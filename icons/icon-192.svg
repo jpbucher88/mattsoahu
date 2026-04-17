@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <rect width="192" height="192" rx="32" fill="#2563eb"/>
+  <text x="96" y="85" font-size="64" text-anchor="middle" fill="white">🚗</text>
+  <text x="96" y="130" font-size="20" font-weight="bold" text-anchor="middle" fill="white" font-family="Arial, sans-serif">FLEET</text>
+  <text x="96" y="155" font-size="16" text-anchor="middle" fill="rgba(255,255,255,0.8)" font-family="Arial, sans-serif">PHOTOS</text>
+</svg>

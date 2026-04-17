@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper: check if user is authenticated
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // Helper: get user role from users collection
+    function getUserRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    // Helper: check if admin
+    function isAdmin() {
+      return isAuth() && getUserRole() == 'admin';
+    }
+
+    // Helper: check if registered user (admin or user)
+    function isRegistered() {
+      return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    // Users collection - only admins can read/write, users can read own doc
+    match /users/{userId} {
+      allow read: if isAuth() && (request.auth.uid == userId || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Vehicles collection - registered users can read, admins can write
+    match /vehicles/{vehicleId} {
+      allow read: if isRegistered();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Photos collection - registered users can create & read, admins can delete
+    match /photos/{photoId} {
+      allow read: if isRegistered();
+      allow create: if isRegistered();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+  }
+}

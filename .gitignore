@@ -1,0 +1,17 @@
+# Firebase
+.firebase/
+firebase-debug.log
+
+# Temporary rules
+firestore-temp.rules
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Editor
+.vscode/
+*.swp
+
+# Node
+node_modules/

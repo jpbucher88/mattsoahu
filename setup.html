@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fleet Photo Manager - First-Time Setup</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #f1f5f9; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .setup-card { background: white; border-radius: 16px; padding: 32px; max-width: 480px; width: 100%; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .subtitle { color: #64748b; margin-bottom: 24px; font-size: 14px; }
+    .form-group { margin-bottom: 16px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #64748b; margin-bottom: 4px; text-transform: uppercase; }
+    input { width: 100%; padding: 12px; border: 2px solid #e2e8f0; border-radius: 8px; font-size: 16px; }
+    input:focus { outline: none; border-color: #2563eb; }
+    button { width: 100%; padding: 14px; background: #2563eb; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .msg { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 14px; }
+    .msg-success { background: #dcfce7; color: #166534; }
+    .msg-error { background: #fee2e2; color: #991b1b; }
+    .steps { margin-top: 20px; padding: 16px; background: #f8fafc; border-radius: 8px; font-size: 13px; color: #475569; }
+    .steps h3 { font-size: 14px; margin-bottom: 8px; }
+    .steps ol { padding-left: 20px; }
+    .steps li { margin-bottom: 4px; }
+    .warning { background: #fef3c7; color: #92400e; padding: 12px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div class="setup-card">
+    <h1>&#128663; First-Time Setup</h1>
+    <p class="subtitle">Create your admin account to get started</p>
+
+    <div class="warning">
+      <strong>Important:</strong> Before running this, temporarily set your Firestore rules to allow all writes.
+      After creating the admin, update the rules to the secure version from firebase-rules.js.
+    </div>
+
+    <div class="form-group">
+      <label>Admin Email</label>
+      <input type="email" id="admin-email" placeholder="admin@yourcompany.com">
+    </div>
+    <div class="form-group">
+      <label>Password (min 6 characters)</label>
+      <input type="password" id="admin-pass" placeholder="Choose a strong password" minlength="6">
+    </div>
+    <div class="form-group">
+      <label>Display Name</label>
+      <input type="text" id="admin-name" placeholder="Your Name">
+    </div>
+
+    <button id="btn-create" onclick="createAdmin()">Create Admin Account</button>
+    <div id="result"></div>
+
+    <div class="steps">
+      <h3>After creating the admin:</h3>
+      <ol>
+        <li>Go to Firebase Console > Firestore > Rules</li>
+        <li>Replace rules with the secure version from firebase-rules.js</li>
+        <li>Open index.html and log in with your new admin credentials</li>
+        <li>You can now create more users from the Admin panel</li>
+      </ol>
+    </div>
+  </div>
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="firebase-config.js"></script>
+  <script>
+    firebase.initializeApp(firebaseConfig);
+
+    async function createAdmin() {
+      const email = document.getElementById('admin-email').value.trim();
+      const password = document.getElementById('admin-pass').value;
+      const displayName = document.getElementById('admin-name').value.trim();
+      const btn = document.getElementById('btn-create');
+      const result = document.getElementById('result');
+
+      if (!email || !password || !displayName) {
+        result.innerHTML = '<div class="msg msg-error">Please fill all fields.</div>';
+        return;
+      }
+      if (password.length < 6) {
+        result.innerHTML = '<div class="msg msg-error">Password must be at least 6 characters.</div>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
+      try {
+        const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+        await cred.user.updateProfile({ displayName });
+
+        await firebase.firestore().collection('users').doc(cred.user.uid).set({
+          email,
+          displayName,
+          role: 'admin',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: 'setup'
+        });
+
+        result.innerHTML = '<div class="msg msg-success">✅ Admin account created! You can now open index.html and log in. Remember to update your Firestore rules!</div>';
+      } catch (err) {
+        result.innerHTML = '<div class="msg msg-error">Error: ' + err.message + '</div>';
+        btn.disabled = false;
+        btn.textContent = 'Create Admin Account';
+      }
+    }
+  </script>
+</body>
+</html>

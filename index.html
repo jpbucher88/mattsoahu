@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Fleet Photo Manager</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
+  <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
+</head>
+<body>
+
+  <!-- ==================== LOGIN PAGE ==================== -->
+  <div id="page-login" class="page active">
+    <div class="login-container">
+      <div class="logo">
+        <img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Company Logo" class="logo-img">
+        <h1>Fleet Photo Manager</h1>
+        <p class="subtitle">Car Rental Photo Documentation</p>
+      </div>
+      <form id="login-form" autocomplete="on">
+        <div class="form-group">
+          <label for="login-email">Email</label>
+          <input type="email" id="login-email" required autocomplete="email" placeholder="you@company.com">
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <div class="password-wrapper">
+            <input type="password" id="login-password" required autocomplete="current-password" placeholder="Enter password">
+            <button type="button" class="btn-toggle-pw" onclick="togglePassword('login-password', this)">Show</button>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Sign In</button>
+        <p id="login-error" class="error-msg"></p>
+        <button type="button" id="btn-forgot-password" class="btn-link">Forgot Password?</button>
+      </form>
+
+      <!-- Reset Password Form -->
+      <form id="reset-form" style="display:none; width:100%; max-width:380px;">
+        <p class="hint" style="margin-bottom:14px;">Enter your email and we'll send a password reset link.</p>
+        <div class="form-group">
+          <label for="reset-email">Email</label>
+          <input type="email" id="reset-email" required placeholder="you@company.com">
+        </div>
+        <button type="submit" class="btn btn-primary btn-full">Send Reset Link</button>
+        <p id="reset-msg" class="error-msg"></p>
+        <button type="button" id="btn-back-login" class="btn-link">Back to Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MAIN DASHBOARD ==================== -->
+  <div id="page-dashboard" class="page">
+    <header class="app-header">
+      <div class="header-brand"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Fleet Photos</h2></div>
+      <div class="header-actions">
+        <span id="user-display" class="user-badge"></span>
+        <button id="btn-change-password" class="btn btn-sm btn-outline">Change Password</button>
+        <button id="btn-admin" class="btn btn-sm btn-outline" style="display:none;">Admin</button>
+        <button id="btn-logout" class="btn btn-sm btn-danger">Logout</button>
+      </div>
+    </header>
+    <main class="dashboard-main">
+      <!-- Vehicle Selector -->
+      <section class="card">
+        <h3>Select Vehicle</h3>
+        <select id="vehicle-select" class="form-select">
+          <option value="">-- Choose a vehicle --</option>
+        </select>
+        <div id="vehicle-info" class="vehicle-info" style="display:none;">
+          <span id="vehicle-make-model"></span>
+          <span id="vehicle-photo-count" class="badge"></span>
+        </div>
+      </section>
+
+      <!-- Camera / Upload Section -->
+      <section id="upload-section" class="card" style="display:none;">
+        <h3>Take / Upload Photos</h3>
+        <p class="hint">Rapid-fire mode: tap the shutter button repeatedly — no confirmation needed.</p>
+
+        <div class="upload-controls">
+          <button id="btn-open-camera" class="btn btn-primary btn-capture">
+            &#128247; Open Camera
+          </button>
+          <label class="btn btn-secondary btn-capture">
+            &#128194; Choose Files
+            <input type="file" id="file-input" accept="image/*" multiple hidden>
+          </label>
+        </div>
+
+        <div id="upload-progress" class="upload-progress" style="display:none;">
+          <div class="progress-bar">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+          <span id="progress-text">0 / 0 uploaded</span>
+        </div>
+
+        <div id="photo-queue" class="photo-queue"></div>
+      </section>
+
+      <!-- Recent Photos for Selected Vehicle -->
+      <section id="recent-photos-section" class="card" style="display:none;">
+        <h3>Today's Photos <span id="today-count" class="badge">0</span></h3>
+        <div id="recent-photos" class="photo-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==================== ADMIN PAGE ==================== -->
+  <div id="page-admin" class="page">
+    <header class="app-header">
+      <button id="btn-back-dashboard" class="btn btn-sm btn-outline">&larr; Back</button>
+      <div class="header-brand"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Admin Panel</h2></div>
+      <div class="header-actions">
+        <button id="btn-admin-logout" class="btn btn-sm btn-danger">Logout</button>
+      </div>
+    </header>
+    <main class="admin-main">
+      <!-- Tab Navigation -->
+      <div class="admin-tabs">
+        <button class="tab-btn active" data-tab="tab-vehicles">Vehicles</button>
+        <button class="tab-btn" data-tab="tab-photos">Photos</button>
+        <button class="tab-btn" data-tab="tab-users">Users</button>
+      </div>
+
+      <!-- ====== Vehicles Tab ====== -->
+      <div id="tab-vehicles" class="tab-content active">
+        <div class="card">
+          <h3>Add New Vehicle</h3>
+          <form id="add-vehicle-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="v-plate">License Plate</label>
+                <input type="text" id="v-plate" required placeholder="e.g. ABC-1234" maxlength="20">
+              </div>
+              <div class="form-group">
+                <label for="v-make">Make</label>
+                <input type="text" id="v-make" required placeholder="e.g. Toyota" maxlength="50">
+              </div>
+              <div class="form-group">
+                <label for="v-model">Model</label>
+                <input type="text" id="v-model" required placeholder="e.g. Camry" maxlength="50">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="v-year">Year</label>
+                <input type="number" id="v-year" placeholder="e.g. 2024" min="1990" max="2030">
+              </div>
+              <div class="form-group">
+                <label for="v-color">Color</label>
+                <input type="text" id="v-color" placeholder="e.g. White" maxlength="30">
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Add Vehicle</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>All Vehicles <span id="vehicle-count" class="badge">0</span></h3>
+          <div id="vehicles-list" class="data-list"></div>
+        </div>
+      </div>
+
+      <!-- ====== Photos Tab ====== -->
+      <div id="tab-photos" class="tab-content">
+        <div class="card">
+          <h3>Browse & Delete Photos</h3>
+          <div class="form-group">
+            <label for="admin-vehicle-select">Select Vehicle</label>
+            <select id="admin-vehicle-select" class="form-select">
+              <option value="">-- Choose a vehicle --</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="admin-date-filter">Filter by Date</label>
+            <input type="date" id="admin-date-filter" class="form-select">
+          </div>
+          <button id="btn-load-photos" class="btn btn-primary">Load Photos</button>
+        </div>
+        <div class="card">
+          <div class="photos-toolbar">
+            <span id="admin-photo-count">0 photos</span>
+            <button id="btn-delete-selected" class="btn btn-sm btn-danger" style="display:none;">Delete Selected</button>
+            <button id="btn-select-all" class="btn btn-sm btn-outline" style="display:none;">Select All</button>
+          </div>
+          <div id="admin-photos" class="photo-grid selectable"></div>
+        </div>
+      </div>
+
+      <!-- ====== Users Tab ====== -->
+      <div id="tab-users" class="tab-content">
+        <div class="card">
+          <h3>Create New User</h3>
+          <form id="add-user-form">
+            <div class="form-group">
+              <label for="u-email">Email</label>
+              <input type="email" id="u-email" required placeholder="user@company.com">
+            </div>
+            <div class="form-group">
+              <label for="u-password">Temporary Password</label>
+              <input type="text" id="u-password" required placeholder="Min 6 characters" minlength="6">
+            </div>
+            <div class="form-group">
+              <label for="u-name">Display Name</label>
+              <input type="text" id="u-name" required placeholder="John Doe" maxlength="100">
+            </div>
+            <div class="form-group">
+              <label for="u-role">Role</label>
+              <select id="u-role" class="form-select">
+                <option value="user">User (Upload photos only)</option>
+                <option value="admin">Admin (Full access)</option>
+              </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Create User</button>
+          </form>
+        </div>
+        <div class="card">
+          <h3>All Users <span id="user-count" class="badge">0</span></h3>
+          <div id="users-list" class="data-list"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================== LIGHTBOX ==================== -->
+  <div id="lightbox" class="lightbox" style="display:none;">
+    <button id="lightbox-close" class="lightbox-close">&times;</button>
+    <img id="lightbox-img" src="" alt="Photo">
+    <div id="lightbox-info" class="lightbox-info"></div>
+  </div>
+
+  <!-- ==================== FULLSCREEN CAMERA ==================== -->
+  <div id="camera-overlay" class="camera-overlay" style="display:none;">
+    <video id="camera-video" autoplay playsinline muted></video>
+    <div class="camera-hud">
+      <div class="camera-top-bar">
+        <button id="camera-close" class="camera-btn-close">&times;</button>
+        <span id="camera-count" class="camera-count-badge">0 photos</span>
+        <button id="camera-flip" class="camera-btn-flip">&#128260;</button>
+      </div>
+      <div class="camera-bottom-bar">
+        <div class="camera-thumbs" id="camera-thumbs"></div>
+        <button id="camera-shutter" class="camera-shutter"></button>
+      </div>
+    </div>
+    <canvas id="camera-canvas" style="display:none;"></canvas>
+  </div>
+
+  <!-- ==================== TOAST NOTIFICATION ==================== -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ==================== LOADING OVERLAY ==================== -->
+  <div id="loading-overlay" class="loading-overlay" style="display:none;">
+    <div class="spinner"></div>
+    <p id="loading-text">Loading...</p>
+  </div>
+
+  <!-- Firebase SDK (compat mode for simplicity) -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+  <script src="firebase-config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
