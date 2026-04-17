@@ -505,6 +505,8 @@ let cameraFacingMode = 'environment'; // back camera
 let cameraShotCount = 0;
 let cameraUploadQueue = [];
 let cameraUploading = false;
+let cameraUploadedCount = 0;
+let cameraTotalQueued = 0;
 
 $('btn-open-camera').addEventListener('click', async () => {
   if (!selectedVehicle) {
@@ -521,8 +523,11 @@ $('btn-open-camera').addEventListener('click', async () => {
 async function openCamera() {
   cameraShotCount = 0;
   cameraUploadQueue = [];
+  cameraUploadedCount = 0;
+  cameraTotalQueued = 0;
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
+  $('camera-upload-bar').style.display = 'none';
   $('camera-overlay').style.display = 'flex';
 
   try {
@@ -542,11 +547,7 @@ async function startCameraStream() {
 
   const constraints = {
     video: {
-      facingMode: cameraFacingMode,
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      zoom: 1.0,
-      resizeMode: 'none',
+      facingMode: { ideal: cameraFacingMode },
     },
     audio: false,
   };
@@ -626,7 +627,26 @@ async function queueCameraUpload(blob) {
   // Compress first
   const compressed = await compressBlob(blob, 1280, 0.7);
   cameraUploadQueue.push(compressed);
+  cameraTotalQueued++;
+  updateCameraUploadBar();
   processCameraQueue();
+}
+
+function updateCameraUploadBar() {
+  const bar = $('camera-upload-bar');
+  if (cameraTotalQueued === 0) {
+    bar.style.display = 'none';
+    return;
+  }
+  bar.style.display = 'flex';
+  const pending = cameraTotalQueued - cameraUploadedCount;
+  if (pending > 0) {
+    $('camera-upload-text').textContent = `Uploading... ${cameraUploadedCount}/${cameraTotalQueued}`;
+  } else {
+    $('camera-upload-text').textContent = `All ${cameraTotalQueued} uploaded ✓`;
+  }
+  const pct = cameraTotalQueued > 0 ? (cameraUploadedCount / cameraTotalQueued) * 100 : 0;
+  $('camera-upload-fill').style.width = pct + '%';
 }
 
 let storageWarningShown = false;
@@ -639,6 +659,8 @@ async function processCameraQueue() {
     const blob = cameraUploadQueue.shift();
     try {
       await uploadPhoto(blob);
+      cameraUploadedCount++;
+      updateCameraUploadBar();
     } catch (err) {
       console.error('Camera upload error:', err);
       if (!getStorage() && !storageWarningShown) {

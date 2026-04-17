@@ -58,9 +58,9 @@
       <div class="header-brand"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Fleet Photos</h2></div>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
-        <button id="btn-change-password" class="btn btn-sm btn-outline">Change Password</button>
-        <button id="btn-admin" class="btn btn-sm btn-outline" style="display:none;">Admin</button>
-        <button id="btn-logout" class="btn btn-sm btn-danger">Logout</button>
+        <button id="btn-change-password" class="btn btn-sm btn-outline btn-icon-mobile" title="Change Password">Change Password</button>
+        <button id="btn-admin" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
+        <button id="btn-logout" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
       </div>
     </header>
     <main class="dashboard-main">
@@ -243,6 +243,14 @@
         <button id="camera-close" class="camera-btn-close">&times;</button>
         <span id="camera-count" class="camera-count-badge">0 photos</span>
         <button id="camera-flip" class="camera-btn-flip">&#128260;</button>
+      </div>
+      <div id="camera-upload-bar" class="camera-upload-bar" style="display:none;">
+        <div class="camera-upload-bar-inner">
+          <span id="camera-upload-text">Uploading...</span>
+          <div class="camera-upload-progress">
+            <div id="camera-upload-fill" class="camera-upload-fill"></div>
+          </div>
+        </div>
       </div>
       <div class="camera-bottom-bar">
         <div class="camera-thumbs" id="camera-thumbs"></div>
