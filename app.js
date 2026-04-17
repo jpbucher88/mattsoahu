@@ -190,6 +190,11 @@ auth.onAuthStateChanged(async (user) => {
       $('user-display').textContent = userData.displayName || user.email;
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
 
+      // Run auto-cleanup on admin login
+      if (currentUserRole === 'admin') {
+        cleanupOldPhotos();
+      }
+
       await loadVehicles();
       showPage('dashboard');
     } catch (err) {
@@ -702,8 +707,10 @@ async function loadTodayPhotos(vehicleId) {
   snapshot.forEach(doc => {
     const data = doc.data();
     const item = document.createElement('div');
-    item.className = 'photo-grid-item';
+    item.className = 'photo-grid-item' + (data.protected ? ' photo-kept' : '');
+    const keepBadge = data.protected ? '<div class="keep-badge">🔒</div>' : '';
     item.innerHTML = `
+      ${keepBadge}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
       <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
     `;
@@ -878,6 +885,8 @@ async function loadAdminPhotos() {
     $('admin-photo-count').textContent = `${snapshot.size} photos`;
     $('btn-delete-selected').style.display = snapshot.size > 0 ? '' : 'none';
     $('btn-select-all').style.display = snapshot.size > 0 ? '' : 'none';
+    $('btn-keep-selected').style.display = snapshot.size > 0 ? '' : 'none';
+    $('btn-unkeep-selected').style.display = snapshot.size > 0 ? '' : 'none';
 
     if (snapshot.empty) {
       container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos found</p></div>';
@@ -888,10 +897,13 @@ async function loadAdminPhotos() {
     snapshot.forEach(doc => {
       const data = doc.data();
       const item = document.createElement('div');
-      item.className = 'photo-grid-item';
+      item.className = 'photo-grid-item' + (data.protected ? ' photo-kept' : '');
       item.dataset.id = doc.id;
       item.dataset.storagePath = data.storagePath || '';
+      item.dataset.protected = data.protected ? '1' : '0';
+      const keepBadge = data.protected ? '<div class="keep-badge">🔒 Kept</div>' : '';
       item.innerHTML = `
+        ${keepBadge}
         <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
         <div class="photo-time">${data.date}${data.timestamp ? ' ' + formatTime(data.timestamp.toDate()) : ''}</div>
       `;
@@ -971,11 +983,14 @@ $('btn-delete-selected').addEventListener('click', async () => {
 
       // Delete from Storage
       if (storagePath) {
-        deletePromises.push(
-          storage.ref(storagePath).delete().catch(err => {
-            console.warn('Storage delete failed for', storagePath, err);
-          })
-        );
+        const st = getStorage();
+        if (st) {
+          deletePromises.push(
+            st.ref(storagePath).delete().catch(err => {
+              console.warn('Storage delete failed for', storagePath, err);
+            })
+          );
+        }
       }
     }
 
@@ -991,9 +1006,106 @@ $('btn-delete-selected').addEventListener('click', async () => {
   }
 });
 
+// Keep selected photos (protect from auto-delete)
+$('btn-keep-selected').addEventListener('click', async () => {
+  if (currentUserRole !== 'admin') return;
+  if (selectedAdminPhotos.size === 0) {
+    toast('No photos selected.', 'warning');
+    return;
+  }
+  showLoading('Protecting photos...');
+  try {
+    const batch = db.batch();
+    for (const docId of selectedAdminPhotos) {
+      batch.update(db.collection('photos').doc(docId), { protected: true });
+    }
+    await batch.commit();
+    toast(`${selectedAdminPhotos.size} photo(s) protected from auto-delete.`, 'success');
+    selectedAdminPhotos.clear();
+    await loadAdminPhotos();
+  } catch (err) {
+    console.error('Keep photos error:', err);
+    toast('Failed to protect photos.', 'error');
+  } finally {
+    hideLoading();
+  }
+});
+
+// Unkeep selected photos (allow auto-delete again)
+$('btn-unkeep-selected').addEventListener('click', async () => {
+  if (currentUserRole !== 'admin') return;
+  if (selectedAdminPhotos.size === 0) {
+    toast('No photos selected.', 'warning');
+    return;
+  }
+  showLoading('Removing protection...');
+  try {
+    const batch = db.batch();
+    for (const docId of selectedAdminPhotos) {
+      batch.update(db.collection('photos').doc(docId), { protected: false });
+    }
+    await batch.commit();
+    toast(`${selectedAdminPhotos.size} photo(s) will now auto-delete after 30 days.`, 'success');
+    selectedAdminPhotos.clear();
+    await loadAdminPhotos();
+  } catch (err) {
+    console.error('Unkeep photos error:', err);
+    toast('Failed to remove protection.', 'error');
+  } finally {
+    hideLoading();
+  }
+});
+
 // ================================================================
-// ADMIN: USER MANAGEMENT
+// AUTO-DELETE: Remove unprotected photos older than 30 days
 // ================================================================
+
+async function cleanupOldPhotos() {
+  const st = getStorage();
+  if (!st) return; // can't delete from storage without it
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 30);
+  const cutoffTimestamp = firebase.firestore.Timestamp.fromDate(cutoff);
+
+  try {
+    const snapshot = await db.collection('photos')
+      .where('timestamp', '<', cutoffTimestamp)
+      .limit(100) // batch to avoid overwhelming
+      .get();
+
+    if (snapshot.empty) return;
+
+    let deletedCount = 0;
+    const batch = db.batch();
+    const storageDeletes = [];
+
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Skip protected photos
+      if (data.protected) return;
+
+      batch.delete(doc.ref);
+      if (data.storagePath) {
+        storageDeletes.push(
+          st.ref(data.storagePath).delete().catch(err => {
+            console.warn('Cleanup storage delete failed:', data.storagePath, err);
+          })
+        );
+      }
+      deletedCount++;
+    });
+
+    if (deletedCount > 0) {
+      await batch.commit();
+      await Promise.all(storageDeletes);
+      console.log(`Auto-cleanup: deleted ${deletedCount} photos older than 30 days.`);
+      toast(`Auto-cleanup: ${deletedCount} old photo(s) removed.`, 'info');
+    }
+  } catch (err) {
+    console.error('Auto-cleanup error:', err);
+  }
+}
 
 $('add-user-form').addEventListener('submit', async (e) => {
   e.preventDefault();

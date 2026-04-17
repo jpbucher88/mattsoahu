@@ -456,6 +456,34 @@ body {
   font-weight: bold;
 }
 
+/* ============ KEEP / PROTECTED BADGE ============ */
+.keep-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: rgba(34, 139, 34, 0.9);
+  color: white;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  z-index: 3;
+  pointer-events: none;
+  font-weight: 600;
+}
+
+.photo-grid-item.photo-kept {
+  border-color: #228b22;
+}
+
+.btn-keep {
+  background: #228b22;
+  color: white;
+  border: none;
+}
+.btn-keep:hover {
+  background: #1a6e1a;
+}
+
 /* ============ ADMIN TABS ============ */
 .admin-tabs {
   display: flex;
