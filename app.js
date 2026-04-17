@@ -13,6 +13,13 @@ try {
   console.warn('Firebase Storage not available yet. Photo uploads will not work until Storage is enabled.');
 }
 
+function getStorage() {
+  if (!storage) {
+    try { storage = firebase.storage(); } catch (e) { /* still not enabled */ }
+  }
+  return storage;
+}
+
 // --------------- GLOBALS ---------------
 let currentUser = null;
 let currentUserRole = null;
@@ -397,7 +404,7 @@ async function handlePhotoFiles(e) {
   const files = Array.from(e.target.files);
   if (!files.length || !selectedVehicle) return;
 
-  if (!storage) {
+  if (!getStorage()) {
     toast('Photo uploads not available — Firebase Storage is not enabled yet. Contact your admin.', 'error');
     e.target.value = '';
     return;
@@ -450,7 +457,8 @@ async function handlePhotoFiles(e) {
 
 // Core upload function — used by both file picker and camera
 async function uploadPhoto(blobOrFile) {
-  if (!storage) {
+  const st = getStorage();
+  if (!st) {
     throw new Error('Firebase Storage is not enabled yet. Contact your admin to enable billing.');
   }
   const plate = sanitizePlate(selectedVehicle.plate);
@@ -459,7 +467,7 @@ async function uploadPhoto(blobOrFile) {
   const fileName = `${timestamp}_${Math.random().toString(36).substring(2, 8)}.jpg`;
   const storagePath = `vehicles/${plate}/${date}/${fileName}`;
 
-  const ref = storage.ref(storagePath);
+  const ref = st.ref(storagePath);
   await ref.put(blobOrFile, { contentType: 'image/jpeg' });
   const downloadURL = await ref.getDownloadURL();
 
@@ -530,8 +538,10 @@ async function startCameraStream() {
   const constraints = {
     video: {
       facingMode: cameraFacingMode,
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
+      width: { ideal: 1280 },
+      height: { ideal: 720 },
+      zoom: 1.0,
+      resizeMode: 'none',
     },
     audio: false,
   };
@@ -545,6 +555,17 @@ async function startCameraStream() {
     } else {
       throw err;
     }
+  }
+
+  // Lock zoom to 1x on supported tracks
+  const [track] = cameraStream.getVideoTracks();
+  if (track) {
+    try {
+      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.zoom) {
+        await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min || 1 }] });
+      }
+    } catch (e) { /* zoom constraint not supported — ok */ }
   }
 
   const video = $('camera-video');
@@ -615,7 +636,7 @@ async function processCameraQueue() {
       await uploadPhoto(blob);
     } catch (err) {
       console.error('Camera upload error:', err);
-      if (!storage && !storageWarningShown) {
+      if (!getStorage() && !storageWarningShown) {
         storageWarningShown = true;
         toast('Photos saved locally but uploads need Firebase Storage enabled.', 'warning');
       }
