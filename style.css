@@ -313,6 +313,19 @@ body {
   font-size: 15px;
 }
 
+/* ============ STALE PHOTO ALERT ============ */
+.stale-alert {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-left: 4px solid var(--danger);
+  border-radius: 8px;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
 /* ============ UPLOAD CONTROLS ============ */
 .upload-controls {
   display: flex;

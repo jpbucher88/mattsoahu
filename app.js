@@ -356,6 +356,27 @@ async function loadVehicles() {
   const snapshot = await db.collection('vehicles').orderBy('plate').get();
   vehiclesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+  // Check latest photo timestamp for each vehicle
+  const now = Date.now();
+  const checks = vehiclesCache.map(async (v) => {
+    try {
+      const photoSnap = await db.collection('photos')
+        .where('vehicleId', '==', v.id)
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get();
+      if (photoSnap.empty) {
+        v.lastPhotoAge = Infinity; // never photographed
+      } else {
+        const ts = photoSnap.docs[0].data().timestamp;
+        v.lastPhotoAge = ts ? now - ts.toDate().getTime() : Infinity;
+      }
+    } catch (e) {
+      v.lastPhotoAge = null; // unknown
+    }
+  });
+  await Promise.all(checks);
+
   // Populate dashboard dropdown
   populateVehicleSelect($('vehicle-select'));
   // Populate admin dropdown
@@ -366,12 +387,15 @@ async function loadVehicles() {
 }
 
 function populateVehicleSelect(selectEl) {
-  // Keep only the placeholder
+  const MS_24H = 24 * 60 * 60 * 1000;
   selectEl.innerHTML = '<option value="">-- Choose a vehicle --</option>';
   vehiclesCache.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v.id;
-    opt.textContent = `${v.plate} — ${v.make} ${v.model}`;
+    const stale = v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
+    const prefix = stale ? '⚠️ ' : '';
+    opt.textContent = `${prefix}${v.plate} — ${v.make} ${v.model}`;
+    if (stale) opt.style.color = '#b91c1c';
     selectEl.appendChild(opt);
   });
 }
@@ -381,6 +405,7 @@ $('vehicle-select').addEventListener('change', async function () {
   const vid = this.value;
   if (!vid) {
     $('vehicle-info').style.display = 'none';
+    $('stale-alert').style.display = 'none';
     $('upload-section').style.display = 'none';
     $('recent-photos-section').style.display = 'none';
     selectedVehicle = null;
@@ -392,6 +417,24 @@ $('vehicle-select').addEventListener('change', async function () {
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
   $('vehicle-info').style.display = 'flex';
+
+  // Show stale photo alert
+  const MS_24H = 24 * 60 * 60 * 1000;
+  const staleAlert = $('stale-alert');
+  if (selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H) {
+    if (selectedVehicle.lastPhotoAge === Infinity) {
+      staleAlert.textContent = '\u26A0\uFE0F No photos have been taken for this vehicle.';
+    } else {
+      const hoursAgo = Math.floor(selectedVehicle.lastPhotoAge / (1000 * 60 * 60));
+      const daysAgo = Math.floor(hoursAgo / 24);
+      const ageText = daysAgo > 0 ? `${daysAgo}d ${hoursAgo % 24}h ago` : `${hoursAgo}h ago`;
+      staleAlert.textContent = `\u26A0\uFE0F Last photo was ${ageText} \u2014 photos may be outdated.`;
+    }
+    staleAlert.style.display = 'block';
+  } else {
+    staleAlert.style.display = 'none';
+  }
+
   $('upload-section').style.display = 'block';
   $('recent-photos-section').style.display = 'block';
 
