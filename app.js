@@ -52,6 +52,7 @@ const pages = {
 function showPage(name) {
   Object.values(pages).forEach(p => p.classList.remove('active'));
   pages[name].classList.add('active');
+  window.scrollTo(0, 0);
 }
 
 function showLoading(text = 'Loading...') {
@@ -116,9 +117,9 @@ function sanitizePlate(plate) {
   return plate.replace(/[^a-zA-Z0-9-]/g, '_').toUpperCase();
 }
 
-// Compress image before upload to save bandwidth
-// 1280px wide at 70% quality = ~200-400KB per photo (plenty for damage docs)
-function compressImage(file, maxWidth = 1280, quality = 0.7) {
+// Compress image before upload
+// 1920px wide at 82% quality = ~300-600KB per photo (good detail for damage docs)
+function compressImage(file, maxWidth = 1920, quality = 0.82) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -146,7 +147,7 @@ function compressImage(file, maxWidth = 1280, quality = 0.7) {
 }
 
 // Compress a blob directly (used by the in-browser camera)
-function compressBlob(blob, maxWidth = 1280, quality = 0.7) {
+function compressBlob(blob, maxWidth = 1920, quality = 0.82) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -190,10 +191,8 @@ auth.onAuthStateChanged(async (user) => {
       $('user-display').textContent = userData.displayName || user.email;
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
 
-      // Run auto-cleanup on admin login
-      if (currentUserRole === 'admin') {
-        cleanupOldPhotos();
-      }
+      // Run auto-cleanup on any login (not just admin)
+      cleanupOldPhotos();
 
       await loadVehicles();
       showPage('dashboard');
@@ -588,33 +587,44 @@ async function startCameraStream() {
     cameraStream.getTracks().forEach(t => t.stop());
   }
 
-  const constraints = {
-    video: {
-      facingMode: { ideal: cameraFacingMode },
-    },
-    audio: false,
-  };
+  // Use 'exact' facingMode to force the wide-angle (1x) lens on multi-camera iPhones
+  // Fall back step by step if the device doesn't support it
+  let stream = null;
+  const attempts = [
+    { video: { facingMode: { exact: cameraFacingMode } }, audio: false },
+    { video: { facingMode: cameraFacingMode }, audio: false },
+    { video: true, audio: false },
+  ];
 
-  try {
-    cameraStream = await navigator.mediaDevices.getUserMedia(constraints);
-  } catch (err) {
-    // iOS may reject exact facingMode on single-camera devices — retry without it
-    if (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError') {
-      cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-    } else {
-      throw err;
+  for (const constraints of attempts) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia(constraints);
+      break;
+    } catch (err) {
+      // Try next set of constraints
     }
   }
 
-  // Lock zoom to 1x on supported tracks
+  if (!stream) {
+    throw new Error('Could not access any camera.');
+  }
+
+  cameraStream = stream;
+
+  // Force zoom to 1x (minimum) on supported devices
   const [track] = cameraStream.getVideoTracks();
-  if (track) {
+  if (track && track.getCapabilities) {
     try {
-      const caps = track.getCapabilities ? track.getCapabilities() : {};
+      const caps = track.getCapabilities();
+      const advanced = [];
       if (caps.zoom) {
-        await track.applyConstraints({ advanced: [{ zoom: caps.zoom.min || 1 }] });
+        advanced.push({ zoom: caps.zoom.min });
       }
-    } catch (e) { /* zoom constraint not supported — ok */ }
+      // Some Android devices expose torch — ignore, just set zoom
+      if (advanced.length) {
+        await track.applyConstraints({ advanced });
+      }
+    } catch (e) { /* zoom not supported — ok */ }
   }
 
   const video = $('camera-video');
@@ -668,7 +678,7 @@ $('camera-shutter').addEventListener('click', () => {
 
 async function queueCameraUpload(blob) {
   // Compress first
-  const compressed = await compressBlob(blob, 1280, 0.7);
+  const compressed = await compressBlob(blob, 1920, 0.82);
   cameraUploadQueue.push(compressed);
   cameraTotalQueued++;
   updateCameraUploadBar();
@@ -1134,41 +1144,99 @@ async function cleanupOldPhotos() {
   const cutoffTimestamp = firebase.firestore.Timestamp.fromDate(cutoff);
 
   try {
-    const snapshot = await db.collection('photos')
-      .where('timestamp', '<', cutoffTimestamp)
-      .limit(100) // batch to avoid overwhelming
-      .get();
+    // Loop to handle more than 100 stale photos across multiple batches
+    let totalDeleted = 0;
+    let hasMore = true;
 
-    if (snapshot.empty) return;
+    while (hasMore) {
+      const snapshot = await db.collection('photos')
+        .where('protected', '!=', true)
+        .where('timestamp', '<', cutoffTimestamp)
+        .limit(100)
+        .get();
 
-    let deletedCount = 0;
-    const batch = db.batch();
-    const storageDeletes = [];
-
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      // Skip protected photos
-      if (data.protected) return;
-
-      batch.delete(doc.ref);
-      if (data.storagePath) {
-        storageDeletes.push(
-          st.ref(data.storagePath).delete().catch(err => {
-            console.warn('Cleanup storage delete failed:', data.storagePath, err);
-          })
-        );
+      if (snapshot.empty) {
+        hasMore = false;
+        break;
       }
-      deletedCount++;
-    });
 
-    if (deletedCount > 0) {
-      await batch.commit();
-      await Promise.all(storageDeletes);
-      console.log(`Auto-cleanup: deleted ${deletedCount} photos older than 30 days.`);
-      toast(`Auto-cleanup: ${deletedCount} old photo(s) removed.`, 'info');
+      const batch = db.batch();
+      const storageDeletes = [];
+      let batchCount = 0;
+
+      snapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.protected) return; // double-check
+
+        batch.delete(doc.ref);
+        if (data.storagePath) {
+          storageDeletes.push(
+            st.ref(data.storagePath).delete().catch(err => {
+              console.warn('Cleanup storage delete failed:', data.storagePath, err);
+            })
+          );
+        }
+        batchCount++;
+      });
+
+      if (batchCount > 0) {
+        await batch.commit();
+        await Promise.all(storageDeletes);
+        totalDeleted += batchCount;
+      }
+
+      // If we got fewer than 100, we're done
+      if (snapshot.size < 100) hasMore = false;
+    }
+
+    if (totalDeleted > 0) {
+      console.log(`Auto-cleanup: deleted ${totalDeleted} photos older than 30 days.`);
+      toast(`Auto-cleanup: ${totalDeleted} old photo(s) removed.`, 'info');
     }
   } catch (err) {
-    console.error('Auto-cleanup error:', err);
+    // Compound query may fail if index doesn't exist — fall back to simple query
+    console.warn('Cleanup compound query failed, trying simple query:', err);
+    try {
+      await cleanupOldPhotosFallback(st, cutoffTimestamp);
+    } catch (err2) {
+      console.error('Auto-cleanup fallback error:', err2);
+    }
+  }
+}
+
+// Fallback that doesn't require a compound index
+async function cleanupOldPhotosFallback(st, cutoffTimestamp) {
+  const snapshot = await db.collection('photos')
+    .where('timestamp', '<', cutoffTimestamp)
+    .limit(200)
+    .get();
+
+  if (snapshot.empty) return;
+
+  const batch = db.batch();
+  const storageDeletes = [];
+  let deletedCount = 0;
+
+  snapshot.forEach(doc => {
+    const data = doc.data();
+    if (data.protected) return;
+
+    batch.delete(doc.ref);
+    if (data.storagePath) {
+      storageDeletes.push(
+        st.ref(data.storagePath).delete().catch(err => {
+          console.warn('Cleanup storage delete failed:', data.storagePath, err);
+        })
+      );
+    }
+    deletedCount++;
+  });
+
+  if (deletedCount > 0) {
+    await batch.commit();
+    await Promise.all(storageDeletes);
+    console.log(`Auto-cleanup (fallback): deleted ${deletedCount} photos older than 30 days.`);
+    toast(`Auto-cleanup: ${deletedCount} old photo(s) removed.`, 'info');
   }
 }
 
