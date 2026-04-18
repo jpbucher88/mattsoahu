@@ -1242,28 +1242,23 @@ $('btn-unkeep-selected').addEventListener('click', async () => {
 
 async function cleanupOldPhotos() {
   const st = getStorage();
-  if (!st) return; // can't delete from storage without it
+  if (!st) return;
 
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 30);
   const cutoffTimestamp = firebase.firestore.Timestamp.fromDate(cutoff);
 
   try {
-    // Loop to handle more than 100 stale photos across multiple batches
     let totalDeleted = 0;
     let hasMore = true;
 
     while (hasMore) {
       const snapshot = await db.collection('photos')
-        .where('protected', '!=', true)
         .where('timestamp', '<', cutoffTimestamp)
         .limit(100)
         .get();
 
-      if (snapshot.empty) {
-        hasMore = false;
-        break;
-      }
+      if (snapshot.empty) { hasMore = false; break; }
 
       const batch = db.batch();
       const storageDeletes = [];
@@ -1271,7 +1266,7 @@ async function cleanupOldPhotos() {
 
       snapshot.forEach(doc => {
         const data = doc.data();
-        if (data.protected) return; // double-check
+        if (data.protected) return; // skip kept photos
 
         batch.delete(doc.ref);
         if (data.storagePath) {
@@ -1290,7 +1285,6 @@ async function cleanupOldPhotos() {
         totalDeleted += batchCount;
       }
 
-      // If we got fewer than 100, we're done
       if (snapshot.size < 100) hasMore = false;
     }
 
@@ -1299,49 +1293,7 @@ async function cleanupOldPhotos() {
       toast(`Auto-cleanup: ${totalDeleted} old photo(s) removed.`, 'info');
     }
   } catch (err) {
-    // Compound query may fail if index doesn't exist — fall back to simple query
-    console.warn('Cleanup compound query failed, trying simple query:', err);
-    try {
-      await cleanupOldPhotosFallback(st, cutoffTimestamp);
-    } catch (err2) {
-      console.error('Auto-cleanup fallback error:', err2);
-    }
-  }
-}
-
-// Fallback that doesn't require a compound index
-async function cleanupOldPhotosFallback(st, cutoffTimestamp) {
-  const snapshot = await db.collection('photos')
-    .where('timestamp', '<', cutoffTimestamp)
-    .limit(200)
-    .get();
-
-  if (snapshot.empty) return;
-
-  const batch = db.batch();
-  const storageDeletes = [];
-  let deletedCount = 0;
-
-  snapshot.forEach(doc => {
-    const data = doc.data();
-    if (data.protected) return;
-
-    batch.delete(doc.ref);
-    if (data.storagePath) {
-      storageDeletes.push(
-        st.ref(data.storagePath).delete().catch(err => {
-          console.warn('Cleanup storage delete failed:', data.storagePath, err);
-        })
-      );
-    }
-    deletedCount++;
-  });
-
-  if (deletedCount > 0) {
-    await batch.commit();
-    await Promise.all(storageDeletes);
-    console.log(`Auto-cleanup (fallback): deleted ${deletedCount} photos older than 30 days.`);
-    toast(`Auto-cleanup: ${deletedCount} old photo(s) removed.`, 'info');
+    console.error('Auto-cleanup error:', err);
   }
 }
 
