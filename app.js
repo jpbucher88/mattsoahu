@@ -830,15 +830,9 @@ $('btn-download-all').addEventListener('click', async () => {
 
     for (const photo of photos) {
       try {
-        // Use XMLHttpRequest to handle cross-origin blob download
-        const blob = await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.responseType = 'blob';
-          xhr.onload = () => resolve(xhr.response);
-          xhr.onerror = () => reject(new Error('XHR failed'));
-          xhr.open('GET', photo.url);
-          xhr.send();
-        });
+        const resp = await fetch(photo.url);
+        if (!resp.ok) throw new Error('fetch ' + resp.status);
+        const blob = await resp.blob();
         count++;
         const ts = photo.timestamp
           ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-')
@@ -846,7 +840,7 @@ $('btn-download-all').addEventListener('click', async () => {
         zip.file(`${label}_${today}_${ts}.jpg`, blob);
         showLoading(`Downloaded ${count} of ${photos.length}...`);
       } catch (dlErr) {
-        console.error('Download error for photo:', dlErr);
+        console.error('Download error for photo:', photo.url, dlErr);
       }
     }
 
