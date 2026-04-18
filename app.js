@@ -5,6 +5,7 @@
 // --------------- FIREBASE INIT ---------------
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
+auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL);
 const db = firebase.firestore();
 let storage = null;
 try {
@@ -790,13 +791,19 @@ async function loadTodayPhotos(vehicleId) {
     const data = doc.data();
     const item = document.createElement('div');
     item.className = 'photo-grid-item' + (data.protected ? ' photo-kept' : '');
+    item.dataset.lightboxInfo = `${data.plate} — ${data.date}`;
     const keepBadge = data.protected ? '<div class="keep-badge">🔒</div>' : '';
     item.innerHTML = `
       ${keepBadge}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
       <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
+      <button class="photo-save-btn" title="Save photo">&#11015;</button>
     `;
-    item.addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
+    item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
+    item.querySelector('.photo-save-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      saveOnePhoto(data.url, `${selectedVehicle ? selectedVehicle.make + '_' + selectedVehicle.model : 'photo'}_${data.date}`);
+    });
     container.appendChild(item);
   });
 }
@@ -900,14 +907,128 @@ $('btn-download-all').addEventListener('click', async () => {
 });
 
 // ================================================================
-// LIGHTBOX
+// LIGHTBOX WITH GALLERY NAVIGATION
 // ================================================================
 
+let lightboxPhotos = []; // array of { url, info }
+let lightboxIndex = 0;
+
 function openLightbox(url, info) {
-  $('lightbox-img').src = url;
-  $('lightbox-info').textContent = info;
+  // Build gallery from currently visible photo grid
+  lightboxPhotos = [];
+  document.querySelectorAll('#recent-photos .photo-grid-item img, #admin-photos .photo-grid-item img').forEach(img => {
+    const item = img.closest('.photo-grid-item');
+    // Get the info from the click handler — store it as data attribute
+    lightboxPhotos.push({
+      url: img.src,
+      info: item.dataset.lightboxInfo || ''
+    });
+  });
+
+  // Find current index
+  lightboxIndex = lightboxPhotos.findIndex(p => p.url === url);
+  if (lightboxIndex < 0) {
+    lightboxPhotos = [{ url, info }];
+    lightboxIndex = 0;
+  }
+
+  showLightboxPhoto();
   $('lightbox').style.display = 'flex';
 }
+
+function showLightboxPhoto() {
+  const photo = lightboxPhotos[lightboxIndex];
+  if (!photo) return;
+  $('lightbox-img').src = photo.url;
+  $('lightbox-info-text').textContent = photo.info;
+  $('lightbox').dataset.url = photo.url;
+  $('lightbox').dataset.info = photo.info;
+
+  const counter = $('lightbox-counter');
+  if (lightboxPhotos.length > 1) {
+    counter.textContent = `${lightboxIndex + 1} / ${lightboxPhotos.length}`;
+    $('lightbox-prev').style.display = '';
+    $('lightbox-next').style.display = '';
+  } else {
+    counter.textContent = '';
+    $('lightbox-prev').style.display = 'none';
+    $('lightbox-next').style.display = 'none';
+  }
+}
+
+function lightboxNav(dir) {
+  lightboxIndex += dir;
+  if (lightboxIndex < 0) lightboxIndex = lightboxPhotos.length - 1;
+  if (lightboxIndex >= lightboxPhotos.length) lightboxIndex = 0;
+  showLightboxPhoto();
+}
+
+// Save a single photo — share sheet on mobile, direct download on desktop
+async function saveOnePhoto(url, name) {
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('fetch ' + resp.status);
+    const blob = await resp.blob();
+    const fileName = name.replace(/\s+/g, '_') + '.jpg';
+
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && navigator.canShare) {
+      const file = new File([blob], fileName, { type: 'image/jpeg' });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file] });
+        return;
+      }
+    }
+
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  } catch (err) {
+    if (err.name === 'AbortError') return;
+    console.error('Save photo error:', err);
+    toast('Could not save photo.', 'error');
+  }
+}
+
+$('lightbox-save').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const url = $('lightbox').dataset.url;
+  const info = $('lightbox').dataset.info || 'photo';
+  saveOnePhoto(url, info);
+});
+
+$('lightbox-prev').addEventListener('click', (e) => { e.stopPropagation(); lightboxNav(-1); });
+$('lightbox-next').addEventListener('click', (e) => { e.stopPropagation(); lightboxNav(1); });
+
+// Arrow keys
+document.addEventListener('keydown', (e) => {
+  if ($('lightbox').style.display !== 'flex') return;
+  if (e.key === 'ArrowLeft') lightboxNav(-1);
+  else if (e.key === 'ArrowRight') lightboxNav(1);
+  else if (e.key === 'Escape') { $('lightbox').style.display = 'none'; $('lightbox-img').src = ''; }
+});
+
+// Touch swipe
+(function() {
+  let touchStartX = 0, touchStartY = 0;
+  const lb = $('lightbox');
+  lb.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+  }, { passive: true });
+  lb.addEventListener('touchend', (e) => {
+    const dx = e.changedTouches[0].screenX - touchStartX;
+    const dy = e.changedTouches[0].screenY - touchStartY;
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) lightboxNav(1);   // swipe left = next
+      else lightboxNav(-1);          // swipe right = prev
+    }
+  }, { passive: true });
+})();
 
 $('lightbox-close').addEventListener('click', () => {
   $('lightbox').style.display = 'none';
@@ -1081,6 +1202,7 @@ async function loadAdminPhotos() {
       item.dataset.id = doc.id;
       item.dataset.storagePath = data.storagePath || '';
       item.dataset.protected = data.protected ? '1' : '0';
+      item.dataset.lightboxInfo = `${data.plate || ''} — ${data.date}`;
       const keepBadge = data.protected ? '<div class="keep-badge">🔒 Kept</div>' : '';
       item.innerHTML = `
         ${keepBadge}

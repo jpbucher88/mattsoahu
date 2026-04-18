@@ -635,6 +635,71 @@ body {
   opacity: 0.8;
 }
 
+.lightbox-counter {
+  margin-left: 8px;
+  opacity: 0.6;
+  font-size: 12px;
+}
+
+.lightbox-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,0.15);
+  color: white;
+  border: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 22px;
+  cursor: pointer;
+  z-index: 201;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lightbox-nav:active { background: rgba(255,255,255,0.35); }
+.lightbox-prev-btn { left: 12px; }
+.lightbox-next-btn { right: 12px; }
+
+.lightbox-save {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: none;
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 22px;
+  font-size: 15px;
+  cursor: pointer;
+  z-index: 201;
+}
+.lightbox-save:active { background: rgba(255,255,255,0.35); }
+
+.photo-grid-item {
+  position: relative;
+}
+.photo-save-btn {
+  position: absolute;
+  bottom: 32px;
+  right: 6px;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.photo-save-btn:active { background: rgba(0,0,0,0.8); }
+
 /* ============ TOAST NOTIFICATIONS ============ */
 .toast-container {
   position: fixed;
@@ -1089,6 +1154,22 @@ body {
     top: 8px;
     right: 8px;
   }
+
+  .lightbox-save {
+    top: 8px;
+    left: 8px;
+    height: 38px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+
+  .lightbox-nav {
+    width: 40px;
+    height: 40px;
+    font-size: 18px;
+  }
+  .lightbox-prev-btn { left: 6px; }
+  .lightbox-next-btn { right: 6px; }
 }
 
 /* Medium screens */
