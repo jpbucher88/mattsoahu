@@ -825,42 +825,66 @@ $('btn-download-all').addEventListener('click', async () => {
 
     showLoading(`Downloading ${photos.length} photos...`);
 
-    const zip = new JSZip();
+    // Download all photo blobs
+    const files = [];
     let count = 0;
-
     for (const photo of photos) {
       try {
         const resp = await fetch(photo.url);
         if (!resp.ok) throw new Error('fetch ' + resp.status);
-        const blob = await resp.blob();
+        const buf = await resp.arrayBuffer();
         count++;
         const ts = photo.timestamp
           ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-')
           : String(count).padStart(3, '0');
-        zip.file(`${label}_${today}_${ts}.jpg`, blob);
+        const fileName = `${label}_${today}_${ts}.jpg`;
+        files.push({ name: fileName, buf });
         showLoading(`Downloaded ${count} of ${photos.length}...`);
       } catch (dlErr) {
         console.error('Download error for photo:', photo.url, dlErr);
       }
     }
 
-    if (count === 0) {
+    if (files.length === 0) {
       toast('Could not download any photos.', 'error');
       hideLoading();
       return;
     }
 
+    // Mobile: use Web Share API to save to camera roll / share
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && navigator.canShare) {
+      const shareFiles = files.map(f => new File([f.buf], f.name, { type: 'image/jpeg' }));
+      if (navigator.canShare({ files: shareFiles })) {
+        hideLoading();
+        try {
+          await navigator.share({ files: shareFiles, title: `${label} photos` });
+          toast(`${files.length} photos shared!`, 'success');
+        } catch (shareErr) {
+          if (shareErr.name !== 'AbortError') {
+            toast('Share cancelled or failed.', 'warning');
+          }
+        }
+        return;
+      }
+    }
+
+    // Desktop: bundle into ZIP
     showLoading('Creating ZIP file...');
+    const zip = new JSZip();
+    for (const f of files) {
+      zip.file(f.name, f.buf, { binary: true });
+    }
     const zipBlob = await zip.generateAsync({ type: 'blob' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(zipBlob);
-    a.download = `${label}_${today}_${count}-photos.zip`;
+    a.download = `${label}_${today}_${files.length}-photos.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
 
-    toast(`ZIP with ${count} photos ready!`, 'success');
+    toast(`ZIP with ${files.length} photos ready!`, 'success');
   } catch (err) {
     console.error('Download all error:', err);
     toast('Failed to download photos.', 'error');
