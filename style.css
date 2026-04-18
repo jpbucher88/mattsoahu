@@ -406,6 +406,19 @@ body {
   background: var(--danger);
 }
 
+/* ============ SECTION HEADER ============ */
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.section-header h3 {
+  margin: 0;
+}
+
 /* ============ PHOTO GRID ============ */
 .photo-grid {
   display: grid;

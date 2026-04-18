@@ -104,7 +104,10 @@
 
       <!-- Recent Photos for Selected Vehicle -->
       <section id="recent-photos-section" class="card" style="display:none;">
-        <h3>Today's Photos <span id="today-count" class="badge">0</span></h3>
+        <div class="section-header">
+          <h3>Today's Photos <span id="today-count" class="badge">0</span></h3>
+          <button id="btn-download-all" class="btn btn-sm btn-outline">&#11015; Download All</button>
+        </div>
         <div id="recent-photos" class="photo-grid"></div>
       </section>
     </main>
@@ -197,15 +200,12 @@
       <!-- ====== Users Tab ====== -->
       <div id="tab-users" class="tab-content">
         <div class="card">
-          <h3>Create New User</h3>
+          <h3>Invite New User</h3>
+          <p class="hint">Enter their email and name. They'll receive a link to set their own password.</p>
           <form id="add-user-form">
             <div class="form-group">
               <label for="u-email">Email</label>
               <input type="email" id="u-email" required placeholder="user@company.com">
-            </div>
-            <div class="form-group">
-              <label for="u-password">Temporary Password</label>
-              <input type="text" id="u-password" required placeholder="Min 6 characters" minlength="6">
             </div>
             <div class="form-group">
               <label for="u-name">Display Name</label>
@@ -214,11 +214,12 @@
             <div class="form-group">
               <label for="u-role">Role</label>
               <select id="u-role" class="form-select">
-                <option value="user">User (Upload photos only)</option>
+                <option value="user">User (View &amp; download photos only)</option>
+                <option value="manager">Manager (Upload &amp; view photos)</option>
                 <option value="admin">Admin (Full access)</option>
               </select>
             </div>
-            <button type="submit" class="btn btn-primary">Create User</button>
+            <button type="submit" class="btn btn-primary">Send Invite</button>
           </form>
         </div>
         <div class="card">

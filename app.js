@@ -434,7 +434,8 @@ $('vehicle-select').addEventListener('change', async function () {
     staleAlert.style.display = 'none';
   }
 
-  $('upload-section').style.display = 'block';
+  const canUpload = (currentUserRole === 'admin' || currentUserRole === 'manager');
+  $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
 
   // Load today's photo count
@@ -793,6 +794,62 @@ async function loadTodayPhotos(vehicleId) {
     container.appendChild(item);
   });
 }
+
+// ================================================================
+// DOWNLOAD ALL PHOTOS FOR SELECTED VEHICLE
+// ================================================================
+
+$('btn-download-all').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+
+  const vid = selectedVehicle.id;
+  const label = `${selectedVehicle.make} ${selectedVehicle.model}`;
+  const today = todayDateString();
+
+  showLoading('Fetching photo list...');
+  try {
+    const snapshot = await db.collection('photos')
+      .where('vehicleId', '==', vid)
+      .where('date', '==', today)
+      .orderBy('timestamp', 'desc')
+      .get();
+
+    if (snapshot.empty) {
+      toast('No photos to download.', 'warning');
+      return;
+    }
+
+    const photos = [];
+    snapshot.forEach(doc => photos.push(doc.data()));
+
+    // Download each photo as a blob and trigger a save
+    let downloaded = 0;
+    for (const photo of photos) {
+      try {
+        const resp = await fetch(photo.url);
+        const blob = await resp.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        const ts = photo.timestamp ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-') : downloaded;
+        a.download = `${label}_${today}_${ts}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(a.href);
+        downloaded++;
+      } catch (dlErr) {
+        console.error('Download error for photo:', dlErr);
+      }
+    }
+
+    toast(`Downloaded ${downloaded} of ${photos.length} photos.`, 'success');
+  } catch (err) {
+    console.error('Download all error:', err);
+    toast('Failed to download photos.', 'error');
+  } finally {
+    hideLoading();
+  }
+});
 
 // ================================================================
 // LIGHTBOX
@@ -1245,30 +1302,26 @@ $('add-user-form').addEventListener('submit', async (e) => {
   if (currentUserRole !== 'admin') return;
 
   const email = $('u-email').value.trim();
-  const password = $('u-password').value;
   const displayName = $('u-name').value.trim();
   const role = $('u-role').value;
 
-  if (!email || !password || !displayName) {
+  if (!email || !displayName) {
     toast('Please fill all fields.', 'warning');
     return;
   }
 
-  if (password.length < 6) {
-    toast('Password must be at least 6 characters.', 'warning');
-    return;
-  }
-
-  showLoading('Creating user...');
+  showLoading('Sending invite...');
   try {
-    // We need to use a Cloud Function or the Admin SDK to create users
-    // without signing out the current admin. As a workaround, we'll use
-    // a secondary Firebase Auth instance.
+    // Create user via secondary app with a random temp password
     const secondaryApp = firebase.apps.find(a => a.name === 'Secondary') ||
       firebase.initializeApp(firebaseConfig, 'Secondary');
     const secondaryAuth = secondaryApp.auth();
 
-    const userCred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+    // Generate a random 24-char password the user will never see
+    const tempPassword = crypto.getRandomValues(new Uint8Array(18))
+      .reduce((s, b) => s + b.toString(36).padStart(2, '0'), '').slice(0, 24);
+
+    const userCred = await secondaryAuth.createUserWithEmailAndPassword(email, tempPassword);
     await userCred.user.updateProfile({ displayName });
 
     // Create user document in Firestore
@@ -1280,18 +1333,21 @@ $('add-user-form').addEventListener('submit', async (e) => {
       createdBy: currentUser.uid,
     });
 
-    // Sign out from secondary app so it doesn't interfere
+    // Sign out from secondary app
     await secondaryAuth.signOut();
 
-    toast(`User ${displayName} created as ${role}!`, 'success');
+    // Send password-reset email so the user can set their own password
+    await auth.sendPasswordResetEmail(email);
+
+    toast(`Invite sent to ${displayName} (${email}) as ${role}!`, 'success');
     $('add-user-form').reset();
     loadAdminUsers();
   } catch (err) {
-    console.error('Create user error:', err);
+    console.error('Invite user error:', err);
     if (err.code === 'auth/email-already-in-use') {
       toast('That email is already registered.', 'error');
     } else {
-      toast('Failed to create user: ' + err.message, 'error');
+      toast('Failed to invite user: ' + err.message, 'error');
     }
   } finally {
     hideLoading();
@@ -1315,17 +1371,20 @@ async function loadAdminUsers() {
     snapshot.forEach(doc => {
       const data = doc.data();
       const isSelf = doc.id === currentUser.uid;
+      const roleBadgeClass = data.role === 'admin' ? '' : data.role === 'manager' ? 'badge-warning' : 'badge-muted';
+      const cycle = { user: 'manager', manager: 'admin', admin: 'user' };
+      const nextRole = cycle[data.role] || 'user';
       const item = document.createElement('div');
       item.className = 'data-list-item';
       item.innerHTML = `
         <div class="item-info">
           <div class="item-title">${escapeHtml(data.displayName || 'Unknown')} ${isSelf ? '(You)' : ''}</div>
-          <div class="item-subtitle">${escapeHtml(data.email)} · <span class="badge ${data.role === 'admin' ? '' : 'badge-muted'}">${data.role}</span></div>
+          <div class="item-subtitle">${escapeHtml(data.email)} · <span class="badge ${roleBadgeClass}">${data.role}</span></div>
         </div>
         <div class="item-actions">
           ${!isSelf ? `
             <button class="btn btn-sm btn-outline" onclick="toggleUserRole('${doc.id}', '${data.role}')">
-              ${data.role === 'admin' ? 'Make User' : 'Make Admin'}
+              Make ${nextRole.charAt(0).toUpperCase() + nextRole.slice(1)}
             </button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
@@ -1341,7 +1400,8 @@ async function loadAdminUsers() {
 
 window.toggleUserRole = async function (uid, currentRole) {
   if (currentUserRole !== 'admin') return;
-  const newRole = currentRole === 'admin' ? 'user' : 'admin';
+  const cycle = { user: 'manager', manager: 'admin', admin: 'user' };
+  const newRole = cycle[currentRole] || 'user';
   const ok = await confirm('Change Role', `Change this user's role to "${newRole}"?`);
   if (!ok) return;
 
