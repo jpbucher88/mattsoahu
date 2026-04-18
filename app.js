@@ -1090,6 +1090,9 @@ $('btn-back-dashboard').addEventListener('click', () => {
   showPage('dashboard');
 });
 
+$('brand-home').addEventListener('click', () => showPage('dashboard'));
+$('brand-home-admin').addEventListener('click', () => showPage('dashboard'));
+
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', function () {
