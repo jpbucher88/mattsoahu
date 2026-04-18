@@ -42,11 +42,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Maintenance collection - registered users can read, managers/admins can write
+    // Maintenance collection - all registered can read, managers/admins can write
     match /maintenance/{recordId} {
       allow read: if isRegistered();
-      allow create: if isRegistered();
-      allow update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
     }
   }
 }

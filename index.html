@@ -119,7 +119,7 @@
         </div>
 
         <!-- Mileage input & recommended services -->
-        <div class="mileage-row">
+        <div id="mileage-edit-row" class="mileage-row">
           <div class="form-group form-group-inline">
             <label for="vehicle-mileage">Current Mileage</label>
             <div class="mileage-input-wrap">
@@ -177,9 +177,15 @@
                 <input type="number" id="m-cost" placeholder="0.00" min="0" step="0.01">
               </div>
             </div>
-            <div class="form-group">
-              <label for="m-notes">Notes</label>
-              <input type="text" id="m-notes" placeholder="Optional details" maxlength="200">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="m-location">Where Serviced</label>
+                <input type="text" id="m-location" placeholder="e.g. Jiffy Lube Kailua" maxlength="100">
+              </div>
+              <div class="form-group">
+                <label for="m-notes">Notes</label>
+                <input type="text" id="m-notes" placeholder="Optional details" maxlength="200">
+              </div>
             </div>
             <div class="form-row">
               <button type="submit" class="btn btn-primary">Save Record</button>

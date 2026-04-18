@@ -441,6 +441,11 @@ $('vehicle-select').addEventListener('change', async function () {
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
 
+  // Role-gate maintenance editing (manager + admin)
+  const canMaintain = (currentUserRole === 'admin' || currentUserRole === 'manager');
+  $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
+  $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
+
   // Load today's photo count
   await loadTodayPhotos(vid);
 
@@ -1722,6 +1727,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
   const mileage = $('m-mileage').value ? parseInt($('m-mileage').value) : null;
   const cost = $('m-cost').value ? parseFloat($('m-cost').value) : null;
   const notes = $('m-notes').value.trim();
+  const location = $('m-location').value.trim();
 
   if (!serviceType || !date) {
     toast('Please select a service type and date.', 'warning');
@@ -1730,7 +1736,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
 
   showLoading('Saving maintenance record...');
   try {
-    await db.collection('maintenance').add({
+    const record = {
       vehicleId: selectedVehicle.id,
       plate: selectedVehicle.plate,
       serviceType,
@@ -1740,7 +1746,9 @@ $('maintenance-form').addEventListener('submit', async (e) => {
       notes,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
-    });
+    };
+    if (location) record.location = location;
+    await db.collection('maintenance').add(record);
 
     // Auto-update vehicle mileage if higher
     if (mileage && (!selectedVehicle.mileage || mileage > selectedVehicle.mileage)) {
@@ -1783,7 +1791,8 @@ async function loadMaintenanceHistory(vehicleId) {
       const d = doc.data();
       const costStr = d.cost != null ? `$${d.cost.toFixed(2)}` : '';
       const mileStr = d.mileage ? `${d.mileage.toLocaleString()} mi` : '';
-      const meta = [mileStr, costStr].filter(Boolean).join(' · ');
+      const locStr = d.location ? d.location : '';
+      const meta = [mileStr, costStr, locStr].filter(Boolean).join(' · ');
       const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
       html += `
         <div class="data-list-item">
