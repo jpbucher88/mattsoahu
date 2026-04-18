@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <title>Fleet Photo Manager</title>
+  <title>Aloha Fleet Management</title>
   <link rel="stylesheet" href="style.css">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -18,8 +18,8 @@
     <div class="login-container">
       <div class="logo">
         <img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Company Logo" class="logo-img">
-        <h1>Fleet Photo Manager</h1>
-        <p class="subtitle">Car Rental Photo Documentation</p>
+        <h1>Aloha Fleet Management</h1>
+        <p class="subtitle">Vehicle Fleet Management System</p>
       </div>
       <form id="login-form" autocomplete="on">
         <div class="form-group">
@@ -55,7 +55,7 @@
   <!-- ==================== MAIN DASHBOARD ==================== -->
   <div id="page-dashboard" class="page">
     <header class="app-header">
-      <div class="header-brand"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Fleet Photos</h2></div>
+      <div class="header-brand"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Aloha Fleet</h2></div>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
         <button id="btn-change-password" class="btn btn-sm btn-outline btn-icon-mobile" title="Change Password">Change Password</button>
@@ -109,6 +109,87 @@
           <button id="btn-download-all" class="btn btn-sm btn-outline">&#11015; Download All</button>
         </div>
         <div id="recent-photos" class="photo-grid"></div>
+      </section>
+
+      <!-- Maintenance Section -->
+      <section id="maintenance-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>Maintenance</h3>
+          <button id="btn-add-maintenance" class="btn btn-sm btn-primary">+ Log Service</button>
+        </div>
+
+        <!-- Mileage input & recommended services -->
+        <div class="mileage-row">
+          <div class="form-group form-group-inline">
+            <label for="vehicle-mileage">Current Mileage</label>
+            <div class="mileage-input-wrap">
+              <input type="number" id="vehicle-mileage" placeholder="e.g. 45000" min="0" max="999999">
+              <button id="btn-save-mileage" class="btn btn-sm btn-outline">Update</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="recommended-services" class="recommended-services" style="display:none;">
+          <h4>&#128736; Recommended Services</h4>
+          <div id="recommended-list"></div>
+        </div>
+
+        <!-- Maintenance log form (hidden by default) -->
+        <div id="maintenance-form-wrap" style="display:none;">
+          <h4>Log Maintenance</h4>
+          <form id="maintenance-form">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="m-type">Service Type</label>
+                <select id="m-type" class="form-select">
+                  <option value="">-- Select --</option>
+                  <option value="Oil Change">Oil Change</option>
+                  <option value="Tire Rotation">Tire Rotation</option>
+                  <option value="Brake Inspection">Brake Inspection</option>
+                  <option value="Brake Pads/Rotors">Brake Pads/Rotors</option>
+                  <option value="Air Filter">Air Filter</option>
+                  <option value="Cabin Filter">Cabin Filter</option>
+                  <option value="Transmission Fluid">Transmission Fluid</option>
+                  <option value="Coolant Flush">Coolant Flush</option>
+                  <option value="Spark Plugs">Spark Plugs</option>
+                  <option value="Battery">Battery</option>
+                  <option value="Tires (New)">Tires (New)</option>
+                  <option value="Alignment">Alignment</option>
+                  <option value="Wiper Blades">Wiper Blades</option>
+                  <option value="Belts/Hoses">Belts/Hoses</option>
+                  <option value="A/C Service">A/C Service</option>
+                  <option value="Inspection/Safety">Inspection/Safety</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="m-date">Date</label>
+                <input type="date" id="m-date" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="m-mileage">Mileage at Service</label>
+                <input type="number" id="m-mileage" placeholder="e.g. 45000" min="0" max="999999">
+              </div>
+              <div class="form-group">
+                <label for="m-cost">Cost ($)</label>
+                <input type="number" id="m-cost" placeholder="0.00" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="m-notes">Notes</label>
+              <input type="text" id="m-notes" placeholder="Optional details" maxlength="200">
+            </div>
+            <div class="form-row">
+              <button type="submit" class="btn btn-primary">Save Record</button>
+              <button type="button" id="btn-cancel-maintenance" class="btn btn-outline">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Maintenance history -->
+        <div id="maintenance-history" class="data-list"></div>
       </section>
     </main>
   </div>

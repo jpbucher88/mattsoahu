@@ -1,5 +1,5 @@
 /* ============================================
-   Fleet Photo Manager - Mobile-First Styles
+   Aloha Fleet Management System - Styles
    ============================================ */
 
 :root {
@@ -1127,4 +1127,59 @@ body {
   .toast-container {
     bottom: max(20px, env(safe-area-inset-bottom));
   }
+}
+
+/* ============ MAINTENANCE ============ */
+.mileage-row {
+  margin-bottom: 12px;
+}
+
+.form-group-inline {
+  max-width: 340px;
+}
+
+.mileage-input-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mileage-input-wrap input {
+  flex: 1;
+}
+
+.recommended-services {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.recommended-services h4 {
+  margin: 0 0 10px 0;
+  font-size: 0.95rem;
+}
+
+.rec-item {
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.rec-overdue {
+  background: #fef2f2;
+  border-left: 3px solid var(--danger);
+}
+
+.rec-upcoming {
+  background: #fffbeb;
+  border-left: 3px solid var(--warning);
+}
+
+.text-danger {
+  color: var(--danger);
+  font-weight: 600;
 }

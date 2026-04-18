@@ -1,5 +1,5 @@
 // ================================================================
-// Fleet Photo Manager - Main Application
+// Aloha Fleet Management System - Main Application
 // ================================================================
 
 // --------------- FIREBASE INIT ---------------
@@ -407,6 +407,7 @@ $('vehicle-select').addEventListener('change', async function () {
     $('stale-alert').style.display = 'none';
     $('upload-section').style.display = 'none';
     $('recent-photos-section').style.display = 'none';
+    $('maintenance-section').style.display = 'none';
     selectedVehicle = null;
     return;
   }
@@ -437,9 +438,14 @@ $('vehicle-select').addEventListener('change', async function () {
   const canUpload = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
+  $('maintenance-section').style.display = 'block';
 
   // Load today's photo count
   await loadTodayPhotos(vid);
+
+  // Load maintenance data
+  loadMileage(vid);
+  loadMaintenanceHistory(vid);
 });
 
 // ================================================================
@@ -1473,6 +1479,240 @@ window.deleteUser = async function (uid, name) {
     toast('Failed to remove user.', 'error');
   } finally {
     hideLoading();
+  }
+};
+
+// ================================================================
+// VEHICLE MAINTENANCE TRACKING
+// ================================================================
+
+// Manufacturer-standard recommended service intervals (miles)
+const MAINTENANCE_SCHEDULE = [
+  { service: 'Oil Change',          interval: 5000,   icon: '🛢️' },
+  { service: 'Tire Rotation',       interval: 7500,   icon: '🔄' },
+  { service: 'Air Filter',          interval: 15000,  icon: '💨' },
+  { service: 'Cabin Filter',        interval: 15000,  icon: '🌬️' },
+  { service: 'Brake Inspection',    interval: 20000,  icon: '🔍' },
+  { service: 'Transmission Fluid',  interval: 30000,  icon: '⚙️' },
+  { service: 'Coolant Flush',       interval: 30000,  icon: '❄️' },
+  { service: 'Spark Plugs',         interval: 30000,  icon: '⚡' },
+  { service: 'Wiper Blades',        interval: 15000,  icon: '🌧️' },
+  { service: 'Belts/Hoses',         interval: 60000,  icon: '🔧' },
+  { service: 'Battery',             interval: 50000,  icon: '🔋' },
+  { service: 'Tires (New)',         interval: 40000,  icon: '🛞' },
+  { service: 'Alignment',           interval: 25000,  icon: '📐' },
+  { service: 'Brake Pads/Rotors',   interval: 40000,  icon: '🛑' },
+];
+
+function loadMileage(vehicleId) {
+  const v = vehiclesCache.find(v => v.id === vehicleId);
+  const mileageInput = $('vehicle-mileage');
+  mileageInput.value = v && v.mileage ? v.mileage : '';
+  updateRecommendedServices(vehicleId);
+}
+
+async function updateRecommendedServices(vehicleId) {
+  const v = vehiclesCache.find(v => v.id === vehicleId);
+  const mileage = v && v.mileage ? v.mileage : 0;
+  const container = $('recommended-services');
+  const list = $('recommended-list');
+
+  if (!mileage) {
+    container.style.display = 'none';
+    return;
+  }
+
+  // Get last service mileage for each type
+  const lastServices = {};
+  try {
+    const snap = await db.collection('maintenance')
+      .where('vehicleId', '==', vehicleId)
+      .orderBy('mileage', 'desc')
+      .get();
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (d.serviceType && !lastServices[d.serviceType]) {
+        lastServices[d.serviceType] = d.mileage || 0;
+      }
+    });
+  } catch (e) {
+    console.warn('Could not load maintenance for recommendations:', e);
+  }
+
+  const due = [];
+  const upcoming = [];
+
+  MAINTENANCE_SCHEDULE.forEach(item => {
+    const lastMi = lastServices[item.service] || 0;
+    const nextDue = lastMi + item.interval;
+    const milesUntil = nextDue - mileage;
+
+    if (milesUntil <= 0) {
+      due.push({ ...item, milesUntil, nextDue, overdue: true });
+    } else if (milesUntil <= item.interval * 0.2) {
+      upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
+    }
+  });
+
+  if (due.length === 0 && upcoming.length === 0) {
+    container.style.display = 'block';
+    list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
+    return;
+  }
+
+  container.style.display = 'block';
+  let html = '';
+  due.sort((a, b) => a.milesUntil - b.milesUntil);
+  upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
+
+  due.forEach(s => {
+    const overMiles = Math.abs(s.milesUntil).toLocaleString();
+    html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+  });
+  upcoming.forEach(s => {
+    const untilMiles = s.milesUntil.toLocaleString();
+    html += `<div class="rec-item rec-upcoming">${s.icon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+  });
+
+  list.innerHTML = html;
+}
+
+$('btn-save-mileage').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const val = parseInt($('vehicle-mileage').value);
+  if (!val || val < 0) {
+    toast('Enter a valid mileage.', 'warning');
+    return;
+  }
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val });
+    selectedVehicle.mileage = val;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.mileage = val;
+    toast('Mileage updated!', 'success');
+    updateRecommendedServices(selectedVehicle.id);
+  } catch (err) {
+    console.error('Save mileage error:', err);
+    toast('Failed to save mileage.', 'error');
+  }
+});
+
+// Show/hide maintenance form
+$('btn-add-maintenance').addEventListener('click', () => {
+  const wrap = $('maintenance-form-wrap');
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+  $('m-date').value = todayDateString();
+  $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
+});
+
+$('btn-cancel-maintenance').addEventListener('click', () => {
+  $('maintenance-form-wrap').style.display = 'none';
+  $('maintenance-form').reset();
+});
+
+// Save maintenance record
+$('maintenance-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!selectedVehicle) return;
+
+  const serviceType = $('m-type').value;
+  const date = $('m-date').value;
+  const mileage = $('m-mileage').value ? parseInt($('m-mileage').value) : null;
+  const cost = $('m-cost').value ? parseFloat($('m-cost').value) : null;
+  const notes = $('m-notes').value.trim();
+
+  if (!serviceType || !date) {
+    toast('Please select a service type and date.', 'warning');
+    return;
+  }
+
+  showLoading('Saving maintenance record...');
+  try {
+    await db.collection('maintenance').add({
+      vehicleId: selectedVehicle.id,
+      plate: selectedVehicle.plate,
+      serviceType,
+      date,
+      mileage,
+      cost,
+      notes,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+    });
+
+    // Auto-update vehicle mileage if higher
+    if (mileage && (!selectedVehicle.mileage || mileage > selectedVehicle.mileage)) {
+      await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage });
+      selectedVehicle.mileage = mileage;
+      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cached) cached.mileage = mileage;
+      $('vehicle-mileage').value = mileage;
+    }
+
+    toast('Maintenance record saved!', 'success');
+    $('maintenance-form-wrap').style.display = 'none';
+    $('maintenance-form').reset();
+    loadMaintenanceHistory(selectedVehicle.id);
+    updateRecommendedServices(selectedVehicle.id);
+  } catch (err) {
+    console.error('Save maintenance error:', err);
+    toast('Failed to save record.', 'error');
+  } finally {
+    hideLoading();
+  }
+});
+
+async function loadMaintenanceHistory(vehicleId) {
+  const container = $('maintenance-history');
+  try {
+    const snap = await db.collection('maintenance')
+      .where('vehicleId', '==', vehicleId)
+      .orderBy('date', 'desc')
+      .limit(50)
+      .get();
+
+    if (snap.empty) {
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">🔧</div><p>No maintenance records yet</p></div>';
+      return;
+    }
+
+    let html = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const costStr = d.cost != null ? `$${d.cost.toFixed(2)}` : '';
+      const mileStr = d.mileage ? `${d.mileage.toLocaleString()} mi` : '';
+      const meta = [mileStr, costStr].filter(Boolean).join(' · ');
+      const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
+      html += `
+        <div class="data-list-item">
+          <div class="item-info">
+            <div class="item-title">${escapeHtml(d.serviceType)}</div>
+            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
+          </div>
+          ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Load maintenance error:', err);
+    container.innerHTML = '<div class="empty-state"><p>Failed to load records.</p></div>';
+  }
+}
+
+window.deleteMaintenanceRecord = async function(docId) {
+  const ok = await confirm('Delete Record', 'Remove this maintenance record?');
+  if (!ok) return;
+  try {
+    await db.collection('maintenance').doc(docId).delete();
+    toast('Record deleted.', 'success');
+    if (selectedVehicle) {
+      loadMaintenanceHistory(selectedVehicle.id);
+      updateRecommendedServices(selectedVehicle.id);
+    }
+  } catch (err) {
+    console.error('Delete maintenance error:', err);
+    toast('Failed to delete record.', 'error');
   }
 };
 
