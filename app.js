@@ -803,7 +803,7 @@ $('btn-download-all').addEventListener('click', async () => {
   if (!selectedVehicle) return;
 
   const vid = selectedVehicle.id;
-  const label = `${selectedVehicle.make} ${selectedVehicle.model}`;
+  const label = `${selectedVehicle.make}_${selectedVehicle.model}`.replace(/\s+/g, '_');
   const today = todayDateString();
 
   showLoading('Fetching photo list...');
@@ -816,33 +816,57 @@ $('btn-download-all').addEventListener('click', async () => {
 
     if (snapshot.empty) {
       toast('No photos to download.', 'warning');
+      hideLoading();
       return;
     }
 
     const photos = [];
     snapshot.forEach(doc => photos.push(doc.data()));
 
-    // Download each photo as a blob and trigger a save
-    let downloaded = 0;
+    showLoading(`Downloading ${photos.length} photos...`);
+
+    const zip = new JSZip();
+    let count = 0;
+
     for (const photo of photos) {
       try {
-        const resp = await fetch(photo.url);
-        const blob = await resp.blob();
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        const ts = photo.timestamp ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-') : downloaded;
-        a.download = `${label}_${today}_${ts}.jpg`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(a.href);
-        downloaded++;
+        // Use XMLHttpRequest to handle cross-origin blob download
+        const blob = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.responseType = 'blob';
+          xhr.onload = () => resolve(xhr.response);
+          xhr.onerror = () => reject(new Error('XHR failed'));
+          xhr.open('GET', photo.url);
+          xhr.send();
+        });
+        count++;
+        const ts = photo.timestamp
+          ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-')
+          : String(count).padStart(3, '0');
+        zip.file(`${label}_${today}_${ts}.jpg`, blob);
+        showLoading(`Downloaded ${count} of ${photos.length}...`);
       } catch (dlErr) {
         console.error('Download error for photo:', dlErr);
       }
     }
 
-    toast(`Downloaded ${downloaded} of ${photos.length} photos.`, 'success');
+    if (count === 0) {
+      toast('Could not download any photos.', 'error');
+      hideLoading();
+      return;
+    }
+
+    showLoading('Creating ZIP file...');
+    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zipBlob);
+    a.download = `${label}_${today}_${count}-photos.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+
+    toast(`ZIP with ${count} photos ready!`, 'success');
   } catch (err) {
     console.error('Download all error:', err);
     toast('Failed to download photos.', 'error');
