@@ -873,9 +873,9 @@ $('btn-download-all').addEventListener('click', async () => {
     showLoading('Creating ZIP file...');
     const zip = new JSZip();
     for (const f of files) {
-      zip.file(f.name, f.buf, { binary: true });
+      zip.file(f.name, new Uint8Array(f.buf));
     }
-    const zipBlob = await zip.generateAsync({ type: 'blob' });
+    const zipBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(zipBlob);
     a.download = `${label}_${today}_${files.length}-photos.zip`;
