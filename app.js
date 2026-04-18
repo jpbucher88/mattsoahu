@@ -797,13 +797,8 @@ async function loadTodayPhotos(vehicleId) {
       ${keepBadge}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
       <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
-      <button class="photo-save-btn" title="Save photo">&#11015;</button>
     `;
     item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
-    item.querySelector('.photo-save-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      saveOnePhoto(data.url, `${selectedVehicle ? selectedVehicle.make + '_' + selectedVehicle.model : 'photo'}_${data.date}`);
-    });
     container.appendChild(item);
   });
 }
@@ -1012,21 +1007,54 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { $('lightbox').style.display = 'none'; $('lightbox-img').src = ''; }
 });
 
-// Touch swipe
+// Touch swipe — smooth iOS handling with visual slide
 (function() {
-  let touchStartX = 0, touchStartY = 0;
+  let startX = 0, startY = 0, moveX = 0, tracking = false;
   const lb = $('lightbox');
+  const img = $('lightbox-img');
+
   lb.addEventListener('touchstart', (e) => {
-    touchStartX = e.changedTouches[0].screenX;
-    touchStartY = e.changedTouches[0].screenY;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    moveX = 0;
+    tracking = true;
+    img.style.transition = 'none';
   }, { passive: true });
-  lb.addEventListener('touchend', (e) => {
-    const dx = e.changedTouches[0].screenX - touchStartX;
-    const dy = e.changedTouches[0].screenY - touchStartY;
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) lightboxNav(1);   // swipe left = next
-      else lightboxNav(-1);          // swipe right = prev
+
+  lb.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    // If mostly horizontal, take over the gesture
+    if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+      e.preventDefault();
+      moveX = dx;
+      img.style.transform = `translateX(${dx}px)`;
     }
+  }, { passive: false });
+
+  lb.addEventListener('touchend', () => {
+    if (!tracking) return;
+    tracking = false;
+    img.style.transition = 'transform 0.2s ease';
+    if (Math.abs(moveX) > 60 && lightboxPhotos.length > 1) {
+      // Slide off screen, then swap photo
+      const dir = moveX < 0 ? 1 : -1;
+      img.style.transform = `translateX(${dir * -window.innerWidth}px)`;
+      setTimeout(() => {
+        lightboxNav(dir);
+        // Slide new photo in from opposite side
+        img.style.transition = 'none';
+        img.style.transform = `translateX(${dir * window.innerWidth}px)`;
+        requestAnimationFrame(() => {
+          img.style.transition = 'transform 0.2s ease';
+          img.style.transform = 'translateX(0)';
+        });
+      }, 180);
+    } else {
+      img.style.transform = 'translateX(0)';
+    }
+    moveX = 0;
   }, { passive: true });
 })();
 

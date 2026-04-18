@@ -610,6 +610,10 @@ body {
   max-height: 80vh;
   object-fit: contain;
   border-radius: 4px;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  pointer-events: none;
 }
 
 .lightbox-close {
@@ -664,19 +668,24 @@ body {
 
 .lightbox-save {
   position: absolute;
-  top: 16px;
-  left: 16px;
+  bottom: 24px;
+  right: 24px;
   background: rgba(255,255,255,0.2);
   color: white;
   border: none;
-  height: 44px;
-  padding: 0 16px;
-  border-radius: 22px;
-  font-size: 15px;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 22px;
   cursor: pointer;
   z-index: 201;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
-.lightbox-save:active { background: rgba(255,255,255,0.35); }
+.lightbox-save:active { background: rgba(255,255,255,0.4); }
 
 .photo-grid-item {
   position: relative;
@@ -1156,20 +1165,16 @@ body {
   }
 
   .lightbox-save {
-    top: 8px;
-    left: 8px;
-    height: 38px;
-    padding: 0 12px;
-    font-size: 14px;
+    bottom: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+    font-size: 20px;
   }
 
   .lightbox-nav {
-    width: 40px;
-    height: 40px;
-    font-size: 18px;
+    display: none;
   }
-  .lightbox-prev-btn { left: 6px; }
-  .lightbox-next-btn { right: 6px; }
 }
 
 /* Medium screens */
