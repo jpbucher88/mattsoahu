@@ -2131,6 +2131,47 @@ function scoreOdometerCandidate(value, rawText, fullText, currentMileage) {
   return score;
 }
 
+// Preprocess image for OCR: convert to high-contrast grayscale for dashboard/LCD readability
+function preprocessForOCR(blob) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      // Use original size for best OCR accuracy
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+
+      // Get pixel data
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imageData.data;
+
+      // Convert to grayscale and apply contrast boost + threshold
+      for (let i = 0; i < data.length; i += 4) {
+        // Luminance grayscale
+        let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+        // Boost contrast: stretch histogram
+        gray = ((gray - 128) * 2.0) + 128;
+        gray = Math.max(0, Math.min(255, gray));
+        // Apply adaptive threshold for crisp text
+        const bw = gray > 120 ? 255 : 0;
+        data[i] = bw;
+        data[i + 1] = bw;
+        data[i + 2] = bw;
+      }
+
+      ctx.putImageData(imageData, 0, 0);
+
+      canvas.toBlob((processedBlob) => {
+        URL.revokeObjectURL(img.src);
+        resolve(processedBlob);
+      }, 'image/png');
+    };
+    img.src = URL.createObjectURL(blob);
+  });
+}
+
 async function autoScanForMileage(blobs) {
   if (!blobs.length || !selectedVehicle) return;
   const statusEl = $('ocr-status');
@@ -2145,25 +2186,41 @@ async function autoScanForMileage(blobs) {
   for (let i = 0; i < blobs.length; i++) {
     statusEl.textContent = `🔍 Scanning photo ${i + 1}/${blobs.length} for odometer…`;
     try {
-      // Create an object URL from the blob so Tesseract can read it locally
-      const objUrl = URL.createObjectURL(blobs[i]);
-      const { data: { text } } = await Tesseract.recognize(objUrl, 'eng');
-      URL.revokeObjectURL(objUrl);
-      console.log('[OCR] Photo', i + 1, 'raw text:', text);
+      // Preprocess: high-contrast B&W for better dashboard/LCD reading
+      const processed = await preprocessForOCR(blobs[i]);
+      const objUrl = URL.createObjectURL(processed);
 
-      // Extract all number-like sequences — be very forgiving
-      // Match: digits possibly separated by commas, dots, or spaces
-      const matches = text.match(/\d[\d,.\s]{1,}/g);
+      // Run OCR with digits-only whitelist so it doesn't confuse letters with numbers
+      const { data: { text } } = await Tesseract.recognize(objUrl, 'eng', {
+        tessedit_char_whitelist: '0123456789,. ',
+        tessedit_pageseg_mode: '6',
+      });
+      URL.revokeObjectURL(objUrl);
+      console.log('[OCR] Photo', i + 1, 'processed text:', text);
+
+      // Also try original (unprocessed) image — sometimes contrast helps, sometimes hurts
+      const origUrl = URL.createObjectURL(blobs[i]);
+      const { data: { text: origText } } = await Tesseract.recognize(origUrl, 'eng', {
+        tessedit_char_whitelist: '0123456789,. ',
+        tessedit_pageseg_mode: '6',
+      });
+      URL.revokeObjectURL(origUrl);
+      console.log('[OCR] Photo', i + 1, 'original text:', origText);
+
+      // Combine results from both passes
+      const allText = text + '\n' + origText;
+
+      // Extract all number-like sequences
+      const matches = allText.match(/\d[\d,.\s]{1,}/g);
       if (!matches) continue;
 
       for (const raw of matches) {
-        // Strip all non-digits to get the actual number
         const digits = raw.replace(/[^0-9]/g, '');
         if (digits.length < 4 || digits.length > 7) continue;
         const cleaned = parseInt(digits, 10);
         if (isNaN(cleaned) || cleaned < 100 || cleaned > 999999) continue;
 
-        const score = scoreOdometerCandidate(cleaned, raw, text, currentMileage);
+        const score = scoreOdometerCandidate(cleaned, raw, allText, currentMileage);
         console.log('[OCR] Candidate:', raw.trim(), '→', cleaned, 'score:', score);
         if (score > bestScore) {
           bestScore = score;
