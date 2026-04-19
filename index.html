@@ -64,24 +64,35 @@
       </div>
     </header>
     <main class="dashboard-main">
-      <!-- Vehicle Selector -->
+      <!-- Fleet Dashboard -->
+      <section id="fleet-overview" class="card">
+        <h3>Fleet Overview</h3>
+        <div id="fleet-dashboard" class="fleet-dashboard"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- ==================== VEHICLE DETAIL PAGE ==================== -->
+  <div id="page-vehicle" class="page">
+    <header class="app-header">
+      <div class="header-left">
+        <button id="btn-back-fleet" class="btn btn-sm btn-outline">&larr; Fleet</button>
+        <div class="header-brand" id="brand-home-vehicle" style="cursor:pointer;"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2 id="vehicle-page-title">Vehicle</h2></div>
+      </div>
+      <div class="header-actions">
+        <button id="btn-admin-from-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
+        <button id="btn-logout-vehicle" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
+      </div>
+    </header>
+    <main class="dashboard-main">
+      <!-- Vehicle Info -->
       <section class="card">
-        <h3>Select Vehicle</h3>
-        <select id="vehicle-select" class="form-select">
-          <option value="">-- Choose a vehicle --</option>
-        </select>
-        <div id="vehicle-info" class="vehicle-info" style="display:none;">
+        <div id="vehicle-info" class="vehicle-info">
           <span id="vehicle-make-model"></span>
           <span id="vehicle-photo-count" class="badge"></span>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
         <div id="stale-alert" class="stale-alert" style="display:none;"></div>
-      </section>
-
-      <!-- Fleet Dashboard -->
-      <section id="fleet-overview" class="card">
-        <h3>Fleet Overview</h3>
-        <div id="fleet-dashboard" class="fleet-dashboard"></div>
       </section>
 
       <!-- Camera / Upload Section -->

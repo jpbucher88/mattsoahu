@@ -47,6 +47,7 @@ const $ = (id) => document.getElementById(id);
 const pages = {
   login: $('page-login'),
   dashboard: $('page-dashboard'),
+  vehicle: $('page-vehicle'),
   admin: $('page-admin'),
 };
 
@@ -243,6 +244,7 @@ function friendlyAuthError(code) {
 
 // Logout
 $('btn-logout').addEventListener('click', () => auth.signOut());
+$('btn-logout-vehicle').addEventListener('click', () => auth.signOut());
 $('btn-admin-logout').addEventListener('click', () => auth.signOut());
 
 // ================================================================
@@ -408,8 +410,6 @@ async function loadVehicles() {
   });
   await Promise.all(checks);
 
-  // Populate dashboard dropdown
-  populateVehicleSelect($('vehicle-select'));
   // Populate admin dropdown
   populateVehicleSelect($('admin-vehicle-select'));
   // Update vehicle count badge
@@ -484,40 +484,24 @@ function renderFleetDashboard() {
   });
   container.innerHTML = html;
 
-  // Click a card to select that vehicle
+  // Click a card to navigate to vehicle detail page
   container.querySelectorAll('.fleet-card').forEach(card => {
     card.addEventListener('click', () => {
-      const vid = card.dataset.vid;
-      $('vehicle-select').value = vid;
-      $('vehicle-select').dispatchEvent(new Event('change'));
+      openVehiclePage(card.dataset.vid);
     });
   });
 }
 
-function resetVehicleView() {
-  $('vehicle-select').value = '';
-  $('vehicle-info').style.display = 'none';
-  $('last-photo-time').style.display = 'none';
-  $('stale-alert').style.display = 'none';
-  $('upload-section').style.display = 'none';
-  $('recent-photos-section').style.display = 'none';
-  $('maintenance-section').style.display = 'none';
-  selectedVehicle = null;
-}
-
-// Dashboard vehicle selection
-$('vehicle-select').addEventListener('change', async function () {
-  const vid = this.value;
-  if (!vid) {
-    resetVehicleView();
-    return;
-  }
-
+// Open the vehicle detail page
+async function openVehiclePage(vid) {
   selectedVehicle = vehiclesCache.find(v => v.id === vid);
+  if (!selectedVehicle) return;
+
+  // Set page title
+  $('vehicle-page-title').textContent = `${selectedVehicle.plate}`;
   $('vehicle-make-model').textContent = `${selectedVehicle.make} ${selectedVehicle.model}` +
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
-  $('vehicle-info').style.display = 'flex';
 
   // Show last photo timestamp
   const lastPhotoEl = $('last-photo-time');
@@ -551,15 +535,21 @@ $('vehicle-select').addEventListener('change', async function () {
     staleAlert.style.display = 'none';
   }
 
+  // Role-gate upload and maintenance
   const canUpload = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
 
-  // Role-gate maintenance editing (manager + admin)
   const canMaintain = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
   $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
+
+  // Show admin button if admin
+  $('btn-admin-from-vehicle').style.display = currentUserRole === 'admin' ? '' : 'none';
+
+  // Navigate to vehicle page
+  showPage('vehicle');
 
   // Load photos for selected date
   selectedDate = todayDateString();
@@ -571,7 +561,7 @@ $('vehicle-select').addEventListener('change', async function () {
   // Load maintenance data
   loadMileage(vid);
   loadMaintenanceHistory(vid);
-});
+}
 
 // ================================================================
 // PHOTO UPLOAD
@@ -1335,16 +1325,32 @@ $('btn-admin').addEventListener('click', () => {
   loadAdminUsers();
 });
 
+$('btn-admin-from-vehicle').addEventListener('click', () => {
+  if (currentUserRole !== 'admin') return;
+  showPage('admin');
+  loadAdminVehicles();
+  loadAdminUsers();
+});
+
 $('btn-back-dashboard').addEventListener('click', () => {
   showPage('dashboard');
 });
 
+$('btn-back-fleet').addEventListener('click', () => {
+  selectedVehicle = null;
+  showPage('dashboard');
+});
+
 $('brand-home').addEventListener('click', () => {
-  resetVehicleView();
+  selectedVehicle = null;
+  showPage('dashboard');
+});
+$('brand-home-vehicle').addEventListener('click', () => {
+  selectedVehicle = null;
   showPage('dashboard');
 });
 $('brand-home-admin').addEventListener('click', () => {
-  resetVehicleView();
+  selectedVehicle = null;
   showPage('dashboard');
 });
 
