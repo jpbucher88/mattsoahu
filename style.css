@@ -2252,8 +2252,11 @@ body {
   background: #f9fafb;
 }
 .cal-day {
-  cursor: default;
+  cursor: pointer;
   transition: background 0.15s;
+}
+.cal-day:hover {
+  background: #eff6ff;
 }
 .cal-day.cal-has-tasks {
   cursor: pointer;
@@ -2387,4 +2390,75 @@ body {
   .cal-day-num { font-size: 0.7rem; }
   .cal-task-count { font-size: 0.6rem; }
   .cal-month-label { min-width: 120px; font-size: 0.9rem; }
+}
+
+/* ============ CALENDAR ADD TASK FORM ============ */
+.cal-add-task-form {
+  background: #f0f9ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.cal-add-task-form h5 {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: #1e3a5f;
+}
+.cal-add-task-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.cal-detail-tasks-title {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #374151;
+  margin-bottom: 8px;
+}
+.cal-detail-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.cal-reassign-btn {
+  font-size: 0.75rem !important;
+  white-space: nowrap;
+}
+
+/* ============ REASSIGN MODAL ============ */
+.reassign-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.reassign-modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 380px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.reassign-modal h4 {
+  margin: 0 0 12px;
+  color: #1e3a5f;
+}
+.reassign-modal p {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: #6b7280;
+}
+.reassign-modal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
 }

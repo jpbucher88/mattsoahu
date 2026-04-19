@@ -2591,6 +2591,7 @@ async function loadVehicleNotes(vehicleId) {
       const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+      const canDelete = (currentUserRole === 'admin');
       html += `
         <div class="note-item${doneClass}">
           <div class="note-content">
@@ -2600,7 +2601,7 @@ async function loadVehicleNotes(vehicleId) {
           </div>
           <div class="note-actions">
             ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">✓ Done</button>` : ''}
-            ${canManage ? `<button class="btn btn-sm btn-danger" onclick="deleteNote('${doc.id}')">Delete</button>` : ''}
+            ${canDelete ? `<button class="btn btn-sm btn-danger" onclick="deleteNote('${doc.id}')">Delete</button>` : ''}
           </div>
         </div>`;
     });
@@ -2742,6 +2743,11 @@ async function loadDashboardFollowUps() {
       }
 
       const urgentTag = item.urgent ? ' 🚨' : '';
+      const isOverdue = item.dueDate && item.dueDate < today;
+      let reassignBtn = '';
+      if (currentUserRole === 'admin' && isOverdue) {
+        reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅</button>`;
+      }
       return `
         <div class="followup-item${extraClass}"${vidAttr}>
           <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
@@ -2749,6 +2755,7 @@ async function loadDashboardFollowUps() {
             <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
             <div class="followup-meta">${metaLabel}</div>
           </div>
+          ${reassignBtn}
         </div>`;
     }
 
@@ -2881,6 +2888,12 @@ function renderUrgentBanner(items) {
       statusTag = `<span class="urgent-status urgent-upcoming">Due ${item.dueDate}</span>`;
     }
 
+    const isOverdue = item.dueDate && item.dueDate < today;
+    let reassignBtn = '';
+    if (currentUserRole === 'admin' && isOverdue) {
+      reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅 Reassign</button>`;
+    }
+
     html += `
       <div class="urgent-banner-item"${vidAttr}>
         <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
@@ -2888,6 +2901,7 @@ function renderUrgentBanner(items) {
           <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
           <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
         </div>
+        ${reassignBtn}
       </div>`;
   }
   list.innerHTML = html;
@@ -2955,7 +2969,7 @@ function renderCalendarGrid() {
     const hasUrgent = tasks.some(t => t.urgent);
     const hasTasks = tasks.length > 0;
 
-    let cellClass = 'cal-cell cal-day';
+    let cellClass = 'cal-cell cal-day cal-clickable';
     if (isToday) cellClass += ' cal-today';
     if (hasTasks) cellClass += ' cal-has-tasks';
     if (hasUrgent) cellClass += ' cal-has-urgent';
@@ -2995,20 +3009,36 @@ window.showCalendarDetail = function(dateStr) {
   const detailList = $('cal-detail-list');
   if (!detailEl) return;
 
-  const tasks = calendarItems.filter(i => i.dueDate === dateStr);
-  if (tasks.length === 0) {
-    detailEl.style.display = 'none';
-    return;
-  }
-
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
   detailDate.textContent = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 
   const today = todayDateString();
+  const tasks = calendarItems.filter(i => i.dueDate === dateStr);
+  const isAdmin = currentUserRole === 'admin';
+  const canAdd = (currentUserRole === 'admin' || currentUserRole === 'manager');
+
   let html = '';
+
+  // Add Task form at top
+  if (canAdd) {
+    html += `
+      <div class="cal-add-task-form">
+        <h5>➕ Add Task for this date</h5>
+        <textarea id="cal-add-task-text" class="note-textarea" placeholder="Enter task description..." maxlength="500" rows="2"></textarea>
+        <div class="cal-add-task-controls">
+          <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> 🚨 Urgent</label>
+          <button class="btn btn-sm btn-primary" onclick="calendarAddTask('${dateStr}')">Save Task</button>
+        </div>
+      </div>`;
+  }
+
   // Sort urgent first
   tasks.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  if (tasks.length > 0) {
+    html += '<div class="cal-detail-tasks-title">Tasks (' + tasks.length + ')</div>';
+  }
 
   for (const item of tasks) {
     const isVehicle = item.type === 'vehicle';
@@ -3024,7 +3054,21 @@ window.showCalendarDetail = function(dateStr) {
     }
 
     const urgentTag = item.urgent ? '<span class="cal-urgent-tag">🚨 Urgent</span>' : '';
-    const overdueTag = item.dueDate < today ? '<span class="cal-overdue-tag">Overdue</span>' : '';
+    const isOverdue = item.dueDate < today;
+    const overdueTag = isOverdue ? '<span class="cal-overdue-tag">Overdue</span>' : '';
+
+    // Admin reassign button for overdue tasks
+    let reassignBtn = '';
+    if (isAdmin && isOverdue) {
+      reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign to new date">📅 Reassign</button>`;
+    }
+
+    // Only admins can delete
+    let deleteBtn = '';
+    if (isAdmin) {
+      const delFn = isVehicle ? 'deleteNote' : 'deleteGeneralNote';
+      deleteBtn = `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); ${delFn}('${item.id}')" title="Delete task">Delete</button>`;
+    }
 
     html += `
       <div class="cal-detail-item${item.urgent ? ' cal-detail-urgent' : ''}"${vidAttr}>
@@ -3033,8 +3077,17 @@ window.showCalendarDetail = function(dateStr) {
           <div class="cal-detail-text">${escapeHtml(item.text)} ${urgentTag} ${overdueTag}</div>
           <div class="cal-detail-meta">${metaLabel}</div>
         </div>
+        <div class="cal-detail-actions">
+          ${reassignBtn}
+          ${deleteBtn}
+        </div>
       </div>`;
   }
+
+  if (tasks.length === 0 && !canAdd) {
+    html += '<p class="hint">No tasks for this date.</p>';
+  }
+
   detailList.innerHTML = html;
   detailEl.style.display = '';
 
@@ -3042,6 +3095,79 @@ window.showCalendarDetail = function(dateStr) {
   detailList.querySelectorAll('.cal-detail-item[data-vid]').forEach(el => {
     el.addEventListener('click', () => openVehiclePage(el.dataset.vid));
   });
+};
+
+// Add task from calendar
+window.calendarAddTask = async function(dateStr) {
+  const text = $('cal-add-task-text') ? $('cal-add-task-text').value.trim() : '';
+  if (!text) {
+    toast('Enter a task description.', 'warning');
+    return;
+  }
+  const isUrgent = $('cal-add-task-urgent') ? $('cal-add-task-urgent').checked : false;
+  try {
+    await db.collection('generalNotes').add({
+      text,
+      isFollowUp: true,
+      done: false,
+      urgent: isUrgent,
+      dueDate: dateStr,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email
+    });
+    toast('Task added!', 'success');
+    loadDashboardFollowUps();
+    loadGeneralNotes();
+  } catch (err) {
+    console.error('Calendar add task error:', err);
+    toast('Failed to add task.', 'error');
+  }
+};
+
+// Reassign overdue task (admin only)
+window.openReassignTask = function(docId, collection, currentDueDate) {
+  if (currentUserRole !== 'admin') return;
+  const existingModal = document.querySelector('.reassign-modal-overlay');
+  if (existingModal) existingModal.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'reassign-modal-overlay';
+  overlay.innerHTML = `
+    <div class="reassign-modal">
+      <h4>📅 Reassign Task</h4>
+      <p>Current due date: <strong>${currentDueDate}</strong></p>
+      <div class="form-group">
+        <label>New Due Date</label>
+        <input type="date" id="reassign-new-date" class="form-select" value="${todayDateString()}">
+      </div>
+      <div class="reassign-modal-actions">
+        <button class="btn btn-primary" id="btn-reassign-confirm">Reassign</button>
+        <button class="btn btn-outline" id="btn-reassign-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#btn-reassign-cancel').onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector('#btn-reassign-confirm').onclick = async () => {
+    const newDate = document.querySelector('#reassign-new-date').value;
+    if (!newDate) {
+      toast('Select a new date.', 'warning');
+      return;
+    }
+    try {
+      await db.collection(collection).doc(docId).update({ dueDate: newDate });
+      toast('Task reassigned to ' + newDate, 'success');
+      overlay.remove();
+      loadDashboardFollowUps();
+      loadGeneralNotes();
+    } catch (err) {
+      console.error('Reassign error:', err);
+      toast('Failed to reassign.', 'error');
+    }
+  };
 };
 
 // Calendar navigation
@@ -3124,6 +3250,7 @@ async function loadGeneralNotes() {
     }
 
     const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    const canDelete = (currentUserRole === 'admin');
     let html = '';
     snap.forEach(doc => {
       const d = doc.data();
@@ -3148,7 +3275,7 @@ async function loadGeneralNotes() {
           </div>
           <div class="note-actions">
             ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markGeneralNoteDone('${doc.id}')">✓ Done</button>` : ''}
-            ${canManage ? `<button class="btn btn-sm btn-danger" onclick="deleteGeneralNote('${doc.id}')">Delete</button>` : ''}
+            ${canDelete ? `<button class="btn btn-sm btn-danger" onclick="deleteGeneralNote('${doc.id}')">Delete</button>` : ''}
           </div>
         </div>`;
     });
