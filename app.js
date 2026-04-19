@@ -602,6 +602,7 @@ async function handlePhotoFiles(e) {
   updateProgress(uploaded, total);
 
   const uploadedUrls = [];
+  const ocrBlobs = [];
   for (const file of files) {
     const item = document.createElement('div');
     item.className = 'photo-queue-item';
@@ -617,6 +618,7 @@ async function handlePhotoFiles(e) {
 
     try {
       const compressed = await compressImage(file);
+      ocrBlobs.push(compressed);
       const url = await uploadPhoto(compressed);
       uploadedUrls.push(url);
 
@@ -639,8 +641,8 @@ async function handlePhotoFiles(e) {
   await loadPhotosForDate(selectedVehicle.id, selectedDate);
 
   // Auto-scan uploaded photos for odometer reading
-  if (uploadedUrls.length > 0 && selectedVehicle) {
-    autoScanForMileage(uploadedUrls);
+  if (ocrBlobs.length > 0 && selectedVehicle) {
+    autoScanForMileage(ocrBlobs);
   }
 }
 
@@ -692,6 +694,7 @@ let cameraUploading = false;
 let cameraUploadedCount = 0;
 let cameraTotalQueued = 0;
 let cameraUploadedUrls = [];
+let cameraOcrBlobs = [];
 
 $('btn-open-camera').addEventListener('click', async () => {
   if (!selectedVehicle) {
@@ -711,6 +714,7 @@ async function openCamera() {
   cameraUploadedCount = 0;
   cameraTotalQueued = 0;
   cameraUploadedUrls = [];
+  cameraOcrBlobs = [];
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
   $('camera-upload-bar').style.display = 'none';
@@ -855,6 +859,7 @@ async function processCameraQueue() {
   while (cameraUploadQueue.length > 0) {
     const blob = cameraUploadQueue.shift();
     try {
+      cameraOcrBlobs.push(blob);
       const url = await uploadPhoto(blob);
       cameraUploadedUrls.push(url);
       cameraUploadedCount++;
@@ -902,8 +907,8 @@ $('camera-close').addEventListener('click', async () => {
     loadPhotoDates(selectedVehicle.id, selectedDate);
 
     // Auto-scan camera photos for odometer reading
-    if (cameraUploadedUrls.length > 0) {
-      autoScanForMileage(cameraUploadedUrls);
+    if (cameraOcrBlobs.length > 0) {
+      autoScanForMileage(cameraOcrBlobs);
     }
   }
 });
@@ -2126,8 +2131,8 @@ function scoreOdometerCandidate(value, rawText, fullText, currentMileage) {
   return score;
 }
 
-async function autoScanForMileage(urls) {
-  if (!urls.length || !selectedVehicle) return;
+async function autoScanForMileage(blobs) {
+  if (!blobs.length || !selectedVehicle) return;
   const statusEl = $('ocr-status');
   statusEl.style.display = 'block';
   statusEl.style.color = '';
@@ -2137,10 +2142,13 @@ async function autoScanForMileage(urls) {
   let bestReading = null;
   let bestScore = -Infinity;
 
-  for (let i = 0; i < urls.length; i++) {
-    statusEl.textContent = `🔍 Scanning photo ${i + 1}/${urls.length} for odometer…`;
+  for (let i = 0; i < blobs.length; i++) {
+    statusEl.textContent = `🔍 Scanning photo ${i + 1}/${blobs.length} for odometer…`;
     try {
-      const { data: { text } } = await Tesseract.recognize(urls[i], 'eng');
+      // Create an object URL from the blob so Tesseract can read it locally
+      const objUrl = URL.createObjectURL(blobs[i]);
+      const { data: { text } } = await Tesseract.recognize(objUrl, 'eng');
+      URL.revokeObjectURL(objUrl);
       console.log('[OCR] Photo', i + 1, 'raw text:', text);
 
       // Extract all number-like sequences — be very forgiving
