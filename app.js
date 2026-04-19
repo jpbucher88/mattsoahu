@@ -107,13 +107,16 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+const APP_TIMEZONE = 'Pacific/Honolulu'; // Hawaii Standard Time
+
 function todayDateString() {
   const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+  return parts; // returns YYYY-MM-DD
 }
 
 function formatTime(date) {
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: APP_TIMEZONE });
 }
 
 function sanitizePlate(plate) {
@@ -523,7 +526,8 @@ async function openVehiclePage(vid) {
   if (selectedVehicle.lastPhotoDate) {
     lastPhotoEl.textContent = '📷 Last photo: ' + selectedVehicle.lastPhotoDate.toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
-      hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+      hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
+      timeZone: APP_TIMEZONE
     });
     lastPhotoEl.style.display = 'block';
   } else if (selectedVehicle.lastPhotoAge === Infinity) {
@@ -987,7 +991,7 @@ $('camera-close').addEventListener('click', async () => {
 function formatDisplayDate(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const dt = new Date(y, m - 1, d);
-  const opts = { weekday: 'short', month: 'short', day: 'numeric' };
+  const opts = { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE };
   const label = dt.toLocaleDateString('en-US', opts);
   return dateStr === todayDateString() ? label + ' (Today)' : label;
 }
@@ -1189,7 +1193,7 @@ $('btn-download-all').addEventListener('click', async () => {
         const ts = photo.timestamp
           ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-')
           : String(count).padStart(3, '0');
-        const fileName = `${label}_${today}_${ts}.jpg`;
+        const fileName = `${label}_${dateForDownload}_${ts}.jpg`;
         files.push({ name: fileName, buf });
         showLoading(`Downloaded ${count} of ${photos.length}...`);
       } catch (dlErr) {
@@ -1230,7 +1234,7 @@ $('btn-download-all').addEventListener('click', async () => {
     const zipBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(zipBlob);
-    a.download = `${label}_${today}_${files.length}-photos.zip`;
+    a.download = `${label}_${dateForDownload}_${files.length}-photos.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -2511,7 +2515,7 @@ async function loadVehicleNotes(vehicleId) {
     let html = '';
     snap.forEach(doc => {
       const d = doc.data();
-      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString() : '';
+      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
       const followUpBadge = d.isFollowUp ? (d.done ? '<span class="note-badge note-badge-done">✅ Done</span>' : '<span class="note-badge note-badge-followup">⚑ Follow Up</span>') : '';
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
@@ -2584,7 +2588,7 @@ async function loadDashboardFollowUps() {
       const d = doc.data();
       const v = vehiclesCache.find(x => x.id === d.vehicleId);
       const plate = v ? v.plate : 'Unknown';
-      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString() : '';
+      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
       html += `
         <div class="followup-item" data-vid="${d.vehicleId}">
           <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkDone('${doc.id}')" title="Mark done">&#9744;</button>
