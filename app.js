@@ -1206,34 +1206,45 @@ $('btn-download-all').addEventListener('click', async () => {
       return;
     }
 
-    // Mobile: use Web Share API to save to camera roll / share
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile && navigator.canShare) {
-      const shareFiles = files.map(f => new File([f.buf], f.name, { type: 'image/jpeg' }));
-      if (navigator.canShare({ files: shareFiles })) {
-        hideLoading();
-        try {
-          await navigator.share({ files: shareFiles, title: `${label} photos` });
-          toast(`${files.length} photos shared!`, 'success');
-        } catch (shareErr) {
-          if (shareErr.name !== 'AbortError') {
-            toast('Share cancelled or failed.', 'warning');
-          }
-        }
-        return;
-      }
-    }
-
-    // Desktop: bundle into ZIP
+    // Bundle into ZIP (works on all platforms including iOS Safari)
     showLoading('Creating ZIP file...');
     const zip = new JSZip();
     for (const f of files) {
       zip.file(f.name, new Uint8Array(f.buf));
     }
     const zipBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/zip' });
+    const zipName = `${label}_${dateForDownload}_${files.length}-photos.zip`;
+
+    // On mobile, try Web Share with the single ZIP file (more reliable than sharing many images)
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && navigator.canShare) {
+      const zipFile = new File([zipBlob], zipName, { type: 'application/zip' });
+      if (navigator.canShare({ files: [zipFile] })) {
+        hideLoading();
+        try {
+          await navigator.share({ files: [zipFile], title: `${label} photos` });
+          toast(`${files.length} photos ready!`, 'success');
+        } catch (shareErr) {
+          if (shareErr.name !== 'AbortError') {
+            // Fallback: direct download link
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(zipBlob);
+            a.download = zipName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(a.href);
+            toast(`ZIP with ${files.length} photos ready!`, 'success');
+          }
+        }
+        return;
+      }
+    }
+
+    // Desktop / fallback: direct download
     const a = document.createElement('a');
     a.href = URL.createObjectURL(zipBlob);
-    a.download = `${label}_${dateForDownload}_${files.length}-photos.zip`;
+    a.download = zipName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
