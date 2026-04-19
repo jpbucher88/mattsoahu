@@ -70,36 +70,55 @@
     <main class="dashboard-main">
       <!-- Urgent Notifications Banner -->
       <section id="urgent-banner" class="card urgent-banner" style="display:none;">
-        <div class="urgent-banner-header">
-          <h3>🚨 Urgent Notifications</h3>
-          <span id="urgent-banner-count" class="badge urgent-badge">0</span>
+        <div class="urgent-banner-header collapsible-header" onclick="toggleSection('urgent-banner-body', 'urgent-banner-toggle')">
+          <div class="collapsible-title">
+            <h3>🚨 Urgent Notifications</h3>
+            <span id="urgent-banner-count" class="badge urgent-badge">0</span>
+          </div>
+          <button class="collapse-btn" id="urgent-banner-toggle">&#8722;</button>
         </div>
-        <div id="urgent-banner-list" class="urgent-banner-list"></div>
+        <div id="urgent-banner-body" class="collapsible-body">
+          <div id="urgent-banner-list" class="urgent-banner-list"></div>
+        </div>
       </section>
 
       <!-- Task Calendar -->
       <section id="task-calendar-section" class="card">
-        <div class="task-calendar-header">
-          <h3>📅 Task Calendar</h3>
-          <div class="task-calendar-nav">
-            <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
-            <span id="cal-month-label" class="cal-month-label"></span>
-            <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
+        <div class="task-calendar-header collapsible-header" onclick="toggleSection('task-calendar-body', 'task-calendar-toggle')">
+          <div class="collapsible-title">
+            <h3>📅 Task Calendar</h3>
+          </div>
+          <div class="collapsible-header-right">
+            <div class="task-calendar-nav" onclick="event.stopPropagation()">
+              <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
+              <span id="cal-month-label" class="cal-month-label"></span>
+              <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
+            </div>
+            <button class="collapse-btn" id="task-calendar-toggle">&#8722;</button>
           </div>
         </div>
-        <div id="task-calendar-grid" class="task-calendar-grid"></div>
-        <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
-          <div class="task-calendar-detail-header">
-            <h4 id="cal-detail-date"></h4>
-            <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
+        <div id="task-calendar-body" class="collapsible-body">
+          <div id="task-calendar-grid" class="task-calendar-grid"></div>
+          <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
+            <div class="task-calendar-detail-header">
+              <h4 id="cal-detail-date"></h4>
+              <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
+            </div>
+            <div id="cal-detail-list" class="cal-detail-list"></div>
           </div>
-          <div id="cal-detail-list" class="cal-detail-list"></div>
         </div>
       </section>
 
       <section id="fleet-overview" class="card">
-        <h3>Fleet Overview</h3>
-        <div id="fleet-dashboard" class="fleet-dashboard"></div>
+        <div class="collapsible-header" onclick="toggleSection('fleet-overview-body', 'fleet-overview-toggle')">
+          <div class="collapsible-title">
+            <h3>Fleet Overview</h3>
+          </div>
+          <button class="collapse-btn" id="fleet-overview-toggle">&#8722;</button>
+        </div>
+        <div id="fleet-overview-body" class="collapsible-body">
+          <div id="fleet-dashboard" class="fleet-dashboard"></div>
+        </div>
       </section>
     </main>
   </div>

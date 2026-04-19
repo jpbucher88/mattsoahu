@@ -60,6 +60,15 @@ function showPage(name) {
   window.scrollTo(0, 0);
 }
 
+// --------------- COLLAPSIBLE SECTIONS ---------------
+window.toggleSection = function(bodyId, toggleId) {
+  const body = $(bodyId);
+  const btn = $(toggleId);
+  if (!body) return;
+  const collapsed = body.classList.toggle('collapsed');
+  if (btn) btn.innerHTML = collapsed ? '&#43;' : '&#8722;';
+};
+
 function showLoading(text = 'Loading...') {
   $('loading-text').textContent = text;
   $('loading-overlay').style.display = 'flex';
