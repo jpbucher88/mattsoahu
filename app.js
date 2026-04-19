@@ -1206,50 +1206,20 @@ $('btn-download-all').addEventListener('click', async () => {
       return;
     }
 
-    // On iOS, share images in small batches so they save to Photos
-    const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    if (isIOS && navigator.canShare) {
-      const BATCH_SIZE = 3;
-      const totalBatches = Math.ceil(files.length / BATCH_SIZE);
-      let saved = 0;
-      hideLoading();
-
-      for (let i = 0; i < files.length; i += BATCH_SIZE) {
-        const batch = files.slice(i, i + BATCH_SIZE);
-        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
-        const shareFiles = batch.map(f => new File([f.buf], f.name, { type: 'image/jpeg' }));
-
-        if (!navigator.canShare({ files: shareFiles })) continue;
-
-        try {
-          toast(`Batch ${batchNum} of ${totalBatches} — tap "Save ${batch.length} Images"`, 'info');
-          await navigator.share({ files: shareFiles, title: `${label} photos (${batchNum}/${totalBatches})` });
-          saved += batch.length;
-        } catch (shareErr) {
-          if (shareErr.name === 'AbortError') {
-            toast(`Saved ${saved} of ${files.length} photos.`, 'warning');
-            return;
-          }
-          console.error('Share batch error:', shareErr);
-        }
-      }
-      toast(`${saved} photos saved!`, 'success');
-      return;
-    }
-
-    // Android: try single share with all images, fall back to ZIP
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    if (isAndroid && navigator.canShare) {
+    // Mobile: share all images at once via share sheet (saves to Photos on iOS)
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    if (isMobile && navigator.canShare) {
       const shareFiles = files.map(f => new File([f.buf], f.name, { type: 'image/jpeg' }));
       if (navigator.canShare({ files: shareFiles })) {
         hideLoading();
         try {
           await navigator.share({ files: shareFiles, title: `${label} photos` });
-          toast(`${files.length} photos shared!`, 'success');
+          toast(`${files.length} photos saved!`, 'success');
           return;
         } catch (shareErr) {
           if (shareErr.name === 'AbortError') return;
-          // Fall through to ZIP
+          console.error('Share error:', shareErr);
+          // Fall through to ZIP fallback
         }
       }
     }
