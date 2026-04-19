@@ -2672,6 +2672,12 @@ async function loadDashboardFollowUps() {
     }
     if (tasksBtn) tasksBtn.style.display = '';
 
+    // Populate urgent banner on dashboard (separate from task panel)
+    renderUrgentBanner(items);
+
+    // Populate task calendar
+    renderTaskCalendar(items);
+
     if (items.length === 0) {
       if (emptyEl) emptyEl.style.display = '';
       overdueEl.style.display = 'none';
@@ -2812,6 +2818,235 @@ window.agendaMarkGeneralDone = async function(docId) {
 // ================================================================
 // GENERAL NOTES (not tied to a vehicle)
 // ================================================================
+
+// ================================================================
+// URGENT BANNER (dashboard, above fleet overview)
+// ================================================================
+function renderUrgentBanner(items) {
+  const banner = $('urgent-banner');
+  const list = $('urgent-banner-list');
+  const countEl = $('urgent-banner-count');
+  if (!banner || !list) return;
+
+  const today = todayDateString();
+  const urgentItems = items.filter(i => i.urgent);
+
+  if (urgentItems.length === 0) {
+    banner.style.display = 'none';
+    return;
+  }
+
+  banner.style.display = '';
+  if (countEl) countEl.textContent = urgentItems.length;
+
+  // Sort: overdue first, then today, then upcoming, then no-date
+  urgentItems.sort((a, b) => {
+    const aDate = a.dueDate || 'zzzz';
+    const bDate = b.dueDate || 'zzzz';
+    const aOverdue = a.dueDate && a.dueDate < today ? 0 : (a.dueDate === today ? 1 : 2);
+    const bOverdue = b.dueDate && b.dueDate < today ? 0 : (b.dueDate === today ? 1 : 2);
+    if (aOverdue !== bOverdue) return aOverdue - bOverdue;
+    return aDate.localeCompare(bDate);
+  });
+
+  let html = '';
+  for (const item of urgentItems) {
+    const isVehicle = item.type === 'vehicle';
+    const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
+    const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
+
+    let metaLabel;
+    if (isVehicle) {
+      const v = vehiclesCache.find(x => x.id === item.vehicleId);
+      metaLabel = '\ud83d\ude97 ' + escapeHtml(v ? v.plate : 'Unknown');
+    } else {
+      metaLabel = '\ud83d\udcdd General';
+    }
+
+    let statusTag = '';
+    if (item.dueDate && item.dueDate < today) {
+      statusTag = '<span class="urgent-status urgent-overdue">OVERDUE</span>';
+    } else if (item.dueDate === today) {
+      statusTag = '<span class="urgent-status urgent-due-today">DUE TODAY</span>';
+    } else if (item.dueDate) {
+      statusTag = `<span class="urgent-status urgent-upcoming">Due ${item.dueDate}</span>`;
+    }
+
+    html += `
+      <div class="urgent-banner-item"${vidAttr}>
+        <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
+        <div class="urgent-banner-info">
+          <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
+          <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
+        </div>
+      </div>`;
+  }
+  list.innerHTML = html;
+
+  // Click vehicle items to navigate
+  list.querySelectorAll('.urgent-banner-item[data-vid]').forEach(el => {
+    el.addEventListener('click', () => openVehiclePage(el.dataset.vid));
+  });
+}
+
+// ================================================================
+// TASK CALENDAR
+// ================================================================
+let calendarMonth = new Date(); // current viewed month
+let calendarItems = [];         // cached task items for calendar
+
+function renderTaskCalendar(items) {
+  calendarItems = items;
+  renderCalendarGrid();
+}
+
+function renderCalendarGrid() {
+  const grid = $('task-calendar-grid');
+  const label = $('cal-month-label');
+  const detailEl = $('task-calendar-detail');
+  if (!grid) return;
+  if (detailEl) detailEl.style.display = 'none';
+
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth();
+  const today = todayDateString();
+
+  label.textContent = new Date(year, month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  // Build map of due dates -> tasks for this month
+  const tasksByDate = {};
+  for (const item of calendarItems) {
+    if (!item.dueDate) continue;
+    const [y, m] = item.dueDate.split('-').map(Number);
+    if (y === year && m - 1 === month) {
+      if (!tasksByDate[item.dueDate]) tasksByDate[item.dueDate] = [];
+      tasksByDate[item.dueDate].push(item);
+    }
+  }
+
+  // Also include overdue items on today's cell if they have past dates
+  const firstDay = new Date(year, month, 1).getDay(); // 0=Sun
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  let html = '<div class="cal-row cal-header-row">';
+  ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(d => {
+    html += `<div class="cal-cell cal-day-name">${d}</div>`;
+  });
+  html += '</div><div class="cal-row">';
+
+  // Blank cells for days before the 1st
+  for (let i = 0; i < firstDay; i++) {
+    html += '<div class="cal-cell cal-empty"></div>';
+  }
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const tasks = tasksByDate[dateStr] || [];
+    const isToday = dateStr === today;
+    const hasUrgent = tasks.some(t => t.urgent);
+    const hasTasks = tasks.length > 0;
+
+    let cellClass = 'cal-cell cal-day';
+    if (isToday) cellClass += ' cal-today';
+    if (hasTasks) cellClass += ' cal-has-tasks';
+    if (hasUrgent) cellClass += ' cal-has-urgent';
+
+    let dots = '';
+    if (hasTasks) {
+      const urgentCount = tasks.filter(t => t.urgent).length;
+      const normalCount = tasks.length - urgentCount;
+      if (urgentCount > 0) dots += `<span class="cal-dot cal-dot-urgent"></span>`;
+      if (normalCount > 0) dots += `<span class="cal-dot cal-dot-normal"></span>`;
+    }
+
+    html += `<div class="${cellClass}" data-date="${dateStr}" onclick="showCalendarDetail('${dateStr}')">
+      <span class="cal-day-num">${day}</span>
+      ${dots ? `<div class="cal-dots">${dots}</div>` : ''}
+      ${hasTasks ? `<span class="cal-task-count">${tasks.length}</span>` : ''}
+    </div>`;
+
+    if ((firstDay + day) % 7 === 0 && day < daysInMonth) {
+      html += '</div><div class="cal-row">';
+    }
+  }
+
+  // Fill remaining cells
+  const remaining = (7 - (firstDay + daysInMonth) % 7) % 7;
+  for (let i = 0; i < remaining; i++) {
+    html += '<div class="cal-cell cal-empty"></div>';
+  }
+  html += '</div>';
+
+  grid.innerHTML = html;
+}
+
+window.showCalendarDetail = function(dateStr) {
+  const detailEl = $('task-calendar-detail');
+  const detailDate = $('cal-detail-date');
+  const detailList = $('cal-detail-list');
+  if (!detailEl) return;
+
+  const tasks = calendarItems.filter(i => i.dueDate === dateStr);
+  if (tasks.length === 0) {
+    detailEl.style.display = 'none';
+    return;
+  }
+
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  detailDate.textContent = dt.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+
+  const today = todayDateString();
+  let html = '';
+  // Sort urgent first
+  tasks.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+
+  for (const item of tasks) {
+    const isVehicle = item.type === 'vehicle';
+    const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
+    const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
+
+    let metaLabel;
+    if (isVehicle) {
+      const v = vehiclesCache.find(x => x.id === item.vehicleId);
+      metaLabel = '\ud83d\ude97 ' + escapeHtml(v ? v.plate : 'Unknown');
+    } else {
+      metaLabel = '\ud83d\udcdd General';
+    }
+
+    const urgentTag = item.urgent ? '<span class="cal-urgent-tag">🚨 Urgent</span>' : '';
+    const overdueTag = item.dueDate < today ? '<span class="cal-overdue-tag">Overdue</span>' : '';
+
+    html += `
+      <div class="cal-detail-item${item.urgent ? ' cal-detail-urgent' : ''}"${vidAttr}>
+        <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
+        <div class="cal-detail-info">
+          <div class="cal-detail-text">${escapeHtml(item.text)} ${urgentTag} ${overdueTag}</div>
+          <div class="cal-detail-meta">${metaLabel}</div>
+        </div>
+      </div>`;
+  }
+  detailList.innerHTML = html;
+  detailEl.style.display = '';
+
+  // Click vehicle items to navigate
+  detailList.querySelectorAll('.cal-detail-item[data-vid]').forEach(el => {
+    el.addEventListener('click', () => openVehiclePage(el.dataset.vid));
+  });
+};
+
+// Calendar navigation
+$('cal-prev').addEventListener('click', () => {
+  calendarMonth.setMonth(calendarMonth.getMonth() - 1);
+  renderCalendarGrid();
+});
+$('cal-next').addEventListener('click', () => {
+  calendarMonth.setMonth(calendarMonth.getMonth() + 1);
+  renderCalendarGrid();
+});
+$('cal-detail-close').addEventListener('click', () => {
+  $('task-calendar-detail').style.display = 'none';
+});
 
 // Task panel open/close
 function openTaskPanel() {

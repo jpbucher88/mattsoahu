@@ -2052,3 +2052,284 @@ body {
   font-weight: 600;
 }
 .agenda-empty { margin-top: 8px; }
+
+/* ============ URGENT BANNER (dashboard top) ============ */
+.urgent-banner {
+  background: #fef2f2;
+  border: 2px solid #f87171;
+  border-left: 6px solid #dc2626;
+  animation: urgent-pulse 2s ease-in-out infinite;
+}
+@keyframes urgent-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.15); }
+  50% { box-shadow: 0 0 12px 4px rgba(220, 38, 38, 0.25); }
+}
+.urgent-banner-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.urgent-banner-header h3 {
+  margin: 0;
+  color: #b91c1c;
+  font-size: 1.1rem;
+}
+.urgent-badge {
+  background: #dc2626;
+  color: #fff;
+  font-weight: 700;
+}
+.urgent-banner-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.urgent-banner-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #fca5a5;
+  border-left: 4px solid #dc2626;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.urgent-banner-item:hover {
+  background: #fff5f5;
+}
+.urgent-banner-info {
+  flex: 1;
+  min-width: 0;
+}
+.urgent-banner-text {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 0.95rem;
+  word-break: break-word;
+}
+.urgent-banner-meta {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.urgent-status {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.urgent-overdue {
+  background: #dc2626;
+  color: #fff;
+}
+.urgent-due-today {
+  background: #f59e0b;
+  color: #fff;
+}
+.urgent-upcoming {
+  background: #e5e7eb;
+  color: #374151;
+  text-transform: none;
+  font-weight: 600;
+}
+
+/* ============ TASK CALENDAR ============ */
+.task-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.task-calendar-header h3 {
+  margin: 0;
+}
+.task-calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cal-month-label {
+  font-weight: 600;
+  font-size: 1rem;
+  min-width: 150px;
+  text-align: center;
+}
+.task-calendar-grid {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cal-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+.cal-header-row {
+  background: #1e3a5f;
+}
+.cal-day-name {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #fff;
+  padding: 8px 2px;
+}
+.cal-cell {
+  min-height: 48px;
+  border: 1px solid #f3f4f6;
+  padding: 4px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.cal-empty {
+  background: #f9fafb;
+}
+.cal-day {
+  cursor: default;
+  transition: background 0.15s;
+}
+.cal-day.cal-has-tasks {
+  cursor: pointer;
+}
+.cal-day.cal-has-tasks:hover {
+  background: #eff6ff;
+}
+.cal-day-num {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #374151;
+}
+.cal-today {
+  background: #eff6ff;
+}
+.cal-today .cal-day-num {
+  background: #1e3a5f;
+  color: #fff;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+.cal-has-urgent {
+  background: #fef2f2;
+}
+.cal-has-urgent:hover {
+  background: #fee2e2;
+}
+.cal-dots {
+  display: flex;
+  gap: 3px;
+  margin-top: 2px;
+}
+.cal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.cal-dot-urgent {
+  background: #dc2626;
+}
+.cal-dot-normal {
+  background: #3b82f6;
+}
+.cal-task-count {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #6b7280;
+  margin-top: 1px;
+}
+
+/* Calendar detail panel */
+.task-calendar-detail {
+  margin-top: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9fafb;
+}
+.task-calendar-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.task-calendar-detail-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #1e3a5f;
+}
+.cal-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cal-detail-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.cal-detail-item:hover {
+  background: #f0f9ff;
+}
+.cal-detail-urgent {
+  border-color: #fca5a5;
+  border-left: 4px solid #dc2626;
+  background: #fff5f5;
+}
+.cal-detail-info {
+  flex: 1;
+  min-width: 0;
+}
+.cal-detail-text {
+  font-size: 0.9rem;
+  color: #1e293b;
+  word-break: break-word;
+}
+.cal-detail-meta {
+  font-size: 0.8rem;
+  color: #6b7280;
+  margin-top: 2px;
+}
+.cal-urgent-tag {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #dc2626;
+}
+.cal-overdue-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  background: #dc2626;
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 4px;
+}
+
+/* Calendar responsive */
+@media (max-width: 600px) {
+  .cal-cell { min-height: 40px; padding: 2px; }
+  .cal-day-num { font-size: 0.7rem; }
+  .cal-task-count { font-size: 0.6rem; }
+  .cal-month-label { min-width: 120px; font-size: 0.9rem; }
+}
