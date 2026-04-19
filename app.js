@@ -22,6 +22,7 @@ function getStorage() {
 }
 
 // --------------- GLOBALS ---------------
+const APP_TIMEZONE = 'Pacific/Honolulu'; // Hawaii Standard Time
 let currentUser = null;
 let currentUserRole = null;
 let selectedVehicle = null;
@@ -106,8 +107,6 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
-
-const APP_TIMEZONE = 'Pacific/Honolulu'; // Hawaii Standard Time
 
 function todayDateString() {
   const d = new Date();
