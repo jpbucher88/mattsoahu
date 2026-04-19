@@ -2131,38 +2131,43 @@ function scoreOdometerCandidate(value, rawText, fullText, currentMileage) {
   return score;
 }
 
-// Preprocess image for OCR: convert to high-contrast grayscale for dashboard/LCD readability
-function preprocessForOCR(blob) {
+// Preprocess image for OCR with multiple strategies
+function preprocessForOCR(blob, strategy) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      // Use original size for best OCR accuracy
       canvas.width = img.width;
       canvas.height = img.height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0);
 
-      // Get pixel data
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       const data = imageData.data;
 
-      // Convert to grayscale and apply contrast boost + threshold
-      for (let i = 0; i < data.length; i += 4) {
-        // Luminance grayscale
-        let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-        // Boost contrast: stretch histogram
-        gray = ((gray - 128) * 2.0) + 128;
-        gray = Math.max(0, Math.min(255, gray));
-        // Apply adaptive threshold for crisp text
-        const bw = gray > 120 ? 255 : 0;
-        data[i] = bw;
-        data[i + 1] = bw;
-        data[i + 2] = bw;
+      if (strategy === 'grayscale') {
+        // Simple grayscale with mild contrast boost
+        for (let i = 0; i < data.length; i += 4) {
+          let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          gray = ((gray - 128) * 1.5) + 128;
+          gray = Math.max(0, Math.min(255, gray));
+          data[i] = data[i + 1] = data[i + 2] = gray;
+        }
+      } else if (strategy === 'invert') {
+        // Inverted grayscale — helps with light text on dark backgrounds
+        for (let i = 0; i < data.length; i += 4) {
+          let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          data[i] = data[i + 1] = data[i + 2] = 255 - gray;
+        }
+      } else if (strategy === 'threshold') {
+        // High-contrast B&W with moderate threshold
+        for (let i = 0; i < data.length; i += 4) {
+          let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          data[i] = data[i + 1] = data[i + 2] = gray > 100 ? 255 : 0;
+        }
       }
 
       ctx.putImageData(imageData, 0, 0);
-
       canvas.toBlob((processedBlob) => {
         URL.revokeObjectURL(img.src);
         resolve(processedBlob);
@@ -2170,6 +2175,19 @@ function preprocessForOCR(blob) {
     };
     img.src = URL.createObjectURL(blob);
   });
+}
+
+// Persistent OCR worker — created once, reused across scans
+let ocrWorker = null;
+
+async function getOCRWorker() {
+  if (!ocrWorker) {
+    ocrWorker = await Tesseract.createWorker('eng');
+    await ocrWorker.setParameters({
+      tessedit_char_whitelist: '0123456789,. ',
+    });
+  }
+  return ocrWorker;
 }
 
 async function autoScanForMileage(blobs) {
@@ -2183,52 +2201,55 @@ async function autoScanForMileage(blobs) {
   let bestReading = null;
   let bestScore = -Infinity;
 
+  let worker;
+  try {
+    worker = await getOCRWorker();
+  } catch (err) {
+    console.error('[OCR] Failed to create worker:', err);
+    statusEl.textContent = '❌ OCR engine failed to load.';
+    statusEl.style.color = '#dc2626';
+    setTimeout(() => { statusEl.style.display = 'none'; statusEl.style.color = ''; }, 8000);
+    return;
+  }
+
+  const strategies = ['original', 'grayscale', 'invert', 'threshold'];
+
   for (let i = 0; i < blobs.length; i++) {
-    statusEl.textContent = `🔍 Scanning photo ${i + 1}/${blobs.length} for odometer…`;
-    try {
-      // Preprocess: high-contrast B&W for better dashboard/LCD reading
-      const processed = await preprocessForOCR(blobs[i]);
-      const objUrl = URL.createObjectURL(processed);
-
-      // Run OCR with digits-only whitelist so it doesn't confuse letters with numbers
-      const { data: { text } } = await Tesseract.recognize(objUrl, 'eng', {
-        tessedit_char_whitelist: '0123456789,. ',
-        tessedit_pageseg_mode: '6',
-      });
-      URL.revokeObjectURL(objUrl);
-      console.log('[OCR] Photo', i + 1, 'processed text:', text);
-
-      // Also try original (unprocessed) image — sometimes contrast helps, sometimes hurts
-      const origUrl = URL.createObjectURL(blobs[i]);
-      const { data: { text: origText } } = await Tesseract.recognize(origUrl, 'eng', {
-        tessedit_char_whitelist: '0123456789,. ',
-        tessedit_pageseg_mode: '6',
-      });
-      URL.revokeObjectURL(origUrl);
-      console.log('[OCR] Photo', i + 1, 'original text:', origText);
-
-      // Combine results from both passes
-      const allText = text + '\n' + origText;
-
-      // Extract all number-like sequences
-      const matches = allText.match(/\d[\d,.\s]{1,}/g);
-      if (!matches) continue;
-
-      for (const raw of matches) {
-        const digits = raw.replace(/[^0-9]/g, '');
-        if (digits.length < 4 || digits.length > 7) continue;
-        const cleaned = parseInt(digits, 10);
-        if (isNaN(cleaned) || cleaned < 100 || cleaned > 999999) continue;
-
-        const score = scoreOdometerCandidate(cleaned, raw, allText, currentMileage);
-        console.log('[OCR] Candidate:', raw.trim(), '→', cleaned, 'score:', score);
-        if (score > bestScore) {
-          bestScore = score;
-          bestReading = cleaned;
+    for (const strategy of strategies) {
+      statusEl.textContent = `🔍 Scanning photo ${i + 1}/${blobs.length} (${strategy})…`;
+      try {
+        let scanBlob;
+        if (strategy === 'original') {
+          scanBlob = blobs[i];
+        } else {
+          scanBlob = await preprocessForOCR(blobs[i], strategy);
         }
+
+        const objUrl = URL.createObjectURL(scanBlob);
+        const { data: { text } } = await worker.recognize(objUrl);
+        URL.revokeObjectURL(objUrl);
+        console.log(`[OCR] Photo ${i + 1} [${strategy}] text:`, text);
+
+        // Extract all number-like sequences
+        const matches = text.match(/\d[\d,.\s]{1,}/g);
+        if (!matches) continue;
+
+        for (const raw of matches) {
+          const digits = raw.replace(/[^0-9]/g, '');
+          if (digits.length < 3 || digits.length > 7) continue;
+          const cleaned = parseInt(digits, 10);
+          if (isNaN(cleaned) || cleaned < 100 || cleaned > 999999) continue;
+
+          const score = scoreOdometerCandidate(cleaned, raw, text, currentMileage);
+          console.log(`[OCR] [${strategy}] Candidate:`, raw.trim(), '→', cleaned, 'score:', score);
+          if (score > bestScore) {
+            bestScore = score;
+            bestReading = cleaned;
+          }
+        }
+      } catch (err) {
+        console.warn(`[OCR] ${strategy} failed for photo ${i + 1}:`, err);
       }
-    } catch (err) {
-      console.warn('OCR failed for photo', i, err);
     }
   }
 
