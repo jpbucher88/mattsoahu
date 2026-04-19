@@ -2072,6 +2072,70 @@ $('btn-save-mileage').addEventListener('click', async () => {
 // ================================================================
 // AUTO MILEAGE OCR — scans uploaded photos for odometer reading
 // ================================================================
+
+// Score a candidate number to determine how likely it is to be an odometer reading
+function scoreOdometerCandidate(value, rawText, fullText, currentMileage) {
+  let score = 0;
+  const raw = rawText.trim();
+  const digitCount = raw.replace(/[^0-9]/g, '').length;
+
+  // --- REJECT obvious non-odometer numbers ---
+  // Speedometer markings: small round numbers (20, 40, 60, 80, 100, 120, 140, 160, 180, 200, 220, 240, 260, 280, 300)
+  if (value <= 300 && value % 20 === 0) return -1000;
+  // RPM zone: 1000-8000 in round thousands
+  if (value >= 1000 && value <= 8000 && value % 1000 === 0) return -1000;
+  // Temperatures: small numbers near °, F, C
+  if (value <= 300 && /[°FCfc]/.test(fullText)) {
+    const pos = fullText.indexOf(raw);
+    const nearby = fullText.substring(Math.max(0, pos - 10), pos + raw.length + 10);
+    if (/[°FCfc]/.test(nearby)) return -1000;
+  }
+  // Radio frequencies: like 88.1, 101.5 etc
+  if (value >= 80 && value <= 110 && /\d+\.\d/.test(raw)) return -1000;
+  // Very small numbers unlikely to be odometers
+  if (value < 1000) return -500;
+  // Time-like patterns: 12:34, 3:45
+  if (/^\d{1,2}:\d{2}$/.test(raw)) return -1000;
+
+  // --- BOOST likely odometer numbers ---
+  // 5-6 digit numbers are classic odometer readings
+  if (digitCount === 5) score += 60;
+  if (digitCount === 6) score += 80;
+  if (digitCount === 4) score += 20;
+  if (digitCount >= 7) score += 10; // possible but less likely
+
+  // Numbers with commas in right places (e.g. 114,023) — strong signal
+  if (/^\d{1,3},\d{3}$/.test(raw) || /^\d{1,3},\d{3},\d{3}$/.test(raw)) score += 50;
+
+  // Nearby odometer keywords (mi, miles, km, odo, trip, total)
+  const fullLower = fullText.toLowerCase();
+  const pos = fullLower.indexOf(raw.toLowerCase());
+  const context = pos >= 0 ? fullLower.substring(Math.max(0, pos - 40), pos + raw.length + 40) : fullLower;
+  if (/\b(odo|odometer|mileage|total\s*mi|miles|mi\b)/.test(context)) score += 70;
+  if (/\b(km|kilometers|kilometres)\b/.test(context)) score += 50;
+  if (/\b(trip)\b/.test(context)) score -= 30; // trip odometer is usually not what we want
+
+  // Penalize if near speed-related words
+  if (/\b(mph|km\/h|kmh|speed|rpm|tach)\b/.test(context)) score -= 80;
+
+  // If we have a current mileage, heavily prefer numbers close to it (within +/- 20%)
+  if (currentMileage && currentMileage > 0) {
+    const diff = Math.abs(value - currentMileage);
+    const pctDiff = diff / currentMileage;
+    if (pctDiff < 0.05) score += 100;       // within 5% — very likely
+    else if (pctDiff < 0.10) score += 70;    // within 10%
+    else if (pctDiff < 0.20) score += 40;    // within 20%
+    else if (value > currentMileage && pctDiff < 0.5) score += 20; // slightly higher, plausible
+    else if (pctDiff > 2) score -= 50;       // way off — probably not odometer
+  }
+
+  // Prefer values in the typical rental car odometer range (5,000 - 300,000)
+  if (value >= 5000 && value <= 300000) score += 30;
+  if (value >= 10000 && value <= 200000) score += 20;
+
+  return score;
+}
+
 async function autoScanForMileage(urls) {
   if (!urls.length || !selectedVehicle) return;
   const statusEl = $('ocr-status');
@@ -2079,25 +2143,27 @@ async function autoScanForMileage(urls) {
   statusEl.style.color = '';
   statusEl.textContent = '🔍 Scanning photos for odometer…';
 
+  const currentMileage = selectedVehicle.mileage || 0;
   let bestReading = null;
+  let bestScore = -Infinity;
 
   for (let i = 0; i < urls.length; i++) {
     statusEl.textContent = `🔍 Scanning photo ${i + 1}/${urls.length} for odometer…`;
     try {
       const { data: { text } } = await Tesseract.recognize(urls[i], 'eng');
 
-      // Extract numbers — look for sequences that could be an odometer
-      const numbers = text.match(/\d[\d,.\s]{2,}/g);
-      if (numbers && numbers.length > 0) {
-        const cleaned = numbers
-          .map(n => parseInt(n.replace(/[,.\s]/g, ''), 10))
-          .filter(n => n >= 100 && n <= 999999);
-        if (cleaned.length > 0) {
-          const max = Math.max(...cleaned);
-          // Prefer the reading closest to current mileage (if set) or just the largest
-          if (!bestReading || max > bestReading) {
-            bestReading = max;
-          }
+      // Extract all number-like sequences from the OCR text
+      const matches = text.match(/\d[\d,.\s]{2,}/g);
+      if (!matches) continue;
+
+      for (const raw of matches) {
+        const cleaned = parseInt(raw.replace(/[,.\s]/g, ''), 10);
+        if (isNaN(cleaned) || cleaned < 100 || cleaned > 999999) continue;
+
+        const score = scoreOdometerCandidate(cleaned, raw, text, currentMileage);
+        if (score > bestScore) {
+          bestScore = score;
+          bestReading = cleaned;
         }
       }
     } catch (err) {
@@ -2105,7 +2171,7 @@ async function autoScanForMileage(urls) {
     }
   }
 
-  if (bestReading) {
+  if (bestReading && bestScore > 0) {
     $('vehicle-mileage').value = bestReading;
     statusEl.textContent = `✅ Odometer detected: ${bestReading.toLocaleString()} — verify and tap Update`;
     statusEl.style.color = '#16a34a';
