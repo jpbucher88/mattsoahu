@@ -1932,3 +1932,123 @@ body {
   border-radius: 6px;
   background: #fff;
 }
+
+/* ============ TASK ALERT BUTTON (header badge) ============ */
+.task-alert-btn {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-left: 8px;
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.task-alert-count {
+  position: absolute;
+  top: -4px; right: -4px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  padding: 0 4px;
+}
+.task-alert-count.count-zero { display: none; }
+@keyframes badge-pulse {
+  0%,100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+.task-alert-count.has-urgent {
+  animation: badge-pulse 1s ease-in-out infinite;
+  background: #b91c1c;
+}
+
+/* ============ TASK PANEL OVERLAY ============ */
+.task-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9000;
+  display: flex;
+  justify-content: flex-end;
+}
+.task-panel {
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  background: #f9fafb;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.2);
+  animation: slideInRight 0.25s ease-out;
+}
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+.task-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  background: #1e3a5f;
+  color: #fff;
+}
+.task-panel-header h3 { margin: 0; font-size: 1.1rem; }
+.task-panel-close {
+  background: none;
+  border: none;
+  color: #fff;
+  font-size: 1.6rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.task-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+.task-panel-section {
+  margin-bottom: 24px;
+}
+.task-panel-section h4 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  color: #1e3a5f;
+}
+
+/* ============ URGENT STYLES ============ */
+.note-urgent-label {
+  font-size: 0.85rem;
+  color: #dc2626;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.note-badge-urgent {
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-left: 4px;
+}
+.followup-item.followup-urgent {
+  background: #fef2f2;
+  border-color: #f87171;
+  border-left: 4px solid #dc2626;
+}
+.followup-item.followup-urgent .followup-text {
+  font-weight: 600;
+}
+.agenda-empty { margin-top: 8px; }

@@ -249,6 +249,9 @@ $('btn-logout').addEventListener('click', () => auth.signOut());
 $('btn-logout-vehicle').addEventListener('click', () => auth.signOut());
 $('btn-admin-logout').addEventListener('click', () => auth.signOut());
 
+// Task panel button
+$('btn-tasks').addEventListener('click', () => openTaskPanel());
+
 // ================================================================
 // FORGOT / RESET PASSWORD
 // ================================================================
@@ -2519,6 +2522,7 @@ $('btn-save-note').addEventListener('click', async () => {
   }
   const isFollowUp = $('note-followup').checked;
   const dueDate = isFollowUp ? ($('note-due-date').value || '') : '';
+  const isUrgent = isFollowUp && $('note-urgent') ? $('note-urgent').checked : false;
 
   try {
     const noteData = {
@@ -2526,6 +2530,7 @@ $('btn-save-note').addEventListener('click', async () => {
       text,
       isFollowUp,
       done: false,
+      urgent: isUrgent,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email
@@ -2534,8 +2539,10 @@ $('btn-save-note').addEventListener('click', async () => {
     await db.collection('vehicleNotes').add(noteData);
     $('note-text').value = '';
     $('note-followup').checked = false;
+    if ($('note-urgent')) $('note-urgent').checked = false;
     $('note-due-date').value = '';
     $('note-due-row').style.display = 'none';
+    if ($('note-urgent-row')) $('note-urgent-row').style.display = 'none';
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadVehicleNotes(selectedVehicle.id);
     if (isFollowUp) loadDashboardFollowUps();
@@ -2572,12 +2579,13 @@ async function loadVehicleNotes(vehicleId) {
           followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
         }
       }
+      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
       html += `
         <div class="note-item${doneClass}">
           <div class="note-content">
-            ${followUpBadge}
+            ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
             <div class="note-meta">${escapeHtml(d.createdByName || '')} · ${dateStr}</div>
           </div>
@@ -2620,13 +2628,14 @@ window.deleteNote = async function(docId) {
 
 // Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
 async function loadDashboardFollowUps() {
-  const section = $('followup-section');
-  if (!section) return;
-
   const overdueEl = $('followup-overdue');
   const todayEl = $('followup-today');
   const upcomingEl = $('followup-upcoming');
   const noDateEl = $('followup-no-date');
+  const emptyEl = $('followup-empty');
+  const badgeEl = $('task-alert-count');
+  const tasksBtn = $('btn-tasks');
+  if (!overdueEl) return;
 
   try {
     const [vehicleSnap, generalSnap] = await Promise.all([
@@ -2654,12 +2663,25 @@ async function loadDashboardFollowUps() {
       items.push({ id: doc.id, collection: 'generalNotes', type: 'general', ...d });
     });
 
+    // Update badge count
+    if (badgeEl) {
+      badgeEl.textContent = items.length;
+      badgeEl.classList.toggle('count-zero', items.length === 0);
+      const hasUrgent = items.some(i => i.urgent);
+      badgeEl.classList.toggle('has-urgent', hasUrgent);
+    }
+    if (tasksBtn) tasksBtn.style.display = '';
+
     if (items.length === 0) {
-      section.style.display = 'none';
+      if (emptyEl) emptyEl.style.display = '';
+      overdueEl.style.display = 'none';
+      todayEl.style.display = 'none';
+      upcomingEl.style.display = 'none';
+      noDateEl.style.display = 'none';
       return;
     }
+    if (emptyEl) emptyEl.style.display = 'none';
 
-    section.style.display = '';
     const today = todayDateString();
 
     // Categorize items
@@ -2680,17 +2702,21 @@ async function loadDashboardFollowUps() {
       }
     }
 
-    // Sort overdue oldest-first, upcoming by date
-    overdue.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
-    upcoming.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+    // Sort urgent first within each group, then by date
+    const urgentFirst = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0);
+    overdue.sort((a, b) => urgentFirst(a, b) || (a.dueDate || '').localeCompare(b.dueDate || ''));
+    upcoming.sort((a, b) => urgentFirst(a, b) || (a.dueDate || '').localeCompare(b.dueDate || ''));
+    todayItems.sort(urgentFirst);
+    noDate.sort(urgentFirst);
 
     function renderAgendaItem(item) {
       const isVehicle = item.type === 'vehicle';
       const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
       const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
       let extraClass = '';
-      if (item.dueDate && item.dueDate < today) extraClass = ' followup-overdue';
-      else if (item.dueDate === today) extraClass = ' followup-today-item';
+      if (item.urgent) extraClass += ' followup-urgent';
+      if (item.dueDate && item.dueDate < today) extraClass += ' followup-overdue';
+      else if (item.dueDate === today) extraClass += ' followup-today-item';
 
       let metaLabel;
       if (isVehicle) {
@@ -2700,11 +2726,12 @@ async function loadDashboardFollowUps() {
         metaLabel = '\ud83d\udcdd General';
       }
 
+      const urgentTag = item.urgent ? ' 🚨' : '';
       return `
         <div class="followup-item${extraClass}"${vidAttr}>
           <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
           <div class="followup-info">
-            <div class="followup-text">${escapeHtml(item.text)}</div>
+            <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
             <div class="followup-meta">${metaLabel}</div>
           </div>
         </div>`;
@@ -2748,14 +2775,14 @@ async function loadDashboardFollowUps() {
     renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
 
     // Click a vehicle follow-up to go to that vehicle
-    section.querySelectorAll('.followup-item[data-vid]').forEach(item => {
+    document.querySelectorAll('#task-panel-overlay .followup-item[data-vid]').forEach(item => {
       item.addEventListener('click', () => {
+        closeTaskPanel();
         openVehiclePage(item.dataset.vid);
       });
     });
   } catch (err) {
     console.error('Load follow-ups error:', err);
-    section.style.display = 'none';
   }
 }
 
@@ -2786,12 +2813,19 @@ window.agendaMarkGeneralDone = async function(docId) {
 // GENERAL NOTES (not tied to a vehicle)
 // ================================================================
 
-// Show section only for admin/manager
-function showGeneralNotesSection() {
-  const section = $('general-notes-section');
-  if (!section) return;
-  section.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
+// Task panel open/close
+function openTaskPanel() {
+  const panel = $('task-panel-overlay');
+  if (panel) panel.style.display = 'flex';
+  loadDashboardFollowUps();
+  loadGeneralNotes();
 }
+function closeTaskPanel() {
+  const panel = $('task-panel-overlay');
+  if (panel) panel.style.display = 'none';
+}
+window.openTaskPanel = openTaskPanel;
+window.closeTaskPanel = closeTaskPanel;
 
 $('btn-save-general-note').addEventListener('click', async () => {
   const text = $('general-note-text').value.trim();
@@ -2801,12 +2835,14 @@ $('btn-save-general-note').addEventListener('click', async () => {
   }
   const isFollowUp = $('general-note-followup').checked;
   const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
+  const isUrgent = isFollowUp && $('general-note-urgent') ? $('general-note-urgent').checked : false;
 
   try {
     const noteData = {
       text,
       isFollowUp,
       done: false,
+      urgent: isUrgent,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email
@@ -2815,8 +2851,10 @@ $('btn-save-general-note').addEventListener('click', async () => {
     await db.collection('generalNotes').add(noteData);
     $('general-note-text').value = '';
     $('general-note-followup').checked = false;
+    if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     $('general-note-due-date').value = '';
     $('general-note-due-row').style.display = 'none';
+    if ($('general-note-urgent-row')) $('general-note-urgent-row').style.display = 'none';
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadGeneralNotes();
     if (isFollowUp) loadDashboardFollowUps();
@@ -2827,7 +2865,6 @@ $('btn-save-general-note').addEventListener('click', async () => {
 });
 
 async function loadGeneralNotes() {
-  showGeneralNotesSection();
   const container = $('general-notes-list');
   if (!container) return;
 
@@ -2856,11 +2893,12 @@ async function loadGeneralNotes() {
           followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
         }
       }
+      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       html += `
         <div class="note-item${doneClass}">
           <div class="note-content">
-            ${followUpBadge}
+            ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
             <div class="note-meta">${escapeHtml(d.createdByName || '')} · ${dateStr}</div>
           </div>
