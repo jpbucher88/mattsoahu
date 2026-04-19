@@ -1206,67 +1206,65 @@ $('btn-download-all').addEventListener('click', async () => {
       return;
     }
 
-    // Mobile: try sharing images so they can be saved to Photos
+    // Mobile: show full-screen gallery for saving to Photos
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-    if (isMobile && navigator.share) {
+    if (isMobile) {
       hideLoading();
-      const shareFiles = files.map(f => new File([new Uint8Array(f.buf)], f.name, { type: 'image/jpeg' }));
 
-      // Try sharing all at once first
-      try {
-        await navigator.share({ files: shareFiles });
-        toast(`${files.length} photos saved!`, 'success');
-        return;
-      } catch (allErr) {
-        if (allErr.name === 'AbortError') return;
-        console.warn('Share all failed, trying individually:', allErr.message);
-      }
+      // Build object URLs for all images
+      const imageUrls = files.map(f => {
+        const blob = new Blob([new Uint8Array(f.buf)], { type: 'image/jpeg' });
+        return URL.createObjectURL(blob);
+      });
 
-      // If sharing all fails, show a save-gallery overlay with each image
       const overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:99999;overflow-y:auto;padding:12px;';
+      overlay.id = 'photo-save-overlay';
+      overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:#000;z-index:99999;overflow-y:auto;-webkit-overflow-scrolling:touch;';
       overlay.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <span style="color:#fff;font-size:18px;font-weight:600;">${files.length} Photos — tap each to save</span>
-          <button style="background:#fff;color:#000;border:none;border-radius:8px;padding:8px 16px;font-size:16px;font-weight:600;" id="close-save-gallery">Done</button>
+        <div style="position:sticky;top:0;background:#000;padding:12px 16px;z-index:1;border-bottom:1px solid #333;">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <span style="color:#fff;font-size:17px;font-weight:600;">${files.length} Photos</span>
+            <div style="display:flex;gap:8px;">
+              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">Share All</button>
+              <button id="save-gallery-done" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">Done</button>
+            </div>
+          </div>
+          <div style="color:#aaa;font-size:13px;margin-top:6px;">Hold any image → "Add to Photos" to save</div>
         </div>
-        <div id="save-gallery-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;"></div>
+        <div id="save-gallery-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:4px;"></div>
       `;
       document.body.appendChild(overlay);
 
       const grid = overlay.querySelector('#save-gallery-grid');
-      for (let i = 0; i < files.length; i++) {
-        const blob = new Blob([new Uint8Array(files[i].buf)], { type: 'image/jpeg' });
-        const url = URL.createObjectURL(blob);
+      for (let i = 0; i < imageUrls.length; i++) {
         const cell = document.createElement('div');
-        cell.style.cssText = 'position:relative;';
-        cell.innerHTML = `
-          <img src="${url}" style="width:100%;border-radius:8px;display:block;" />
-          <button data-idx="${i}" style="position:absolute;bottom:6px;right:6px;background:rgba(0,122,255,0.9);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:14px;font-weight:600;">Save</button>
-        `;
+        cell.innerHTML = `<img src="${imageUrls[i]}" style="width:100%;display:block;" />`;
         grid.appendChild(cell);
-
-        // "Save" button: share single image -> tap "Save Image" in share sheet
-        cell.querySelector('button').addEventListener('click', async (e) => {
-          e.preventDefault();
-          const file = new File([new Uint8Array(files[i].buf)], files[i].name, { type: 'image/jpeg' });
-          try {
-            await navigator.share({ files: [file] });
-            e.target.textContent = '✓';
-            e.target.style.background = 'rgba(52,199,89,0.9)';
-          } catch (err) {
-            if (err.name !== 'AbortError') console.error('Save single error:', err);
-          }
-        });
       }
 
-      overlay.querySelector('#close-save-gallery').addEventListener('click', () => {
+      // "Share All" button: try sharing all images at once
+      overlay.querySelector('#save-gallery-share').addEventListener('click', async () => {
+        if (!navigator.share) { toast('Share not supported', 'warning'); return; }
+        const shareFiles = files.map(f => new File([new Uint8Array(f.buf)], f.name, { type: 'image/jpeg' }));
+        try {
+          await navigator.share({ files: shareFiles });
+          toast(`${files.length} photos shared!`, 'success');
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            toast('Share failed — hold each image to save', 'warning');
+          }
+        }
+      });
+
+      // "Done" button: close overlay and revoke URLs
+      overlay.querySelector('#save-gallery-done').addEventListener('click', () => {
+        imageUrls.forEach(u => URL.revokeObjectURL(u));
         document.body.removeChild(overlay);
       });
       return;
     }
 
-    // Desktop / fallback: bundle into ZIP
+    // Desktop: bundle into ZIP
     showLoading('Creating ZIP file...');
     const zip = new JSZip();
     for (const f of files) {
