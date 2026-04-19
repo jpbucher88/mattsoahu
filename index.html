@@ -105,9 +105,16 @@
       <!-- Recent Photos for Selected Vehicle -->
       <section id="recent-photos-section" class="card" style="display:none;">
         <div class="section-header">
-          <h3>Today's Photos <span id="today-count" class="badge">0</span></h3>
+          <h3>Photos <span id="today-count" class="badge">0</span></h3>
           <button id="btn-download-all" class="btn btn-sm btn-outline">&#11015; Download All</button>
         </div>
+        <div class="date-nav">
+          <button id="btn-date-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
+          <button id="btn-date-display" class="date-display"></button>
+          <button id="btn-date-next" class="btn btn-sm btn-outline">&rsaquo;</button>
+          <button id="btn-date-today" class="btn btn-sm btn-outline">Today</button>
+        </div>
+        <div id="mini-calendar" class="mini-calendar"></div>
         <div id="recent-photos" class="photo-grid"></div>
       </section>
 

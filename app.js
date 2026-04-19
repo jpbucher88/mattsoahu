@@ -26,6 +26,8 @@ let currentUser = null;
 let currentUserRole = null;
 let selectedVehicle = null;
 let selectedAdminPhotos = new Set();
+let selectedDate = todayDateString(); // dashboard photo date
+let photoDatesCache = new Set();      // dates with photos for current vehicle/month
 
 // --------------- PASSWORD TOGGLE ---------------
 window.togglePassword = function(inputId, btn) {
@@ -446,8 +448,12 @@ $('vehicle-select').addEventListener('change', async function () {
   $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
   $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
 
-  // Load today's photo count
-  await loadTodayPhotos(vid);
+  // Load photos for selected date
+  selectedDate = todayDateString();
+  updateDateDisplay();
+  $('mini-calendar').style.display = 'none';
+  await loadPhotosForDate(vid, selectedDate);
+  loadPhotoDates(vid, selectedDate);
 
   // Load maintenance data
   loadMileage(vid);
@@ -512,7 +518,7 @@ async function handlePhotoFiles(e) {
 
   toast(`${uploaded} photo(s) uploaded!`, 'success');
   e.target.value = '';
-  await loadTodayPhotos(selectedVehicle.id);
+  await loadPhotosForDate(selectedVehicle.id, selectedDate);
 }
 
 // Core upload function — used by both file picker and camera
@@ -766,29 +772,159 @@ $('camera-close').addEventListener('click', async () => {
 
   if (cameraShotCount > 0 && selectedVehicle) {
     toast(`${cameraShotCount} photo(s) taken!`, 'success');
-    await loadTodayPhotos(selectedVehicle.id);
+    await loadPhotosForDate(selectedVehicle.id, selectedDate);
+    loadPhotoDates(selectedVehicle.id, selectedDate);
   }
 });
 
 // ================================================================
-// TODAY'S PHOTOS
+// PHOTO DATE NAVIGATION
 // ================================================================
 
-async function loadTodayPhotos(vehicleId) {
-  const today = todayDateString();
+function formatDisplayDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const opts = { weekday: 'short', month: 'short', day: 'numeric' };
+  const label = dt.toLocaleDateString('en-US', opts);
+  return dateStr === todayDateString() ? label + ' (Today)' : label;
+}
+
+function updateDateDisplay() {
+  $('btn-date-display').textContent = formatDisplayDate(selectedDate);
+  $('btn-date-today').style.display = selectedDate === todayDateString() ? 'none' : '';
+}
+
+function shiftDate(days) {
+  const [y, m, d] = selectedDate.split('-').map(Number);
+  const dt = new Date(y, m - 1, d + days);
+  selectedDate = dt.toISOString().slice(0, 10);
+  updateDateDisplay();
+  if (selectedVehicle) {
+    loadPhotosForDate(selectedVehicle.id, selectedDate);
+    // Refresh calendar if month changed
+    loadPhotoDates(selectedVehicle.id, selectedDate);
+  }
+}
+
+$('btn-date-prev').addEventListener('click', () => shiftDate(-1));
+$('btn-date-next').addEventListener('click', () => shiftDate(1));
+$('btn-date-today').addEventListener('click', () => {
+  selectedDate = todayDateString();
+  updateDateDisplay();
+  if (selectedVehicle) {
+    loadPhotosForDate(selectedVehicle.id, selectedDate);
+    loadPhotoDates(selectedVehicle.id, selectedDate);
+  }
+});
+
+// Toggle mini calendar on date display click
+$('btn-date-display').addEventListener('click', () => {
+  const cal = $('mini-calendar');
+  cal.style.display = cal.style.display === 'none' ? '' : 'none';
+});
+
+// ================================================================
+// MINI CALENDAR — shows month grid with dots on days that have photos
+// ================================================================
+
+async function loadPhotoDates(vehicleId, refDate) {
+  const [y, m] = refDate.split('-').map(Number);
+  const startDate = `${y}-${String(m).padStart(2,'0')}-01`;
+  const endDay = new Date(y, m, 0).getDate();
+  const endDate = `${y}-${String(m).padStart(2,'0')}-${String(endDay).padStart(2,'0')}`;
+
+  try {
+    const snap = await db.collection('photos')
+      .where('vehicleId', '==', vehicleId)
+      .where('date', '>=', startDate)
+      .where('date', '<=', endDate)
+      .get();
+    photoDatesCache = new Set();
+    snap.forEach(doc => photoDatesCache.add(doc.data().date));
+  } catch (e) {
+    console.error('loadPhotoDates error:', e);
+    photoDatesCache = new Set();
+  }
+  renderMiniCalendar(refDate);
+}
+
+function renderMiniCalendar(refDate) {
+  const cal = $('mini-calendar');
+  const [y, m] = refDate.split('-').map(Number);
+  const firstDay = new Date(y, m - 1, 1).getDay();
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const todayStr = todayDateString();
+
+  const monthLabel = new Date(y, m - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  let html = `<div class="cal-header">
+    <button class="cal-nav" id="cal-prev-month">&lsaquo;</button>
+    <span class="cal-month">${monthLabel}</span>
+    <button class="cal-nav" id="cal-next-month">&rsaquo;</button>
+  </div>`;
+  html += '<div class="cal-grid">';
+  ['S','M','T','W','T','F','S'].forEach(d => { html += `<div class="cal-day-label">${d}</div>`; });
+
+  for (let i = 0; i < firstDay; i++) html += '<div class="cal-cell"></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const hasPhotos = photoDatesCache.has(ds);
+    const isSelected = ds === selectedDate;
+    const isToday = ds === todayStr;
+    let cls = 'cal-cell cal-day';
+    if (hasPhotos) cls += ' cal-has-photos';
+    if (isSelected) cls += ' cal-selected';
+    if (isToday) cls += ' cal-today';
+    html += `<div class="${cls}" data-date="${ds}">${d}${hasPhotos ? '<span class="cal-dot"></span>' : ''}</div>`;
+  }
+
+  html += '</div>';
+  cal.innerHTML = html;
+
+  // Day click
+  cal.querySelectorAll('.cal-day').forEach(el => {
+    el.addEventListener('click', () => {
+      selectedDate = el.dataset.date;
+      updateDateDisplay();
+      loadPhotosForDate(selectedVehicle.id, selectedDate);
+      renderMiniCalendar(selectedDate);
+    });
+  });
+
+  // Month navigation
+  const prevBtn = $('cal-prev-month');
+  const nextBtn = $('cal-next-month');
+  if (prevBtn) prevBtn.addEventListener('click', () => {
+    const nd = new Date(y, m - 2, 1);
+    const newRef = nd.toISOString().slice(0, 10);
+    loadPhotoDates(selectedVehicle.id, newRef);
+  });
+  if (nextBtn) nextBtn.addEventListener('click', () => {
+    const nd = new Date(y, m, 1);
+    const newRef = nd.toISOString().slice(0, 10);
+    loadPhotoDates(selectedVehicle.id, newRef);
+  });
+}
+
+// ================================================================
+// LOAD PHOTOS FOR DATE
+// ================================================================
+
+async function loadPhotosForDate(vehicleId, dateStr) {
   const snapshot = await db.collection('photos')
     .where('vehicleId', '==', vehicleId)
-    .where('date', '==', today)
+    .where('date', '==', dateStr)
     .orderBy('timestamp', 'desc')
     .get();
 
   const container = $('recent-photos');
   container.innerHTML = '';
   $('today-count').textContent = snapshot.size;
-  $('vehicle-photo-count').textContent = `${snapshot.size} photos today`;
+  $('vehicle-photo-count').textContent = `${snapshot.size} photos`;
 
   if (snapshot.empty) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos yet today</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos for this date</p></div>';
     return;
   }
 
@@ -817,13 +953,13 @@ $('btn-download-all').addEventListener('click', async () => {
 
   const vid = selectedVehicle.id;
   const label = `${selectedVehicle.make}_${selectedVehicle.model}`.replace(/\s+/g, '_');
-  const today = todayDateString();
+  const dateForDownload = selectedDate;
 
   showLoading('Fetching photo list...');
   try {
     const snapshot = await db.collection('photos')
       .where('vehicleId', '==', vid)
-      .where('date', '==', today)
+      .where('date', '==', dateForDownload)
       .orderBy('timestamp', 'desc')
       .get();
 
