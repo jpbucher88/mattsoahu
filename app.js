@@ -419,6 +419,7 @@ async function loadVehicles() {
 
   // Render fleet dashboard
   renderFleetDashboard();
+  loadDashboardFollowUps();
 }
 
 function populateVehicleSelect(selectEl) {
@@ -566,6 +567,9 @@ async function openVehiclePage(vid) {
   $('btn-edit-schedule').style.display = canMaintain ? '' : 'none';
   $('schedule-editor').style.display = 'none';
 
+  // Show notes section
+  $('notes-section').style.display = 'block';
+
   // Show admin button if admin
   $('btn-admin-from-vehicle').style.display = currentUserRole === 'admin' ? '' : 'none';
 
@@ -582,6 +586,7 @@ async function openVehiclePage(vid) {
   // Load maintenance data
   loadMileage(vid);
   loadMaintenanceHistory(vid);
+  loadVehicleNotes(vid);
 }
 
 // ================================================================
@@ -2453,6 +2458,164 @@ window.deleteMaintenanceRecord = async function(docId) {
   } catch (err) {
     console.error('Delete maintenance error:', err);
     toast('Failed to delete record.', 'error');
+  }
+};
+
+// ================================================================
+// VEHICLE NOTES & FOLLOW-UPS
+// ================================================================
+
+$('btn-save-note').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const text = $('note-text').value.trim();
+  if (!text) {
+    toast('Enter a note first.', 'warning');
+    return;
+  }
+  const isFollowUp = $('note-followup').checked;
+
+  try {
+    await db.collection('vehicleNotes').add({
+      vehicleId: selectedVehicle.id,
+      text,
+      isFollowUp,
+      done: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email
+    });
+    $('note-text').value = '';
+    $('note-followup').checked = false;
+    toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
+    loadVehicleNotes(selectedVehicle.id);
+  } catch (err) {
+    console.error('Save note error:', err);
+    toast('Failed to save note.', 'error');
+  }
+});
+
+async function loadVehicleNotes(vehicleId) {
+  const container = $('notes-list');
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('vehicleId', '==', vehicleId)
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    if (snap.empty) {
+      container.innerHTML = '<p class="hint" style="margin:0; padding:8px 0;">No notes yet.</p>';
+      return;
+    }
+
+    let html = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString() : '';
+      const followUpBadge = d.isFollowUp ? (d.done ? '<span class="note-badge note-badge-done">✅ Done</span>' : '<span class="note-badge note-badge-followup">⚑ Follow Up</span>') : '';
+      const doneClass = d.done ? ' note-done' : '';
+      const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+      html += `
+        <div class="note-item${doneClass}">
+          <div class="note-content">
+            ${followUpBadge}
+            <div class="note-text">${escapeHtml(d.text)}</div>
+            <div class="note-meta">${escapeHtml(d.createdByName || '')} · ${dateStr}</div>
+          </div>
+          <div class="note-actions">
+            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">✓ Done</button>` : ''}
+            ${canManage ? `<button class="btn btn-sm btn-danger" onclick="deleteNote('${doc.id}')">Delete</button>` : ''}
+          </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Load notes error:', err);
+    container.innerHTML = '<p class="hint">Failed to load notes.</p>';
+  }
+}
+
+window.markNoteDone = async function(docId) {
+  try {
+    await db.collection('vehicleNotes').doc(docId).update({ done: true });
+    toast('Follow-up marked done.', 'success');
+    if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+  } catch (err) {
+    console.error('Mark done error:', err);
+    toast('Failed to update.', 'error');
+  }
+};
+
+window.deleteNote = async function(docId) {
+  const ok = await confirm('Delete Note', 'Remove this note?');
+  if (!ok) return;
+  try {
+    await db.collection('vehicleNotes').doc(docId).delete();
+    toast('Note deleted.', 'success');
+    if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+  } catch (err) {
+    console.error('Delete note error:', err);
+    toast('Failed to delete note.', 'error');
+  }
+};
+
+// Dashboard follow-up to-dos (across all vehicles)
+async function loadDashboardFollowUps() {
+  const section = $('followup-section');
+  const container = $('followup-list');
+  if (!section || !container) return;
+
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('isFollowUp', '==', true)
+      .where('done', '==', false)
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    if (snap.empty) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = '';
+    let html = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const v = vehiclesCache.find(x => x.id === d.vehicleId);
+      const plate = v ? v.plate : 'Unknown';
+      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString() : '';
+      html += `
+        <div class="followup-item" data-vid="${d.vehicleId}">
+          <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkDone('${doc.id}')" title="Mark done">&#9744;</button>
+          <div class="followup-info">
+            <div class="followup-text">${escapeHtml(d.text)}</div>
+            <div class="followup-meta">${escapeHtml(plate)} · ${dateStr}</div>
+          </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+
+    // Click a follow-up to go to that vehicle
+    container.querySelectorAll('.followup-item').forEach(item => {
+      item.addEventListener('click', () => {
+        openVehiclePage(item.dataset.vid);
+      });
+    });
+  } catch (err) {
+    console.error('Load follow-ups error:', err);
+    section.style.display = 'none';
+  }
+}
+
+window.dashboardMarkDone = async function(docId) {
+  try {
+    await db.collection('vehicleNotes').doc(docId).update({ done: true });
+    toast('Follow-up done! ✓', 'success');
+    loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Mark done error:', err);
+    toast('Failed to update.', 'error');
   }
 };
 

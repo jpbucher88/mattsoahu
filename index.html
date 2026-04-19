@@ -65,6 +65,12 @@
     </header>
     <main class="dashboard-main">
       <!-- Fleet Dashboard -->
+      <!-- Follow-up To-Dos -->
+      <section id="followup-section" class="card" style="display:none;">
+        <h3>&#9873; Follow-Up To-Dos</h3>
+        <div id="followup-list" class="followup-list"></div>
+      </section>
+
       <section id="fleet-overview" class="card">
         <h3>Fleet Overview</h3>
         <div id="fleet-dashboard" class="fleet-dashboard"></div>
@@ -258,6 +264,21 @@
 
         <!-- Maintenance history -->
         <div id="maintenance-history" class="data-list"></div>
+      </section>
+
+      <!-- Vehicle Notes Section -->
+      <section id="notes-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>&#128221; Notes</h3>
+        </div>
+        <div class="note-input-wrap">
+          <textarea id="note-text" class="note-textarea" placeholder="Add a note about this vehicle..." maxlength="500" rows="3"></textarea>
+          <div class="note-controls">
+            <label class="note-followup-label"><input type="checkbox" id="note-followup"> &#9873; Mark as Follow Up</label>
+            <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
+          </div>
+        </div>
+        <div id="notes-list" class="notes-list"></div>
       </section>
     </main>
   </div>

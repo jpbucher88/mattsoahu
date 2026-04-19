@@ -1712,3 +1712,152 @@ body {
   color: var(--danger);
   font-weight: 600;
 }
+
+/* ============ VEHICLE NOTES ============ */
+.note-textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  resize: vertical;
+  min-height: 70px;
+  font-family: inherit;
+}
+
+.note-textarea:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.note-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  gap: 10px;
+}
+
+.note-followup-label {
+  font-size: 0.88rem;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.notes-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.note-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border-radius: 8px;
+  border-left: 3px solid #e2e8f0;
+}
+
+.note-item.note-done {
+  opacity: 0.6;
+  border-left-color: #86efac;
+}
+
+.note-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.note-text {
+  font-size: 0.92rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.note-meta {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-top: 4px;
+}
+
+.note-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.note-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+.note-badge-followup {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.note-badge-done {
+  background: #dcfce7;
+  color: #166534;
+}
+
+/* ============ DASHBOARD FOLLOW-UPS ============ */
+.followup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.followup-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.followup-item:hover {
+  background: #fef3c7;
+}
+
+.followup-check {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.followup-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.followup-text {
+  font-size: 0.92rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.followup-meta {
+  font-size: 0.78rem;
+  color: #92400e;
+  margin-top: 2px;
+}

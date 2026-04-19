@@ -47,5 +47,11 @@ service cloud.firestore {
       allow read: if isRegistered();
       allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
     }
+
+    // Vehicle notes - all registered can read, managers/admins can write
+    match /vehicleNotes/{noteId} {
+      allow read: if isRegistered();
+      allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+    }
   }
 }

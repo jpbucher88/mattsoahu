@@ -40,6 +40,23 @@
         { "fieldPath": "vehicleId", "order": "ASCENDING" },
         { "fieldPath": "mileage", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "vehicleNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vehicleId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicleNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isFollowUp", "order": "ASCENDING" },
+        { "fieldPath": "done", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
