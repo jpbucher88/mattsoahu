@@ -103,16 +103,32 @@
       <!-- Camera / Upload Section -->
       <section id="upload-section" class="card" style="display:none;">
         <h3>Take / Upload Photos</h3>
-        <p class="hint">Rapid-fire mode: tap the shutter button repeatedly — no confirmation needed.</p>
 
-        <div class="upload-controls">
-          <button id="btn-open-camera" class="btn btn-primary btn-capture">
-            &#128247; Open Camera
-          </button>
-          <label class="btn btn-secondary btn-capture">
-            &#128194; Choose Files
-            <input type="file" id="file-input" accept="image/*" multiple hidden>
-          </label>
+        <!-- Mileage prompt — required before uploading -->
+        <div id="mileage-prompt" class="mileage-prompt">
+          <div class="mileage-prompt-icon">&#128663;</div>
+          <label for="mileage-prompt-input" class="mileage-prompt-label">Enter current odometer reading</label>
+          <div id="mileage-prompt-prev" class="mileage-prompt-prev"></div>
+          <input type="number" id="mileage-prompt-input" class="mileage-prompt-input" placeholder="e.g. 45000" min="0" max="999999" inputmode="numeric">
+          <button id="btn-mileage-confirm" class="btn btn-primary btn-block">Confirm Mileage &amp; Continue</button>
+        </div>
+
+        <div id="upload-controls-wrap" style="display:none;">
+          <p class="hint">Rapid-fire mode: tap the shutter button repeatedly — no confirmation needed.</p>
+          <div id="mileage-confirmed-banner" class="mileage-confirmed-banner">
+            &#9989; Odometer: <strong id="mileage-confirmed-value"></strong> mi
+            <button id="btn-mileage-edit" class="btn btn-sm btn-outline">Edit</button>
+          </div>
+
+          <div class="upload-controls">
+            <button id="btn-open-camera" class="btn btn-primary btn-capture">
+              &#128247; Open Camera
+            </button>
+            <label class="btn btn-secondary btn-capture">
+              &#128194; Choose Files
+              <input type="file" id="file-input" accept="image/*" multiple hidden>
+            </label>
+          </div>
         </div>
 
         <div id="upload-progress" class="upload-progress" style="display:none;">
@@ -156,7 +172,7 @@
               <input type="number" id="vehicle-mileage" placeholder="e.g. 45000" min="0" max="999999">
               <button id="btn-save-mileage" class="btn btn-sm btn-outline">Update</button>
             </div>
-            <div id="ocr-status" class="ocr-status" style="display:none;"></div>
+
           </div>
         </div>
 
@@ -420,7 +436,6 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <script src="jszip.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>

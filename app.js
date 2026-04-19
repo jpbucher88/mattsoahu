@@ -554,6 +554,11 @@ async function openVehiclePage(vid) {
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
 
+  // Reset mileage prompt for this vehicle
+  if (canUpload) {
+    resetMileagePrompt();
+  }
+
   const canMaintain = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
   $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
@@ -575,6 +580,75 @@ async function openVehiclePage(vid) {
   loadMileage(vid);
   loadMaintenanceHistory(vid);
 }
+
+// ================================================================
+// MILEAGE PROMPT — required before photo upload
+// ================================================================
+
+let mileageConfirmed = false;
+
+function resetMileagePrompt() {
+  mileageConfirmed = false;
+  $('mileage-prompt').style.display = '';
+  $('upload-controls-wrap').style.display = 'none';
+  const input = $('mileage-prompt-input');
+  input.value = '';
+
+  // Show previous mileage as hint
+  const prev = selectedVehicle && selectedVehicle.mileage;
+  const prevEl = $('mileage-prompt-prev');
+  if (prev) {
+    prevEl.textContent = `Last recorded: ${prev.toLocaleString()} mi`;
+  } else {
+    prevEl.textContent = 'No mileage on file yet';
+  }
+}
+
+function confirmMileage() {
+  const input = $('mileage-prompt-input');
+  const val = parseInt(input.value);
+  if (!val || val < 1) {
+    toast('Enter the current odometer reading to continue.', 'warning');
+    input.focus();
+    return;
+  }
+  mileageConfirmed = true;
+
+  // Save mileage to Firestore
+  if (selectedVehicle) {
+    db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val }).then(() => {
+      selectedVehicle.mileage = val;
+      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cached) cached.mileage = val;
+      // Also update the maintenance mileage input
+      $('vehicle-mileage').value = val;
+      updateRecommendedServices(selectedVehicle.id);
+    }).catch(err => console.error('Mileage save error:', err));
+  }
+
+  // Show upload controls, hide prompt
+  $('mileage-prompt').style.display = 'none';
+  $('upload-controls-wrap').style.display = '';
+  $('mileage-confirmed-value').textContent = val.toLocaleString();
+}
+
+$('btn-mileage-confirm').addEventListener('click', confirmMileage);
+
+$('mileage-prompt-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    confirmMileage();
+  }
+});
+
+$('btn-mileage-edit').addEventListener('click', () => {
+  resetMileagePrompt();
+  // Pre-fill with current value
+  if (selectedVehicle && selectedVehicle.mileage) {
+    $('mileage-prompt-input').value = selectedVehicle.mileage;
+  }
+  $('mileage-prompt-input').focus();
+});
 
 // ================================================================
 // PHOTO UPLOAD
@@ -602,7 +676,6 @@ async function handlePhotoFiles(e) {
   updateProgress(uploaded, total);
 
   const uploadedUrls = [];
-  const ocrBlobs = [];
   for (const file of files) {
     const item = document.createElement('div');
     item.className = 'photo-queue-item';
@@ -618,7 +691,6 @@ async function handlePhotoFiles(e) {
 
     try {
       const compressed = await compressImage(file);
-      ocrBlobs.push(compressed);
       const url = await uploadPhoto(compressed);
       uploadedUrls.push(url);
 
@@ -639,11 +711,6 @@ async function handlePhotoFiles(e) {
   toast(`${uploaded} photo(s) uploaded!`, 'success');
   e.target.value = '';
   await loadPhotosForDate(selectedVehicle.id, selectedDate);
-
-  // Auto-scan uploaded photos for odometer reading
-  if (ocrBlobs.length > 0 && selectedVehicle) {
-    autoScanForMileage(ocrBlobs);
-  }
 }
 
 // Core upload function — used by both file picker and camera
@@ -694,7 +761,6 @@ let cameraUploading = false;
 let cameraUploadedCount = 0;
 let cameraTotalQueued = 0;
 let cameraUploadedUrls = [];
-let cameraOcrBlobs = [];
 
 $('btn-open-camera').addEventListener('click', async () => {
   if (!selectedVehicle) {
@@ -714,7 +780,6 @@ async function openCamera() {
   cameraUploadedCount = 0;
   cameraTotalQueued = 0;
   cameraUploadedUrls = [];
-  cameraOcrBlobs = [];
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
   $('camera-upload-bar').style.display = 'none';
@@ -859,7 +924,6 @@ async function processCameraQueue() {
   while (cameraUploadQueue.length > 0) {
     const blob = cameraUploadQueue.shift();
     try {
-      cameraOcrBlobs.push(blob);
       const url = await uploadPhoto(blob);
       cameraUploadedUrls.push(url);
       cameraUploadedCount++;
@@ -905,11 +969,6 @@ $('camera-close').addEventListener('click', async () => {
     toast(`${cameraShotCount} photo(s) taken!`, 'success');
     await loadPhotosForDate(selectedVehicle.id, selectedDate);
     loadPhotoDates(selectedVehicle.id, selectedDate);
-
-    // Auto-scan camera photos for odometer reading
-    if (cameraOcrBlobs.length > 0) {
-      autoScanForMileage(cameraOcrBlobs);
-    }
   }
 });
 
@@ -2073,203 +2132,6 @@ $('btn-save-mileage').addEventListener('click', async () => {
     toast('Failed to save mileage.', 'error');
   }
 });
-
-// ================================================================
-// AUTO MILEAGE OCR — scans uploaded photos for odometer reading
-// ================================================================
-
-// Score a candidate number to determine how likely it is to be an odometer reading
-function scoreOdometerCandidate(value, rawText, fullText, currentMileage) {
-  let score = 0;
-  const raw = rawText.trim();
-  const digitCount = raw.replace(/[^0-9]/g, '').length;
-
-  // --- HARD REJECT ---
-  // Time-like patterns: 12:34, 3:45
-  if (/^\d{1,2}:\d{2}$/.test(raw)) return -1000;
-  // Radio frequencies: like 88.1, 101.5
-  if (value >= 80 && value <= 110 && /\d+\.\d/.test(raw)) return -1000;
-
-  // --- SOFT PENALTIES (can still win with enough boost) ---
-  // Speedometer markings: small round numbers (20–300 in multiples of 20)
-  if (value <= 300 && value % 20 === 0) score -= 100;
-  // RPM zone: 1000-8000 in round thousands
-  if (value >= 1000 && value <= 8000 && value % 1000 === 0) score -= 60;
-  // Very small numbers
-  if (value < 1000) score -= 80;
-
-  // --- BOOST likely odometer numbers ---
-  // 5-6 digit numbers are classic odometer readings
-  if (digitCount >= 6) score += 80;
-  else if (digitCount === 5) score += 60;
-  else if (digitCount === 4) score += 20;
-
-  // Numbers with commas in right places (e.g. 114,023)
-  if (/^\d{1,3},\d{3}$/.test(raw) || /^\d{1,3},\d{3},\d{3}$/.test(raw)) score += 50;
-
-  // Nearby odometer keywords
-  const fullLower = fullText.toLowerCase();
-  if (/odo|mileage|total\s*mi|miles?\b/.test(fullLower)) score += 40;
-  if (/\bkm\b|kilometers|kilometres/.test(fullLower)) score += 30;
-
-  // Penalize if near speed-related words
-  if (/mph|km\/h|kmh|speed|rpm|tach/i.test(fullLower)) score -= 30;
-
-  // If we have a current mileage, prefer numbers in the ballpark
-  if (currentMileage && currentMileage > 0) {
-    const pctDiff = Math.abs(value - currentMileage) / currentMileage;
-    if (pctDiff < 0.05) score += 100;
-    else if (pctDiff < 0.10) score += 70;
-    else if (pctDiff < 0.20) score += 40;
-    else if (pctDiff < 0.50) score += 10;
-  }
-
-  // Prefer values in the typical car odometer range (5k–300k)
-  if (value >= 5000 && value <= 300000) score += 30;
-  if (value >= 10000 && value <= 200000) score += 20;
-
-  return score;
-}
-
-// Preprocess image for OCR with multiple strategies
-function preprocessForOCR(blob, strategy) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const data = imageData.data;
-
-      if (strategy === 'grayscale') {
-        // Simple grayscale with mild contrast boost
-        for (let i = 0; i < data.length; i += 4) {
-          let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          gray = ((gray - 128) * 1.5) + 128;
-          gray = Math.max(0, Math.min(255, gray));
-          data[i] = data[i + 1] = data[i + 2] = gray;
-        }
-      } else if (strategy === 'invert') {
-        // Inverted grayscale — helps with light text on dark backgrounds
-        for (let i = 0; i < data.length; i += 4) {
-          let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          data[i] = data[i + 1] = data[i + 2] = 255 - gray;
-        }
-      } else if (strategy === 'threshold') {
-        // High-contrast B&W with moderate threshold
-        for (let i = 0; i < data.length; i += 4) {
-          let gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          data[i] = data[i + 1] = data[i + 2] = gray > 100 ? 255 : 0;
-        }
-      }
-
-      ctx.putImageData(imageData, 0, 0);
-      canvas.toBlob((processedBlob) => {
-        URL.revokeObjectURL(img.src);
-        resolve(processedBlob);
-      }, 'image/png');
-    };
-    img.src = URL.createObjectURL(blob);
-  });
-}
-
-// Persistent OCR worker — created once, reused across scans
-let ocrWorker = null;
-
-async function getOCRWorker() {
-  if (!ocrWorker) {
-    ocrWorker = await Tesseract.createWorker('eng');
-    await ocrWorker.setParameters({
-      tessedit_char_whitelist: '0123456789,. ',
-    });
-  }
-  return ocrWorker;
-}
-
-async function autoScanForMileage(blobs) {
-  if (!blobs.length || !selectedVehicle) return;
-  const statusEl = $('ocr-status');
-  statusEl.style.display = 'block';
-  statusEl.style.color = '';
-  statusEl.textContent = '🔍 Scanning photos for odometer…';
-
-  const currentMileage = selectedVehicle.mileage || 0;
-  let bestReading = null;
-  let bestScore = -Infinity;
-
-  let worker;
-  try {
-    worker = await getOCRWorker();
-  } catch (err) {
-    console.error('[OCR] Failed to create worker:', err);
-    statusEl.textContent = '❌ OCR engine failed to load.';
-    statusEl.style.color = '#dc2626';
-    setTimeout(() => { statusEl.style.display = 'none'; statusEl.style.color = ''; }, 8000);
-    return;
-  }
-
-  const strategies = ['original', 'grayscale', 'invert', 'threshold'];
-
-  for (let i = 0; i < blobs.length; i++) {
-    for (const strategy of strategies) {
-      statusEl.textContent = `🔍 Scanning photo ${i + 1}/${blobs.length} (${strategy})…`;
-      try {
-        let scanBlob;
-        if (strategy === 'original') {
-          scanBlob = blobs[i];
-        } else {
-          scanBlob = await preprocessForOCR(blobs[i], strategy);
-        }
-
-        const objUrl = URL.createObjectURL(scanBlob);
-        const { data: { text } } = await worker.recognize(objUrl);
-        URL.revokeObjectURL(objUrl);
-        console.log(`[OCR] Photo ${i + 1} [${strategy}] text:`, text);
-
-        // Extract all number-like sequences
-        const matches = text.match(/\d[\d,.\s]{1,}/g);
-        if (!matches) continue;
-
-        for (const raw of matches) {
-          const digits = raw.replace(/[^0-9]/g, '');
-          if (digits.length < 3 || digits.length > 7) continue;
-          const cleaned = parseInt(digits, 10);
-          if (isNaN(cleaned) || cleaned < 100 || cleaned > 999999) continue;
-
-          const score = scoreOdometerCandidate(cleaned, raw, text, currentMileage);
-          console.log(`[OCR] [${strategy}] Candidate:`, raw.trim(), '→', cleaned, 'score:', score);
-          if (score > bestScore) {
-            bestScore = score;
-            bestReading = cleaned;
-          }
-        }
-      } catch (err) {
-        console.warn(`[OCR] ${strategy} failed for photo ${i + 1}:`, err);
-      }
-    }
-  }
-
-  console.log('[OCR] Best reading:', bestReading, 'score:', bestScore);
-
-  if (bestReading && bestScore >= 0) {
-    $('vehicle-mileage').value = bestReading;
-    statusEl.textContent = `✅ Odometer detected: ${bestReading.toLocaleString()} — verify and tap Update`;
-    statusEl.style.color = '#16a34a';
-  } else {
-    statusEl.textContent = '📷 No odometer reading detected in photos.';
-    statusEl.style.color = '#6b7280';
-  }
-
-  // Auto-hide after 12 seconds
-  setTimeout(() => {
-    statusEl.style.display = 'none';
-    statusEl.style.color = '';
-  }, 12000);
-}
 
 // Show/hide maintenance form
 $('btn-add-maintenance').addEventListener('click', () => {
