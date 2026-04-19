@@ -293,6 +293,13 @@
                 <input type="text" id="v-color" placeholder="e.g. White" maxlength="30">
               </div>
             </div>
+            <div class="form-group">
+              <label for="v-photo">Vehicle Photo <span class="hint">(optional)</span></label>
+              <input type="file" id="v-photo" accept="image/*" class="form-input">
+            </div>
+            <div id="v-photo-preview" style="display:none; margin-bottom:10px;">
+              <img id="v-photo-preview-img" style="max-width:200px; border-radius:8px;">
+            </div>
             <button type="submit" class="btn btn-primary">Add Vehicle</button>
           </form>
         </div>
@@ -300,27 +307,57 @@
           <h3>All Vehicles <span id="vehicle-count" class="badge">0</span></h3>
           <div id="vehicles-list" class="data-list"></div>
         </div>
+      </div>
 
-        <!-- Default Vehicle Image Upload -->
-        <div class="card">
-          <h3>Set Vehicle Default Photo</h3>
-          <p class="hint">Upload a photo that stays permanently at the top of the vehicle page.</p>
-          <div class="form-row">
-            <div class="form-group">
-              <label for="hero-vehicle-select">Select Vehicle</label>
-              <select id="hero-vehicle-select" class="form-select">
-                <option value="">-- Choose a vehicle --</option>
-              </select>
+      <!-- ====== Edit Vehicle Modal ====== -->
+      <div id="edit-vehicle-overlay" class="edit-vehicle-overlay" style="display:none;">
+        <div class="edit-vehicle-modal">
+          <div class="edit-vehicle-header">
+            <h3>Edit Vehicle</h3>
+            <button id="btn-edit-close" class="btn-close">&times;</button>
+          </div>
+          <form id="edit-vehicle-form">
+            <input type="hidden" id="ev-id">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ev-plate">License Plate</label>
+                <input type="text" id="ev-plate" required placeholder="e.g. ABC-1234" maxlength="20">
+              </div>
+              <div class="form-group">
+                <label for="ev-make">Make</label>
+                <input type="text" id="ev-make" required placeholder="e.g. Toyota" maxlength="50">
+              </div>
+              <div class="form-group">
+                <label for="ev-model">Model</label>
+                <input type="text" id="ev-model" required placeholder="e.g. Camry" maxlength="50">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="ev-year">Year</label>
+                <input type="number" id="ev-year" placeholder="e.g. 2024" min="1990" max="2030">
+              </div>
+              <div class="form-group">
+                <label for="ev-color">Color</label>
+                <input type="text" id="ev-color" placeholder="e.g. White" maxlength="30">
+              </div>
             </div>
             <div class="form-group">
-              <label for="hero-image-input">Photo</label>
-              <input type="file" id="hero-image-input" accept="image/*" class="form-input">
+              <label>Vehicle Photo</label>
+              <div id="ev-photo-current" class="ev-photo-current" style="display:none;">
+                <img id="ev-photo-current-img" style="max-width:200px; border-radius:8px;">
+                <button type="button" id="btn-ev-remove-photo" class="btn btn-sm btn-danger">Remove Photo</button>
+              </div>
+              <input type="file" id="ev-photo" accept="image/*" class="form-input">
             </div>
-          </div>
-          <div id="hero-preview-wrap" style="display:none; margin-bottom:10px;">
-            <img id="hero-preview-img" style="max-width:200px; border-radius:8px;">
-          </div>
-          <button id="btn-upload-hero" class="btn btn-primary" disabled>Upload Default Photo</button>
+            <div id="ev-photo-preview" style="display:none; margin-bottom:10px;">
+              <img id="ev-photo-preview-img" style="max-width:200px; border-radius:8px;">
+            </div>
+            <div class="edit-vehicle-actions">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <button type="button" id="btn-edit-cancel" class="btn btn-outline">Cancel</button>
+            </div>
+          </form>
         </div>
       </div>
 

@@ -1469,6 +1469,7 @@ $('add-vehicle-form').addEventListener('submit', async (e) => {
   const model = $('v-model').value.trim();
   const year = $('v-year').value ? parseInt($('v-year').value) : null;
   const color = $('v-color').value.trim() || null;
+  const photoFile = $('v-photo').files[0] || null;
 
   if (!plate || !make || !model) {
     toast('Please fill in plate, make, and model.', 'warning');
@@ -1484,13 +1485,21 @@ $('add-vehicle-form').addEventListener('submit', async (e) => {
 
   showLoading('Adding vehicle...');
   try {
-    await db.collection('vehicles').add({
+    const docData = {
       plate, make, model, year, color,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
-    });
+    };
+    const docRef = await db.collection('vehicles').add(docData);
+
+    // Upload default photo if provided
+    if (photoFile) {
+      await uploadVehicleDefaultImage(docRef.id, photoFile);
+    }
+
     toast(`Vehicle ${plate} added!`, 'success');
     $('add-vehicle-form').reset();
+    $('v-photo-preview').style.display = 'none';
     await loadVehicles();
     loadAdminVehicles();
   } catch (err) {
@@ -1501,29 +1510,41 @@ $('add-vehicle-form').addEventListener('submit', async (e) => {
   }
 });
 
+// Preview photo in add-vehicle form
+$('v-photo').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    $('v-photo-preview-img').src = URL.createObjectURL(file);
+    $('v-photo-preview').style.display = 'block';
+  } else {
+    $('v-photo-preview').style.display = 'none';
+  }
+});
+
 function loadAdminVehicles() {
   const list = $('vehicles-list');
   $('vehicle-count').textContent = vehiclesCache.length;
-
-  // Populate hero image vehicle dropdown
-  populateVehicleSelect($('hero-vehicle-select'));
 
   if (!vehiclesCache.length) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">🚗</div><p>No vehicles added yet</p></div>';
     return;
   }
 
-  list.innerHTML = vehiclesCache.map(v => `
+  list.innerHTML = vehiclesCache.map(v => {
+    const hasPhoto = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="v-list-thumb" alt="">` : '<div class="v-list-thumb-empty">📷</div>';
+    return `
     <div class="data-list-item">
+      <div class="v-list-thumb-wrap">${hasPhoto}</div>
       <div class="item-info">
         <div class="item-title">${escapeHtml(v.plate)}</div>
         <div class="item-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.year ? ` (${v.year})` : ''}${v.color ? ` - ${escapeHtml(v.color)}` : ''}</div>
       </div>
       <div class="item-actions">
+        <button class="btn btn-sm btn-outline" onclick="openEditVehicle('${v.id}')">Edit</button>
         <button class="btn btn-sm btn-danger" onclick="deleteVehicle('${v.id}', '${escapeHtml(v.plate)}')">Delete</button>
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 window.deleteVehicle = async function (vehicleId, plate) {
@@ -1546,70 +1567,152 @@ window.deleteVehicle = async function (vehicleId, plate) {
 };
 
 // ================================================================
-// ADMIN: DEFAULT VEHICLE IMAGE
+// SHARED: Upload default vehicle image
 // ================================================================
 
-$('hero-image-input').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  const previewWrap = $('hero-preview-wrap');
-  const previewImg = $('hero-preview-img');
-  const uploadBtn = $('btn-upload-hero');
+async function uploadVehicleDefaultImage(vehicleId, file) {
+  const st = getStorage();
+  if (!st) throw new Error('Storage not available');
 
-  if (file) {
-    previewImg.src = URL.createObjectURL(file);
-    previewWrap.style.display = 'block';
-    uploadBtn.disabled = !$('hero-vehicle-select').value;
+  const resized = await compressImage(file, 2560, 0.92);
+  const storagePath = `vehicles/${vehicleId}/default-image.jpg`;
+  const ref = st.ref(storagePath);
+  await ref.put(resized, { contentType: 'image/jpeg' });
+  const downloadURL = await ref.getDownloadURL();
+
+  await db.collection('vehicles').doc(vehicleId).update({
+    defaultImageUrl: downloadURL,
+    defaultImagePath: storagePath
+  });
+
+  // Update cache
+  const cached = vehiclesCache.find(v => v.id === vehicleId);
+  if (cached) cached.defaultImageUrl = downloadURL;
+
+  return downloadURL;
+}
+
+// ================================================================
+// ADMIN: EDIT VEHICLE
+// ================================================================
+
+window.openEditVehicle = function (vehicleId) {
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  if (!v) return;
+
+  $('ev-id').value = v.id;
+  $('ev-plate').value = v.plate || '';
+  $('ev-make').value = v.make || '';
+  $('ev-model').value = v.model || '';
+  $('ev-year').value = v.year || '';
+  $('ev-color').value = v.color || '';
+  $('ev-photo').value = '';
+  $('ev-photo-preview').style.display = 'none';
+
+  // Show current default photo if exists
+  if (v.defaultImageUrl) {
+    $('ev-photo-current-img').src = v.defaultImageUrl;
+    $('ev-photo-current').style.display = 'flex';
   } else {
-    previewWrap.style.display = 'none';
-    uploadBtn.disabled = true;
+    $('ev-photo-current').style.display = 'none';
+  }
+
+  $('edit-vehicle-overlay').style.display = 'flex';
+};
+
+$('btn-edit-close').addEventListener('click', () => {
+  $('edit-vehicle-overlay').style.display = 'none';
+});
+
+$('btn-edit-cancel').addEventListener('click', () => {
+  $('edit-vehicle-overlay').style.display = 'none';
+});
+
+$('edit-vehicle-overlay').addEventListener('click', (e) => {
+  if (e.target === $('edit-vehicle-overlay')) {
+    $('edit-vehicle-overlay').style.display = 'none';
   }
 });
 
-$('hero-vehicle-select').addEventListener('change', () => {
-  const hasFile = $('hero-image-input').files.length > 0;
-  $('btn-upload-hero').disabled = !($('hero-vehicle-select').value && hasFile);
+// Preview photo in edit form
+$('ev-photo').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (file) {
+    $('ev-photo-preview-img').src = URL.createObjectURL(file);
+    $('ev-photo-preview').style.display = 'block';
+  } else {
+    $('ev-photo-preview').style.display = 'none';
+  }
 });
 
-$('btn-upload-hero').addEventListener('click', async () => {
-  if (currentUserRole !== 'admin') return;
-  const vehicleId = $('hero-vehicle-select').value;
-  const file = $('hero-image-input').files[0];
-  if (!vehicleId || !file) return;
+// Remove current photo
+$('btn-ev-remove-photo').addEventListener('click', async () => {
+  const vehicleId = $('ev-id').value;
+  if (!vehicleId) return;
+  const ok = await confirm('Remove Photo', 'Remove the default photo for this vehicle?');
+  if (!ok) return;
 
-  const vehicle = vehiclesCache.find(v => v.id === vehicleId);
-  if (!vehicle) return;
-
-  showLoading('Uploading default photo…');
   try {
-    const st = getStorage();
-    if (!st) throw new Error('Storage not available');
-
-    // Resize image before upload
-    const resized = await compressImage(file, 2560, 0.92);
-
-    const storagePath = `vehicles/${vehicleId}/default-image.jpg`;
-    const ref = st.ref(storagePath);
-    await ref.put(resized, { contentType: 'image/jpeg' });
-    const downloadURL = await ref.getDownloadURL();
-
-    // Save URL to vehicle document
     await db.collection('vehicles').doc(vehicleId).update({
-      defaultImageUrl: downloadURL,
-      defaultImagePath: storagePath
+      defaultImageUrl: firebase.firestore.FieldValue.delete(),
+      defaultImagePath: firebase.firestore.FieldValue.delete()
+    });
+    const cached = vehiclesCache.find(v => v.id === vehicleId);
+    if (cached) {
+      delete cached.defaultImageUrl;
+      delete cached.defaultImagePath;
+    }
+    $('ev-photo-current').style.display = 'none';
+    toast('Photo removed.', 'success');
+    loadAdminVehicles();
+  } catch (err) {
+    console.error('Remove photo error:', err);
+    toast('Failed to remove photo.', 'error');
+  }
+});
+
+// Save edited vehicle
+$('edit-vehicle-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (currentUserRole !== 'admin') return;
+
+  const vehicleId = $('ev-id').value;
+  const plate = $('ev-plate').value.trim().toUpperCase();
+  const make = $('ev-make').value.trim();
+  const model = $('ev-model').value.trim();
+  const year = $('ev-year').value ? parseInt($('ev-year').value) : null;
+  const color = $('ev-color').value.trim() || null;
+  const photoFile = $('ev-photo').files[0] || null;
+
+  if (!plate || !make || !model) {
+    toast('Please fill in plate, make, and model.', 'warning');
+    return;
+  }
+
+  // Check for duplicate plate (exclude current vehicle)
+  const existing = vehiclesCache.find(v => v.plate.toUpperCase() === plate && v.id !== vehicleId);
+  if (existing) {
+    toast('Another vehicle already has that plate.', 'error');
+    return;
+  }
+
+  showLoading('Saving changes...');
+  try {
+    await db.collection('vehicles').doc(vehicleId).update({
+      plate, make, model, year, color
     });
 
-    // Update cache
-    vehicle.defaultImageUrl = downloadURL;
-    const cached = vehiclesCache.find(v => v.id === vehicleId);
-    if (cached) cached.defaultImageUrl = downloadURL;
+    if (photoFile) {
+      await uploadVehicleDefaultImage(vehicleId, photoFile);
+    }
 
-    toast(`Default photo set for ${vehicle.plate}!`, 'success');
-    $('hero-image-input').value = '';
-    $('hero-preview-wrap').style.display = 'none';
-    $('btn-upload-hero').disabled = true;
+    toast('Vehicle updated!', 'success');
+    $('edit-vehicle-overlay').style.display = 'none';
+    await loadVehicles();
+    loadAdminVehicles();
   } catch (err) {
-    console.error('Upload hero image error:', err);
-    toast('Failed to upload default photo.', 'error');
+    console.error('Edit vehicle error:', err);
+    toast('Failed to save changes.', 'error');
   } finally {
     hideLoading();
   }
