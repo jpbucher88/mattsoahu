@@ -121,8 +121,8 @@ function sanitizePlate(plate) {
 }
 
 // Compress image before upload
-// 1920px wide at 82% quality = ~300-600KB per photo (good detail for damage docs)
-function compressImage(file, maxWidth = 1920, quality = 0.82) {
+// 2560px wide at 92% quality = ~500KB-1.2MB per photo (high detail for damage docs)
+function compressImage(file, maxWidth = 2560, quality = 0.92) {
   return new Promise((resolve) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -150,7 +150,7 @@ function compressImage(file, maxWidth = 1920, quality = 0.82) {
 }
 
 // Compress a blob directly (used by the in-browser camera)
-function compressBlob(blob, maxWidth = 1920, quality = 0.82) {
+function compressBlob(blob, maxWidth = 2560, quality = 0.92) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
