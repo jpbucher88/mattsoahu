@@ -475,7 +475,9 @@ function renderFleetDashboard() {
       maintCls = 'status-ok';
     }
 
-    html += `<div class="fleet-card" data-vid="${v.id}">
+    const needsPhotos = photoCls !== 'status-ok';
+    html += `<div class="fleet-card${needsPhotos ? ' fleet-card-alert' : ''}" data-vid="${v.id}">
+      ${needsPhotos ? '<span class="fleet-card-badge">⚠️</span>' : ''}
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
       <div class="fleet-card-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
       <div class="fleet-card-status ${photoCls}">${photoStatus}</div>

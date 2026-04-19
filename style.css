@@ -453,6 +453,18 @@ body {
 .fleet-card-status.status-danger { color: #dc2626; font-weight: 600; }
 .fleet-card-status.status-muted { color: var(--text-light); }
 
+.fleet-card-alert {
+  position: relative;
+  border-color: #d97706;
+}
+.fleet-card-badge {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  font-size: 18px;
+  line-height: 1;
+}
+
 .last-photo-time {
   font-size: 13px;
   color: var(--text-light);
