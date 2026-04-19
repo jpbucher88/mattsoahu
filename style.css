@@ -1606,6 +1606,90 @@ body {
   font-size: 0.95rem;
 }
 
+.rec-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.rec-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+/* ============ SCHEDULE EDITOR ============ */
+.schedule-editor {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+
+.schedule-editor h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.schedule-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.schedule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.schedule-row:last-child {
+  border-bottom: none;
+}
+
+.schedule-label {
+  font-size: 0.88rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.schedule-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.schedule-input {
+  width: 90px;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.88rem;
+  text-align: right;
+  -moz-appearance: textfield;
+}
+
+.schedule-input::-webkit-outer-spin-button,
+.schedule-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.schedule-input:focus {
+  border-color: var(--primary);
+  outline: none;
+}
+
+.schedule-unit {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+
 .rec-item {
   padding: 8px 10px;
   border-radius: 8px;

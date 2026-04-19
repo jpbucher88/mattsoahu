@@ -402,8 +402,9 @@ async function loadVehicles() {
           if (d.serviceType && !lastServices[d.serviceType]) lastServices[d.serviceType] = d.mileage || 0;
         });
         MAINTENANCE_SCHEDULE.forEach(item => {
+          const customInterval = (v.customSchedule && v.customSchedule[item.service]) || item.interval;
           const lastMi = lastServices[item.service] || 0;
-          if (lastMi + item.interval - v.mileage <= 0) v.overdueCount++;
+          if (lastMi + customInterval - v.mileage <= 0) v.overdueCount++;
         });
       } catch (e) { /* ignore */ }
     }
@@ -562,6 +563,8 @@ async function openVehiclePage(vid) {
   const canMaintain = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
   $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
+  $('btn-edit-schedule').style.display = canMaintain ? '' : 'none';
+  $('schedule-editor').style.display = 'none';
 
   // Show admin button if admin
   $('btn-admin-from-vehicle').style.display = currentUserRole === 'admin' ? '' : 'none';
@@ -2143,6 +2146,16 @@ const MAINTENANCE_SCHEDULE = [
   { service: 'Brake Pads/Rotors',   interval: 40000,  icon: '🛑' },
 ];
 
+// Get schedule for a vehicle, merging custom overrides with defaults
+function getScheduleForVehicle(vehicle) {
+  const custom = (vehicle && vehicle.customSchedule) || {};
+  return MAINTENANCE_SCHEDULE.map(item => ({
+    ...item,
+    interval: custom[item.service] || item.interval,
+    isCustom: !!custom[item.service]
+  }));
+}
+
 function loadMileage(vehicleId) {
   const v = vehiclesCache.find(v => v.id === vehicleId);
   const mileageInput = $('vehicle-mileage');
@@ -2178,10 +2191,12 @@ async function updateRecommendedServices(vehicleId) {
     console.warn('Could not load maintenance for recommendations:', e);
   }
 
+  const schedule = getScheduleForVehicle(v);
+
   const due = [];
   const upcoming = [];
 
-  MAINTENANCE_SCHEDULE.forEach(item => {
+  schedule.forEach(item => {
     const lastMi = lastServices[item.service] || 0;
     const nextDue = lastMi + item.interval;
     const milesUntil = nextDue - mileage;
@@ -2233,6 +2248,88 @@ $('btn-save-mileage').addEventListener('click', async () => {
   } catch (err) {
     console.error('Save mileage error:', err);
     toast('Failed to save mileage.', 'error');
+  }
+});
+
+// ================================================================
+// PER-VEHICLE SCHEDULE EDITOR
+// ================================================================
+
+$('btn-edit-schedule').addEventListener('click', () => {
+  if (!selectedVehicle) return;
+  const schedule = getScheduleForVehicle(selectedVehicle);
+  const container = $('schedule-items');
+
+  container.innerHTML = schedule.map(item => {
+    const defaultVal = MAINTENANCE_SCHEDULE.find(d => d.service === item.service).interval;
+    const customVal = item.isCustom ? item.interval : '';
+    return `
+      <div class="schedule-row">
+        <div class="schedule-label">${item.icon} ${escapeHtml(item.service)}</div>
+        <div class="schedule-input-wrap">
+          <input type="number" class="schedule-input" data-service="${escapeHtml(item.service)}"
+            placeholder="${defaultVal.toLocaleString()}" value="${customVal}" min="500" max="999999"
+            inputmode="numeric">
+          <span class="schedule-unit">mi</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  $('schedule-editor').style.display = 'block';
+  $('recommended-services').style.display = 'none';
+});
+
+$('btn-close-schedule').addEventListener('click', () => {
+  $('schedule-editor').style.display = 'none';
+  if (selectedVehicle) updateRecommendedServices(selectedVehicle.id);
+});
+
+$('btn-save-schedule').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const inputs = $('schedule-items').querySelectorAll('.schedule-input');
+  const customSchedule = {};
+
+  inputs.forEach(input => {
+    const service = input.dataset.service;
+    const val = parseInt(input.value);
+    if (val && val >= 500) {
+      // Only store if different from default
+      const def = MAINTENANCE_SCHEDULE.find(d => d.service === service);
+      if (def && val !== def.interval) {
+        customSchedule[service] = val;
+      }
+    }
+  });
+
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ customSchedule });
+    selectedVehicle.customSchedule = customSchedule;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.customSchedule = customSchedule;
+    toast('Maintenance schedule saved!', 'success');
+    $('schedule-editor').style.display = 'none';
+    updateRecommendedServices(selectedVehicle.id);
+  } catch (err) {
+    console.error('Save schedule error:', err);
+    toast('Failed to save schedule.', 'error');
+  }
+});
+
+$('btn-reset-schedule').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({
+      customSchedule: firebase.firestore.FieldValue.delete()
+    });
+    selectedVehicle.customSchedule = null;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.customSchedule = null;
+    toast('Schedule reset to defaults.', 'success');
+    // Refresh the editor view
+    $('btn-edit-schedule').click();
+  } catch (err) {
+    console.error('Reset schedule error:', err);
+    toast('Failed to reset schedule.', 'error');
   }
 });
 

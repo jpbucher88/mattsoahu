@@ -177,8 +177,23 @@
         </div>
 
         <div id="recommended-services" class="recommended-services" style="display:none;">
-          <h4>&#128736; Recommended Services</h4>
+          <div class="rec-header">
+            <h4>&#128736; Recommended Services</h4>
+            <button id="btn-edit-schedule" class="btn btn-sm btn-outline">&#9881; Edit Schedule</button>
+          </div>
           <div id="recommended-list"></div>
+        </div>
+
+        <!-- Per-vehicle schedule editor (hidden by default) -->
+        <div id="schedule-editor" class="schedule-editor" style="display:none;">
+          <div class="rec-header">
+            <h4>&#9881; Maintenance Intervals</h4>
+            <button id="btn-close-schedule" class="btn btn-sm btn-outline">Done</button>
+          </div>
+          <p class="hint">Set custom mileage intervals for this vehicle. Leave blank to use the default.</p>
+          <div id="schedule-items" class="schedule-items"></div>
+          <button id="btn-save-schedule" class="btn btn-primary" style="margin-top:10px;">Save Schedule</button>
+          <button id="btn-reset-schedule" class="btn btn-outline btn-sm" style="margin-top:6px;">Reset All to Defaults</button>
         </div>
 
         <!-- Maintenance log form (hidden by default) -->
