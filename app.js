@@ -494,16 +494,22 @@ function renderFleetDashboard() {
   });
 }
 
+function resetVehicleView() {
+  $('vehicle-select').value = '';
+  $('vehicle-info').style.display = 'none';
+  $('last-photo-time').style.display = 'none';
+  $('stale-alert').style.display = 'none';
+  $('upload-section').style.display = 'none';
+  $('recent-photos-section').style.display = 'none';
+  $('maintenance-section').style.display = 'none';
+  selectedVehicle = null;
+}
+
 // Dashboard vehicle selection
 $('vehicle-select').addEventListener('change', async function () {
   const vid = this.value;
   if (!vid) {
-    $('vehicle-info').style.display = 'none';
-    $('stale-alert').style.display = 'none';
-    $('upload-section').style.display = 'none';
-    $('recent-photos-section').style.display = 'none';
-    $('maintenance-section').style.display = 'none';
-    selectedVehicle = null;
+    resetVehicleView();
     return;
   }
 
@@ -1334,14 +1340,11 @@ $('btn-back-dashboard').addEventListener('click', () => {
 });
 
 $('brand-home').addEventListener('click', () => {
-  // Reset vehicle selection and return to fleet overview
-  $('vehicle-select').value = '';
-  $('vehicle-select').dispatchEvent(new Event('change'));
+  resetVehicleView();
   showPage('dashboard');
 });
 $('brand-home-admin').addEventListener('click', () => {
-  $('vehicle-select').value = '';
-  $('vehicle-select').dispatchEvent(new Event('change'));
+  resetVehicleView();
   showPage('dashboard');
 });
 
