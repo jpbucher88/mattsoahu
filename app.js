@@ -2518,9 +2518,10 @@ $('btn-save-note').addEventListener('click', async () => {
     return;
   }
   const isFollowUp = $('note-followup').checked;
+  const dueDate = isFollowUp ? ($('note-due-date').value || '') : '';
 
   try {
-    await db.collection('vehicleNotes').add({
+    const noteData = {
       vehicleId: selectedVehicle.id,
       text,
       isFollowUp,
@@ -2528,11 +2529,16 @@ $('btn-save-note').addEventListener('click', async () => {
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email
-    });
+    };
+    if (dueDate) noteData.dueDate = dueDate;
+    await db.collection('vehicleNotes').add(noteData);
     $('note-text').value = '';
     $('note-followup').checked = false;
+    $('note-due-date').value = '';
+    $('note-due-row').style.display = 'none';
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadVehicleNotes(selectedVehicle.id);
+    if (isFollowUp) loadDashboardFollowUps();
   } catch (err) {
     console.error('Save note error:', err);
     toast('Failed to save note.', 'error');
@@ -2557,7 +2563,15 @@ async function loadVehicleNotes(vehicleId) {
     snap.forEach(doc => {
       const d = doc.data();
       const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
-      const followUpBadge = d.isFollowUp ? (d.done ? '<span class="note-badge note-badge-done">✅ Done</span>' : '<span class="note-badge note-badge-followup">⚑ Follow Up</span>') : '';
+      let followUpBadge = '';
+      if (d.isFollowUp) {
+        if (d.done) {
+          followUpBadge = '<span class="note-badge note-badge-done">✅ Done</span>';
+        } else {
+          const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
+          followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
+        }
+      }
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
       html += `
@@ -2604,45 +2618,40 @@ window.deleteNote = async function(docId) {
   }
 };
 
-// Dashboard follow-up to-dos (vehicle notes + general notes)
+// Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
 async function loadDashboardFollowUps() {
   const section = $('followup-section');
-  const container = $('followup-list');
-  if (!section || !container) return;
+  if (!section) return;
+
+  const overdueEl = $('followup-overdue');
+  const todayEl = $('followup-today');
+  const upcomingEl = $('followup-upcoming');
+  const noDateEl = $('followup-no-date');
 
   try {
-    // Fetch vehicle follow-ups and general follow-ups in parallel
     const [vehicleSnap, generalSnap] = await Promise.all([
       db.collection('vehicleNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', false)
         .orderBy('createdAt', 'desc')
-        .limit(50)
+        .limit(100)
         .get(),
       db.collection('generalNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', false)
         .orderBy('createdAt', 'desc')
-        .limit(50)
+        .limit(100)
         .get()
     ]);
 
-    // Combine into a single sorted list
     const items = [];
     vehicleSnap.forEach(doc => {
       const d = doc.data();
-      items.push({ id: doc.id, type: 'vehicle', ...d });
+      items.push({ id: doc.id, collection: 'vehicleNotes', type: 'vehicle', ...d });
     });
     generalSnap.forEach(doc => {
       const d = doc.data();
-      items.push({ id: doc.id, type: 'general', ...d });
-    });
-
-    // Sort by createdAt descending
-    items.sort((a, b) => {
-      const ta = a.createdAt ? a.createdAt.toMillis() : 0;
-      const tb = b.createdAt ? b.createdAt.toMillis() : 0;
-      return tb - ta;
+      items.push({ id: doc.id, collection: 'generalNotes', type: 'general', ...d });
     });
 
     if (items.length === 0) {
@@ -2651,35 +2660,95 @@ async function loadDashboardFollowUps() {
     }
 
     section.style.display = '';
-    let html = '';
+    const today = todayDateString();
+
+    // Categorize items
+    const overdue = [];
+    const todayItems = [];
+    const upcoming = []; // sorted by dueDate
+    const noDate = [];
+
     for (const item of items) {
-      const dateStr = item.createdAt ? new Date(item.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
-      if (item.type === 'vehicle') {
-        const v = vehiclesCache.find(x => x.id === item.vehicleId);
-        const plate = v ? v.plate : 'Unknown';
-        html += `
-          <div class="followup-item" data-vid="${item.vehicleId}">
-            <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkDone('${item.id}')" title="Mark done">&#9744;</button>
-            <div class="followup-info">
-              <div class="followup-text">${escapeHtml(item.text)}</div>
-              <div class="followup-meta">\ud83d\ude97 ${escapeHtml(plate)} · ${dateStr}</div>
-            </div>
-          </div>`;
+      if (!item.dueDate) {
+        noDate.push(item);
+      } else if (item.dueDate < today) {
+        overdue.push(item);
+      } else if (item.dueDate === today) {
+        todayItems.push(item);
       } else {
-        html += `
-          <div class="followup-item followup-general">
-            <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkGeneralDone('${item.id}')" title="Mark done">&#9744;</button>
-            <div class="followup-info">
-              <div class="followup-text">${escapeHtml(item.text)}</div>
-              <div class="followup-meta">\ud83d\udcdd General · ${dateStr}</div>
-            </div>
-          </div>`;
+        upcoming.push(item);
       }
     }
-    container.innerHTML = html;
+
+    // Sort overdue oldest-first, upcoming by date
+    overdue.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+    upcoming.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''));
+
+    function renderAgendaItem(item) {
+      const isVehicle = item.type === 'vehicle';
+      const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
+      const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
+      let extraClass = '';
+      if (item.dueDate && item.dueDate < today) extraClass = ' followup-overdue';
+      else if (item.dueDate === today) extraClass = ' followup-today-item';
+
+      let metaLabel;
+      if (isVehicle) {
+        const v = vehiclesCache.find(x => x.id === item.vehicleId);
+        metaLabel = '\ud83d\ude97 ' + escapeHtml(v ? v.plate : 'Unknown');
+      } else {
+        metaLabel = '\ud83d\udcdd General';
+      }
+
+      return `
+        <div class="followup-item${extraClass}"${vidAttr}>
+          <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
+          <div class="followup-info">
+            <div class="followup-text">${escapeHtml(item.text)}</div>
+            <div class="followup-meta">${metaLabel}</div>
+          </div>
+        </div>`;
+    }
+
+    function renderGroup(el, title, cssClass, groupItems, showDateLabels) {
+      if (groupItems.length === 0) {
+        el.style.display = 'none';
+        return;
+      }
+      el.style.display = '';
+      let html = `<div class="agenda-group-title ${cssClass}">${title} (${groupItems.length})</div>`;
+      html += '<div class="followup-list">';
+
+      if (showDateLabels) {
+        let lastDate = '';
+        for (const item of groupItems) {
+          const d = item.dueDate || '';
+          if (d && d !== lastDate) {
+            const [y, m, dy] = d.split('-').map(Number);
+            const dt = new Date(y, m - 1, dy);
+            const label = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE });
+            html += `<div class="agenda-date-label">${label}</div>`;
+            lastDate = d;
+          }
+          html += renderAgendaItem(item);
+        }
+      } else {
+        for (const item of groupItems) {
+          html += renderAgendaItem(item);
+        }
+      }
+
+      html += '</div>';
+      el.innerHTML = html;
+    }
+
+    renderGroup(overdueEl, '\u26a0\ufe0f Overdue', 'agenda-overdue', overdue, true);
+    renderGroup(todayEl, '\ud83d\udfe2 Today', 'agenda-today', todayItems, false);
+    renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
+    renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
 
     // Click a vehicle follow-up to go to that vehicle
-    container.querySelectorAll('.followup-item[data-vid]').forEach(item => {
+    section.querySelectorAll('.followup-item[data-vid]').forEach(item => {
       item.addEventListener('click', () => {
         openVehiclePage(item.dataset.vid);
       });
@@ -2690,7 +2759,7 @@ async function loadDashboardFollowUps() {
   }
 }
 
-window.dashboardMarkDone = async function(docId) {
+window.agendaMarkDone = async function(docId) {
   try {
     await db.collection('vehicleNotes').doc(docId).update({ done: true });
     toast('Follow-up done! ✓', 'success');
@@ -2701,7 +2770,7 @@ window.dashboardMarkDone = async function(docId) {
   }
 };
 
-window.dashboardMarkGeneralDone = async function(docId) {
+window.agendaMarkGeneralDone = async function(docId) {
   try {
     await db.collection('generalNotes').doc(docId).update({ done: true });
     toast('Follow-up done! ✓', 'success');
@@ -2731,18 +2800,23 @@ $('btn-save-general-note').addEventListener('click', async () => {
     return;
   }
   const isFollowUp = $('general-note-followup').checked;
+  const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
 
   try {
-    await db.collection('generalNotes').add({
+    const noteData = {
       text,
       isFollowUp,
       done: false,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email
-    });
+    };
+    if (dueDate) noteData.dueDate = dueDate;
+    await db.collection('generalNotes').add(noteData);
     $('general-note-text').value = '';
     $('general-note-followup').checked = false;
+    $('general-note-due-date').value = '';
+    $('general-note-due-row').style.display = 'none';
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadGeneralNotes();
     if (isFollowUp) loadDashboardFollowUps();
@@ -2773,7 +2847,15 @@ async function loadGeneralNotes() {
     snap.forEach(doc => {
       const d = doc.data();
       const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
-      const followUpBadge = d.isFollowUp ? (d.done ? '<span class="note-badge note-badge-done">✅ Done</span>' : '<span class="note-badge note-badge-followup">⚑ Follow Up</span>') : '';
+      let followUpBadge = '';
+      if (d.isFollowUp) {
+        if (d.done) {
+          followUpBadge = '<span class="note-badge note-badge-done">✅ Done</span>';
+        } else {
+          const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
+          followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
+        }
+      }
       const doneClass = d.done ? ' note-done' : '';
       html += `
         <div class="note-item${doneClass}">

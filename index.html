@@ -65,10 +65,13 @@
     </header>
     <main class="dashboard-main">
       <!-- Fleet Dashboard -->
-      <!-- Follow-up To-Dos -->
+      <!-- Follow-up Agenda -->
       <section id="followup-section" class="card" style="display:none;">
-        <h3>&#9873; Follow-Up To-Dos</h3>
-        <div id="followup-list" class="followup-list"></div>
+        <h3>&#128197; Follow-Up Agenda</h3>
+        <div id="followup-overdue" class="agenda-group" style="display:none;"></div>
+        <div id="followup-today" class="agenda-group" style="display:none;"></div>
+        <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
+        <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
       </section>
 
       <!-- General Notes -->
@@ -77,7 +80,11 @@
         <div class="note-form">
           <textarea id="general-note-text" class="note-textarea" placeholder="Add a general note..." rows="2"></textarea>
           <div class="note-form-row">
-            <label class="note-followup-label"><input type="checkbox" id="general-note-followup"> Follow Up</label>
+            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="document.getElementById('general-note-due-row').style.display=this.checked?'':'none'"> Follow Up</label>
+            <div id="general-note-due-row" class="note-due-row" style="display:none;">
+              <label class="note-due-label">Due:</label>
+              <input type="date" id="general-note-due-date" class="note-due-input">
+            </div>
             <button id="btn-save-general-note" class="btn btn-primary btn-sm">Save Note</button>
           </div>
         </div>
@@ -287,7 +294,11 @@
         <div class="note-input-wrap">
           <textarea id="note-text" class="note-textarea" placeholder="Add a note about this vehicle..." maxlength="500" rows="3"></textarea>
           <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="note-followup"> &#9873; Mark as Follow Up</label>
+            <label class="note-followup-label"><input type="checkbox" id="note-followup" onchange="document.getElementById('note-due-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
+            <div id="note-due-row" class="note-due-row" style="display:none;">
+              <label class="note-due-label">Due:</label>
+              <input type="date" id="note-due-date" class="note-due-input">
+            </div>
             <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
           </div>
         </div>

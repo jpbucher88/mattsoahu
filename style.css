@@ -1812,7 +1812,42 @@ body {
   color: #166534;
 }
 
-/* ============ DASHBOARD FOLLOW-UPS ============ */
+/* ============ DASHBOARD FOLLOW-UP AGENDA ============ */
+.agenda-group {
+  margin-bottom: 16px;
+}
+.agenda-group-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 6px 0;
+  margin-bottom: 6px;
+  border-bottom: 2px solid;
+}
+.agenda-group-title.agenda-overdue {
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+.agenda-group-title.agenda-today {
+  color: #0369a1;
+  border-color: #7dd3fc;
+}
+.agenda-group-title.agenda-upcoming {
+  color: #4d7c0f;
+  border-color: #bef264;
+}
+.agenda-group-title.agenda-nodate {
+  color: #6b7280;
+  border-color: #d1d5db;
+}
+.agenda-date-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #374151;
+  padding: 4px 0 2px;
+  margin-top: 6px;
+}
 .followup-list {
   display: flex;
   flex-direction: column;
@@ -1829,6 +1864,14 @@ body {
   border-radius: 8px;
   cursor: pointer;
   transition: background 0.15s;
+}
+.followup-item.followup-overdue {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+.followup-item.followup-today-item {
+  background: #f0f9ff;
+  border-color: #7dd3fc;
 }
 
 .followup-item:hover {
@@ -1860,4 +1903,32 @@ body {
   font-size: 0.78rem;
   color: #92400e;
   margin-top: 2px;
+}
+
+.followup-due {
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+.followup-due.due-overdue { color: #dc2626; }
+.followup-due.due-today { color: #0369a1; }
+.followup-due.due-future { color: #4d7c0f; }
+
+/* Note due date picker row */
+.note-due-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.note-due-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+}
+.note-due-input {
+  font-size: 0.85rem;
+  padding: 4px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
 }
