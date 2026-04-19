@@ -358,9 +358,10 @@ async function loadVehicles() {
   const snapshot = await db.collection('vehicles').orderBy('plate').get();
   vehiclesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-  // Check latest photo timestamp for each vehicle
+  // Check latest photo timestamp + overdue maintenance for each vehicle
   const now = Date.now();
   const checks = vehiclesCache.map(async (v) => {
+    // Last photo
     try {
       const photoSnap = await db.collection('photos')
         .where('vehicleId', '==', v.id)
@@ -368,13 +369,41 @@ async function loadVehicles() {
         .limit(1)
         .get();
       if (photoSnap.empty) {
-        v.lastPhotoAge = Infinity; // never photographed
+        v.lastPhotoAge = Infinity;
+        v.lastPhotoDate = null;
       } else {
         const ts = photoSnap.docs[0].data().timestamp;
-        v.lastPhotoAge = ts ? now - ts.toDate().getTime() : Infinity;
+        if (ts) {
+          v.lastPhotoDate = ts.toDate();
+          v.lastPhotoAge = now - v.lastPhotoDate.getTime();
+        } else {
+          v.lastPhotoAge = Infinity;
+          v.lastPhotoDate = null;
+        }
       }
     } catch (e) {
-      v.lastPhotoAge = null; // unknown
+      v.lastPhotoAge = null;
+      v.lastPhotoDate = null;
+    }
+
+    // Overdue maintenance count
+    v.overdueCount = 0;
+    if (v.mileage) {
+      try {
+        const mSnap = await db.collection('maintenance')
+          .where('vehicleId', '==', v.id)
+          .orderBy('mileage', 'desc')
+          .get();
+        const lastServices = {};
+        mSnap.forEach(doc => {
+          const d = doc.data();
+          if (d.serviceType && !lastServices[d.serviceType]) lastServices[d.serviceType] = d.mileage || 0;
+        });
+        MAINTENANCE_SCHEDULE.forEach(item => {
+          const lastMi = lastServices[item.service] || 0;
+          if (lastMi + item.interval - v.mileage <= 0) v.overdueCount++;
+        });
+      } catch (e) { /* ignore */ }
     }
   });
   await Promise.all(checks);
@@ -386,6 +415,9 @@ async function loadVehicles() {
   // Update vehicle count badge
   const countEl = $('vehicle-count');
   if (countEl) countEl.textContent = vehiclesCache.length;
+
+  // Render fleet dashboard
+  renderFleetDashboard();
 }
 
 function populateVehicleSelect(selectEl) {
@@ -399,6 +431,66 @@ function populateVehicleSelect(selectEl) {
     opt.textContent = `${prefix}${v.plate} — ${v.make} ${v.model}`;
     if (stale) opt.style.color = '#b91c1c';
     selectEl.appendChild(opt);
+  });
+}
+
+function renderFleetDashboard() {
+  const container = $('fleet-dashboard');
+  if (!container) return;
+  if (vehiclesCache.length === 0) {
+    container.innerHTML = '<p class="hint">No vehicles added yet.</p>';
+    return;
+  }
+
+  const MS_24H = 24 * 60 * 60 * 1000;
+  let html = '';
+  vehiclesCache.forEach(v => {
+    // Photo status
+    let photoStatus, photoCls;
+    if (v.lastPhotoAge === Infinity || v.lastPhotoAge == null) {
+      photoStatus = '📷 No photos';
+      photoCls = 'status-danger';
+    } else if (v.lastPhotoAge > MS_24H) {
+      const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
+      const days = Math.floor(hrs / 24);
+      photoStatus = `📷 ${days}d ${hrs % 24}h ago`;
+      photoCls = 'status-warn';
+    } else {
+      const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
+      const mins = Math.floor((v.lastPhotoAge / (1000 * 60)) % 60);
+      photoStatus = hrs > 0 ? `📷 ${hrs}h ${mins}m ago` : `📷 ${mins}m ago`;
+      photoCls = 'status-ok';
+    }
+
+    // Maintenance status
+    let maintStatus, maintCls;
+    if (!v.mileage) {
+      maintStatus = '🔧 No mileage set';
+      maintCls = 'status-muted';
+    } else if (v.overdueCount > 0) {
+      maintStatus = `🔧 ${v.overdueCount} overdue`;
+      maintCls = 'status-danger';
+    } else {
+      maintStatus = '🔧 Up to date';
+      maintCls = 'status-ok';
+    }
+
+    html += `<div class="fleet-card" data-vid="${v.id}">
+      <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
+      <div class="fleet-card-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
+      <div class="fleet-card-status ${photoCls}">${photoStatus}</div>
+      <div class="fleet-card-status ${maintCls}">${maintStatus}</div>
+    </div>`;
+  });
+  container.innerHTML = html;
+
+  // Click a card to select that vehicle
+  container.querySelectorAll('.fleet-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const vid = card.dataset.vid;
+      $('vehicle-select').value = vid;
+      $('vehicle-select').dispatchEvent(new Event('change'));
+    });
   });
 }
 
@@ -420,6 +512,21 @@ $('vehicle-select').addEventListener('change', async function () {
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
   $('vehicle-info').style.display = 'flex';
+
+  // Show last photo timestamp
+  const lastPhotoEl = $('last-photo-time');
+  if (selectedVehicle.lastPhotoDate) {
+    lastPhotoEl.textContent = '📷 Last photo: ' + selectedVehicle.lastPhotoDate.toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+    });
+    lastPhotoEl.style.display = 'block';
+  } else if (selectedVehicle.lastPhotoAge === Infinity) {
+    lastPhotoEl.textContent = '📷 No photos taken yet';
+    lastPhotoEl.style.display = 'block';
+  } else {
+    lastPhotoEl.style.display = 'none';
+  }
 
   // Show stale photo alert
   const MS_24H = 24 * 60 * 60 * 1000;

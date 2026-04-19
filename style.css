@@ -406,6 +406,53 @@ body {
   background: var(--danger);
 }
 
+/* ============ FLEET DASHBOARD ============ */
+.fleet-dashboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.fleet-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.fleet-card:active { box-shadow: 0 0 0 2px var(--primary); }
+
+.fleet-card-title {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.fleet-card-subtitle {
+  font-size: 12px;
+  color: var(--text-light);
+  margin-bottom: 8px;
+}
+
+.fleet-card-status {
+  font-size: 12px;
+  margin-top: 3px;
+  padding: 2px 0;
+}
+
+.fleet-card-status.status-ok { color: #16a34a; }
+.fleet-card-status.status-warn { color: #d97706; }
+.fleet-card-status.status-danger { color: #dc2626; font-weight: 600; }
+.fleet-card-status.status-muted { color: var(--text-light); }
+
+.last-photo-time {
+  font-size: 13px;
+  color: var(--text-light);
+  margin-top: 6px;
+}
+
 /* ============ SECTION HEADER ============ */
 .section-header {
   display: flex;
