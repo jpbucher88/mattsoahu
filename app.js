@@ -505,6 +505,17 @@ async function openVehiclePage(vid) {
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
 
+  // Show hero image if set
+  const heroWrap = $('vehicle-hero-wrap');
+  const heroImg = $('vehicle-hero-img');
+  if (selectedVehicle.defaultImageUrl) {
+    heroImg.src = selectedVehicle.defaultImageUrl;
+    heroWrap.style.display = 'block';
+  } else {
+    heroWrap.style.display = 'none';
+    heroImg.src = '';
+  }
+
   // Show last photo timestamp
   const lastPhotoEl = $('last-photo-time');
   if (selectedVehicle.lastPhotoDate) {
@@ -1415,6 +1426,9 @@ function loadAdminVehicles() {
   const list = $('vehicles-list');
   $('vehicle-count').textContent = vehiclesCache.length;
 
+  // Populate hero image vehicle dropdown
+  populateVehicleSelect($('hero-vehicle-select'));
+
   if (!vehiclesCache.length) {
     list.innerHTML = '<div class="empty-state"><div class="empty-icon">🚗</div><p>No vehicles added yet</p></div>';
     return;
@@ -1451,6 +1465,76 @@ window.deleteVehicle = async function (vehicleId, plate) {
     hideLoading();
   }
 };
+
+// ================================================================
+// ADMIN: DEFAULT VEHICLE IMAGE
+// ================================================================
+
+$('hero-image-input').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  const previewWrap = $('hero-preview-wrap');
+  const previewImg = $('hero-preview-img');
+  const uploadBtn = $('btn-upload-hero');
+
+  if (file) {
+    previewImg.src = URL.createObjectURL(file);
+    previewWrap.style.display = 'block';
+    uploadBtn.disabled = !$('hero-vehicle-select').value;
+  } else {
+    previewWrap.style.display = 'none';
+    uploadBtn.disabled = true;
+  }
+});
+
+$('hero-vehicle-select').addEventListener('change', () => {
+  const hasFile = $('hero-image-input').files.length > 0;
+  $('btn-upload-hero').disabled = !($('hero-vehicle-select').value && hasFile);
+});
+
+$('btn-upload-hero').addEventListener('click', async () => {
+  if (currentUserRole !== 'admin') return;
+  const vehicleId = $('hero-vehicle-select').value;
+  const file = $('hero-image-input').files[0];
+  if (!vehicleId || !file) return;
+
+  const vehicle = vehiclesCache.find(v => v.id === vehicleId);
+  if (!vehicle) return;
+
+  showLoading('Uploading default photo…');
+  try {
+    const st = getStorage();
+    if (!st) throw new Error('Storage not available');
+
+    // Resize image before upload
+    const resized = await compressImage(file, 2560, 0.92);
+
+    const storagePath = `vehicles/${vehicleId}/default-image.jpg`;
+    const ref = st.ref(storagePath);
+    await ref.put(resized, { contentType: 'image/jpeg' });
+    const downloadURL = await ref.getDownloadURL();
+
+    // Save URL to vehicle document
+    await db.collection('vehicles').doc(vehicleId).update({
+      defaultImageUrl: downloadURL,
+      defaultImagePath: storagePath
+    });
+
+    // Update cache
+    vehicle.defaultImageUrl = downloadURL;
+    const cached = vehiclesCache.find(v => v.id === vehicleId);
+    if (cached) cached.defaultImageUrl = downloadURL;
+
+    toast(`Default photo set for ${vehicle.plate}!`, 'success');
+    $('hero-image-input').value = '';
+    $('hero-preview-wrap').style.display = 'none';
+    $('btn-upload-hero').disabled = true;
+  } catch (err) {
+    console.error('Upload hero image error:', err);
+    toast('Failed to upload default photo.', 'error');
+  } finally {
+    hideLoading();
+  }
+});
 
 // ================================================================
 // ADMIN: PHOTO MANAGEMENT
@@ -1968,6 +2052,60 @@ $('btn-save-mileage').addEventListener('click', async () => {
     console.error('Save mileage error:', err);
     toast('Failed to save mileage.', 'error');
   }
+});
+
+// ================================================================
+// MILEAGE OCR
+// ================================================================
+$('ocr-file-input').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  e.target.value = '';
+
+  const statusEl = $('ocr-status');
+  statusEl.style.display = 'block';
+  statusEl.textContent = '⏳ Reading mileage from photo…';
+
+  try {
+    const { data: { text } } = await Tesseract.recognize(file, 'eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          const pct = Math.round(m.progress * 100);
+          statusEl.textContent = `⏳ Scanning… ${pct}%`;
+        }
+      }
+    });
+
+    // Extract numbers — look for the largest numeric sequence (likely odometer)
+    const numbers = text.match(/\d[\d,.\s]{2,}/g);
+    if (numbers && numbers.length > 0) {
+      // Clean each match and pick the one that looks most like a mileage
+      const cleaned = numbers.map(n => parseInt(n.replace(/[,.\s]/g, ''), 10)).filter(n => n >= 100 && n <= 999999);
+      if (cleaned.length > 0) {
+        // Pick the largest plausible reading
+        const best = Math.max(...cleaned);
+        $('vehicle-mileage').value = best;
+        statusEl.textContent = `✅ Read: ${best.toLocaleString()} — verify and tap Update`;
+        statusEl.style.color = '#16a34a';
+      } else {
+        statusEl.textContent = '⚠️ Could not find a valid mileage number. Enter manually.';
+        statusEl.style.color = '#d97706';
+      }
+    } else {
+      statusEl.textContent = '⚠️ No numbers detected. Try a clearer photo.';
+      statusEl.style.color = '#d97706';
+    }
+  } catch (err) {
+    console.error('OCR Error:', err);
+    statusEl.textContent = '❌ OCR failed. Please enter mileage manually.';
+    statusEl.style.color = '#dc2626';
+  }
+
+  // Auto-hide status after 8 seconds
+  setTimeout(() => {
+    statusEl.style.display = 'none';
+    statusEl.style.color = '';
+  }, 8000);
 });
 
 // Show/hide maintenance form

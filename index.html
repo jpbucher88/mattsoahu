@@ -85,6 +85,11 @@
       </div>
     </header>
     <main class="dashboard-main">
+      <!-- Hero Image -->
+      <div id="vehicle-hero-wrap" class="vehicle-hero-wrap" style="display:none;">
+        <img id="vehicle-hero-img" class="vehicle-hero-img" alt="Vehicle photo">
+      </div>
+
       <!-- Vehicle Info -->
       <section class="card">
         <div id="vehicle-info" class="vehicle-info">
@@ -150,7 +155,12 @@
             <div class="mileage-input-wrap">
               <input type="number" id="vehicle-mileage" placeholder="e.g. 45000" min="0" max="999999">
               <button id="btn-save-mileage" class="btn btn-sm btn-outline">Update</button>
+              <label class="btn btn-sm btn-secondary btn-ocr" title="Read mileage from photo">
+                &#128247; Scan
+                <input type="file" id="ocr-file-input" accept="image/*" capture="environment" hidden>
+              </label>
             </div>
+            <div id="ocr-status" class="ocr-status" style="display:none;"></div>
           </div>
         </div>
 
@@ -278,6 +288,28 @@
           <h3>All Vehicles <span id="vehicle-count" class="badge">0</span></h3>
           <div id="vehicles-list" class="data-list"></div>
         </div>
+
+        <!-- Default Vehicle Image Upload -->
+        <div class="card">
+          <h3>Set Vehicle Default Photo</h3>
+          <p class="hint">Upload a photo that stays permanently at the top of the vehicle page.</p>
+          <div class="form-row">
+            <div class="form-group">
+              <label for="hero-vehicle-select">Select Vehicle</label>
+              <select id="hero-vehicle-select" class="form-select">
+                <option value="">-- Choose a vehicle --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="hero-image-input">Photo</label>
+              <input type="file" id="hero-image-input" accept="image/*" class="form-input">
+            </div>
+          </div>
+          <div id="hero-preview-wrap" style="display:none; margin-bottom:10px;">
+            <img id="hero-preview-img" style="max-width:200px; border-radius:8px;">
+          </div>
+          <button id="btn-upload-hero" class="btn btn-primary" disabled>Upload Default Photo</button>
+        </div>
       </div>
 
       <!-- ====== Photos Tab ====== -->
@@ -392,6 +424,7 @@
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
   <script src="jszip.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
