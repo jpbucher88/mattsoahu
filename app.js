@@ -601,6 +601,7 @@ async function handlePhotoFiles(e) {
 
   updateProgress(uploaded, total);
 
+  const uploadedUrls = [];
   for (const file of files) {
     const item = document.createElement('div');
     item.className = 'photo-queue-item';
@@ -616,7 +617,8 @@ async function handlePhotoFiles(e) {
 
     try {
       const compressed = await compressImage(file);
-      await uploadPhoto(compressed);
+      const url = await uploadPhoto(compressed);
+      uploadedUrls.push(url);
 
       statusIcon.className = 'status-icon status-done';
       statusIcon.textContent = '✓';
@@ -635,6 +637,11 @@ async function handlePhotoFiles(e) {
   toast(`${uploaded} photo(s) uploaded!`, 'success');
   e.target.value = '';
   await loadPhotosForDate(selectedVehicle.id, selectedDate);
+
+  // Auto-scan uploaded photos for odometer reading
+  if (uploadedUrls.length > 0 && selectedVehicle) {
+    autoScanForMileage(uploadedUrls);
+  }
 }
 
 // Core upload function — used by both file picker and camera
@@ -684,6 +691,7 @@ let cameraUploadQueue = [];
 let cameraUploading = false;
 let cameraUploadedCount = 0;
 let cameraTotalQueued = 0;
+let cameraUploadedUrls = [];
 
 $('btn-open-camera').addEventListener('click', async () => {
   if (!selectedVehicle) {
@@ -702,6 +710,7 @@ async function openCamera() {
   cameraUploadQueue = [];
   cameraUploadedCount = 0;
   cameraTotalQueued = 0;
+  cameraUploadedUrls = [];
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
   $('camera-upload-bar').style.display = 'none';
@@ -846,7 +855,8 @@ async function processCameraQueue() {
   while (cameraUploadQueue.length > 0) {
     const blob = cameraUploadQueue.shift();
     try {
-      await uploadPhoto(blob);
+      const url = await uploadPhoto(blob);
+      cameraUploadedUrls.push(url);
       cameraUploadedCount++;
       updateCameraUploadBar();
     } catch (err) {
@@ -890,6 +900,11 @@ $('camera-close').addEventListener('click', async () => {
     toast(`${cameraShotCount} photo(s) taken!`, 'success');
     await loadPhotosForDate(selectedVehicle.id, selectedDate);
     loadPhotoDates(selectedVehicle.id, selectedDate);
+
+    // Auto-scan camera photos for odometer reading
+    if (cameraUploadedUrls.length > 0) {
+      autoScanForMileage(cameraUploadedUrls);
+    }
   }
 });
 
@@ -2055,58 +2070,56 @@ $('btn-save-mileage').addEventListener('click', async () => {
 });
 
 // ================================================================
-// MILEAGE OCR
+// AUTO MILEAGE OCR — scans uploaded photos for odometer reading
 // ================================================================
-$('ocr-file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  e.target.value = '';
-
+async function autoScanForMileage(urls) {
+  if (!urls.length || !selectedVehicle) return;
   const statusEl = $('ocr-status');
   statusEl.style.display = 'block';
-  statusEl.textContent = '⏳ Reading mileage from photo…';
+  statusEl.style.color = '';
+  statusEl.textContent = '🔍 Scanning photos for odometer…';
 
-  try {
-    const { data: { text } } = await Tesseract.recognize(file, 'eng', {
-      logger: m => {
-        if (m.status === 'recognizing text') {
-          const pct = Math.round(m.progress * 100);
-          statusEl.textContent = `⏳ Scanning… ${pct}%`;
+  let bestReading = null;
+
+  for (let i = 0; i < urls.length; i++) {
+    statusEl.textContent = `🔍 Scanning photo ${i + 1}/${urls.length} for odometer…`;
+    try {
+      const { data: { text } } = await Tesseract.recognize(urls[i], 'eng');
+
+      // Extract numbers — look for sequences that could be an odometer
+      const numbers = text.match(/\d[\d,.\s]{2,}/g);
+      if (numbers && numbers.length > 0) {
+        const cleaned = numbers
+          .map(n => parseInt(n.replace(/[,.\s]/g, ''), 10))
+          .filter(n => n >= 100 && n <= 999999);
+        if (cleaned.length > 0) {
+          const max = Math.max(...cleaned);
+          // Prefer the reading closest to current mileage (if set) or just the largest
+          if (!bestReading || max > bestReading) {
+            bestReading = max;
+          }
         }
       }
-    });
-
-    // Extract numbers — look for the largest numeric sequence (likely odometer)
-    const numbers = text.match(/\d[\d,.\s]{2,}/g);
-    if (numbers && numbers.length > 0) {
-      // Clean each match and pick the one that looks most like a mileage
-      const cleaned = numbers.map(n => parseInt(n.replace(/[,.\s]/g, ''), 10)).filter(n => n >= 100 && n <= 999999);
-      if (cleaned.length > 0) {
-        // Pick the largest plausible reading
-        const best = Math.max(...cleaned);
-        $('vehicle-mileage').value = best;
-        statusEl.textContent = `✅ Read: ${best.toLocaleString()} — verify and tap Update`;
-        statusEl.style.color = '#16a34a';
-      } else {
-        statusEl.textContent = '⚠️ Could not find a valid mileage number. Enter manually.';
-        statusEl.style.color = '#d97706';
-      }
-    } else {
-      statusEl.textContent = '⚠️ No numbers detected. Try a clearer photo.';
-      statusEl.style.color = '#d97706';
+    } catch (err) {
+      console.warn('OCR failed for photo', i, err);
     }
-  } catch (err) {
-    console.error('OCR Error:', err);
-    statusEl.textContent = '❌ OCR failed. Please enter mileage manually.';
-    statusEl.style.color = '#dc2626';
   }
 
-  // Auto-hide status after 8 seconds
+  if (bestReading) {
+    $('vehicle-mileage').value = bestReading;
+    statusEl.textContent = `✅ Odometer detected: ${bestReading.toLocaleString()} — verify and tap Update`;
+    statusEl.style.color = '#16a34a';
+  } else {
+    statusEl.textContent = '📷 No odometer reading detected in photos.';
+    statusEl.style.color = '#6b7280';
+  }
+
+  // Auto-hide after 12 seconds
   setTimeout(() => {
     statusEl.style.display = 'none';
     statusEl.style.color = '';
-  }, 8000);
-});
+  }, 12000);
+}
 
 // Show/hide maintenance form
 $('btn-add-maintenance').addEventListener('click', () => {
