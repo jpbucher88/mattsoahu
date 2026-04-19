@@ -1333,8 +1333,17 @@ $('btn-back-dashboard').addEventListener('click', () => {
   showPage('dashboard');
 });
 
-$('brand-home').addEventListener('click', () => showPage('dashboard'));
-$('brand-home-admin').addEventListener('click', () => showPage('dashboard'));
+$('brand-home').addEventListener('click', () => {
+  // Reset vehicle selection and return to fleet overview
+  $('vehicle-select').value = '';
+  $('vehicle-select').dispatchEvent(new Event('change'));
+  showPage('dashboard');
+});
+$('brand-home-admin').addEventListener('click', () => {
+  $('vehicle-select').value = '';
+  $('vehicle-select').dispatchEvent(new Event('change'));
+  showPage('dashboard');
+});
 
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
