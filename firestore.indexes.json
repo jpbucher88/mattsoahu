@@ -57,6 +57,15 @@
         { "fieldPath": "done", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "generalNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "isFollowUp", "order": "ASCENDING" },
+        { "fieldPath": "done", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

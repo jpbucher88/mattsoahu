@@ -422,6 +422,7 @@ async function loadVehicles() {
   // Render fleet dashboard
   renderFleetDashboard();
   loadDashboardFollowUps();
+  loadGeneralNotes();
 }
 
 function populateVehicleSelect(selectEl) {
@@ -2603,45 +2604,82 @@ window.deleteNote = async function(docId) {
   }
 };
 
-// Dashboard follow-up to-dos (across all vehicles)
+// Dashboard follow-up to-dos (vehicle notes + general notes)
 async function loadDashboardFollowUps() {
   const section = $('followup-section');
   const container = $('followup-list');
   if (!section || !container) return;
 
   try {
-    const snap = await db.collection('vehicleNotes')
-      .where('isFollowUp', '==', true)
-      .where('done', '==', false)
-      .orderBy('createdAt', 'desc')
-      .limit(50)
-      .get();
+    // Fetch vehicle follow-ups and general follow-ups in parallel
+    const [vehicleSnap, generalSnap] = await Promise.all([
+      db.collection('vehicleNotes')
+        .where('isFollowUp', '==', true)
+        .where('done', '==', false)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get(),
+      db.collection('generalNotes')
+        .where('isFollowUp', '==', true)
+        .where('done', '==', false)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get()
+    ]);
 
-    if (snap.empty) {
+    // Combine into a single sorted list
+    const items = [];
+    vehicleSnap.forEach(doc => {
+      const d = doc.data();
+      items.push({ id: doc.id, type: 'vehicle', ...d });
+    });
+    generalSnap.forEach(doc => {
+      const d = doc.data();
+      items.push({ id: doc.id, type: 'general', ...d });
+    });
+
+    // Sort by createdAt descending
+    items.sort((a, b) => {
+      const ta = a.createdAt ? a.createdAt.toMillis() : 0;
+      const tb = b.createdAt ? b.createdAt.toMillis() : 0;
+      return tb - ta;
+    });
+
+    if (items.length === 0) {
       section.style.display = 'none';
       return;
     }
 
     section.style.display = '';
     let html = '';
-    snap.forEach(doc => {
-      const d = doc.data();
-      const v = vehiclesCache.find(x => x.id === d.vehicleId);
-      const plate = v ? v.plate : 'Unknown';
-      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
-      html += `
-        <div class="followup-item" data-vid="${d.vehicleId}">
-          <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkDone('${doc.id}')" title="Mark done">&#9744;</button>
-          <div class="followup-info">
-            <div class="followup-text">${escapeHtml(d.text)}</div>
-            <div class="followup-meta">${escapeHtml(plate)} · ${dateStr}</div>
-          </div>
-        </div>`;
-    });
+    for (const item of items) {
+      const dateStr = item.createdAt ? new Date(item.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
+      if (item.type === 'vehicle') {
+        const v = vehiclesCache.find(x => x.id === item.vehicleId);
+        const plate = v ? v.plate : 'Unknown';
+        html += `
+          <div class="followup-item" data-vid="${item.vehicleId}">
+            <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkDone('${item.id}')" title="Mark done">&#9744;</button>
+            <div class="followup-info">
+              <div class="followup-text">${escapeHtml(item.text)}</div>
+              <div class="followup-meta">\ud83d\ude97 ${escapeHtml(plate)} · ${dateStr}</div>
+            </div>
+          </div>`;
+      } else {
+        html += `
+          <div class="followup-item followup-general">
+            <button class="followup-check" onclick="event.stopPropagation(); dashboardMarkGeneralDone('${item.id}')" title="Mark done">&#9744;</button>
+            <div class="followup-info">
+              <div class="followup-text">${escapeHtml(item.text)}</div>
+              <div class="followup-meta">\ud83d\udcdd General · ${dateStr}</div>
+            </div>
+          </div>`;
+      }
+    }
     container.innerHTML = html;
 
-    // Click a follow-up to go to that vehicle
-    container.querySelectorAll('.followup-item').forEach(item => {
+    // Click a vehicle follow-up to go to that vehicle
+    container.querySelectorAll('.followup-item[data-vid]').forEach(item => {
       item.addEventListener('click', () => {
         openVehiclePage(item.dataset.vid);
       });
@@ -2660,6 +2698,126 @@ window.dashboardMarkDone = async function(docId) {
   } catch (err) {
     console.error('Mark done error:', err);
     toast('Failed to update.', 'error');
+  }
+};
+
+window.dashboardMarkGeneralDone = async function(docId) {
+  try {
+    await db.collection('generalNotes').doc(docId).update({ done: true });
+    toast('Follow-up done! ✓', 'success');
+    loadDashboardFollowUps();
+    loadGeneralNotes();
+  } catch (err) {
+    console.error('Mark general done error:', err);
+    toast('Failed to update.', 'error');
+  }
+};
+
+// ================================================================
+// GENERAL NOTES (not tied to a vehicle)
+// ================================================================
+
+// Show section only for admin/manager
+function showGeneralNotesSection() {
+  const section = $('general-notes-section');
+  if (!section) return;
+  section.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
+}
+
+$('btn-save-general-note').addEventListener('click', async () => {
+  const text = $('general-note-text').value.trim();
+  if (!text) {
+    toast('Enter a note first.', 'warning');
+    return;
+  }
+  const isFollowUp = $('general-note-followup').checked;
+
+  try {
+    await db.collection('generalNotes').add({
+      text,
+      isFollowUp,
+      done: false,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email
+    });
+    $('general-note-text').value = '';
+    $('general-note-followup').checked = false;
+    toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
+    loadGeneralNotes();
+    if (isFollowUp) loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Save general note error:', err);
+    toast('Failed to save note.', 'error');
+  }
+});
+
+async function loadGeneralNotes() {
+  showGeneralNotesSection();
+  const container = $('general-notes-list');
+  if (!container) return;
+
+  try {
+    const snap = await db.collection('generalNotes')
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    if (snap.empty) {
+      container.innerHTML = '<p class="hint" style="margin:0; padding:8px 0;">No general notes yet.</p>';
+      return;
+    }
+
+    const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    let html = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
+      const followUpBadge = d.isFollowUp ? (d.done ? '<span class="note-badge note-badge-done">✅ Done</span>' : '<span class="note-badge note-badge-followup">⚑ Follow Up</span>') : '';
+      const doneClass = d.done ? ' note-done' : '';
+      html += `
+        <div class="note-item${doneClass}">
+          <div class="note-content">
+            ${followUpBadge}
+            <div class="note-text">${escapeHtml(d.text)}</div>
+            <div class="note-meta">${escapeHtml(d.createdByName || '')} · ${dateStr}</div>
+          </div>
+          <div class="note-actions">
+            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markGeneralNoteDone('${doc.id}')">✓ Done</button>` : ''}
+            ${canManage ? `<button class="btn btn-sm btn-danger" onclick="deleteGeneralNote('${doc.id}')">Delete</button>` : ''}
+          </div>
+        </div>`;
+    });
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Load general notes error:', err);
+    container.innerHTML = '<p class="hint">Failed to load notes.</p>';
+  }
+}
+
+window.markGeneralNoteDone = async function(docId) {
+  try {
+    await db.collection('generalNotes').doc(docId).update({ done: true });
+    toast('Follow-up marked done.', 'success');
+    loadGeneralNotes();
+    loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Mark general note done error:', err);
+    toast('Failed to update.', 'error');
+  }
+};
+
+window.deleteGeneralNote = async function(docId) {
+  const ok = await confirm('Delete Note', 'Remove this note?');
+  if (!ok) return;
+  try {
+    await db.collection('generalNotes').doc(docId).delete();
+    toast('Note deleted.', 'success');
+    loadGeneralNotes();
+    loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Delete general note error:', err);
+    toast('Failed to delete note.', 'error');
   }
 };
 
