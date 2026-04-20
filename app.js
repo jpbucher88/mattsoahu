@@ -928,10 +928,8 @@ async function openVehiclePage(vid) {
     repairPartsRow.style.display = tripStatusSelect.value === 'repair-shop' ? '' : 'none';
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
-      // Format for datetime-local input (YYYY-MM-DDTHH:MM)
-      const offset = rd.getTimezoneOffset();
-      const local = new Date(rd.getTime() - offset * 60000);
-      tripReturnInput.value = local.toISOString().slice(0, 16);
+      // Format for datetime-local input in HST (sv-SE gives ISO-like "YYYY-MM-DD HH:MM:SS")
+      tripReturnInput.value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
     } else {
       tripReturnInput.value = '';
     }
@@ -2152,7 +2150,8 @@ $('btn-save-location').addEventListener('click', async () => {
   if (tripStatus === 'on-trip') {
     updateData.location = 'On Trip';
     if (tripReturnVal) {
-      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
+      // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
+      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
@@ -2162,7 +2161,8 @@ $('btn-save-location').addEventListener('click', async () => {
   } else if (tripStatus === 'repair-shop') {
     updateData.location = 'Repair Shop';
     if (tripReturnVal) {
-      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
+      // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
+      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
@@ -2194,7 +2194,7 @@ $('btn-save-location').addEventListener('click', async () => {
     // Update local cache
     Object.assign(selectedVehicle, { homeLocation, tripStatus, location: updateData.location });
     if (tripReturnVal && (tripStatus === 'on-trip' || tripStatus === 'repair-shop')) {
-      selectedVehicle.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
+      selectedVehicle.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
     } else {
       delete selectedVehicle.tripReturnDate;
     }
@@ -2949,22 +2949,21 @@ async function updateRecommendedServices(vehicleId) {
   const container = $('recommended-services');
   const list = $('recommended-list');
 
-  if (!mileage) {
-    container.style.display = 'none';
-    return;
-  }
-
-  // Get last service mileage for each type
+  // Get last service mileage and last service date for each type
   const lastServices = {};
+  const lastServiceData = {};
   try {
     const snap = await db.collection('maintenance')
       .where('vehicleId', '==', vehicleId)
-      .orderBy('mileage', 'desc')
+      .orderBy('date', 'desc')
       .get();
     snap.forEach(doc => {
       const d = doc.data();
-      if (d.serviceType && !lastServices[d.serviceType]) {
-        lastServices[d.serviceType] = d.mileage || 0;
+      if (d.serviceType) {
+        if (!lastServices[d.serviceType]) {
+          lastServices[d.serviceType] = d.mileage || 0;
+          lastServiceData[d.serviceType] = d;
+        }
       }
     });
   } catch (e) {
@@ -2972,41 +2971,91 @@ async function updateRecommendedServices(vehicleId) {
   }
 
   const schedule = getScheduleForVehicle(v);
+  const today = todayDateString();
 
+  // --- Time-based section ---
+  const timeDue = [];
+  const timeUpcoming = [];
+
+  // Collect all services with an intervalMonths set (use most recent record per service)
+  const seenInterval = new Set();
+  try {
+    const iSnap = await db.collection('maintenance')
+      .where('vehicleId', '==', vehicleId)
+      .orderBy('date', 'desc')
+      .get();
+    iSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.intervalMonths && d.nextDueDate && !seenInterval.has(d.serviceType)) {
+        seenInterval.add(d.serviceType);
+        const lbl = d.intervalMonths === 1 ? '1 Month' : d.intervalMonths === 12 ? '1 Year' : d.intervalMonths === 24 ? '2 Years' : `${d.intervalMonths} Months`;
+        const entry = { service: d.serviceType, nextDueDate: d.nextDueDate, label: lbl };
+        if (d.nextDueDate <= today) {
+          timeDue.push(entry);
+        } else {
+          // Show if within 30 days
+          const [ny, nm, nd] = d.nextDueDate.split('-').map(Number);
+          const [ty, tm, td2] = today.split('-').map(Number);
+          const daysUntil = Math.round((new Date(ny, nm-1, nd) - new Date(ty, tm-1, td2)) / 86400000);
+          if (daysUntil <= 30) timeUpcoming.push({ ...entry, daysUntil });
+        }
+      }
+    });
+  } catch (e) { /* ignore */ }
+
+  // --- Mileage-based section ---
   const due = [];
   const upcoming = [];
 
-  schedule.forEach(item => {
-    const lastMi = lastServices[item.service] || 0;
-    const nextDue = lastMi + item.interval;
-    const milesUntil = nextDue - mileage;
+  if (mileage) {
+    schedule.forEach(item => {
+      const lastMi = lastServices[item.service] || 0;
+      const nextDue = lastMi + item.interval;
+      const milesUntil = nextDue - mileage;
+      if (milesUntil <= 0) {
+        due.push({ ...item, milesUntil, nextDue, overdue: true });
+      } else if (milesUntil <= item.interval * 0.2) {
+        upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
+      }
+    });
+  }
 
-    if (milesUntil <= 0) {
-      due.push({ ...item, milesUntil, nextDue, overdue: true });
-    } else if (milesUntil <= item.interval * 0.2) {
-      upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
-    }
-  });
-
-  if (due.length === 0 && upcoming.length === 0) {
-    container.style.display = 'block';
-    list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
+  if (timeDue.length === 0 && timeUpcoming.length === 0 && due.length === 0 && upcoming.length === 0) {
+    container.style.display = mileage ? 'block' : 'none';
+    if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
     return;
   }
 
   container.style.display = 'block';
   let html = '';
-  due.sort((a, b) => a.milesUntil - b.milesUntil);
-  upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
 
-  due.forEach(s => {
-    const overMiles = Math.abs(s.milesUntil).toLocaleString();
-    html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
-  });
-  upcoming.forEach(s => {
-    const untilMiles = s.milesUntil.toLocaleString();
-    html += `<div class="rec-item rec-upcoming">${s.icon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
-  });
+  // Time-based items first
+  if (timeDue.length > 0 || timeUpcoming.length > 0) {
+    html += '<div class="rec-section-title">⏱ Time-Based</div>';
+    timeDue.sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
+    timeDue.forEach(s => {
+      html += `<div class="rec-item rec-time rec-time-overdue">🗓️ <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue</span> · Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
+    });
+    timeUpcoming.sort((a, b) => a.daysUntil - b.daysUntil);
+    timeUpcoming.forEach(s => {
+      html += `<div class="rec-item rec-time rec-time-upcoming">🗓️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span></div>`;
+    });
+  }
+
+  // Mileage-based items
+  if (due.length > 0 || upcoming.length > 0) {
+    if (timeDue.length > 0 || timeUpcoming.length > 0) html += '<div class="rec-section-title">🛣 Mileage-Based</div>';
+    due.sort((a, b) => a.milesUntil - b.milesUntil);
+    upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
+    due.forEach(s => {
+      const overMiles = Math.abs(s.milesUntil).toLocaleString();
+      html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+    });
+    upcoming.forEach(s => {
+      const untilMiles = s.milesUntil.toLocaleString();
+      html += `<div class="rec-item rec-upcoming">${s.icon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+    });
+  }
 
   list.innerHTML = html;
 }
@@ -3119,11 +3168,27 @@ $('btn-add-maintenance').addEventListener('click', () => {
   wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
   $('m-date').value = todayDateString();
   $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
+  $('m-interval').value = '';
+  $('m-next-due-display').textContent = '—';
 });
+
+// Update "Next Due" display when interval or date changes
+function updateNextDueDisplay() {
+  const dateVal = $('m-date').value;
+  const months = parseInt($('m-interval').value);
+  const display = $('m-next-due-display');
+  if (!dateVal || !months) { display.textContent = '—'; return; }
+  const [y, mo, d] = dateVal.split('-').map(Number);
+  const next = new Date(y, mo - 1 + months, d);
+  display.textContent = next.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE });
+}
+$('m-interval').addEventListener('change', updateNextDueDisplay);
+$('m-date').addEventListener('change', updateNextDueDisplay);
 
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
+  $('m-next-due-display').textContent = '—';
 });
 
 // Save maintenance record
@@ -3137,6 +3202,15 @@ $('maintenance-form').addEventListener('submit', async (e) => {
   const cost = $('m-cost').value ? parseFloat($('m-cost').value) : null;
   const notes = $('m-notes').value.trim();
   const location = $('m-location').value.trim();
+  const intervalMonths = $('m-interval').value ? parseInt($('m-interval').value) : null;
+
+  // Compute next due date if interval is set
+  let nextDueDate = null;
+  if (intervalMonths && date) {
+    const [y, mo, d] = date.split('-').map(Number);
+    const next = new Date(y, mo - 1 + intervalMonths, d);
+    nextDueDate = next.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }); // YYYY-MM-DD
+  }
 
   if (!serviceType || !date) {
     toast('Please select a service type and date.', 'warning');
@@ -3157,7 +3231,39 @@ $('maintenance-form').addEventListener('submit', async (e) => {
       createdBy: currentUser.uid,
     };
     if (location) record.location = location;
-    await db.collection('maintenance').add(record);
+    if (intervalMonths) record.intervalMonths = intervalMonths;
+    if (nextDueDate) record.nextDueDate = nextDueDate;
+
+    const maintenanceRef = await db.collection('maintenance').add(record);
+
+    // If interval is set, auto-create (or replace) a follow-up vehicleNote for next service
+    if (intervalMonths && nextDueDate) {
+      // Remove any existing auto-created follow-up for this service + vehicle
+      const oldNotes = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', selectedVehicle.id)
+        .where('maintenanceService', '==', serviceType)
+        .where('autoCreated', '==', true)
+        .get();
+      const batch = db.batch();
+      oldNotes.forEach(d => batch.delete(d.ref));
+      const intervalLabel = intervalMonths === 1 ? '1 Month' : intervalMonths === 12 ? '1 Year' : intervalMonths === 24 ? '2 Years' : `${intervalMonths} Months`;
+      const noteRef = db.collection('vehicleNotes').doc();
+      batch.set(noteRef, {
+        vehicleId: selectedVehicle.id,
+        text: `🔧 ${serviceType} due (every ${intervalLabel})`,
+        isFollowUp: true,
+        done: false,
+        urgent: false,
+        dueDate: nextDueDate,
+        maintenanceService: serviceType,
+        maintenanceRecordId: maintenanceRef.id,
+        autoCreated: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: currentUser.displayName || currentUser.email,
+      });
+      await batch.commit();
+    }
 
     // Auto-update vehicle mileage if higher
     if (mileage && (!selectedVehicle.mileage || mileage > selectedVehicle.mileage)) {
@@ -3171,6 +3277,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     toast('Maintenance record saved!', 'success');
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
+    $('m-next-due-display').textContent = '—';
     loadMaintenanceHistory(selectedVehicle.id);
     updateRecommendedServices(selectedVehicle.id);
   } catch (err) {
@@ -3203,11 +3310,17 @@ async function loadMaintenanceHistory(vehicleId) {
       const locStr = d.location ? d.location : '';
       const meta = [mileStr, costStr, locStr].filter(Boolean).join(' · ');
       const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
+      let intervalBadge = '';
+      if (d.intervalMonths) {
+        const lbl = d.intervalMonths === 1 ? '1 Mo' : d.intervalMonths === 12 ? '1 Yr' : d.intervalMonths === 24 ? '2 Yr' : `${d.intervalMonths} Mo`;
+        intervalBadge = `<span class="interval-badge">🔁 Every ${lbl}</span>`;
+      }
+      const nextDueStr = d.nextDueDate ? ` · Next: ${d.nextDueDate}` : '';
       html += `
         <div class="data-list-item">
           <div class="item-info">
-            <div class="item-title">${escapeHtml(d.serviceType)}</div>
-            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
+            <div class="item-title">${escapeHtml(d.serviceType)}${intervalBadge}</div>
+            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
           </div>
           ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
         </div>
@@ -3224,7 +3337,15 @@ window.deleteMaintenanceRecord = async function(docId) {
   const ok = await confirm('Delete Record', 'Remove this maintenance record?');
   if (!ok) return;
   try {
-    await db.collection('maintenance').doc(docId).delete();
+    // Also remove any auto-created follow-up linked to this record
+    const linkedNotes = await db.collection('vehicleNotes')
+      .where('maintenanceRecordId', '==', docId)
+      .where('autoCreated', '==', true)
+      .get();
+    const batch = db.batch();
+    batch.delete(db.collection('maintenance').doc(docId));
+    linkedNotes.forEach(d => batch.delete(d.ref));
+    await batch.commit();
     toast('Record deleted.', 'success');
     if (selectedVehicle) {
       loadMaintenanceHistory(selectedVehicle.id);
@@ -3477,13 +3598,16 @@ async function loadDashboardFollowUps() {
         reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅</button>`;
       }
       return `
-        <div class="followup-item${extraClass}"${vidAttr}>
-          <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
-          <div class="followup-info">
-            <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
-            <div class="followup-meta">${metaLabel}${creatorLabel}</div>
+        <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}">
+          <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
+          <div class="followup-item${extraClass}"${vidAttr}>
+            <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
+            <div class="followup-info">
+              <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
+              <div class="followup-meta">${metaLabel}${creatorLabel}</div>
+            </div>
+            ${reassignBtn}
           </div>
-          ${reassignBtn}
         </div>`;
     }
 
@@ -4063,6 +4187,114 @@ function closeTaskPanel() {
 }
 window.openTaskPanel = openTaskPanel;
 window.closeTaskPanel = closeTaskPanel;
+
+// ---- Reschedule task (swipe / hold) — works for all roles ----
+window.openRescheduleTask = function(docId, col, currentDue) {
+  if (!docId || !col) return;
+  const existing = document.querySelector('.reassign-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'reassign-modal-overlay';
+  overlay.innerHTML = `
+    <div class="reassign-modal">
+      <h4>📅 Reschedule Task</h4>
+      ${currentDue ? `<p>Current due date: <strong>${currentDue}</strong></p>` : '<p>Set a due date for this task</p>'}
+      <div class="form-group">
+        <label>New Due Date</label>
+        <input type="date" id="reschedule-new-date" class="form-select" value="${todayDateString()}">
+      </div>
+      <div class="reassign-modal-actions">
+        <button class="btn btn-primary" id="btn-reschedule-confirm">Save</button>
+        <button class="btn btn-outline" id="btn-reschedule-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#btn-reschedule-cancel').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector('#btn-reschedule-confirm').onclick = async () => {
+    const newDate = overlay.querySelector('#reschedule-new-date').value;
+    if (!newDate) { toast('Pick a date.', 'warning'); return; }
+    try {
+      await db.collection(col).doc(docId).update({ dueDate: newDate });
+      toast('Task rescheduled to ' + newDate, 'success');
+      overlay.remove();
+      loadDashboardFollowUps();
+    } catch (err) {
+      console.error('Reschedule error:', err);
+      toast('Failed to reschedule.', 'error');
+    }
+  };
+};
+
+// ---- Gesture setup: swipe-left or long-press on followup items to reschedule ----
+(function setupFollowupGestures() {
+  const overlay = $('task-panel-overlay');
+  if (!overlay) return;
+  let startX = 0, startY = 0, activeWrap = null, pressTimer = null, swiping = false;
+
+  function getWrap(t) {
+    let el = t;
+    while (el && el !== overlay) {
+      if (el.classList && el.classList.contains('followup-item-wrap')) return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  overlay.addEventListener('touchstart', e => {
+    const wrap = getWrap(e.target);
+    if (!wrap) return;
+    activeWrap = wrap;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    swiping = false;
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      const w = activeWrap;
+      activeWrap = null;
+      if (w) openRescheduleTask(w.dataset.id, w.dataset.col, w.dataset.due);
+    }, 600);
+  }, { passive: true });
+
+  overlay.addEventListener('touchmove', e => {
+    if (!activeWrap) return;
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+    if (!swiping && Math.abs(dx) > 8) { clearTimeout(pressTimer); pressTimer = null; swiping = true; }
+    if (swiping && dx < 0 && Math.abs(dx) > Math.abs(dy)) {
+      const item = activeWrap.querySelector('.followup-item');
+      if (item) item.style.transform = `translateX(${Math.max(dx, -90)}px)`;
+    }
+  }, { passive: true });
+
+  overlay.addEventListener('touchend', e => {
+    clearTimeout(pressTimer); pressTimer = null;
+    if (!activeWrap) return;
+    const wrap = activeWrap; activeWrap = null;
+    const dx = startX - e.changedTouches[0].clientX;
+    const item = wrap.querySelector('.followup-item');
+    if (item) {
+      item.style.transition = 'transform 0.2s ease';
+      item.style.transform = '';
+      setTimeout(() => { item.style.transition = ''; }, 220);
+    }
+    if (swiping && dx > 60) openRescheduleTask(wrap.dataset.id, wrap.dataset.col, wrap.dataset.due);
+    swiping = false;
+  }, { passive: true });
+
+  // Desktop: long-press via mousedown
+  overlay.addEventListener('mousedown', e => {
+    const wrap = getWrap(e.target);
+    if (!wrap) return;
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      openRescheduleTask(wrap.dataset.id, wrap.dataset.col, wrap.dataset.due);
+    }, 700);
+  });
+  overlay.addEventListener('mouseup', () => { clearTimeout(pressTimer); pressTimer = null; });
+  overlay.addEventListener('mousemove', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
+})();
 
 $('btn-save-general-note').addEventListener('click', async () => {
   const text = $('general-note-text').value.trim();

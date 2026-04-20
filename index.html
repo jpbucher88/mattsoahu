@@ -355,6 +355,23 @@
               </div>
             </div>
             <div class="form-row">
+              <div class="form-group">
+                <label for="m-interval">Repeat Every</label>
+                <select id="m-interval" class="form-select">
+                  <option value="">No repeat</option>
+                  <option value="1">1 Month</option>
+                  <option value="3">3 Months</option>
+                  <option value="6">6 Months</option>
+                  <option value="12">1 Year (12 Months)</option>
+                  <option value="24">2 Years (24 Months)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Next Due Date</label>
+                <div id="m-next-due-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+            </div>
+            <div class="form-row">
               <button type="submit" class="btn btn-primary">Save Record</button>
               <button type="button" id="btn-cancel-maintenance" class="btn btn-outline">Cancel</button>
             </div>

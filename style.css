@@ -2080,6 +2080,70 @@ body {
 }
 .agenda-empty { margin-top: 8px; }
 
+/* ---- Swipe-to-reschedule wrapper ---- */
+.followup-item-wrap {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+.followup-item-wrap .swipe-action-bg {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 90px;
+  background: #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 0 8px 8px 0;
+  pointer-events: none;
+  letter-spacing: 0.02em;
+}
+.followup-item-wrap .swipe-action-bg span { font-size: 1.15rem; }
+.followup-item {
+  will-change: transform;
+}
+
+/* ---- Time-based maintenance badges ---- */
+.interval-badge {
+  display: inline-block;
+  background: #dbeafe;
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 0.73rem;
+  font-weight: 600;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.rec-time {
+  padding: 8px 10px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+.rec-time-overdue {
+  background: #fef2f2;
+  border-left: 3px solid var(--danger);
+}
+.rec-time-upcoming {
+  background: #f0f9ff;
+  border-left: 3px solid #3b82f6;
+}
+.rec-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 10px 0 4px;
+}
+
 /* ============ URGENT BANNER (dashboard top) ============ */
 .urgent-banner {
   background: #fef2f2;
