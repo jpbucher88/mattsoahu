@@ -1081,13 +1081,39 @@ function confirmMileage() {
 
   // Save mileage to Firestore
   if (selectedVehicle) {
-    db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val }).then(() => {
+    db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val }).then(async () => {
       selectedVehicle.mileage = val;
       const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
       if (cached) cached.mileage = val;
       // Also update the maintenance mileage input
       $('vehicle-mileage').value = val;
       updateRecommendedServices(selectedVehicle.id);
+
+      // Auto-flag mileage-based follow-ups as urgent when within 500 miles
+      try {
+        const miSnap = await db.collection('vehicleNotes')
+          .where('vehicleId', '==', selectedVehicle.id)
+          .where('autoCreated', '==', true)
+          .where('intervalType', '==', 'mileage')
+          .where('done', '==', false)
+          .get();
+        const urgentBatch = db.batch();
+        let anyUrgent = false;
+        miSnap.forEach(doc => {
+          const d = doc.data();
+          if (!d.nextDueMileage) return;
+          const milesLeft = d.nextDueMileage - val;
+          if (milesLeft <= 500 && !d.urgent) {
+            urgentBatch.update(doc.ref, { urgent: true });
+            anyUrgent = true;
+          }
+        });
+        if (anyUrgent) {
+          await urgentBatch.commit();
+          toast('⚠️ Service coming up within 500 miles!', 'warning');
+          loadDashboardFollowUps();
+        }
+      } catch (e) { /* ignore */ }
     }).catch(err => console.error('Mileage save error:', err));
   }
 
@@ -1511,7 +1537,7 @@ function updateDateDisplay() {
 function shiftDate(days) {
   const [y, m, d] = selectedDate.split('-').map(Number);
   const dt = new Date(y, m - 1, d + days);
-  selectedDate = dt.toISOString().slice(0, 10);
+  selectedDate = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
   updateDateDisplay();
   if (selectedVehicle) {
     loadPhotosForDate(selectedVehicle.id, selectedDate);
@@ -1611,12 +1637,12 @@ function renderMiniCalendar(refDate) {
   const nextBtn = $('cal-next-month');
   if (prevBtn) prevBtn.addEventListener('click', () => {
     const nd = new Date(y, m - 2, 1);
-    const newRef = nd.toISOString().slice(0, 10);
+    const newRef = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-01`;
     loadPhotoDates(selectedVehicle.id, newRef);
   });
   if (nextBtn) nextBtn.addEventListener('click', () => {
     const nd = new Date(y, m, 1);
-    const newRef = nd.toISOString().slice(0, 10);
+    const newRef = `${nd.getFullYear()}-${String(nd.getMonth()+1).padStart(2,'0')}-01`;
     loadPhotoDates(selectedVehicle.id, newRef);
   });
 }
@@ -3003,7 +3029,31 @@ async function updateRecommendedServices(vehicleId) {
     });
   } catch (e) { /* ignore */ }
 
-  // --- Mileage-based section ---
+  // --- Custom mileage-interval section (from vehicleNotes with intervalType:'mileage') ---
+  const miIntervalDue = [];
+  const miIntervalWarn = [];
+  if (mileage) {
+    try {
+      const mnSnap = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', vehicleId)
+        .where('autoCreated', '==', true)
+        .where('intervalType', '==', 'mileage')
+        .where('done', '==', false)
+        .get();
+      mnSnap.forEach(doc => {
+        const d = doc.data();
+        if (!d.nextDueMileage || !d.intervalMiles) return;
+        const milesLeft = d.nextDueMileage - mileage;
+        if (milesLeft <= 0) {
+          miIntervalDue.push({ service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
+        } else if (milesLeft <= 500) {
+          miIntervalWarn.push({ service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
+        }
+      });
+    } catch (e) { /* ignore */ }
+  }
+
+  // --- Mileage-based section (from MAINTENANCE_SCHEDULE defaults) ---
   const due = [];
   const upcoming = [];
 
@@ -3014,13 +3064,16 @@ async function updateRecommendedServices(vehicleId) {
       const milesUntil = nextDue - mileage;
       if (milesUntil <= 0) {
         due.push({ ...item, milesUntil, nextDue, overdue: true });
+      } else if (milesUntil <= 500) {
+        // Early warning within 500 miles
+        upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
       } else if (milesUntil <= item.interval * 0.2) {
         upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
       }
     });
   }
 
-  if (timeDue.length === 0 && timeUpcoming.length === 0 && due.length === 0 && upcoming.length === 0) {
+  if (timeDue.length === 0 && timeUpcoming.length === 0 && due.length === 0 && upcoming.length === 0 && miIntervalDue.length === 0 && miIntervalWarn.length === 0) {
     container.style.display = mileage ? 'block' : 'none';
     if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
     return;
@@ -3042,9 +3095,23 @@ async function updateRecommendedServices(vehicleId) {
     });
   }
 
-  // Mileage-based items
+  // Custom mileage-interval items
+  if (miIntervalDue.length > 0 || miIntervalWarn.length > 0) {
+    html += '<div class="rec-section-title">🛣 Custom Mileage Intervals</div>';
+    miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
+    miIntervalDue.forEach(s => {
+      const over = Math.abs(s.milesLeft).toLocaleString();
+      html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> · Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+    });
+    miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
+    miIntervalWarn.forEach(s => {
+      html += `<div class="rec-item rec-upcoming">⚠️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.milesLeft.toLocaleString()} mi · at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+    });
+  }
+
+  // Standard mileage-based items
   if (due.length > 0 || upcoming.length > 0) {
-    if (timeDue.length > 0 || timeUpcoming.length > 0) html += '<div class="rec-section-title">🛣 Mileage-Based</div>';
+    if (timeDue.length > 0 || timeUpcoming.length > 0 || miIntervalDue.length > 0 || miIntervalWarn.length > 0) html += '<div class="rec-section-title">📋 Standard Schedule</div>';
     due.sort((a, b) => a.milesUntil - b.milesUntil);
     upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
     due.forEach(s => {
@@ -3053,7 +3120,9 @@ async function updateRecommendedServices(vehicleId) {
     });
     upcoming.forEach(s => {
       const untilMiles = s.milesUntil.toLocaleString();
-      html += `<div class="rec-item rec-upcoming">${s.icon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+      const warnClass = s.milesUntil <= 500 ? 'rec-overdue' : 'rec-upcoming';
+      const warnIcon = s.milesUntil <= 500 ? '⚠️' : s.icon;
+      html += `<div class="rec-item ${warnClass}">${warnIcon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
     });
   }
 
@@ -3074,6 +3143,32 @@ $('btn-save-mileage').addEventListener('click', async () => {
     if (cached) cached.mileage = val;
     toast('Mileage updated!', 'success');
     updateRecommendedServices(selectedVehicle.id);
+
+    // Auto-flag mileage-based follow-ups as urgent within 500 miles
+    try {
+      const miSnap = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', selectedVehicle.id)
+        .where('autoCreated', '==', true)
+        .where('intervalType', '==', 'mileage')
+        .where('done', '==', false)
+        .get();
+      const urgentBatch = db.batch();
+      let anyUrgent = false;
+      miSnap.forEach(doc => {
+        const d = doc.data();
+        if (!d.nextDueMileage) return;
+        const milesLeft = d.nextDueMileage - val;
+        if (milesLeft <= 500 && !d.urgent) {
+          urgentBatch.update(doc.ref, { urgent: true });
+          anyUrgent = true;
+        }
+      });
+      if (anyUrgent) {
+        await urgentBatch.commit();
+        toast('⚠️ Service coming up within 500 miles!', 'warning');
+        loadDashboardFollowUps();
+      }
+    } catch (e) { /* ignore */ }
   } catch (err) {
     console.error('Save mileage error:', err);
     toast('Failed to save mileage.', 'error');
@@ -3169,26 +3264,47 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-date').value = todayDateString();
   $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
   $('m-interval').value = '';
+  $('m-mile-interval').value = '';
   $('m-next-due-display').textContent = '—';
+  $('m-next-due-mileage-display').textContent = '—';
+  $('m-custom-row').style.display = 'none';
+  $('m-custom-type').value = '';
 });
 
-// Update "Next Due" display when interval or date changes
+// Update "Next Due" displays when interval or date/mileage changes
 function updateNextDueDisplay() {
   const dateVal = $('m-date').value;
   const months = parseInt($('m-interval').value);
-  const display = $('m-next-due-display');
-  if (!dateVal || !months) { display.textContent = '—'; return; }
-  const [y, mo, d] = dateVal.split('-').map(Number);
-  const next = new Date(y, mo - 1 + months, d);
-  display.textContent = next.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE });
+  const dateDisplay = $('m-next-due-display');
+  if (!dateVal || !months) {
+    dateDisplay.textContent = '—';
+  } else {
+    const [y, mo, d] = dateVal.split('-').map(Number);
+    const next = new Date(y, mo - 1 + months, d);
+    dateDisplay.textContent = next.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE });
+  }
+
+  const serviceMileage = parseInt($('m-mileage').value) || (selectedVehicle && selectedVehicle.mileage) || 0;
+  const mileInt = parseInt($('m-mile-interval').value);
+  const mileDisplay = $('m-next-due-mileage-display');
+  if (!mileInt || !serviceMileage) {
+    mileDisplay.textContent = mileInt && !serviceMileage ? 'Enter mileage at service' : '—';
+  } else {
+    const nextMi = serviceMileage + mileInt;
+    mileDisplay.textContent = nextMi.toLocaleString() + ' mi (warn at ' + (nextMi - 500).toLocaleString() + ' mi)';
+  }
 }
 $('m-interval').addEventListener('change', updateNextDueDisplay);
 $('m-date').addEventListener('change', updateNextDueDisplay);
+$('m-mileage').addEventListener('input', updateNextDueDisplay);
+$('m-mile-interval').addEventListener('input', updateNextDueDisplay);
 
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
   $('m-next-due-display').textContent = '—';
+  $('m-next-due-mileage-display').textContent = '—';
+  $('m-custom-row').style.display = 'none';
 });
 
 // Save maintenance record
@@ -3196,15 +3312,18 @@ $('maintenance-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   if (!selectedVehicle) return;
 
-  const serviceType = $('m-type').value;
+  const rawType = $('m-type').value;
+  const customTypeName = $('m-custom-type').value.trim();
+  const serviceType = rawType === 'Custom' ? (customTypeName || 'Custom Service') : rawType;
   const date = $('m-date').value;
   const mileage = $('m-mileage').value ? parseInt($('m-mileage').value) : null;
   const cost = $('m-cost').value ? parseFloat($('m-cost').value) : null;
   const notes = $('m-notes').value.trim();
   const location = $('m-location').value.trim();
   const intervalMonths = $('m-interval').value ? parseInt($('m-interval').value) : null;
+  const intervalMiles = $('m-mile-interval').value ? parseInt($('m-mile-interval').value) : null;
 
-  // Compute next due date if interval is set
+  // Compute next due date if time interval is set
   let nextDueDate = null;
   if (intervalMonths && date) {
     const [y, mo, d] = date.split('-').map(Number);
@@ -3212,7 +3331,11 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     nextDueDate = next.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }); // YYYY-MM-DD
   }
 
-  if (!serviceType || !date) {
+  // Compute next due mileage if mile interval is set
+  const serviceMileage = mileage || (selectedVehicle && selectedVehicle.mileage) || null;
+  const nextDueMileage = (intervalMiles && serviceMileage) ? serviceMileage + intervalMiles : null;
+
+  if (!rawType || !date) {
     toast('Please select a service type and date.', 'warning');
     return;
   }
@@ -3233,12 +3356,13 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     if (location) record.location = location;
     if (intervalMonths) record.intervalMonths = intervalMonths;
     if (nextDueDate) record.nextDueDate = nextDueDate;
+    if (intervalMiles) record.intervalMiles = intervalMiles;
+    if (nextDueMileage) record.nextDueMileage = nextDueMileage;
 
     const maintenanceRef = await db.collection('maintenance').add(record);
 
-    // If interval is set, auto-create (or replace) a follow-up vehicleNote for next service
-    if (intervalMonths && nextDueDate) {
-      // Remove any existing auto-created follow-up for this service + vehicle
+    // Remove any existing auto-created follow-up notes for this service + vehicle, then create new ones
+    if (intervalMonths || intervalMiles) {
       const oldNotes = await db.collection('vehicleNotes')
         .where('vehicleId', '==', selectedVehicle.id)
         .where('maintenanceService', '==', serviceType)
@@ -3246,22 +3370,49 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         .get();
       const batch = db.batch();
       oldNotes.forEach(d => batch.delete(d.ref));
-      const intervalLabel = intervalMonths === 1 ? '1 Month' : intervalMonths === 12 ? '1 Year' : intervalMonths === 24 ? '2 Years' : `${intervalMonths} Months`;
-      const noteRef = db.collection('vehicleNotes').doc();
-      batch.set(noteRef, {
-        vehicleId: selectedVehicle.id,
-        text: `🔧 ${serviceType} due (every ${intervalLabel})`,
-        isFollowUp: true,
-        done: false,
-        urgent: false,
-        dueDate: nextDueDate,
-        maintenanceService: serviceType,
-        maintenanceRecordId: maintenanceRef.id,
-        autoCreated: true,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdBy: currentUser.uid,
-        createdByName: currentUser.displayName || currentUser.email,
-      });
+
+      // Time-based follow-up
+      if (intervalMonths && nextDueDate) {
+        const intervalLabel = intervalMonths === 1 ? '1 Month' : intervalMonths === 12 ? '1 Year' : intervalMonths === 24 ? '2 Years' : `${intervalMonths} Months`;
+        const noteRef = db.collection('vehicleNotes').doc();
+        batch.set(noteRef, {
+          vehicleId: selectedVehicle.id,
+          text: `🔧 ${serviceType} due (every ${intervalLabel})`,
+          isFollowUp: true,
+          done: false,
+          urgent: false,
+          dueDate: nextDueDate,
+          maintenanceService: serviceType,
+          maintenanceRecordId: maintenanceRef.id,
+          autoCreated: true,
+          intervalType: 'time',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+        });
+      }
+
+      // Mileage-based follow-up (no calendar dueDate, stored as nextDueMileage)
+      if (intervalMiles && nextDueMileage) {
+        const mileNoteRef = db.collection('vehicleNotes').doc();
+        batch.set(mileNoteRef, {
+          vehicleId: selectedVehicle.id,
+          text: `🛢️ ${serviceType} due at ${nextDueMileage.toLocaleString()} mi (every ${intervalMiles.toLocaleString()} mi)`,
+          isFollowUp: true,
+          done: false,
+          urgent: false,
+          nextDueMileage,
+          intervalMiles,
+          maintenanceService: serviceType,
+          maintenanceRecordId: maintenanceRef.id,
+          autoCreated: true,
+          intervalType: 'mileage',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+        });
+      }
+
       await batch.commit();
     }
 
@@ -3278,6 +3429,8 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
     $('m-next-due-display').textContent = '—';
+    $('m-next-due-mileage-display').textContent = '—';
+    $('m-custom-row').style.display = 'none';
     loadMaintenanceHistory(selectedVehicle.id);
     updateRecommendedServices(selectedVehicle.id);
   } catch (err) {
@@ -3313,14 +3466,18 @@ async function loadMaintenanceHistory(vehicleId) {
       let intervalBadge = '';
       if (d.intervalMonths) {
         const lbl = d.intervalMonths === 1 ? '1 Mo' : d.intervalMonths === 12 ? '1 Yr' : d.intervalMonths === 24 ? '2 Yr' : `${d.intervalMonths} Mo`;
-        intervalBadge = `<span class="interval-badge">🔁 Every ${lbl}</span>`;
+        intervalBadge += `<span class="interval-badge">🔁 Every ${lbl}</span>`;
+      }
+      if (d.intervalMiles) {
+        intervalBadge += `<span class="interval-badge" style="background:#d1fae5;color:#065f46;">🛣 Every ${d.intervalMiles.toLocaleString()} mi</span>`;
       }
       const nextDueStr = d.nextDueDate ? ` · Next: ${d.nextDueDate}` : '';
+      const nextDueMiStr = d.nextDueMileage ? ` · Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
       html += `
         <div class="data-list-item">
           <div class="item-info">
             <div class="item-title">${escapeHtml(d.serviceType)}${intervalBadge}</div>
-            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
+            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
           </div>
           ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
         </div>

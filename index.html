@@ -181,7 +181,7 @@
             </select>
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
-            <label for="vehicle-trip-return">🔄 Expected Return:</label>
+            <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
             <input type="datetime-local" id="vehicle-trip-return" class="vehicle-location-custom">
           </div>
           <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
@@ -308,7 +308,7 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="m-type">Service Type</label>
-                <select id="m-type" class="form-select">
+                <select id="m-type" class="form-select" onchange="document.getElementById('m-custom-row').style.display=this.value==='Custom'?'':'none'">
                   <option value="">-- Select --</option>
                   <option value="Oil Change">Oil Change</option>
                   <option value="Tire Rotation">Tire Rotation</option>
@@ -326,12 +326,20 @@
                   <option value="Belts/Hoses">Belts/Hoses</option>
                   <option value="A/C Service">A/C Service</option>
                   <option value="Inspection/Safety">Inspection/Safety</option>
-                  <option value="Other">Other</option>
+                  <option value="Roach Treatment">Roach Treatment</option>
+                  <option value="Custom">✏️ Custom (type below)...</option>
                 </select>
               </div>
               <div class="form-group">
                 <label for="m-date">Date</label>
                 <input type="date" id="m-date" required>
+              </div>
+            </div>
+            <!-- Custom service name row (shown when Custom is selected) -->
+            <div class="form-row" id="m-custom-row" style="display:none;">
+              <div class="form-group" style="flex:1;">
+                <label for="m-custom-type">Custom Service Name</label>
+                <input type="text" id="m-custom-type" class="form-select" placeholder="e.g. Full Detail, Window Tint..." maxlength="100">
               </div>
             </div>
             <div class="form-row">
@@ -356,9 +364,9 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="m-interval">Repeat Every</label>
+                <label for="m-interval">Repeat Every (Time)</label>
                 <select id="m-interval" class="form-select">
-                  <option value="">No repeat</option>
+                  <option value="">No time repeat</option>
                   <option value="1">1 Month</option>
                   <option value="3">3 Months</option>
                   <option value="6">6 Months</option>
@@ -367,8 +375,18 @@
                 </select>
               </div>
               <div class="form-group">
+                <label for="m-mile-interval">Repeat Every (Miles)</label>
+                <input type="number" id="m-mile-interval" class="form-select" placeholder="e.g. 7000" min="100" max="999999" inputmode="numeric">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
                 <label>Next Due Date</label>
                 <div id="m-next-due-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+              <div class="form-group">
+                <label>Next Due Mileage</label>
+                <div id="m-next-due-mileage-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
               </div>
             </div>
             <div class="form-row">
