@@ -186,6 +186,10 @@
           </div>
           <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
             <div class="loc-field">
+              <label for="repair-shop-name">🏥 Shop Name:</label>
+              <input type="text" id="repair-shop-name" class="vehicle-location-custom" placeholder="Where is it being repaired?">
+            </div>
+            <div class="loc-field">
               <label for="repair-order-number">📦 Order / Tracking #:</label>
               <input type="text" id="repair-order-number" class="vehicle-location-custom" placeholder="Order or tracking number">
             </div>
@@ -195,6 +199,7 @@
             </div>
           </div>
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
+          <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
         <div id="stale-alert" class="stale-alert" style="display:none;"></div>

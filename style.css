@@ -2797,6 +2797,23 @@ body {
   border-color: #bfdbfe;
 }
 
+/* ============ PHOTOS NEEDED ============ */
+.location-group-photos .location-group-header {
+  background: #7c3aed;
+}
+.photo-age-tag {
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.photo-done-btn {
+  white-space: nowrap;
+}
+
 /* ============ CLEANING ACTIONS ============ */
 .cleaning-actions {
   display: flex;

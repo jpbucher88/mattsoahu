@@ -579,6 +579,8 @@ function renderLocationsWidget() {
     return;
   }
 
+  const MS_24H = 24 * 60 * 60 * 1000;
+  const MS_2H = 2 * 60 * 60 * 1000;
   const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip');
   const atRepair = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
   const atHome1585 = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === '1585 Kapiolani' && !v.needsCleaning);
@@ -587,6 +589,23 @@ function renderLocationsWidget() {
   const cleaningHNL = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === 'HNL');
   const cleaning1585 = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === '1585 Kapiolani');
   const cleaningOther = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
+
+  // Photos needed — vehicles with stale photos (>24h), not suppressed
+  function needsPhotosCheck(v) {
+    const isOnTrip = v.tripStatus === 'on-trip';
+    const isAtRepair = v.tripStatus === 'repair-shop';
+    const stillCleaning = v.needsCleaning;
+    let withinGrace = false;
+    if (v.cleaningFlaggedAt) {
+      const flagTime = v.cleaningFlaggedAt.toDate ? v.cleaningFlaggedAt.toDate().getTime() : new Date(v.cleaningFlaggedAt).getTime();
+      withinGrace = (Date.now() - flagTime) < MS_2H;
+    }
+    if (isOnTrip || isAtRepair || stillCleaning || withinGrace) return false;
+    return v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
+  }
+  const photosHNL = vehiclesCache.filter(v => needsPhotosCheck(v) && v.homeLocation === 'HNL');
+  const photos1585 = vehiclesCache.filter(v => needsPhotosCheck(v) && v.homeLocation === '1585 Kapiolani');
+  const photosOther = vehiclesCache.filter(v => needsPhotosCheck(v) && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
 
   // Sort helpers
   const sortByReturn = (arr) => arr.sort((a, b) => {
@@ -624,6 +643,42 @@ function renderLocationsWidget() {
     s += '</div></div>';
     return s;
   }
+
+  // Helper for photos-needed section
+  function renderPhotosSection(title, vehicles) {
+    if (vehicles.length === 0) return '';
+    let s = `<div class="location-group location-group-photos">
+      <div class="location-group-header" style="background:#7c3aed;">
+        <span class="location-group-name">\ud83d\udcf7 ${escapeHtml(title)}</span>
+        <span class="location-group-count">${vehicles.length}</span>
+      </div>
+      <div class="location-group-vehicles cleaning-list">`;
+    for (const v of vehicles) {
+      let ageText = '';
+      if (v.lastPhotoAge === Infinity) {
+        ageText = 'No photos yet';
+      } else {
+        const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
+        const days = Math.floor(hrs / 24);
+        ageText = days > 0 ? `${days}d ${hrs % 24}h ago` : `${hrs}h ago`;
+      }
+      s += `<div class="cleaning-item" data-vid="${v.id}">
+        <div class="cleaning-vehicle-info">
+          <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+          <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+          <span class="photo-age-tag">${ageText}</span>
+        </div>
+        <button class="btn btn-sm btn-primary photo-done-btn" data-vid="${v.id}">\ud83d\udcf7 Done</button>
+      </div>`;
+    }
+    s += '</div></div>';
+    return s;
+  }
+
+  // Photos Needed — split by location
+  html += renderPhotosSection('Needs Photos — HNL', photosHNL);
+  html += renderPhotosSection('Needs Photos — 1585 Kapiolani', photos1585);
+  if (photosOther.length > 0) html += renderPhotosSection('Needs Photos — Other', photosOther);
 
   // Needs Cleaning — split by location
   html += renderCleaningSection('Needs Cleaning — HNL', cleaningHNL);
@@ -696,6 +751,7 @@ function renderLocationsWidget() {
         returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">\u21a9 ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
       }
       let partsInfo = '';
+      if (v.repairShopName) partsInfo += `<span class="repair-parts-tag">\ud83c\udfe5 ${escapeHtml(v.repairShopName)}</span>`;
       if (v.repairOrderNumber) partsInfo += `<span class="repair-parts-tag">\ud83d\udce6 ${escapeHtml(v.repairOrderNumber)}</span>`;
       if (v.repairPartsEta) partsInfo += `<span class="repair-parts-tag">\ud83d\udcc5 Parts ETA: ${v.repairPartsEta}</span>`;
       html += `<div class="trip-item">
@@ -762,6 +818,14 @@ function renderLocationsWidget() {
         console.error('Mark cleaned error:', err);
         toast('Failed to update.', 'error');
       }
+    });
+  });
+
+  // Photo done button handler — opens vehicle page to take photos
+  container.querySelectorAll('.photo-done-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openVehiclePage(btn.dataset.vid);
     });
   });
 }
@@ -858,8 +922,16 @@ async function openVehiclePage(vid) {
       tripReturnInput.value = '';
     }
     // Repair parts fields
+    $('repair-shop-name').value = selectedVehicle.repairShopName || '';
     $('repair-order-number').value = selectedVehicle.repairOrderNumber || '';
     $('repair-parts-eta').value = selectedVehicle.repairPartsEta || '';
+  }
+
+  // Show "Needs Cleaning" button if vehicle is home and not already flagged
+  const needsCleanBtn = $('btn-needs-cleaning');
+  if (needsCleanBtn) {
+    const showCleanBtn = selectedVehicle.tripStatus !== 'on-trip' && selectedVehicle.tripStatus !== 'repair-shop' && !selectedVehicle.needsCleaning;
+    needsCleanBtn.style.display = showCleanBtn ? '' : 'none';
   }
 
   // Show hero image if set
@@ -2017,6 +2089,33 @@ $('brand-home-admin').addEventListener('click', () => {
 $('vehicle-trip-status').addEventListener('change', function() {
   $('trip-return-row').style.display = (this.value === 'on-trip' || this.value === 'repair-shop') ? '' : 'none';
   $('repair-parts-row').style.display = this.value === 'repair-shop' ? '' : 'none';
+  // Hide needs-cleaning btn if switching to trip/repair
+  const needsCleanBtn = $('btn-needs-cleaning');
+  if (needsCleanBtn && selectedVehicle) {
+    const showCleanBtn = this.value !== 'on-trip' && this.value !== 'repair-shop' && !selectedVehicle.needsCleaning;
+    needsCleanBtn.style.display = showCleanBtn ? '' : 'none';
+  }
+});
+
+// Needs Cleaning button on vehicle page
+$('btn-needs-cleaning').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({
+      needsCleaning: true,
+      needsDamageCheck: true,
+      cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    selectedVehicle.needsCleaning = true;
+    selectedVehicle.needsDamageCheck = true;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) { cached.needsCleaning = true; cached.needsDamageCheck = true; }
+    $('btn-needs-cleaning').style.display = 'none';
+    toast('Flagged for cleaning! \u2713', 'success');
+  } catch (err) {
+    console.error('Flag cleaning error:', err);
+    toast('Failed to flag for cleaning.', 'error');
+  }
 });
 
 $('btn-save-location').addEventListener('click', async () => {
@@ -2024,6 +2123,7 @@ $('btn-save-location').addEventListener('click', async () => {
   const homeLocation = $('vehicle-home-location').value;
   const tripStatus = $('vehicle-trip-status').value;
   const tripReturnVal = $('vehicle-trip-return').value;
+  const repairShopName = $('repair-shop-name').value.trim();
   const repairOrderNumber = $('repair-order-number').value.trim();
   const repairPartsEta = $('repair-parts-eta').value;
 
@@ -2042,6 +2142,7 @@ $('btn-save-location').addEventListener('click', async () => {
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
+    updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   } else if (tripStatus === 'repair-shop') {
@@ -2051,15 +2152,16 @@ $('btn-save-location').addEventListener('click', async () => {
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
+    updateData.repairShopName = repairShopName || firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = repairOrderNumber || firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = repairPartsEta || firebase.firestore.FieldValue.delete();
-    // Create a follow-up task if parts ETA is set
     if (repairPartsEta) {
       updateData.repairPartsEta = repairPartsEta;
     }
   } else {
     updateData.location = homeLocation;
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+    updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   }
@@ -2083,9 +2185,11 @@ $('btn-save-location').addEventListener('click', async () => {
       delete selectedVehicle.tripReturnDate;
     }
     if (tripStatus === 'repair-shop') {
+      selectedVehicle.repairShopName = repairShopName || '';
       selectedVehicle.repairOrderNumber = repairOrderNumber || '';
       selectedVehicle.repairPartsEta = repairPartsEta || '';
     } else {
+      delete selectedVehicle.repairShopName;
       delete selectedVehicle.repairOrderNumber;
       delete selectedVehicle.repairPartsEta;
     }
