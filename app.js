@@ -582,8 +582,16 @@ function renderFleetDashboard() {
     };
   }
 
-  // Click a card to navigate to vehicle detail page
+  // Click a card to navigate to vehicle detail page (touchend for instant iOS response)
   container.querySelectorAll('.fleet-card').forEach(card => {
+    let touchMoved = false;
+    card.addEventListener('touchstart', () => { touchMoved = false; }, { passive: true });
+    card.addEventListener('touchmove', () => { touchMoved = true; }, { passive: true });
+    card.addEventListener('touchend', (e) => {
+      if (touchMoved) return;
+      e.preventDefault();
+      openVehiclePage(card.dataset.vid);
+    });
     card.addEventListener('click', () => {
       openVehiclePage(card.dataset.vid);
     });
@@ -815,8 +823,16 @@ function renderLocationsWidget() {
   if (!html) html = '<p class="hint">No vehicles to display.</p>';
   container.innerHTML = html;
 
-  // Click chip to open vehicle
+  // Click chip to open vehicle (touchend for instant iOS response)
   container.querySelectorAll('.location-vehicle-chip').forEach(chip => {
+    let chipTouchMoved = false;
+    chip.addEventListener('touchstart', () => { chipTouchMoved = false; }, { passive: true });
+    chip.addEventListener('touchmove', () => { chipTouchMoved = true; }, { passive: true });
+    chip.addEventListener('touchend', (e) => {
+      if (chipTouchMoved) return;
+      e.preventDefault();
+      openVehiclePage(chip.dataset.vid);
+    });
     chip.addEventListener('click', () => openVehiclePage(chip.dataset.vid));
   });
 
