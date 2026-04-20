@@ -135,11 +135,15 @@ function sanitizePlate(plate) {
 // Compress image before upload
 // 2560px wide at 92% quality = ~500KB-1.2MB per photo (high detail for damage docs)
 function compressImage(file, maxWidth = 2560, quality = 0.92) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Image processing timed out — the file format may not be supported by this browser.')), 15000);
     const reader = new FileReader();
+    reader.onerror = () => { clearTimeout(timeout); reject(new Error('Could not read the image file.')); };
     reader.onload = (e) => {
       const img = new Image();
+      img.onerror = () => { clearTimeout(timeout); reject(new Error('Could not decode image — the format may not be supported. Try taking a screenshot or converting to JPEG first.')); };
       img.onload = () => {
+        clearTimeout(timeout);
         const canvas = document.createElement('canvas');
         let w = img.width;
         let h = img.height;
@@ -152,7 +156,8 @@ function compressImage(file, maxWidth = 2560, quality = 0.92) {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, w, h);
         canvas.toBlob((blob) => {
-          resolve(new File([blob], file.name || 'photo.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+          if (!blob) { reject(new Error('Failed to convert image to JPEG.')); return; }
+          resolve(new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
         }, 'image/jpeg', quality);
       };
       img.src = e.target.result;
@@ -163,10 +168,13 @@ function compressImage(file, maxWidth = 2560, quality = 0.92) {
 
 // Compress a blob directly (used by the in-browser camera)
 function compressBlob(blob, maxWidth = 2560, quality = 0.92) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Image processing timed out.')), 15000);
     const url = URL.createObjectURL(blob);
     const img = new Image();
+    img.onerror = () => { clearTimeout(timeout); URL.revokeObjectURL(url); reject(new Error('Could not decode camera image.')); };
     img.onload = () => {
+      clearTimeout(timeout);
       URL.revokeObjectURL(url);
       const canvas = document.createElement('canvas');
       let w = img.width;
@@ -179,7 +187,10 @@ function compressBlob(blob, maxWidth = 2560, quality = 0.92) {
       canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, w, h);
-      canvas.toBlob((result) => resolve(result), 'image/jpeg', quality);
+      canvas.toBlob((result) => {
+        if (!result) { reject(new Error('Failed to convert to JPEG.')); return; }
+        resolve(result);
+      }, 'image/jpeg', quality);
     };
     img.src = url;
   });
@@ -1198,23 +1209,32 @@ $('btn-download-all').addEventListener('click', async () => {
     let count = 0;
     for (const photo of photos) {
       try {
-        const resp = await fetch(photo.url);
+        const resp = await fetch(photo.url, { mode: 'cors' });
         if (!resp.ok) throw new Error('fetch ' + resp.status);
         const buf = await resp.arrayBuffer();
+        // Re-encode as JPEG to guarantee format compatibility across devices
+        const jpegBlob = await reencodeAsJpeg(buf);
         count++;
         const ts = photo.timestamp
           ? photo.timestamp.toDate().toISOString().replace(/[:.]/g, '-')
           : String(count).padStart(3, '0');
         const fileName = `${label}_${dateForDownload}_${ts}.jpg`;
-        files.push({ name: fileName, buf });
+        files.push({ name: fileName, buf: await jpegBlob.arrayBuffer() });
         showLoading(`Downloaded ${count} of ${photos.length}...`);
       } catch (dlErr) {
         console.error('Download error for photo:', photo.url, dlErr);
+        count++;
       }
     }
 
     if (files.length === 0) {
-      toast('Could not download any photos.', 'error');
+      toast('Download failed — opening photos in new tabs instead. Right-click or long-press to save each.', 'warning');
+      for (const photo of photos) { window.open(photo.url, '_blank'); }
+      hideLoading();
+      return;
+    } else if (files.length < photos.length) {
+      toast(`${photos.length - files.length} photo(s) could not be downloaded and were skipped.`, 'warning');
+    }
       hideLoading();
       return;
     }
@@ -1359,17 +1379,45 @@ function lightboxNav(dir) {
   showLightboxPhoto();
 }
 
+// Re-encode any image buffer as a guaranteed JPEG blob (handles HEIC, PNG, WebP, etc.)
+function reencodeAsJpeg(arrayBuf) {
+  return new Promise((resolve, reject) => {
+    const blob = new Blob([new Uint8Array(arrayBuf)]);
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      // If re-encoding fails, return original as-is (already JPEG from upload)
+      resolve(new Blob([new Uint8Array(arrayBuf)], { type: 'image/jpeg' }));
+    };
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      canvas.toBlob((result) => {
+        resolve(result || new Blob([new Uint8Array(arrayBuf)], { type: 'image/jpeg' }));
+      }, 'image/jpeg', 0.95);
+    };
+    img.src = url;
+  });
+}
+
 // Save a single photo — share sheet on mobile, direct download on desktop
 async function saveOnePhoto(url, name) {
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { mode: 'cors' });
     if (!resp.ok) throw new Error('fetch ' + resp.status);
-    const blob = await resp.blob();
-    const fileName = name.replace(/\s+/g, '_') + '.jpg';
+    const buf = await resp.arrayBuffer();
+    // Re-encode as JPEG for guaranteed cross-platform compatibility
+    const jpegBlob = await reencodeAsJpeg(buf);
+    const fileName = name.replace(/\s+/g, '_').replace(/\.[^.]+$/, '') + '.jpg';
 
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (isMobile && navigator.canShare) {
-      const file = new File([blob], fileName, { type: 'image/jpeg' });
+      const file = new File([jpegBlob], fileName, { type: 'image/jpeg' });
       if (navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file] });
         return;
@@ -1377,7 +1425,7 @@ async function saveOnePhoto(url, name) {
     }
 
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = URL.createObjectURL(jpegBlob);
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
@@ -1386,7 +1434,9 @@ async function saveOnePhoto(url, name) {
   } catch (err) {
     if (err.name === 'AbortError') return;
     console.error('Save photo error:', err);
-    toast('Could not save photo.', 'error');
+    // Fallback: open in new tab so user can long-press / right-click to save
+    toast('Direct download failed — opening photo in new tab. Right-click or long-press to save.', 'warning');
+    window.open(url, '_blank');
   }
 }
 
