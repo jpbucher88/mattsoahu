@@ -1083,10 +1083,11 @@ body {
 .camera-overlay video {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
   touch-action: none;
   -webkit-touch-callout: none;
   pointer-events: none;
+  transform: none !important;
 }
 
 .camera-hud {
@@ -1134,6 +1135,31 @@ body {
   border: none;
   font-size: 20px;
   cursor: pointer;
+}
+
+.camera-top-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.camera-btn-flash {
+  height: 36px;
+  border-radius: 18px;
+  background: rgba(0,0,0,0.5);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.camera-btn-flash.camera-flash-active {
+  background: rgba(255,204,0,0.85);
+  color: #000;
+  border-color: rgba(255,204,0,0.9);
 }
 
 .camera-count-badge {

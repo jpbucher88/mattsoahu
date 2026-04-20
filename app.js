@@ -790,6 +790,7 @@ function updateProgress(uploaded, total) {
 
 let cameraStream = null;
 let cameraFacingMode = 'environment'; // back camera
+let cameraFlashOn = false;
 let cameraShotCount = 0;
 let cameraUploadQueue = [];
 let cameraUploading = false;
@@ -815,10 +816,18 @@ async function openCamera() {
   cameraUploadedCount = 0;
   cameraTotalQueued = 0;
   cameraUploadedUrls = [];
+  cameraFlashOn = false;
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
   $('camera-upload-bar').style.display = 'none';
+  updateFlashButton();
   $('camera-overlay').style.display = 'flex';
+
+  // Prevent pinch-to-zoom gestures on camera
+  const preventZoom = (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); };
+  $('camera-overlay').addEventListener('touchmove', preventZoom, { passive: false });
+  $('camera-overlay').addEventListener('gesturestart', (e) => e.preventDefault());
+  $('camera-overlay').addEventListener('gesturechange', (e) => e.preventDefault());
 
   try {
     await startCameraStream();
@@ -836,9 +845,12 @@ async function startCameraStream() {
   }
 
   // Use 'exact' facingMode to force the wide-angle (1x) lens on multi-camera iPhones
+  // Request specific resolution to avoid telephoto lens selection
   // Fall back step by step if the device doesn't support it
   let stream = null;
   const attempts = [
+    { video: { facingMode: { exact: cameraFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 }, zoom: 1.0 }, audio: false },
+    { video: { facingMode: { exact: cameraFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
     { video: { facingMode: { exact: cameraFacingMode } }, audio: false },
     { video: { facingMode: cameraFacingMode }, audio: false },
     { video: true, audio: false },
@@ -859,21 +871,25 @@ async function startCameraStream() {
 
   cameraStream = stream;
 
-  // Force zoom to 1x (minimum) on supported devices
+  // Force zoom to 1x (minimum) and apply flash state
   const [track] = cameraStream.getVideoTracks();
   if (track && track.getCapabilities) {
     try {
       const caps = track.getCapabilities();
-      const advanced = [];
+      const constraintUpdates = {};
       if (caps.zoom) {
-        advanced.push({ zoom: caps.zoom.min });
+        constraintUpdates.zoom = caps.zoom.min;
       }
-      // Some Android devices expose torch — ignore, just set zoom
-      if (advanced.length) {
-        await track.applyConstraints({ advanced });
+      // Apply torch state if supported
+      if (caps.torch) {
+        constraintUpdates.torch = cameraFlashOn;
       }
-    } catch (e) { /* zoom not supported — ok */ }
+      if (Object.keys(constraintUpdates).length) {
+        await track.applyConstraints({ advanced: [constraintUpdates] });
+      }
+    } catch (e) { /* zoom/torch not supported — ok */ }
   }
+  updateFlashButton();
 
   const video = $('camera-video');
   video.srcObject = cameraStream;
@@ -974,6 +990,44 @@ async function processCameraQueue() {
 
   cameraUploading = false;
 }
+
+// Flash toggle
+function updateFlashButton() {
+  const btn = $('camera-flash');
+  if (!btn) return;
+  btn.textContent = cameraFlashOn ? '⚡ On' : '⚡ Off';
+  btn.classList.toggle('camera-flash-active', cameraFlashOn);
+
+  // Hide flash button if torch not available
+  if (cameraStream) {
+    const [track] = cameraStream.getVideoTracks();
+    if (track && track.getCapabilities) {
+      const caps = track.getCapabilities();
+      btn.style.display = caps.torch ? '' : 'none';
+    }
+  }
+}
+
+$('camera-flash').addEventListener('click', async () => {
+  cameraFlashOn = !cameraFlashOn;
+  updateFlashButton();
+  if (cameraStream) {
+    const [track] = cameraStream.getVideoTracks();
+    if (track && track.getCapabilities) {
+      try {
+        const caps = track.getCapabilities();
+        if (caps.torch) {
+          await track.applyConstraints({ advanced: [{ torch: cameraFlashOn }] });
+        }
+      } catch (e) {
+        console.warn('Torch toggle failed:', e);
+        toast('Flash not supported on this device.', 'warning');
+        cameraFlashOn = false;
+        updateFlashButton();
+      }
+    }
+  }
+});
 
 // Flip camera
 $('camera-flip').addEventListener('click', async () => {
