@@ -2488,3 +2488,111 @@ body {
   gap: 8px;
   margin-top: 16px;
 }
+
+/* ============ HOURLY DAY VIEW (calendar detail) ============ */
+.hour-day-view {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  max-height: 65vh;
+  overflow-y: auto;
+}
+.hour-block {
+  display: flex;
+  min-height: 36px;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+}
+.hour-block:last-child {
+  border-bottom: none;
+}
+.hour-block.hour-has-tasks {
+  background: #f0f9ff;
+}
+.hour-block.hour-allday {
+  background: #fafafa;
+  border-bottom: 2px solid #e5e7eb;
+  min-height: 40px;
+}
+.hour-label {
+  width: 58px;
+  flex-shrink: 0;
+  padding: 6px 4px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #6b7280;
+  text-align: right;
+  border-right: 1px solid #e5e7eb;
+  line-height: 1.2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.hour-tasks {
+  flex: 1;
+  padding: 3px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cal-item-time {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #2563eb;
+  background: #dbeafe;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+.cal-detail-overdue {
+  border-left: 3px solid #ef4444 !important;
+}
+
+/* ============ NOTE EDIT MODAL ============ */
+.note-edit-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.note-edit-modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.note-edit-modal h4 {
+  margin: 0 0 16px;
+  color: #1e3a5f;
+}
+.note-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.cal-time-input {
+  height: 34px;
+  font-size: 0.85rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0 8px;
+}
+
+/* Undo button */
+.btn-undo {
+  background: #6b7280;
+  color: #fff;
+  border: none;
+}
+.btn-undo:hover {
+  background: #4b5563;
+}
