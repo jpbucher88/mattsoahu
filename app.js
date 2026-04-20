@@ -504,13 +504,33 @@ function renderFleetDashboard() {
     }
 
     const needsPhotos = photoCls !== 'status-ok';
-    const locDisplay = v.location ? escapeHtml(v.location) : 'No location set';
-    const locCls = v.location ? 'status-ok' : 'status-muted';
+    // Location/status display
+    let locDisplay, locCls;
+    if (v.tripStatus === 'on-trip') {
+      let returnInfo = '';
+      if (v.tripReturnDate) {
+        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        returnInfo = ' · Return ' + rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
+      }
+      locDisplay = `🚗 On Trip${returnInfo}`;
+      locCls = 'status-warn';
+    } else if (v.tripStatus === 'repair-shop') {
+      locDisplay = '🔧 Repair Shop';
+      locCls = 'status-danger';
+    } else if (v.homeLocation) {
+      locDisplay = `🏠 ${escapeHtml(v.homeLocation)}`;
+      locCls = 'status-ok';
+    } else {
+      locDisplay = 'No location set';
+      locCls = 'status-muted';
+    }
+    const cleaningFlag = v.needsCleaning ? '<span class="fleet-cleaning-flag">🧹</span>' : '';
     html += `<div class="fleet-card${needsPhotos ? ' fleet-card-alert' : ''}" data-vid="${v.id}">
       ${needsPhotos ? '<span class="fleet-card-badge">⚠️</span>' : ''}
+      ${cleaningFlag}
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
       <div class="fleet-card-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
-      <div class="fleet-card-status ${locCls}">📍 ${locDisplay}</div>
+      <div class="fleet-card-status ${locCls}">${locDisplay}</div>
       <div class="fleet-card-status ${photoCls}">${photoStatus}</div>
       <div class="fleet-card-status ${maintCls}">${maintStatus}</div>
     </div>`;
@@ -536,40 +556,143 @@ function renderLocationsWidget() {
     return;
   }
 
-  // Group vehicles by location
-  const groups = {};
-  vehiclesCache.forEach(v => {
-    const loc = v.location || 'No Location';
-    if (!groups[loc]) groups[loc] = [];
-    groups[loc].push(v);
-  });
+  const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip');
+  const atRepair = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
+  const atHome1585 = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === '1585 Kapiolani');
+  const atHomeHNL = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === 'HNL');
+  const noLocation = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && !v.homeLocation);
+  const needsCleaning = vehiclesCache.filter(v => v.needsCleaning);
 
-  // Sort location names — put "No Location" last
-  const locs = Object.keys(groups).sort((a, b) => {
-    if (a === 'No Location') return 1;
-    if (b === 'No Location') return -1;
-    return a.localeCompare(b);
+  // Sort on-trip by return date
+  onTrip.sort((a, b) => {
+    const aT = a.tripReturnDate ? (a.tripReturnDate.toDate ? a.tripReturnDate.toDate().getTime() : new Date(a.tripReturnDate).getTime()) : Infinity;
+    const bT = b.tripReturnDate ? (b.tripReturnDate.toDate ? b.tripReturnDate.toDate().getTime() : new Date(b.tripReturnDate).getTime()) : Infinity;
+    return aT - bT;
   });
 
   let html = '';
-  for (const loc of locs) {
-    const vehicles = groups[loc];
-    html += `<div class="location-group">
-      <div class="location-group-header">
-        <span class="location-group-name">📍 ${escapeHtml(loc)}</span>
-        <span class="location-group-count">${vehicles.length}</span>
+
+  // Needs Cleaning section
+  if (needsCleaning.length > 0) {
+    html += `<div class="location-group location-group-cleaning">
+      <div class="location-group-header" style="background:#d97706;">
+        <span class="location-group-name">🧹 Needs Cleaning</span>
+        <span class="location-group-count">${needsCleaning.length}</span>
       </div>
-      <div class="location-group-vehicles">`;
-    for (const v of vehicles) {
-      html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+      <div class="location-group-vehicles cleaning-list">`;
+    for (const v of needsCleaning) {
+      html += `<div class="cleaning-item">
+        <div class="cleaning-vehicle-info">
+          <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+          <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+        </div>
+        <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}">✓ Cleaned</button>
+      </div>`;
     }
     html += '</div></div>';
   }
+
+  // On the Road
+  if (onTrip.length > 0) {
+    html += `<div class="location-group">
+      <div class="location-group-header" style="background:#2563eb;">
+        <span class="location-group-name">🚗 On the Road</span>
+        <span class="location-group-count">${onTrip.length}</span>
+      </div>
+      <div class="location-group-vehicles trip-list">`;
+    for (const v of onTrip) {
+      let returnLabel = '';
+      if (v.tripReturnDate) {
+        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        const now = new Date();
+        const isOverdue = rd < now;
+        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+      }
+      html += `<div class="trip-item">
+        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+        <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+        ${returnLabel}
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+
+  // At Home — 1585 Kapiolani
+  if (atHome1585.length > 0) {
+    html += `<div class="location-group">
+      <div class="location-group-header">
+        <span class="location-group-name">🏠 1585 Kapiolani</span>
+        <span class="location-group-count">${atHome1585.length}</span>
+      </div>
+      <div class="location-group-vehicles">`;
+    for (const v of atHome1585) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+    html += '</div></div>';
+  }
+
+  // At Home — HNL
+  if (atHomeHNL.length > 0) {
+    html += `<div class="location-group">
+      <div class="location-group-header">
+        <span class="location-group-name">🏠 HNL</span>
+        <span class="location-group-count">${atHomeHNL.length}</span>
+      </div>
+      <div class="location-group-vehicles">`;
+    for (const v of atHomeHNL) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+    html += '</div></div>';
+  }
+
+  // Repair Shop
+  if (atRepair.length > 0) {
+    html += `<div class="location-group">
+      <div class="location-group-header" style="background:#dc2626;">
+        <span class="location-group-name">🔧 Repair Shop</span>
+        <span class="location-group-count">${atRepair.length}</span>
+      </div>
+      <div class="location-group-vehicles">`;
+    for (const v of atRepair) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+    html += '</div></div>';
+  }
+
+  // No Location
+  if (noLocation.length > 0) {
+    html += `<div class="location-group">
+      <div class="location-group-header" style="background:#6b7280;">
+        <span class="location-group-name">❓ No Location Set</span>
+        <span class="location-group-count">${noLocation.length}</span>
+      </div>
+      <div class="location-group-vehicles">`;
+    for (const v of noLocation) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+    html += '</div></div>';
+  }
+
+  if (!html) html = '<p class="hint">No vehicles to display.</p>';
   container.innerHTML = html;
 
   // Click chip to open vehicle
   container.querySelectorAll('.location-vehicle-chip').forEach(chip => {
     chip.addEventListener('click', () => openVehiclePage(chip.dataset.vid));
+  });
+
+  // Cleaned button handler
+  container.querySelectorAll('.cleaning-done-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const vid = btn.dataset.vid;
+      try {
+        await db.collection('vehicles').doc(vid).update({
+          needsCleaning: false,
+          lastCleanedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          lastCleanedBy: currentUser.displayName || currentUser.email
+        });
+        const cached = vehiclesCache.find(v => v.id === vid);
+        if (cached) cached.needsCleaning = false;
+        toast('Marked as cleaned! ✓', 'success');
+        renderLocationsWidget();
+      } catch (err) {
+        console.error('Mark cleaned error:', err);
+        toast('Failed to update.', 'error');
+      }
+    });
   });
 }
 
@@ -584,27 +707,23 @@ async function openVehiclePage(vid) {
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
 
-  // Set location dropdown
-  const locSelect = $('vehicle-location-select');
-  const locCustom = $('vehicle-location-custom');
-  if (locSelect) {
-    const loc = selectedVehicle.location || '';
-    const presets = ['1585 Kapiolani', 'HNL', 'Repair Shop', 'Other'];
-    if (loc && !presets.includes(loc)) {
-      // Custom location stored — set to the closest preset or Other
-      if (loc.toLowerCase().includes('repair')) {
-        locSelect.value = 'Repair Shop';
-        locCustom.value = loc;
-        locCustom.style.display = '';
-      } else {
-        locSelect.value = 'Other';
-        locCustom.value = loc;
-        locCustom.style.display = '';
-      }
+  // Set location dropdowns
+  const homeLocSelect = $('vehicle-home-location');
+  const tripStatusSelect = $('vehicle-trip-status');
+  const tripReturnRow = $('trip-return-row');
+  const tripReturnInput = $('vehicle-trip-return');
+  if (homeLocSelect) {
+    homeLocSelect.value = selectedVehicle.homeLocation || '';
+    tripStatusSelect.value = selectedVehicle.tripStatus || 'home';
+    tripReturnRow.style.display = tripStatusSelect.value === 'on-trip' ? '' : 'none';
+    if (selectedVehicle.tripReturnDate) {
+      const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
+      // Format for datetime-local input (YYYY-MM-DDTHH:MM)
+      const offset = rd.getTimezoneOffset();
+      const local = new Date(rd.getTime() - offset * 60000);
+      tripReturnInput.value = local.toISOString().slice(0, 16);
     } else {
-      locSelect.value = loc;
-      locCustom.value = '';
-      locCustom.style.display = (loc === 'Repair Shop' || loc === 'Other') ? '' : 'none';
+      tripReturnInput.value = '';
     }
   }
 
@@ -1293,12 +1412,38 @@ async function loadPhotosForDate(vehicleId, dateStr) {
     item.className = 'photo-grid-item' + (data.protected ? ' photo-kept' : '');
     item.dataset.lightboxInfo = `${data.plate} — ${data.date}`;
     const keepBadge = data.protected ? '<div class="keep-badge">🔒</div>' : '';
+    const adminDelete = currentUserRole === 'admin' ? `<button class="photo-delete-btn" data-doc-id="${doc.id}" data-storage-path="${escapeHtml(data.storagePath || '')}" title="Delete photo">✕</button>` : '';
     item.innerHTML = `
       ${keepBadge}
+      ${adminDelete}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
       <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
     `;
     item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
+    const delBtn = item.querySelector('.photo-delete-btn');
+    if (delBtn) {
+      delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Delete this photo permanently?')) return;
+        try {
+          const docId = delBtn.dataset.docId;
+          const storagePath = delBtn.dataset.storagePath;
+          await db.collection('photos').doc(docId).delete();
+          if (storagePath) {
+            try { await getStorage().ref(storagePath).delete(); } catch (se) { console.warn('Storage delete failed:', se); }
+          }
+          item.remove();
+          toast('Photo deleted.', 'success');
+          // Update count
+          const remaining = container.querySelectorAll('.photo-grid-item').length;
+          $('today-count').textContent = remaining;
+          $('vehicle-photo-count').textContent = `${remaining} photos`;
+        } catch (err) {
+          console.error('Delete photo error:', err);
+          toast('Failed to delete photo.', 'error');
+        }
+      });
+    }
     container.appendChild(item);
   });
 }
@@ -1717,32 +1862,59 @@ $('brand-home-admin').addEventListener('click', () => {
 });
 
 // Location dropdown handlers
-$('vehicle-location-select').addEventListener('change', function() {
-  const custom = $('vehicle-location-custom');
-  if (this.value === 'Repair Shop' || this.value === 'Other') {
-    custom.style.display = '';
-    custom.focus();
-  } else {
-    custom.style.display = 'none';
-    custom.value = '';
-  }
+$('vehicle-trip-status').addEventListener('change', function() {
+  $('trip-return-row').style.display = this.value === 'on-trip' ? '' : 'none';
 });
 
 $('btn-save-location').addEventListener('click', async () => {
   if (!selectedVehicle) return;
-  const sel = $('vehicle-location-select').value;
-  const custom = $('vehicle-location-custom').value.trim();
-  let location = '';
-  if (sel === 'Repair Shop' || sel === 'Other') {
-    location = custom || sel;
-  } else {
-    location = sel;
+  const homeLocation = $('vehicle-home-location').value;
+  const tripStatus = $('vehicle-trip-status').value;
+  const tripReturnVal = $('vehicle-trip-return').value;
+
+  if (!homeLocation) {
+    toast('Please select a home location.', 'warning');
+    return;
   }
+
+  const updateData = { homeLocation, tripStatus };
+
+  // Compute the display location for backward compat
+  if (tripStatus === 'on-trip') {
+    updateData.location = 'On Trip';
+    if (tripReturnVal) {
+      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
+    } else {
+      updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+    }
+  } else if (tripStatus === 'repair-shop') {
+    updateData.location = 'Repair Shop';
+    updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+  } else {
+    updateData.location = homeLocation;
+    updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+  }
+
+  // If vehicle was on-trip and now returning home, flag for cleaning
+  const wasOnTrip = selectedVehicle.tripStatus === 'on-trip';
+  const nowHome = tripStatus === 'home';
+  if (wasOnTrip && nowHome) {
+    updateData.needsCleaning = true;
+    updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.serverTimestamp();
+  }
+
   try {
-    await db.collection('vehicles').doc(selectedVehicle.id).update({ location });
-    selectedVehicle.location = location;
+    await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
+    // Update local cache
+    Object.assign(selectedVehicle, { homeLocation, tripStatus, location: updateData.location });
+    if (tripReturnVal && tripStatus === 'on-trip') {
+      selectedVehicle.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
+    } else {
+      delete selectedVehicle.tripReturnDate;
+    }
+    if (wasOnTrip && nowHome) selectedVehicle.needsCleaning = true;
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) cached.location = location;
+    if (cached) Object.assign(cached, selectedVehicle);
     toast('Location saved!', 'success');
     renderFleetDashboard();
   } catch (err) {

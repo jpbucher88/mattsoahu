@@ -443,6 +443,7 @@ body {
   padding: 12px;
   cursor: pointer;
   transition: box-shadow 0.15s, border-color 0.15s;
+  position: relative;
 }
 .fleet-card:active { box-shadow: 0 0 0 2px var(--primary); }
 
@@ -2681,4 +2682,93 @@ body {
 .location-vehicle-chip:hover {
   background: #eff6ff;
   border-color: #3b82f6;
+}
+
+/* ============ PHOTO DELETE BUTTON (admin) ============ */
+.photo-delete-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(220, 38, 38, 0.85);
+  color: #fff;
+  border: none;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  line-height: 1;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.photo-grid-item:hover .photo-delete-btn {
+  opacity: 1;
+}
+@media (max-width: 600px) {
+  .photo-delete-btn { opacity: 1; }
+}
+
+/* ============ FLEET STATUS WIDGET ============ */
+.loc-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.loc-field label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+.trip-list, .cleaning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+}
+.trip-item, .cleaning-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.trip-meta, .cleaning-meta {
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+.trip-return-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: #dbeafe;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.trip-return-label.trip-overdue {
+  color: #dc2626;
+  background: #fef2f2;
+  font-weight: 700;
+}
+.cleaning-vehicle-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+.cleaning-done-btn {
+  white-space: nowrap;
+}
+.fleet-cleaning-flag {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  font-size: 16px;
+  line-height: 1;
 }

@@ -124,11 +124,11 @@
         </div>
       </section>
 
-      <!-- Locations Widget -->
+      <!-- Locations & Fleet Status Widget -->
       <section id="locations-widget" class="card">
         <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
           <div class="collapsible-title">
-            <h3>📍 Locations</h3>
+            <h3>📍 Fleet Status</h3>
           </div>
           <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
         </div>
@@ -164,15 +164,26 @@
           <span id="vehicle-photo-count" class="badge"></span>
         </div>
         <div id="vehicle-location-row" class="vehicle-location-row">
-          <label for="vehicle-location-select">📍 Location:</label>
-          <select id="vehicle-location-select" class="vehicle-location-select">
-            <option value="">— Select —</option>
-            <option value="1585 Kapiolani">1585 Kapiolani</option>
-            <option value="HNL">HNL</option>
-            <option value="Repair Shop">Repair Shop</option>
-            <option value="Other">Other</option>
-          </select>
-          <input type="text" id="vehicle-location-custom" class="vehicle-location-custom" placeholder="Enter location..." style="display:none;">
+          <div class="loc-field">
+            <label for="vehicle-home-location">🏠 Home Location:</label>
+            <select id="vehicle-home-location" class="vehicle-location-select">
+              <option value="">— Select —</option>
+              <option value="1585 Kapiolani">1585 Kapiolani</option>
+              <option value="HNL">HNL</option>
+            </select>
+          </div>
+          <div class="loc-field">
+            <label for="vehicle-trip-status">📍 Status:</label>
+            <select id="vehicle-trip-status" class="vehicle-location-select">
+              <option value="home">At Home</option>
+              <option value="on-trip">On Trip</option>
+              <option value="repair-shop">Repair Shop</option>
+            </select>
+          </div>
+          <div id="trip-return-row" class="loc-field" style="display:none;">
+            <label for="vehicle-trip-return">🔄 Expected Return:</label>
+            <input type="datetime-local" id="vehicle-trip-return" class="vehicle-location-custom">
+          </div>
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
