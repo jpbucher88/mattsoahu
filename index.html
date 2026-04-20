@@ -184,6 +184,16 @@
             <label for="vehicle-trip-return">🔄 Expected Return:</label>
             <input type="datetime-local" id="vehicle-trip-return" class="vehicle-location-custom">
           </div>
+          <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
+            <div class="loc-field">
+              <label for="repair-order-number">📦 Order / Tracking #:</label>
+              <input type="text" id="repair-order-number" class="vehicle-location-custom" placeholder="Order or tracking number">
+            </div>
+            <div class="loc-field">
+              <label for="repair-parts-eta">📅 Parts ETA:</label>
+              <input type="date" id="repair-parts-eta" class="vehicle-location-custom">
+            </div>
+          </div>
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>

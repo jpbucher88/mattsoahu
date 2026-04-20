@@ -471,11 +471,34 @@ function renderFleetDashboard() {
   }
 
   const MS_24H = 24 * 60 * 60 * 1000;
+  const MS_2H = 2 * 60 * 60 * 1000;
   let html = '';
   vehiclesCache.forEach(v => {
+    // Determine if photo staleness should be suppressed
+    const isOnTrip = v.tripStatus === 'on-trip';
+    const isAtRepair = v.tripStatus === 'repair-shop';
+    const stillCleaning = v.needsCleaning;
+    let withinGrace = false;
+    if (v.cleaningFlaggedAt) {
+      const flagTime = v.cleaningFlaggedAt.toDate ? v.cleaningFlaggedAt.toDate().getTime() : new Date(v.cleaningFlaggedAt).getTime();
+      withinGrace = (Date.now() - flagTime) < MS_2H;
+    }
+    const suppressPhoto = isOnTrip || isAtRepair || stillCleaning || withinGrace;
+
     // Photo status
     let photoStatus, photoCls;
-    if (v.lastPhotoAge === Infinity || v.lastPhotoAge == null) {
+    if (suppressPhoto) {
+      if (isOnTrip) {
+        photoStatus = '📷 On trip';
+        photoCls = 'status-muted';
+      } else if (isAtRepair) {
+        photoStatus = '📷 At shop';
+        photoCls = 'status-muted';
+      } else {
+        photoStatus = '📷 Awaiting cleaning';
+        photoCls = 'status-muted';
+      }
+    } else if (v.lastPhotoAge === Infinity || v.lastPhotoAge == null) {
       photoStatus = '📷 No photos';
       photoCls = 'status-danger';
     } else if (v.lastPhotoAge > MS_24H) {
@@ -558,45 +581,60 @@ function renderLocationsWidget() {
 
   const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip');
   const atRepair = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
-  const atHome1585 = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === '1585 Kapiolani');
-  const atHomeHNL = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === 'HNL');
-  const noLocation = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && !v.homeLocation);
-  const needsCleaning = vehiclesCache.filter(v => v.needsCleaning);
+  const atHome1585 = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === '1585 Kapiolani' && !v.needsCleaning);
+  const atHomeHNL = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === 'HNL' && !v.needsCleaning);
+  const noLocation = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && !v.homeLocation && !v.needsCleaning);
+  const cleaningHNL = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === 'HNL');
+  const cleaning1585 = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === '1585 Kapiolani');
+  const cleaningOther = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
 
-  // Sort on-trip by return date
-  onTrip.sort((a, b) => {
+  // Sort helpers
+  const sortByReturn = (arr) => arr.sort((a, b) => {
     const aT = a.tripReturnDate ? (a.tripReturnDate.toDate ? a.tripReturnDate.toDate().getTime() : new Date(a.tripReturnDate).getTime()) : Infinity;
     const bT = b.tripReturnDate ? (b.tripReturnDate.toDate ? b.tripReturnDate.toDate().getTime() : new Date(b.tripReturnDate).getTime()) : Infinity;
     return aT - bT;
   });
+  sortByReturn(onTrip);
+  sortByReturn(atRepair);
 
   let html = '';
 
-  // Needs Cleaning section
-  if (needsCleaning.length > 0) {
-    html += `<div class="location-group location-group-cleaning">
+  // Helper for cleaning section
+  function renderCleaningSection(title, vehicles) {
+    if (vehicles.length === 0) return '';
+    let s = `<div class="location-group location-group-cleaning">
       <div class="location-group-header" style="background:#d97706;">
-        <span class="location-group-name">🧹 Needs Cleaning</span>
-        <span class="location-group-count">${needsCleaning.length}</span>
+        <span class="location-group-name">\ud83e\uddf9 ${escapeHtml(title)}</span>
+        <span class="location-group-count">${vehicles.length}</span>
       </div>
       <div class="location-group-vehicles cleaning-list">`;
-    for (const v of needsCleaning) {
-      html += `<div class="cleaning-item">
+    for (const v of vehicles) {
+      const needsDamage = v.needsDamageCheck;
+      s += `<div class="cleaning-item" data-vid="${v.id}">
         <div class="cleaning-vehicle-info">
           <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
           <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         </div>
-        <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}">✓ Cleaned</button>
+        <div class="cleaning-actions">
+          ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
+          <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>✓ Cleaned</button>
+        </div>
       </div>`;
     }
-    html += '</div></div>';
+    s += '</div></div>';
+    return s;
   }
+
+  // Needs Cleaning — split by location
+  html += renderCleaningSection('Needs Cleaning — HNL', cleaningHNL);
+  html += renderCleaningSection('Needs Cleaning — 1585 Kapiolani', cleaning1585);
+  if (cleaningOther.length > 0) html += renderCleaningSection('Needs Cleaning — Other', cleaningOther);
 
   // On the Road
   if (onTrip.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#2563eb;">
-        <span class="location-group-name">🚗 On the Road</span>
+        <span class="location-group-name">\ud83d\ude97 On the Road</span>
         <span class="location-group-count">${onTrip.length}</span>
       </div>
       <div class="location-group-vehicles trip-list">`;
@@ -606,7 +644,7 @@ function renderLocationsWidget() {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
         const now = new Date();
         const isOverdue = rd < now;
-        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">\u21a9 ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
       }
       html += `<div class="trip-item">
         <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
@@ -621,7 +659,7 @@ function renderLocationsWidget() {
   if (atHome1585.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header">
-        <span class="location-group-name">🏠 1585 Kapiolani</span>
+        <span class="location-group-name">\ud83c\udfe0 1585 Kapiolani</span>
         <span class="location-group-count">${atHome1585.length}</span>
       </div>
       <div class="location-group-vehicles">`;
@@ -633,7 +671,7 @@ function renderLocationsWidget() {
   if (atHomeHNL.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header">
-        <span class="location-group-name">🏠 HNL</span>
+        <span class="location-group-name">\ud83c\udfe0 HNL</span>
         <span class="location-group-count">${atHomeHNL.length}</span>
       </div>
       <div class="location-group-vehicles">`;
@@ -641,15 +679,32 @@ function renderLocationsWidget() {
     html += '</div></div>';
   }
 
-  // Repair Shop
+  // Repair Shop — with return date + parts info
   if (atRepair.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#dc2626;">
-        <span class="location-group-name">🔧 Repair Shop</span>
+        <span class="location-group-name">\ud83d\udd27 Repair Shop</span>
         <span class="location-group-count">${atRepair.length}</span>
       </div>
-      <div class="location-group-vehicles">`;
-    for (const v of atRepair) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+      <div class="location-group-vehicles trip-list">`;
+    for (const v of atRepair) {
+      let returnLabel = '';
+      if (v.tripReturnDate) {
+        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        const now = new Date();
+        const isOverdue = rd < now;
+        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">\u21a9 ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+      }
+      let partsInfo = '';
+      if (v.repairOrderNumber) partsInfo += `<span class="repair-parts-tag">\ud83d\udce6 ${escapeHtml(v.repairOrderNumber)}</span>`;
+      if (v.repairPartsEta) partsInfo += `<span class="repair-parts-tag">\ud83d\udcc5 Parts ETA: ${v.repairPartsEta}</span>`;
+      html += `<div class="trip-item">
+        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+        <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+        ${returnLabel}
+        ${partsInfo}
+      </div>`;
+    }
     html += '</div></div>';
   }
 
@@ -657,7 +712,7 @@ function renderLocationsWidget() {
   if (noLocation.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#6b7280;">
-        <span class="location-group-name">❓ No Location Set</span>
+        <span class="location-group-name">\u2753 No Location Set</span>
         <span class="location-group-count">${noLocation.length}</span>
       </div>
       <div class="location-group-vehicles">`;
@@ -673,26 +728,100 @@ function renderLocationsWidget() {
     chip.addEventListener('click', () => openVehiclePage(chip.dataset.vid));
   });
 
+  // Damage inspection button handler — show checklist modal
+  container.querySelectorAll('.damage-check-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vid = btn.dataset.vid;
+      const v = vehiclesCache.find(x => x.id === vid);
+      showDamageCheckModal(vid, v ? v.plate : 'Vehicle');
+    });
+  });
+
   // Cleaned button handler
   container.querySelectorAll('.cleaning-done-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      if (btn.disabled) return;
       const vid = btn.dataset.vid;
       try {
         await db.collection('vehicles').doc(vid).update({
           needsCleaning: false,
+          needsDamageCheck: false,
           lastCleanedAt: firebase.firestore.FieldValue.serverTimestamp(),
           lastCleanedBy: currentUser.displayName || currentUser.email
         });
         const cached = vehiclesCache.find(v => v.id === vid);
-        if (cached) cached.needsCleaning = false;
-        toast('Marked as cleaned! ✓', 'success');
+        if (cached) {
+          cached.needsCleaning = false;
+          cached.needsDamageCheck = false;
+        }
+        toast('Marked as cleaned! \u2713', 'success');
         renderLocationsWidget();
       } catch (err) {
         console.error('Mark cleaned error:', err);
         toast('Failed to update.', 'error');
       }
     });
+  });
+}
+
+// Damage check modal
+function showDamageCheckModal(vid, plate) {
+  // Remove existing modal if any
+  const existing = document.querySelector('.damage-check-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'damage-check-overlay';
+  overlay.innerHTML = `
+    <div class="damage-check-modal">
+      <h4>\ud83d\udd0d Vehicle Inspection \u2014 ${escapeHtml(plate)}</h4>
+      <p>Complete all checks before marking as cleaned:</p>
+      <div class="damage-checklist">
+        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="exterior"> Exterior \u2014 No new damage</label>
+        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="interior"> Interior \u2014 No new damage</label>
+        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="tires"> Tires \u2014 Good condition</label>
+        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="clean"> Vehicle cleaned</label>
+      </div>
+      <div class="damage-check-actions">
+        <button class="btn btn-sm btn-outline dmg-cancel-btn">Cancel</button>
+        <button class="btn btn-sm btn-primary dmg-confirm-btn" disabled>✓ Confirm All Clear</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const checks = overlay.querySelectorAll('.dmg-check');
+  const confirmBtn = overlay.querySelector('.dmg-confirm-btn');
+
+  // Enable confirm only when all checked
+  checks.forEach(cb => {
+    cb.addEventListener('change', () => {
+      const allChecked = Array.from(checks).every(c => c.checked);
+      confirmBtn.disabled = !allChecked;
+    });
+  });
+
+  overlay.querySelector('.dmg-cancel-btn').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+  confirmBtn.addEventListener('click', async () => {
+    try {
+      await db.collection('vehicles').doc(vid).update({
+        needsDamageCheck: false,
+        lastInspectedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        lastInspectedBy: currentUser.displayName || currentUser.email
+      });
+      const cached = vehiclesCache.find(v => v.id === vid);
+      if (cached) cached.needsDamageCheck = false;
+      toast('Inspection complete! \u2713', 'success');
+      overlay.remove();
+      renderLocationsWidget();
+    } catch (err) {
+      console.error('Damage check error:', err);
+      toast('Failed to update.', 'error');
+    }
   });
 }
 
@@ -712,10 +841,13 @@ async function openVehiclePage(vid) {
   const tripStatusSelect = $('vehicle-trip-status');
   const tripReturnRow = $('trip-return-row');
   const tripReturnInput = $('vehicle-trip-return');
+  const repairPartsRow = $('repair-parts-row');
   if (homeLocSelect) {
     homeLocSelect.value = selectedVehicle.homeLocation || '';
     tripStatusSelect.value = selectedVehicle.tripStatus || 'home';
-    tripReturnRow.style.display = tripStatusSelect.value === 'on-trip' ? '' : 'none';
+    // Show/hide return row for on-trip and repair-shop
+    tripReturnRow.style.display = (tripStatusSelect.value === 'on-trip' || tripStatusSelect.value === 'repair-shop') ? '' : 'none';
+    repairPartsRow.style.display = tripStatusSelect.value === 'repair-shop' ? '' : 'none';
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
       // Format for datetime-local input (YYYY-MM-DDTHH:MM)
@@ -725,6 +857,9 @@ async function openVehiclePage(vid) {
     } else {
       tripReturnInput.value = '';
     }
+    // Repair parts fields
+    $('repair-order-number').value = selectedVehicle.repairOrderNumber || '';
+    $('repair-parts-eta').value = selectedVehicle.repairPartsEta || '';
   }
 
   // Show hero image if set
@@ -754,10 +889,22 @@ async function openVehiclePage(vid) {
     lastPhotoEl.style.display = 'none';
   }
 
-  // Show stale photo alert
+  // Show stale photo alert — suppress for on-trip, needs-cleaning, and 2hr grace after return
   const MS_24H = 24 * 60 * 60 * 1000;
+  const MS_2H = 2 * 60 * 60 * 1000;
   const staleAlert = $('stale-alert');
-  if (selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H) {
+  const isOnTrip = selectedVehicle.tripStatus === 'on-trip';
+  const isAtRepairShop = selectedVehicle.tripStatus === 'repair-shop';
+  const stillNeedsCleaning = selectedVehicle.needsCleaning;
+  // Grace: 2 hours after cleaning was flagged (vehicle returned)
+  let withinGrace = false;
+  if (selectedVehicle.cleaningFlaggedAt) {
+    const flagTime = selectedVehicle.cleaningFlaggedAt.toDate ? selectedVehicle.cleaningFlaggedAt.toDate().getTime() : new Date(selectedVehicle.cleaningFlaggedAt).getTime();
+    withinGrace = (Date.now() - flagTime) < MS_2H;
+  }
+  const suppressStale = isOnTrip || isAtRepairShop || stillNeedsCleaning || withinGrace;
+
+  if (!suppressStale && selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H) {
     if (selectedVehicle.lastPhotoAge === Infinity) {
       staleAlert.textContent = '\u26A0\uFE0F No photos have been taken for this vehicle.';
     } else {
@@ -767,8 +914,13 @@ async function openVehiclePage(vid) {
       staleAlert.textContent = `\u26A0\uFE0F Last photo was ${ageText} \u2014 photos may be outdated.`;
     }
     staleAlert.style.display = 'block';
+  } else if (isOnTrip) {
+    staleAlert.textContent = '\ud83d\ude97 Vehicle is on a trip \u2014 photos not required until after return & cleaning.';
+    staleAlert.style.display = 'block';
+    staleAlert.className = 'stale-alert stale-info';
   } else {
     staleAlert.style.display = 'none';
+    staleAlert.className = 'stale-alert';
   }
 
   // Role-gate upload and maintenance
@@ -1863,7 +2015,8 @@ $('brand-home-admin').addEventListener('click', () => {
 
 // Location dropdown handlers
 $('vehicle-trip-status').addEventListener('change', function() {
-  $('trip-return-row').style.display = this.value === 'on-trip' ? '' : 'none';
+  $('trip-return-row').style.display = (this.value === 'on-trip' || this.value === 'repair-shop') ? '' : 'none';
+  $('repair-parts-row').style.display = this.value === 'repair-shop' ? '' : 'none';
 });
 
 $('btn-save-location').addEventListener('click', async () => {
@@ -1871,6 +2024,8 @@ $('btn-save-location').addEventListener('click', async () => {
   const homeLocation = $('vehicle-home-location').value;
   const tripStatus = $('vehicle-trip-status').value;
   const tripReturnVal = $('vehicle-trip-return').value;
+  const repairOrderNumber = $('repair-order-number').value.trim();
+  const repairPartsEta = $('repair-parts-eta').value;
 
   if (!homeLocation) {
     toast('Please select a home location.', 'warning');
@@ -1887,19 +2042,34 @@ $('btn-save-location').addEventListener('click', async () => {
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
+    updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
+    updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   } else if (tripStatus === 'repair-shop') {
     updateData.location = 'Repair Shop';
-    updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+    if (tripReturnVal) {
+      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
+    } else {
+      updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+    }
+    updateData.repairOrderNumber = repairOrderNumber || firebase.firestore.FieldValue.delete();
+    updateData.repairPartsEta = repairPartsEta || firebase.firestore.FieldValue.delete();
+    // Create a follow-up task if parts ETA is set
+    if (repairPartsEta) {
+      updateData.repairPartsEta = repairPartsEta;
+    }
   } else {
     updateData.location = homeLocation;
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+    updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
+    updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   }
 
-  // If vehicle was on-trip and now returning home, flag for cleaning
+  // If vehicle was on-trip and now returning home, flag for cleaning + damage check
   const wasOnTrip = selectedVehicle.tripStatus === 'on-trip';
   const nowHome = tripStatus === 'home';
   if (wasOnTrip && nowHome) {
     updateData.needsCleaning = true;
+    updateData.needsDamageCheck = true;
     updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.serverTimestamp();
   }
 
@@ -1907,12 +2077,22 @@ $('btn-save-location').addEventListener('click', async () => {
     await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
     // Update local cache
     Object.assign(selectedVehicle, { homeLocation, tripStatus, location: updateData.location });
-    if (tripReturnVal && tripStatus === 'on-trip') {
+    if (tripReturnVal && (tripStatus === 'on-trip' || tripStatus === 'repair-shop')) {
       selectedVehicle.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal));
     } else {
       delete selectedVehicle.tripReturnDate;
     }
-    if (wasOnTrip && nowHome) selectedVehicle.needsCleaning = true;
+    if (tripStatus === 'repair-shop') {
+      selectedVehicle.repairOrderNumber = repairOrderNumber || '';
+      selectedVehicle.repairPartsEta = repairPartsEta || '';
+    } else {
+      delete selectedVehicle.repairOrderNumber;
+      delete selectedVehicle.repairPartsEta;
+    }
+    if (wasOnTrip && nowHome) {
+      selectedVehicle.needsCleaning = true;
+      selectedVehicle.needsDamageCheck = true;
+    }
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, selectedVehicle);
     toast('Location saved!', 'success');

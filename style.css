@@ -2772,3 +2772,103 @@ body {
   font-size: 16px;
   line-height: 1;
 }
+
+/* ============ REPAIR PARTS ============ */
+.loc-parts-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.repair-parts-tag {
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #fef3c7;
+  color: #92400e;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* ============ STALE ALERT VARIANTS ============ */
+.stale-alert.stale-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+/* ============ CLEANING ACTIONS ============ */
+.cleaning-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.damage-ok-badge {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #16a34a;
+  white-space: nowrap;
+}
+
+/* ============ DAMAGE CHECK MODAL ============ */
+.damage-check-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.damage-check-modal {
+  background: #fff;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+}
+.damage-check-modal h4 {
+  margin: 0 0 8px;
+  color: #1e3a5f;
+}
+.damage-check-modal p {
+  margin: 0 0 14px;
+  font-size: 0.88rem;
+  color: #6b7280;
+}
+.damage-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.damage-check-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #374151;
+  cursor: pointer;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.damage-check-item:has(input:checked) {
+  background: #f0fdf4;
+  border-color: #86efac;
+}
+.damage-check-item input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #16a34a;
+}
+.damage-check-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
