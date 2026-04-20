@@ -66,6 +66,25 @@
         { "fieldPath": "done", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "vehicleNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vehicleId", "order": "ASCENDING" },
+        { "fieldPath": "autoCreated", "order": "ASCENDING" },
+        { "fieldPath": "intervalType", "order": "ASCENDING" },
+        { "fieldPath": "done", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vehicleNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vehicleId", "order": "ASCENDING" },
+        { "fieldPath": "maintenanceService", "order": "ASCENDING" },
+        { "fieldPath": "autoCreated", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

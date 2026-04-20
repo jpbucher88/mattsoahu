@@ -3416,13 +3416,17 @@ $('maintenance-form').addEventListener('submit', async (e) => {
       await batch.commit();
     }
 
-    // Auto-update vehicle mileage if higher
+    // Auto-update vehicle mileage if higher (admin-only; silently skip if permission denied)
     if (mileage && (!selectedVehicle.mileage || mileage > selectedVehicle.mileage)) {
-      await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage });
-      selectedVehicle.mileage = mileage;
-      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-      if (cached) cached.mileage = mileage;
-      $('vehicle-mileage').value = mileage;
+      try {
+        await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage });
+        selectedVehicle.mileage = mileage;
+        const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+        if (cached) cached.mileage = mileage;
+        $('vehicle-mileage').value = mileage;
+      } catch (mileErr) {
+        console.warn('Could not auto-update vehicle mileage (may require admin role):', mileErr);
+      }
     }
 
     toast('Maintenance record saved!', 'success');
