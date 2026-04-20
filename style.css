@@ -431,9 +431,38 @@ body {
 /* ============ FLEET DASHBOARD ============ */
 .fleet-dashboard {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 10px;
   margin-top: 8px;
+}
+
+/* Fleet Overview vehicle jump dropdown */
+.fleet-jump-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.fleet-jump-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.fleet-jump-select {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+.fleet-card.fleet-card-highlight {
+  box-shadow: 0 0 0 3px var(--primary);
+  border-color: var(--primary);
+  transition: box-shadow 0.2s, border-color 0.2s;
 }
 
 .fleet-card {
@@ -2197,13 +2226,14 @@ body {
 }
 .collapse-btn:hover { background: #f3f4f6; }
 .collapsible-body {
-  overflow: hidden;
-  transition: max-height 0.3s ease, opacity 0.3s ease, margin-top 0.3s ease;
-  max-height: 2000px;
+  overflow: visible;
+  transition: max-height 0.35s ease, opacity 0.35s ease, margin-top 0.35s ease;
+  max-height: 9999px;
   opacity: 1;
   margin-top: 12px;
 }
 .collapsible-body.collapsed {
+  overflow: hidden;
   max-height: 0 !important;
   opacity: 0;
   margin-top: 0;

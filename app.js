@@ -560,6 +560,28 @@ function renderFleetDashboard() {
   });
   container.innerHTML = html;
 
+  // Populate jump dropdown
+  const jumpSelect = $('fleet-jump-select');
+  if (jumpSelect) {
+    jumpSelect.innerHTML = '<option value="">— Select vehicle —</option>';
+    vehiclesCache.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = `${v.plate} — ${v.make} ${v.model}`;
+      jumpSelect.appendChild(opt);
+    });
+    jumpSelect.onchange = function() {
+      const vid = this.value;
+      if (!vid) return;
+      const card = container.querySelector(`.fleet-card[data-vid="${vid}"]`);
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.classList.add('fleet-card-highlight');
+      setTimeout(() => card.classList.remove('fleet-card-highlight'), 1800);
+      this.value = '';
+    };
+  }
+
   // Click a card to navigate to vehicle detail page
   container.querySelectorAll('.fleet-card').forEach(card => {
     card.addEventListener('click', () => {
