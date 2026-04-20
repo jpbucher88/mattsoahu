@@ -1236,12 +1236,26 @@ $('btn-download-all').addEventListener('click', async () => {
       toast(`${photos.length - files.length} photo(s) could not be downloaded and were skipped.`, 'warning');
     }
 
-    // Mobile: show full-screen gallery for saving to Photos
+    // Mobile: try to share/save all photos at once via native share sheet
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
     if (isMobile) {
       hideLoading();
 
-      // Build object URLs for all images
+      const shareFiles = files.map(f => new File([new Uint8Array(f.buf)], f.name, { type: 'image/jpeg' }));
+
+      // Try native share first — lets user "Save to Photos" all at once
+      if (navigator.canShare && navigator.canShare({ files: shareFiles })) {
+        try {
+          await navigator.share({ files: shareFiles });
+          toast(`${files.length} photos shared!`, 'success');
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return; // user cancelled, done
+          // Share failed — fall through to gallery
+        }
+      }
+
+      // Fallback: show gallery with save buttons
       const imageUrls = files.map(f => {
         const blob = new Blob([new Uint8Array(f.buf)], { type: 'image/jpeg' });
         return URL.createObjectURL(blob);
@@ -1255,11 +1269,11 @@ $('btn-download-all').addEventListener('click', async () => {
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <span style="color:#fff;font-size:17px;font-weight:600;">${files.length} Photos</span>
             <div style="display:flex;gap:8px;">
-              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">Share All</button>
+              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">📥 Save All to Photos</button>
               <button id="save-gallery-done" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">Done</button>
             </div>
           </div>
-          <div style="color:#aaa;font-size:13px;margin-top:6px;">Hold any image → "Add to Photos" to save</div>
+          <div style="color:#aaa;font-size:13px;margin-top:6px;">Tap "Save All to Photos" or hold any image → Save</div>
         </div>
         <div id="save-gallery-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:4px;"></div>
       `;
@@ -1268,22 +1282,37 @@ $('btn-download-all').addEventListener('click', async () => {
       const grid = overlay.querySelector('#save-gallery-grid');
       for (let i = 0; i < imageUrls.length; i++) {
         const cell = document.createElement('div');
-        cell.innerHTML = `<img src="${imageUrls[i]}" style="width:100%;display:block;" />`;
+        cell.style.cssText = 'position:relative;';
+        cell.innerHTML = `
+          <img src="${imageUrls[i]}" style="width:100%;display:block;" />
+          <a href="${imageUrls[i]}" download="${files[i].name}" style="position:absolute;bottom:4px;right:4px;background:rgba(0,122,255,0.85);color:#fff;border:none;border-radius:6px;padding:4px 8px;font-size:12px;font-weight:600;text-decoration:none;">Save</a>
+        `;
         grid.appendChild(cell);
       }
 
-      // "Share All" button: try sharing all images at once
+      // "Save All to Photos" button
       overlay.querySelector('#save-gallery-share').addEventListener('click', async () => {
-        if (!navigator.share) { toast('Share not supported', 'warning'); return; }
-        const shareFiles = files.map(f => new File([new Uint8Array(f.buf)], f.name, { type: 'image/jpeg' }));
-        try {
-          await navigator.share({ files: shareFiles });
-          toast(`${files.length} photos shared!`, 'success');
-        } catch (err) {
-          if (err.name !== 'AbortError') {
-            toast('Share failed — hold each image to save', 'warning');
+        if (navigator.canShare && navigator.canShare({ files: shareFiles })) {
+          try {
+            await navigator.share({ files: shareFiles });
+            toast(`${files.length} photos saved!`, 'success');
+            imageUrls.forEach(u => URL.revokeObjectURL(u));
+            document.body.removeChild(overlay);
+            return;
+          } catch (err) {
+            if (err.name === 'AbortError') return;
           }
         }
+        // Fallback: trigger individual downloads
+        for (let i = 0; i < imageUrls.length; i++) {
+          const a = document.createElement('a');
+          a.href = imageUrls[i];
+          a.download = files[i].name;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+        toast(`${files.length} photos downloading!`, 'success');
       });
 
       // "Done" button: close overlay and revoke URLs
