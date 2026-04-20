@@ -2389,6 +2389,8 @@ body {
   font-size: 0.9rem;
   color: #1e293b;
   word-break: break-word;
+  white-space: normal;
+  overflow-wrap: break-word;
 }
 .cal-detail-meta {
   font-size: 0.8rem;
@@ -2537,6 +2539,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
+  overflow: visible;
 }
 .cal-item-time {
   font-size: 0.7rem;
@@ -2595,4 +2599,86 @@ body {
 }
 .btn-undo:hover {
   background: #4b5563;
+}
+
+/* ============ VEHICLE LOCATION ============ */
+.vehicle-location-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.vehicle-location-row label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+}
+.vehicle-location-select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  background: #fff;
+}
+.vehicle-location-custom {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  width: 160px;
+}
+
+/* ============ LOCATIONS WIDGET ============ */
+.locations-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.location-group {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.location-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #1e3a5f;
+  color: #fff;
+}
+.location-group-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.location-group-count {
+  background: rgba(255,255,255,0.2);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.location-group-vehicles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 14px;
+}
+.location-vehicle-chip {
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #1e3a5f;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.location-vehicle-chip:hover {
+  background: #eff6ff;
+  border-color: #3b82f6;
 }

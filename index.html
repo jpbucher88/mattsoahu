@@ -60,6 +60,9 @@
         <span class="task-alert-icon">📋</span>
         <span id="task-alert-count" class="task-alert-count">0</span>
       </button>
+      <button id="btn-locations" class="task-alert-btn" title="Locations">
+        <span class="task-alert-icon">📍</span>
+      </button>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
         <button id="btn-change-password" class="btn btn-sm btn-outline btn-icon-mobile" title="Change Password">Change Password</button>
@@ -120,6 +123,19 @@
           <div id="fleet-dashboard" class="fleet-dashboard"></div>
         </div>
       </section>
+
+      <!-- Locations Widget -->
+      <section id="locations-widget" class="card">
+        <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>📍 Locations</h3>
+          </div>
+          <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
+        </div>
+        <div id="locations-widget-body" class="collapsible-body">
+          <div id="locations-grid" class="locations-grid"></div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -146,6 +162,18 @@
         <div id="vehicle-info" class="vehicle-info">
           <span id="vehicle-make-model"></span>
           <span id="vehicle-photo-count" class="badge"></span>
+        </div>
+        <div id="vehicle-location-row" class="vehicle-location-row">
+          <label for="vehicle-location-select">📍 Location:</label>
+          <select id="vehicle-location-select" class="vehicle-location-select">
+            <option value="">— Select —</option>
+            <option value="1585 Kapiolani">1585 Kapiolani</option>
+            <option value="HNL">HNL</option>
+            <option value="Repair Shop">Repair Shop</option>
+            <option value="Other">Other</option>
+          </select>
+          <input type="text" id="vehicle-location-custom" class="vehicle-location-custom" placeholder="Enter location..." style="display:none;">
+          <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
         <div id="stale-alert" class="stale-alert" style="display:none;"></div>
@@ -319,12 +347,12 @@
         <div class="note-input-wrap">
           <textarea id="note-text" class="note-textarea" placeholder="Add a note about this vehicle..." maxlength="500" rows="3"></textarea>
           <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="note-followup" onchange="document.getElementById('note-due-row').style.display=this.checked?'':'none'; document.getElementById('note-urgent-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
+            <label class="note-followup-label"><input type="checkbox" id="note-followup" onchange="document.getElementById('note-due-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
             <div id="note-due-row" class="note-due-row" style="display:none;">
               <label class="note-due-label">Due:</label>
               <input type="date" id="note-due-date" class="note-due-input">
             </div>
-            <label id="note-urgent-row" class="note-urgent-label" style="display:none;"><input type="checkbox" id="note-urgent"> 🚨 Urgent</label>
+            <label class="note-urgent-label"><input type="checkbox" id="note-urgent"> 🚨 Urgent</label>
             <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
           </div>
         </div>
@@ -561,12 +589,12 @@
           <h4>📝 Add General Note</h4>
           <textarea id="general-note-text" class="note-textarea" placeholder="Add a general note..." maxlength="500" rows="2"></textarea>
           <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="document.getElementById('general-note-due-row').style.display=this.checked?'':'none'; document.getElementById('general-note-urgent-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
+            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="document.getElementById('general-note-due-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
             <div id="general-note-due-row" class="note-due-row" style="display:none;">
               <label class="note-due-label">Due:</label>
               <input type="date" id="general-note-due-date" class="note-due-input">
             </div>
-            <label id="general-note-urgent-row" class="note-urgent-label" style="display:none;"><input type="checkbox" id="general-note-urgent"> 🚨 Urgent</label>
+            <label class="note-urgent-label"><input type="checkbox" id="general-note-urgent"> 🚨 Urgent</label>
             <button id="btn-save-general-note" class="btn btn-sm btn-primary">Save Note</button>
           </div>
         </div>

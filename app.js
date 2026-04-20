@@ -504,10 +504,13 @@ function renderFleetDashboard() {
     }
 
     const needsPhotos = photoCls !== 'status-ok';
+    const locDisplay = v.location ? escapeHtml(v.location) : 'No location set';
+    const locCls = v.location ? 'status-ok' : 'status-muted';
     html += `<div class="fleet-card${needsPhotos ? ' fleet-card-alert' : ''}" data-vid="${v.id}">
       ${needsPhotos ? '<span class="fleet-card-badge">⚠️</span>' : ''}
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
       <div class="fleet-card-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
+      <div class="fleet-card-status ${locCls}">📍 ${locDisplay}</div>
       <div class="fleet-card-status ${photoCls}">${photoStatus}</div>
       <div class="fleet-card-status ${maintCls}">${maintStatus}</div>
     </div>`;
@@ -519,6 +522,54 @@ function renderFleetDashboard() {
     card.addEventListener('click', () => {
       openVehiclePage(card.dataset.vid);
     });
+  });
+
+  // Render Locations widget
+  renderLocationsWidget();
+}
+
+function renderLocationsWidget() {
+  const container = $('locations-grid');
+  if (!container) return;
+  if (vehiclesCache.length === 0) {
+    container.innerHTML = '<p class="hint">No vehicles to display.</p>';
+    return;
+  }
+
+  // Group vehicles by location
+  const groups = {};
+  vehiclesCache.forEach(v => {
+    const loc = v.location || 'No Location';
+    if (!groups[loc]) groups[loc] = [];
+    groups[loc].push(v);
+  });
+
+  // Sort location names — put "No Location" last
+  const locs = Object.keys(groups).sort((a, b) => {
+    if (a === 'No Location') return 1;
+    if (b === 'No Location') return -1;
+    return a.localeCompare(b);
+  });
+
+  let html = '';
+  for (const loc of locs) {
+    const vehicles = groups[loc];
+    html += `<div class="location-group">
+      <div class="location-group-header">
+        <span class="location-group-name">📍 ${escapeHtml(loc)}</span>
+        <span class="location-group-count">${vehicles.length}</span>
+      </div>
+      <div class="location-group-vehicles">`;
+    for (const v of vehicles) {
+      html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+    }
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
+
+  // Click chip to open vehicle
+  container.querySelectorAll('.location-vehicle-chip').forEach(chip => {
+    chip.addEventListener('click', () => openVehiclePage(chip.dataset.vid));
   });
 }
 
@@ -532,6 +583,30 @@ async function openVehiclePage(vid) {
   $('vehicle-make-model').textContent = `${selectedVehicle.make} ${selectedVehicle.model}` +
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
+
+  // Set location dropdown
+  const locSelect = $('vehicle-location-select');
+  const locCustom = $('vehicle-location-custom');
+  if (locSelect) {
+    const loc = selectedVehicle.location || '';
+    const presets = ['1585 Kapiolani', 'HNL', 'Repair Shop', 'Other'];
+    if (loc && !presets.includes(loc)) {
+      // Custom location stored — set to the closest preset or Other
+      if (loc.toLowerCase().includes('repair')) {
+        locSelect.value = 'Repair Shop';
+        locCustom.value = loc;
+        locCustom.style.display = '';
+      } else {
+        locSelect.value = 'Other';
+        locCustom.value = loc;
+        locCustom.style.display = '';
+      }
+    } else {
+      locSelect.value = loc;
+      locCustom.value = '';
+      locCustom.style.display = (loc === 'Repair Shop' || loc === 'Other') ? '' : 'none';
+    }
+  }
 
   // Show hero image if set
   const heroWrap = $('vehicle-hero-wrap');
@@ -1641,6 +1716,49 @@ $('brand-home-admin').addEventListener('click', () => {
   showPage('dashboard');
 });
 
+// Location dropdown handlers
+$('vehicle-location-select').addEventListener('change', function() {
+  const custom = $('vehicle-location-custom');
+  if (this.value === 'Repair Shop' || this.value === 'Other') {
+    custom.style.display = '';
+    custom.focus();
+  } else {
+    custom.style.display = 'none';
+    custom.value = '';
+  }
+});
+
+$('btn-save-location').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const sel = $('vehicle-location-select').value;
+  const custom = $('vehicle-location-custom').value.trim();
+  let location = '';
+  if (sel === 'Repair Shop' || sel === 'Other') {
+    location = custom || sel;
+  } else {
+    location = sel;
+  }
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ location });
+    selectedVehicle.location = location;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.location = location;
+    toast('Location saved!', 'success');
+    renderFleetDashboard();
+  } catch (err) {
+    console.error('Save location error:', err);
+    toast('Failed to save location.', 'error');
+  }
+});
+
+// Locations button — scroll to Locations widget
+$('btn-locations').addEventListener('click', () => {
+  const widget = $('locations-widget');
+  if (widget) {
+    widget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+});
+
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', function () {
@@ -2661,7 +2779,7 @@ $('btn-save-note').addEventListener('click', async () => {
   }
   const isFollowUp = $('note-followup').checked;
   const dueDate = isFollowUp ? ($('note-due-date').value || '') : '';
-  const isUrgent = isFollowUp && $('note-urgent') ? $('note-urgent').checked : false;
+  const isUrgent = $('note-urgent') ? $('note-urgent').checked : false;
 
   try {
     const noteData = {
@@ -2681,7 +2799,7 @@ $('btn-save-note').addEventListener('click', async () => {
     if ($('note-urgent')) $('note-urgent').checked = false;
     $('note-due-date').value = '';
     $('note-due-row').style.display = 'none';
-    if ($('note-urgent-row')) $('note-urgent-row').style.display = 'none';
+    if ($('note-urgent')) $('note-urgent').checked = false;
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadVehicleNotes(selectedVehicle.id);
     if (isFollowUp) loadDashboardFollowUps();
@@ -2712,7 +2830,9 @@ async function loadVehicleNotes(vehicleId) {
       let followUpBadge = '';
       if (d.isFollowUp) {
         if (d.done) {
-          followUpBadge = '<span class="note-badge note-badge-done">✅ Done</span>';
+          const completer = d.completedByName ? ` by ${escapeHtml(d.completedByName)}` : '';
+          const completedDate = d.completedAt ? ' · ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+          followUpBadge = `<span class="note-badge note-badge-done">✅ Done${completer}${completedDate}</span>`;
         } else {
           const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
           followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
@@ -2746,7 +2866,12 @@ async function loadVehicleNotes(vehicleId) {
 
 window.markNoteDone = async function(docId) {
   try {
-    await db.collection('vehicleNotes').doc(docId).update({ done: true });
+    await db.collection('vehicleNotes').doc(docId).update({
+      done: true,
+      completedBy: currentUser.uid,
+      completedByName: currentUser.displayName || currentUser.email,
+      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     toast('Follow-up marked done.', 'success');
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
@@ -2943,7 +3068,12 @@ async function loadDashboardFollowUps() {
 
 window.agendaMarkDone = async function(docId) {
   try {
-    await db.collection('vehicleNotes').doc(docId).update({ done: true });
+    await db.collection('vehicleNotes').doc(docId).update({
+      done: true,
+      completedBy: currentUser.uid,
+      completedByName: currentUser.displayName || currentUser.email,
+      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     toast('Follow-up done! ✓', 'success');
     loadDashboardFollowUps();
   } catch (err) {
@@ -2954,7 +3084,12 @@ window.agendaMarkDone = async function(docId) {
 
 window.agendaMarkGeneralDone = async function(docId) {
   try {
-    await db.collection('generalNotes').doc(docId).update({ done: true });
+    await db.collection('generalNotes').doc(docId).update({
+      done: true,
+      completedBy: currentUser.uid,
+      completedByName: currentUser.displayName || currentUser.email,
+      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     toast('Follow-up done! ✓', 'success');
     loadDashboardFollowUps();
     loadGeneralNotes();
@@ -3467,7 +3602,7 @@ $('btn-save-general-note').addEventListener('click', async () => {
   }
   const isFollowUp = $('general-note-followup').checked;
   const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
-  const isUrgent = isFollowUp && $('general-note-urgent') ? $('general-note-urgent').checked : false;
+  const isUrgent = $('general-note-urgent') ? $('general-note-urgent').checked : false;
 
   try {
     const noteData = {
@@ -3486,7 +3621,7 @@ $('btn-save-general-note').addEventListener('click', async () => {
     if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     $('general-note-due-date').value = '';
     $('general-note-due-row').style.display = 'none';
-    if ($('general-note-urgent-row')) $('general-note-urgent-row').style.display = 'none';
+    if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadGeneralNotes();
     if (isFollowUp) loadDashboardFollowUps();
@@ -3520,7 +3655,9 @@ async function loadGeneralNotes() {
       let followUpBadge = '';
       if (d.isFollowUp) {
         if (d.done) {
-          followUpBadge = '<span class="note-badge note-badge-done">✅ Done</span>';
+          const completer = d.completedByName ? ` by ${escapeHtml(d.completedByName)}` : '';
+          const completedDate = d.completedAt ? ' · ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+          followUpBadge = `<span class="note-badge note-badge-done">✅ Done${completer}${completedDate}</span>`;
         } else {
           const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
           followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
@@ -3552,7 +3689,12 @@ async function loadGeneralNotes() {
 
 window.markGeneralNoteDone = async function(docId) {
   try {
-    await db.collection('generalNotes').doc(docId).update({ done: true });
+    await db.collection('generalNotes').doc(docId).update({
+      done: true,
+      completedBy: currentUser.uid,
+      completedByName: currentUser.displayName || currentUser.email,
+      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
     toast('Follow-up marked done.', 'success');
     loadGeneralNotes();
     loadDashboardFollowUps();
