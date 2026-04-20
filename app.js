@@ -583,29 +583,33 @@ function renderLocationsWidget() {
   const MS_2H = 2 * 60 * 60 * 1000;
   const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip');
   const atRepair = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
-  const atHome1585 = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === '1585 Kapiolani' && !v.needsCleaning);
-  const atHomeHNL = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && v.homeLocation === 'HNL' && !v.needsCleaning);
-  const noLocation = vehiclesCache.filter(v => v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && !v.homeLocation && !v.needsCleaning);
+  // "at home" excludes vehicles needing cleaning OR needing photos-only
+  function isAtHome(v) {
+    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && !v.needsCleaning;
+  }
+  const atHome1585 = vehiclesCache.filter(v => isAtHome(v) && v.homeLocation === '1585 Kapiolani' && !needsPhotosCheck(v));
+  const atHomeHNL = vehiclesCache.filter(v => isAtHome(v) && v.homeLocation === 'HNL' && !needsPhotosCheck(v));
+  const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation && !needsPhotosCheck(v));
   const cleaningHNL = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === 'HNL');
   const cleaning1585 = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === '1585 Kapiolani');
   const cleaningOther = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
 
-  // Photos needed — vehicles with stale photos (>24h), not suppressed
+  // Check if vehicle needs photos (stale >24h, not suppressed by trip/repair/grace)
   function needsPhotosCheck(v) {
     const isOnTrip = v.tripStatus === 'on-trip';
     const isAtRepair = v.tripStatus === 'repair-shop';
-    const stillCleaning = v.needsCleaning;
     let withinGrace = false;
     if (v.cleaningFlaggedAt) {
       const flagTime = v.cleaningFlaggedAt.toDate ? v.cleaningFlaggedAt.toDate().getTime() : new Date(v.cleaningFlaggedAt).getTime();
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
-    if (isOnTrip || isAtRepair || stillCleaning || withinGrace) return false;
+    if (isOnTrip || isAtRepair || withinGrace) return false;
     return v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
   }
-  const photosHNL = vehiclesCache.filter(v => needsPhotosCheck(v) && v.homeLocation === 'HNL');
-  const photos1585 = vehiclesCache.filter(v => needsPhotosCheck(v) && v.homeLocation === '1585 Kapiolani');
-  const photosOther = vehiclesCache.filter(v => needsPhotosCheck(v) && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
+  // Photos-ONLY = needs photos but NOT cleaning (cleaning+photos merged into cleaning bucket)
+  const photosOnlyHNL = vehiclesCache.filter(v => needsPhotosCheck(v) && !v.needsCleaning && v.homeLocation === 'HNL');
+  const photosOnly1585 = vehiclesCache.filter(v => needsPhotosCheck(v) && !v.needsCleaning && v.homeLocation === '1585 Kapiolani');
+  const photosOnlyOther = vehiclesCache.filter(v => needsPhotosCheck(v) && !v.needsCleaning && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
 
   // Sort helpers
   const sortByReturn = (arr) => arr.sort((a, b) => {
@@ -618,7 +622,7 @@ function renderLocationsWidget() {
 
   let html = '';
 
-  // Helper for cleaning section
+  // Helper for cleaning section (includes photo button if vehicle also needs photos)
   function renderCleaningSection(title, vehicles) {
     if (vehicles.length === 0) return '';
     let s = `<div class="location-group location-group-cleaning">
@@ -629,14 +633,24 @@ function renderLocationsWidget() {
       <div class="location-group-vehicles cleaning-list">`;
     for (const v of vehicles) {
       const needsDamage = v.needsDamageCheck;
+      const alsoNeedsPhotos = needsPhotosCheck(v);
+      let photoTag = '';
+      if (alsoNeedsPhotos) {
+        let ageText = '';
+        if (v.lastPhotoAge === Infinity) { ageText = 'No photos yet'; }
+        else { const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60)); const days = Math.floor(hrs / 24); ageText = days > 0 ? `${days}d ${hrs % 24}h ago` : `${hrs}h ago`; }
+        photoTag = `<span class="photo-age-tag">${ageText}</span>`;
+      }
       s += `<div class="cleaning-item" data-vid="${v.id}">
         <div class="cleaning-vehicle-info">
           <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
           <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+          ${photoTag}
         </div>
         <div class="cleaning-actions">
           ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
           <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>✓ Cleaned</button>
+          ${alsoNeedsPhotos ? `<button class="btn btn-sm btn-outline photo-done-btn" data-vid="${v.id}">\ud83d\udcf7</button>` : ''}
         </div>
       </div>`;
     }
@@ -675,15 +689,15 @@ function renderLocationsWidget() {
     return s;
   }
 
-  // Photos Needed — split by location
-  html += renderPhotosSection('Needs Photos — HNL', photosHNL);
-  html += renderPhotosSection('Needs Photos — 1585 Kapiolani', photos1585);
-  if (photosOther.length > 0) html += renderPhotosSection('Needs Photos — Other', photosOther);
-
-  // Needs Cleaning — split by location
+  // Needs Cleaning (+ photos if both) — split by location
   html += renderCleaningSection('Needs Cleaning — HNL', cleaningHNL);
   html += renderCleaningSection('Needs Cleaning — 1585 Kapiolani', cleaning1585);
   if (cleaningOther.length > 0) html += renderCleaningSection('Needs Cleaning — Other', cleaningOther);
+
+  // Photos Only (not cleaning) — split by location
+  html += renderPhotosSection('Needs Photos — HNL', photosOnlyHNL);
+  html += renderPhotosSection('Needs Photos — 1585 Kapiolani', photosOnly1585);
+  if (photosOnlyOther.length > 0) html += renderPhotosSection('Needs Photos — Other', photosOnlyOther);
 
   // On the Road
   if (onTrip.length > 0) {
