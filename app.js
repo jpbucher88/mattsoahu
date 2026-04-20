@@ -1235,9 +1235,6 @@ $('btn-download-all').addEventListener('click', async () => {
     } else if (files.length < photos.length) {
       toast(`${photos.length - files.length} photo(s) could not be downloaded and were skipped.`, 'warning');
     }
-      hideLoading();
-      return;
-    }
 
     // Mobile: show full-screen gallery for saving to Photos
     const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
