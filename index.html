@@ -153,6 +153,10 @@
         <div class="header-brand" id="brand-home-vehicle" style="cursor:pointer;"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2 id="vehicle-page-title">Vehicle</h2></div>
       </div>
       <div class="header-actions">
+        <button id="btn-tasks-vehicle" class="task-alert-btn" style="display:none;" title="Open Tasks">
+          <span class="task-alert-icon">📋</span>
+          <span id="task-alert-count-vehicle" class="task-alert-count">0</span>
+        </button>
         <button id="btn-admin-from-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
         <button id="btn-logout-vehicle" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
       </div>
@@ -303,6 +307,13 @@
           </div>
           <p class="hint">Set custom mileage intervals for this vehicle. Leave blank to use the default.</p>
           <div id="schedule-items" class="schedule-items"></div>
+          <div class="schedule-custom-section">
+            <div class="schedule-custom-header">
+              <span class="schedule-custom-title">✏️ Custom Services</span>
+              <button type="button" id="btn-add-custom-service" class="btn btn-sm btn-outline">+ Add Service</button>
+            </div>
+            <div id="custom-schedule-rows"></div>
+          </div>
           <button id="btn-save-schedule" class="btn btn-primary" style="margin-top:10px;">Save Schedule</button>
           <button id="btn-reset-schedule" class="btn btn-outline btn-sm" style="margin-top:6px;">Reset All to Defaults</button>
         </div>

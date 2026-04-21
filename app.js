@@ -271,6 +271,7 @@ $('btn-admin-logout').addEventListener('click', () => auth.signOut());
 
 // Task panel button
 $('btn-tasks').addEventListener('click', () => openTaskPanel());
+$('btn-tasks-vehicle').addEventListener('click', () => openTaskPanel());
 
 // ================================================================
 // FORGOT / RESET PASSWORD
@@ -3237,9 +3238,36 @@ $('btn-edit-schedule').addEventListener('click', () => {
       </div>`;
   }).join('');
 
+  // Populate custom service rows from vehicle's customServices array
+  const customServicesContainer = $('custom-schedule-rows');
+  customServicesContainer.innerHTML = '';
+  const existingCustom = (selectedVehicle.customServices) || [];
+  existingCustom.forEach(cs => addCustomScheduleRow(cs.name, cs.interval));
+  // If none, start with one blank row
+  if (existingCustom.length === 0) addCustomScheduleRow('', '');
+
   $('schedule-editor').style.display = 'block';
   $('recommended-services').style.display = 'none';
 });
+
+function addCustomScheduleRow(name = '', interval = '') {
+  const container = $('custom-schedule-rows');
+  const row = document.createElement('div');
+  row.className = 'schedule-row schedule-custom-row';
+  row.innerHTML = `
+    <input type="text" class="custom-service-name" placeholder="Service name (e.g. Detail, Inspect)" value="${escapeHtml(name)}" maxlength="80">
+    <div class="schedule-input-wrap">
+      <input type="number" class="custom-service-interval" placeholder="mi interval" value="${escapeHtml(String(interval))}" min="100" max="999999" inputmode="numeric">
+      <span class="schedule-unit">mi</span>
+    </div>
+    <button type="button" class="btn btn-sm btn-danger btn-remove-custom-row" title="Remove">✕</button>
+  `;
+  row.querySelector('.btn-remove-custom-row').addEventListener('click', () => row.remove());
+  container.appendChild(row);
+}
+window.addCustomScheduleRow = addCustomScheduleRow;
+
+$('btn-add-custom-service').addEventListener('click', () => addCustomScheduleRow('', ''));
 
 $('btn-close-schedule').addEventListener('click', () => {
   $('schedule-editor').style.display = 'none';
@@ -3263,11 +3291,33 @@ $('btn-save-schedule').addEventListener('click', async () => {
     }
   });
 
+  // Collect custom service rows
+  const customServices = [];
+  $('custom-schedule-rows').querySelectorAll('.schedule-custom-row').forEach(row => {
+    const nameInput = row.querySelector('.custom-service-name');
+    const intervalInput = row.querySelector('.custom-service-interval');
+    const name = nameInput ? nameInput.value.trim() : '';
+    const interval = intervalInput ? parseInt(intervalInput.value) : 0;
+    if (name && interval >= 100) {
+      customServices.push({ name, interval });
+    }
+  });
+
   try {
-    await db.collection('vehicles').doc(selectedVehicle.id).update({ customSchedule });
+    const updateData = { customSchedule };
+    if (customServices.length > 0) {
+      updateData.customServices = customServices;
+    } else {
+      updateData.customServices = firebase.firestore.FieldValue.delete();
+    }
+    await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
     selectedVehicle.customSchedule = customSchedule;
+    selectedVehicle.customServices = customServices.length > 0 ? customServices : null;
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) cached.customSchedule = customSchedule;
+    if (cached) {
+      cached.customSchedule = customSchedule;
+      cached.customServices = customServices.length > 0 ? customServices : null;
+    }
     toast('Maintenance schedule saved!', 'success');
     $('schedule-editor').style.display = 'none';
     updateRecommendedServices(selectedVehicle.id);
@@ -3298,7 +3348,8 @@ $('btn-reset-schedule').addEventListener('click', async () => {
 // Show/hide maintenance form
 $('btn-add-maintenance').addEventListener('click', () => {
   const wrap = $('maintenance-form-wrap');
-  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+  // Always show the form (use Cancel button to close)
+  wrap.style.display = 'block';
   $('m-date').value = todayDateString();
   $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
   $('m-interval').value = '';
@@ -3307,6 +3358,9 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-next-due-mileage-display').textContent = '—';
   $('m-custom-row').style.display = 'none';
   $('m-custom-type').value = '';
+  $('m-type').value = '';
+  // Scroll into view so form is visible even when recommended services section is shown above it
+  setTimeout(() => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 });
 
 // Update "Next Due" displays when interval or date/mileage changes
@@ -3729,6 +3783,16 @@ async function loadDashboardFollowUps() {
     }
     if (tasksBtn) tasksBtn.style.display = '';
 
+    // Sync vehicle-page task button badge
+    const badgeVehicle = $('task-alert-count-vehicle');
+    const tasksBtnVehicle = $('btn-tasks-vehicle');
+    if (badgeVehicle) {
+      badgeVehicle.textContent = items.length;
+      badgeVehicle.classList.toggle('count-zero', items.length === 0);
+      badgeVehicle.classList.toggle('has-urgent', items.some(i => i.urgent));
+    }
+    if (tasksBtnVehicle) tasksBtnVehicle.style.display = '';
+
     // Populate urgent banner on dashboard (separate from task panel)
     renderUrgentBanner(items);
 
@@ -3792,20 +3856,19 @@ async function loadDashboardFollowUps() {
       const urgentTag = item.urgent ? ' 🚨' : '';
       const isOverdue = item.dueDate && item.dueDate < today;
       const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
-      let reassignBtn = '';
-      if (currentUserRole === 'admin' && isOverdue) {
-        reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅</button>`;
-      }
+      const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
+      // Context menu button — always visible
+      const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
       return `
-        <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}">
+        <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}" data-vid-key="${item.vehicleId || ''}">
           <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
           <div class="followup-item${extraClass}"${vidAttr}>
             <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
             <div class="followup-info">
               <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
-              <div class="followup-meta">${metaLabel}${creatorLabel}</div>
+              <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}</div>
             </div>
-            ${reassignBtn}
+            ${menuBtn}
           </div>
         </div>`;
     }
@@ -3847,11 +3910,26 @@ async function loadDashboardFollowUps() {
     renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
     renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
 
-    // Click a vehicle follow-up to go to that vehicle
-    document.querySelectorAll('#task-panel-overlay .followup-item[data-vid]').forEach(item => {
-      item.addEventListener('click', () => {
-        closeTaskPanel();
-        openVehiclePage(item.dataset.vid);
+    // Click a task item:
+    //   - if it has a dueDate → jump to that day in the calendar (within task panel)
+    //   - if vehicle task with no dueDate → navigate to the vehicle page
+    document.querySelectorAll('#task-panel-overlay .followup-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        // Ignore clicks on buttons inside the item
+        if (e.target.closest('button')) return;
+        const wrap = item.closest('.followup-item-wrap');
+        const dueDate = wrap ? wrap.dataset.due : '';
+        if (dueDate) {
+          // Scroll to calendar section and show that day
+          const calSection = $('task-calendar-grid');
+          if (calSection) {
+            calSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+          jumpToCalendarDay(dueDate);
+        } else if (item.dataset.vid) {
+          closeTaskPanel();
+          openVehiclePage(item.dataset.vid);
+        }
       });
     });
   } catch (err) {
@@ -4386,6 +4464,172 @@ function closeTaskPanel() {
 }
 window.openTaskPanel = openTaskPanel;
 window.closeTaskPanel = closeTaskPanel;
+
+// Jump to a specific day in the task calendar (inside the task panel)
+window.jumpToCalendarDay = function(dateStr) {
+  if (!dateStr) return;
+  const [y, m] = dateStr.split('-').map(Number);
+  calendarMonth = new Date(y, m - 1, 1);
+  renderCalendarGrid();
+  // Scroll to calendar section within task panel
+  const calSection = document.querySelector('.task-panel-body .task-panel-section:last-child');
+  const calGrid = $('task-calendar-grid');
+  if (calGrid) {
+    calGrid.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  // Show the day detail
+  setTimeout(() => window.showCalendarDetail(dateStr), 200);
+};
+
+// ---- Task context menu (⋯ button on each agenda item) ----
+window.openTaskContextMenu = function(docId, col, triggerBtn) {
+  // Remove any existing menus
+  document.querySelectorAll('.task-ctx-menu').forEach(m => m.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'task-ctx-menu';
+  menu.innerHTML = `
+    <button class="task-ctx-item" id="ctx-edit">✏️ Edit Task</button>
+    <button class="task-ctx-item" id="ctx-date">📅 Change Date</button>
+    <button class="task-ctx-item" id="ctx-vehicle">🚗 Go to Vehicle</button>
+    <button class="task-ctx-item task-ctx-danger" id="ctx-delete">🗑️ Delete Task</button>
+  `;
+  document.body.appendChild(menu);
+
+  // Position near the trigger button
+  const rect = triggerBtn.getBoundingClientRect();
+  const menuW = 200;
+  let left = rect.left - menuW + rect.width;
+  if (left < 8) left = 8;
+  menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  menu.style.left = left + 'px';
+
+  // Fetch doc to get current data for context
+  async function getData() {
+    const snap = await db.collection(col).doc(docId).get();
+    return snap.exists ? snap.data() : null;
+  }
+
+  menu.querySelector('#ctx-edit').onclick = async () => {
+    menu.remove();
+    // Open the edit modal which supports text + followup fields
+    const d = await getData();
+    if (!d) { toast('Task not found.', 'error'); return; }
+    openFullEditTaskModal(docId, col, d);
+  };
+  menu.querySelector('#ctx-date').onclick = async () => {
+    menu.remove();
+    const d = await getData();
+    const currentDue = d ? d.dueDate || '' : '';
+    openRescheduleTask(docId, col, currentDue);
+  };
+  menu.querySelector('#ctx-vehicle').onclick = async () => {
+    menu.remove();
+    const d = await getData();
+    if (d && d.vehicleId) {
+      closeTaskPanel();
+      openVehiclePage(d.vehicleId);
+    } else {
+      toast('No vehicle linked to this task.', 'info');
+    }
+  };
+  menu.querySelector('#ctx-delete').onclick = async () => {
+    menu.remove();
+    const ok = await confirm('Delete Task', 'Permanently remove this task?');
+    if (!ok) return;
+    try {
+      await db.collection(col).doc(docId).delete();
+      toast('Task deleted.', 'success');
+      loadDashboardFollowUps();
+      if (col === 'generalNotes') loadGeneralNotes();
+    } catch (err) {
+      console.error('Delete task error:', err);
+      toast('Failed to delete.', 'error');
+    }
+  };
+
+  // Close menu on outside click
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e) {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 10);
+};
+
+// Full edit modal: allows editing text + followup/urgent/dueDate
+window.openFullEditTaskModal = function(docId, col, d) {
+  const existing = document.querySelector('.task-full-edit-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'task-full-edit-overlay';
+  overlay.innerHTML = `
+    <div class="task-full-edit-modal">
+      <h4>✏️ Edit Task</h4>
+      <div class="form-group">
+        <label>Task Text</label>
+        <textarea id="tfe-text" class="note-textarea" rows="3" maxlength="500">${escapeHtml(d.text || '')}</textarea>
+      </div>
+      <div class="form-group">
+        <label class="note-followup-label">
+          <input type="checkbox" id="tfe-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
+        </label>
+      </div>
+      <div id="tfe-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
+        <div class="form-group">
+          <label class="note-followup-label">
+            <input type="checkbox" id="tfe-urgent" ${d.urgent ? 'checked' : ''}> 🚨 Urgent
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Due Date</label>
+          <input type="date" id="tfe-due-date" class="form-select" value="${d.dueDate || ''}">
+        </div>
+        <div class="form-group">
+          <label>Due Time <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
+          <input type="time" id="tfe-due-time" class="form-select" value="${d.dueTime || ''}">
+        </div>
+      </div>
+      <div class="reassign-modal-actions">
+        <button class="btn btn-primary" id="btn-tfe-save">Save Changes</button>
+        <button class="btn btn-outline" id="btn-tfe-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#tfe-followup').addEventListener('change', function() {
+    overlay.querySelector('#tfe-followup-opts').style.display = this.checked ? '' : 'none';
+  });
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector('#btn-tfe-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#btn-tfe-save').onclick = async () => {
+    const newText = overlay.querySelector('#tfe-text').value.trim();
+    if (!newText) { toast('Task text cannot be empty.', 'warning'); return; }
+    const isFollowUp = overlay.querySelector('#tfe-followup').checked;
+    const urgent = isFollowUp && overlay.querySelector('#tfe-urgent').checked;
+    const dueDate = isFollowUp ? overlay.querySelector('#tfe-due-date').value : '';
+    const dueTime = isFollowUp ? overlay.querySelector('#tfe-due-time').value : '';
+    const updates = { text: newText, isFollowUp, urgent };
+    if (dueDate) updates.dueDate = dueDate;
+    else updates.dueDate = firebase.firestore.FieldValue.delete();
+    if (dueTime) updates.dueTime = dueTime;
+    else updates.dueTime = firebase.firestore.FieldValue.delete();
+    try {
+      await db.collection(col).doc(docId).update(updates);
+      toast('Task updated!', 'success');
+      overlay.remove();
+      loadDashboardFollowUps();
+      if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+      if (col === 'generalNotes') loadGeneralNotes();
+    } catch (err) {
+      console.error('Edit task error:', err);
+      toast('Failed to save changes.', 'error');
+    }
+  };
+};
 
 // ---- Reschedule task (swipe / hold) — works for all roles ----
 window.openRescheduleTask = function(docId, col, currentDue) {
