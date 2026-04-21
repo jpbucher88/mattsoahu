@@ -5378,14 +5378,14 @@ function startMailListener() {
 // ================================================================
 
 function initTimeClock() {
-  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  if (!currentUser) return;
   const widget = $('time-clock-widget');
   if (widget) widget.style.display = '';
   loadTimeClock();
 }
 
 async function loadTimeClock() {
-  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  if (!currentUser) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
   try {
@@ -5496,7 +5496,7 @@ function startElapsedTimer(clockInTime) {
 }
 
 window.clockIn = async function() {
-  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  if (!currentUser) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
   const goalInput = $('tc-goal-input');
@@ -5520,7 +5520,7 @@ window.clockIn = async function() {
 };
 
 window.clockOut = async function() {
-  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  if (!currentUser) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
   const achievedInput = $('tc-achieved-input');
@@ -5540,8 +5540,8 @@ window.clockOut = async function() {
 };
 
 window.resetTimeClock = async function() {
-  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
-  const ok = await confirm('Reset Time Clock', 'Clear today\'s session and start fresh?');
+  if (!currentUser) return;
+  const ok = await confirm('Reset Session', 'Clear today\'s session and start fresh?');
   if (!ok) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
