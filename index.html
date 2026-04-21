@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260420b">
+  <link rel="stylesheet" href="style.css?v=20260420c">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -59,6 +59,10 @@
       <button id="btn-tasks" class="task-alert-btn" style="display:none;" title="Open Tasks">
         <span class="task-alert-icon">📋</span>
         <span id="task-alert-count" class="task-alert-count">0</span>
+      </button>
+      <button id="btn-mailbox" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
+        <span class="task-alert-icon">📬</span>
+        <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
       </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
@@ -142,6 +146,19 @@
           <div id="locations-grid" class="locations-grid"></div>
         </div>
       </section>
+
+      <!-- ==================== TIME CLOCK WIDGET (Owner Only) ==================== -->
+      <section id="time-clock-widget" class="card" style="display:none;">
+        <div class="collapsible-header" onclick="toggleSection('time-clock-body', 'time-clock-toggle')">
+          <div class="collapsible-title">
+            <h3>⏱️ Time Clock</h3>
+          </div>
+          <button class="collapse-btn" id="time-clock-toggle">&#8722;</button>
+        </div>
+        <div id="time-clock-body" class="collapsible-body">
+          <div id="time-clock-content" class="time-clock-content"></div>
+        </div>
+      </section>
     </main>
   </div>
 
@@ -156,6 +173,10 @@
         <button id="btn-tasks-vehicle" class="task-alert-btn" style="display:none;" title="Open Tasks">
           <span class="task-alert-icon">📋</span>
           <span id="task-alert-count-vehicle" class="task-alert-count">0</span>
+        </button>
+        <button id="btn-mailbox-vehicle" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
+          <span class="task-alert-icon">📬</span>
+          <span id="mail-unread-count-vehicle" class="task-alert-count count-zero">0</span>
         </button>
         <button id="btn-admin-from-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
         <button id="btn-logout-vehicle" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
@@ -654,6 +675,46 @@
   </div>
 
   <!-- ==================== TOAST NOTIFICATION ==================== -->
+
+  <!-- ==================== MAILBOX PANEL ==================== -->
+  <div id="mailbox-overlay" class="mailbox-overlay" style="display:none;" onclick="if(event.target===this)closeMailbox()">
+    <div class="mailbox-panel">
+      <div class="mailbox-header">
+        <h3>📬 Mailbox</h3>
+        <button class="mailbox-close" onclick="closeMailbox()">&times;</button>
+      </div>
+      <div class="mailbox-tabs">
+        <button class="mailbox-tab active" id="mb-tab-inbox" onclick="switchMailTab('inbox')">📥 Inbox <span id="mb-inbox-count" class="mb-count"></span></button>
+        <button class="mailbox-tab" id="mb-tab-sent" onclick="switchMailTab('sent')">📤 Sent</button>
+        <button class="mailbox-tab" id="mb-tab-compose" onclick="switchMailTab('compose')">✉️ Compose</button>
+      </div>
+      <div class="mailbox-body">
+        <!-- Inbox -->
+        <div id="mb-inbox" class="mb-tab-content">
+          <div id="mb-inbox-list" class="mb-message-list"></div>
+        </div>
+        <!-- Sent -->
+        <div id="mb-sent" class="mb-tab-content" style="display:none;">
+          <div id="mb-sent-list" class="mb-message-list"></div>
+        </div>
+        <!-- Compose -->
+        <div id="mb-compose" class="mb-tab-content" style="display:none;">
+          <div class="mb-compose-form">
+            <div class="mb-field">
+              <label class="mb-field-label">To:</label>
+              <select id="mb-to-user" class="mb-select"><option value="">— Select recipient —</option></select>
+            </div>
+            <div class="mb-field">
+              <label class="mb-field-label">Message:</label>
+              <textarea id="mb-message-body" class="mb-textarea" placeholder="Type your message..." maxlength="1000" rows="5"></textarea>
+            </div>
+            <button class="btn btn-primary" onclick="sendMailMessage()">✉️ Send Message</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== TASK PANEL OVERLAY ==================== -->
   <div id="task-panel-overlay" class="task-panel-overlay" style="display:none;" onclick="if(event.target===this)closeTaskPanel()">
     <div class="task-panel">

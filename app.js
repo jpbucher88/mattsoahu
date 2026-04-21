@@ -222,6 +222,8 @@ auth.onAuthStateChanged(async (user) => {
 
       await loadVehicles();
       showPage('dashboard');
+      startMailListener();
+      initTimeClock();
     } catch (err) {
       console.error('Auth state error:', err);
       toast('Error loading profile', 'error');
@@ -231,6 +233,8 @@ auth.onAuthStateChanged(async (user) => {
   } else {
     currentUser = null;
     currentUserRole = null;
+    if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
+    if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
     showPage('login');
   }
 });
@@ -3743,6 +3747,12 @@ window.deleteNote = async function(docId) {
 let currentTaskTab = 'all';
 // Cached items for re-filtering without refetch
 let cachedTaskItems = [];
+// Mailbox
+let mailUnsubscribe = null;
+// Time clock
+let elapsedInterval = null;
+let timeclockData = null;
+const OWNER_EMAIL = 'mattaiscale@gmail.com';
 
 window.switchTaskTab = function(tab) {
   currentTaskTab = tab;
@@ -5074,3 +5084,434 @@ window.deleteGeneralNote = async function(docId) {
 // INIT - Set today's date as default in admin date filter
 // ================================================================
 $('admin-date-filter').value = todayDateString();
+
+// ================================================================
+// MAILBOX SYSTEM
+// ================================================================
+
+let currentMailTab = 'inbox';
+
+window.openMailbox = function() {
+  const overlay = $('mailbox-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  switchMailTab('inbox');
+  loadMailboxInbox();
+  loadMailboxSent();
+  loadMailboxUsers();
+};
+
+window.closeMailbox = function() {
+  const overlay = $('mailbox-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+window.switchMailTab = function(tab) {
+  currentMailTab = tab;
+  document.querySelectorAll('.mailbox-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.mb-tab-content').forEach(c => c.style.display = 'none');
+  const tabBtn = $('mb-tab-' + tab);
+  const tabContent = $('mb-' + tab);
+  if (tabBtn) tabBtn.classList.add('active');
+  if (tabContent) tabContent.style.display = '';
+};
+
+async function loadMailboxUsers() {
+  if (!currentUser) return;
+  const sel = $('mb-to-user');
+  if (!sel) return;
+  try {
+    const snap = await db.collection('users').orderBy('displayName').get();
+    sel.innerHTML = '<option value="">— Select recipient —</option>';
+    snap.forEach(doc => {
+      if (doc.id === currentUser.uid) return;
+      const d = doc.data();
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.dataset.name = d.displayName || d.email;
+      opt.textContent = d.displayName || d.email;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.error('Load mailbox users:', e);
+  }
+}
+
+async function loadMailboxInbox() {
+  if (!currentUser) return;
+  const list = $('mb-inbox-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading...</p>';
+  try {
+    const snap = await db.collection('messages')
+      .where('to', '==', currentUser.uid)
+      .limit(80)
+      .get();
+    renderMailboxInbox(snap);
+  } catch (e) {
+    console.error('Inbox load error:', e);
+    list.innerHTML = '<p class="hint">Could not load inbox.</p>';
+  }
+}
+
+function renderMailboxInbox(snap) {
+  const list = $('mb-inbox-list');
+  if (!list) return;
+  if (snap.empty) {
+    list.innerHTML = '<p class="hint" style="text-align:center;padding:24px 0;">No messages yet. \ud83d\udcad</p>';
+    return;
+  }
+  const msgs = [];
+  snap.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
+  msgs.sort((a, b) => {
+    const ta = a.sentAt ? (a.sentAt.toMillis ? a.sentAt.toMillis() : 0) : 0;
+    const tb = b.sentAt ? (b.sentAt.toMillis ? b.sentAt.toMillis() : 0) : 0;
+    return tb - ta;
+  });
+  list.innerHTML = msgs.map(m => {
+    const unread = !m.read;
+    const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
+    const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+    const preview = m.body ? m.body.substring(0, 90) + (m.body.length > 90 ? '…' : '') : '';
+    return `
+      <div class="mb-message-item ${unread ? 'mb-unread' : ''}" id="mb-msg-${m.id}">
+        <div class="mb-msg-header" onclick="openMessage('${m.id}')">
+          <span class="mb-msg-from">${unread ? '<span class="mb-dot"></span>' : ''}${escapeHtml(m.fromName || 'Unknown')}</span>
+          <span class="mb-msg-time">${timeStr}</span>
+        </div>
+        <div class="mb-msg-preview" onclick="openMessage('${m.id}')">${escapeHtml(preview)}</div>
+        <div class="mb-msg-actions">
+          <button class="btn btn-sm btn-outline" onclick="replyToMessage('${m.from}', '${escapeHtml((m.fromName||'').replace(/'/g,''))}')">↩ Reply</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteMessage('${m.id}')">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadMailboxSent() {
+  if (!currentUser) return;
+  const list = $('mb-sent-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading...</p>';
+  try {
+    const snap = await db.collection('messages')
+      .where('from', '==', currentUser.uid)
+      .limit(80)
+      .get();
+    const msgs = [];
+    snap.forEach(doc => msgs.push({ id: doc.id, ...doc.data() }));
+    msgs.sort((a, b) => {
+      const ta = a.sentAt ? (a.sentAt.toMillis ? a.sentAt.toMillis() : 0) : 0;
+      const tb = b.sentAt ? (b.sentAt.toMillis ? b.sentAt.toMillis() : 0) : 0;
+      return tb - ta;
+    });
+    if (!msgs.length) {
+      list.innerHTML = '<p class="hint" style="text-align:center;padding:24px 0;">No sent messages. \ud83d\udce4</p>';
+      return;
+    }
+    list.innerHTML = msgs.map(m => {
+      const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
+      const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const preview = m.body ? m.body.substring(0, 100) + (m.body.length > 100 ? '…' : '') : '';
+      return `
+        <div class="mb-message-item mb-sent-item">
+          <div class="mb-msg-header">
+            <span class="mb-msg-from">To: ${escapeHtml(m.toName || 'Unknown')}</span>
+            <span class="mb-msg-time">${timeStr}</span>
+          </div>
+          <div class="mb-msg-preview">${escapeHtml(preview)}</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    if ($('mb-sent-list')) $('mb-sent-list').innerHTML = '<p class="hint">Could not load sent messages.</p>';
+  }
+}
+
+window.openMessage = async function(msgId) {
+  try {
+    await db.collection('messages').doc(msgId).update({ read: true });
+    const el = $('mb-msg-' + msgId);
+    if (el) el.classList.remove('mb-unread');
+    updateMailBadge();
+  } catch (e) { /* ignore */ }
+};
+
+window.replyToMessage = function(fromUid, fromName) {
+  switchMailTab('compose');
+  const sel = $('mb-to-user');
+  if (sel) {
+    const opt = sel.querySelector(`option[value="${fromUid}"]`);
+    if (opt) sel.value = fromUid;
+  }
+  const body = $('mb-message-body');
+  if (body) body.focus();
+};
+
+window.deleteMessage = async function(msgId) {
+  const ok = await confirm('Delete Message', 'Permanently delete this message?');
+  if (!ok) return;
+  try {
+    await db.collection('messages').doc(msgId).delete();
+    toast('Message deleted.', 'success');
+    loadMailboxInbox();
+    updateMailBadge();
+  } catch (e) {
+    toast('Failed to delete.', 'error');
+  }
+};
+
+window.sendMailMessage = async function() {
+  const sel = $('mb-to-user');
+  const body = $('mb-message-body');
+  if (!sel || !body) return;
+  const toUid = sel.value;
+  const toName = sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].textContent.trim() : '';
+  const msgBody = body.value.trim();
+  if (!toUid) { toast('Select a recipient.', 'warning'); return; }
+  if (!msgBody) { toast('Write a message first.', 'warning'); return; }
+  const fromName = ($('user-display') || {}).textContent || currentUser.email;
+  try {
+    await db.collection('messages').add({
+      from: currentUser.uid,
+      fromName,
+      to: toUid,
+      toName,
+      body: msgBody,
+      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+      read: false
+    });
+    body.value = '';
+    sel.value = '';
+    toast('Message sent! ✉️', 'success');
+    loadMailboxSent();
+    switchMailTab('sent');
+  } catch (e) {
+    console.error('Send message error:', e);
+    toast('Failed to send.', 'error');
+  }
+};
+
+async function updateMailBadge() {
+  if (!currentUser) return;
+  try {
+    const snap = await db.collection('messages')
+      .where('to', '==', currentUser.uid)
+      .where('read', '==', false)
+      .get();
+    const count = snap.size;
+    [$('mail-unread-count'), $('mail-unread-count-vehicle')].forEach(badge => {
+      if (!badge) return;
+      badge.textContent = count;
+      badge.classList.toggle('count-zero', count === 0);
+    });
+    const inboxCount = $('mb-inbox-count');
+    if (inboxCount) inboxCount.textContent = count || '';
+  } catch (e) { /* ignore */ }
+}
+
+function startMailListener() {
+  if (!currentUser) return;
+  if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
+  try {
+    mailUnsubscribe = db.collection('messages')
+      .where('to', '==', currentUser.uid)
+      .where('read', '==', false)
+      .onSnapshot(snap => {
+        const count = snap.size;
+        [$('mail-unread-count'), $('mail-unread-count-vehicle')].forEach(badge => {
+          if (!badge) return;
+          badge.textContent = count;
+          badge.classList.toggle('count-zero', count === 0);
+        });
+        const inboxCount = $('mb-inbox-count');
+        if (inboxCount) inboxCount.textContent = count || '';
+      }, () => {
+        // Fallback polling on listener error (e.g. missing composite index)
+        updateMailBadge();
+      });
+  } catch (e) {
+    updateMailBadge();
+  }
+}
+
+// ================================================================
+// TIME CLOCK WIDGET (Owner Only)
+// ================================================================
+
+function initTimeClock() {
+  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  const widget = $('time-clock-widget');
+  if (widget) widget.style.display = '';
+  loadTimeClock();
+}
+
+async function loadTimeClock() {
+  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  const today = todayDateString();
+  const docId = currentUser.uid + '_' + today;
+  try {
+    const snap = await db.collection('timeclock').doc(docId).get();
+    timeclockData = snap.exists ? snap.data() : null;
+    renderTimeClock(timeclockData);
+  } catch (e) {
+    console.error('Load time clock error:', e);
+  }
+}
+
+function renderTimeClock(data) {
+  const content = $('time-clock-content');
+  if (!content) return;
+  const today = todayDateString();
+
+  if (!data || !data.clockIn) {
+    // Not clocked in
+    const savedGoal = data && data.revenueGoal ? data.revenueGoal : '';
+    content.innerHTML = `
+      <div class="tc-status tc-status-out">
+        <div class="tc-status-dot"></div>
+        <div>
+          <div class="tc-status-label">Not Clocked In</div>
+          <div class="tc-date">${today}</div>
+        </div>
+      </div>
+      <div class="tc-goal-row">
+        <label class="tc-label">\ud83d\udcb0 Daily Revenue Goal</label>
+        <div class="tc-input-row">
+          <span class="tc-dollar">$</span>
+          <input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${savedGoal}">
+        </div>
+      </div>
+      <button class="btn btn-primary tc-btn" onclick="clockIn()">\u23f1\ufe0f Clock In</button>
+    `;
+  } else if (data.clockIn && !data.clockOut) {
+    // Currently clocked in
+    const clockInTime = data.clockIn.toDate ? data.clockIn.toDate() : new Date(data.clockIn);
+    const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+    const goalStr = data.revenueGoal ? '$' + Number(data.revenueGoal).toLocaleString() : 'No goal set';
+    content.innerHTML = `
+      <div class="tc-status tc-status-in">
+        <div class="tc-status-dot tc-dot-green"></div>
+        <div>
+          <div class="tc-status-label">Clocked In</div>
+          <div class="tc-clock-time">Since ${clockInStr}</div>
+        </div>
+        <div class="tc-elapsed-badge" id="tc-elapsed">00:00:00</div>
+      </div>
+      <div class="tc-info-row">
+        <span class="tc-label">Daily Goal:</span>
+        <span class="tc-value tc-goal-val">${goalStr}</span>
+      </div>
+      <div class="tc-goal-row">
+        <label class="tc-label">\ud83d\udcb0 Revenue Achieved Today</label>
+        <div class="tc-input-row">
+          <span class="tc-dollar">$</span>
+          <input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0">
+        </div>
+      </div>
+      <button class="btn btn-danger tc-btn" onclick="clockOut()">\u23f9\ufe0f Clock Out</button>
+    `;
+    startElapsedTimer(clockInTime);
+  } else if (data.clockIn && data.clockOut) {
+    // Clocked out — show summary
+    const clockInTime = data.clockIn.toDate ? data.clockIn.toDate() : new Date(data.clockIn);
+    const clockOutTime = data.clockOut.toDate ? data.clockOut.toDate() : new Date(data.clockOut);
+    const msWorked = clockOutTime - clockInTime;
+    const hh = Math.floor(msWorked / 3600000);
+    const mm = Math.floor((msWorked % 3600000) / 60000);
+    const hoursLabel = `${hh}h ${mm}m`;
+    const inStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+    const outStr = clockOutTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+    const goalStr = data.revenueGoal ? '$' + Number(data.revenueGoal).toLocaleString() : '—';
+    const achievedStr = (data.revenueAchieved !== null && data.revenueAchieved !== undefined) ? '$' + Number(data.revenueAchieved).toLocaleString() : '—';
+    const pct = (data.revenueGoal && data.revenueAchieved !== undefined && data.revenueAchieved !== null)
+      ? Math.round((data.revenueAchieved / data.revenueGoal) * 100) : null;
+    const pctStr = pct !== null ? ` (${pct}%)` : '';
+    const pctClass = pct === null ? '' : pct >= 100 ? 'tc-great' : pct >= 75 ? 'tc-good' : 'tc-low';
+    content.innerHTML = `
+      <div class="tc-summary-card">
+        <div class="tc-summary-title">\ud83d\udccb Daily Summary — ${today}</div>
+        <div class="tc-summary-row"><span>Clock In</span><span>${inStr}</span></div>
+        <div class="tc-summary-row"><span>Clock Out</span><span>${outStr}</span></div>
+        <div class="tc-summary-row"><span>Time Worked</span><span><strong>${hoursLabel}</strong></span></div>
+        <div class="tc-summary-row"><span>Revenue Goal</span><span>${goalStr}</span></div>
+        <div class="tc-summary-row ${pctClass}"><span>Revenue Achieved</span><span><strong>${achievedStr}${pctStr}</strong></span></div>
+      </div>
+      <button class="btn btn-outline tc-btn" style="margin-top:12px;" onclick="resetTimeClock()">\ud83d\udd04 Start New Session</button>
+    `;
+  }
+}
+
+function startElapsedTimer(clockInTime) {
+  if (elapsedInterval) clearInterval(elapsedInterval);
+  function update() {
+    const el = $('tc-elapsed');
+    if (!el) { clearInterval(elapsedInterval); elapsedInterval = null; return; }
+    const elapsed = Date.now() - clockInTime.getTime();
+    const h = Math.floor(elapsed / 3600000);
+    const m = Math.floor((elapsed % 3600000) / 60000);
+    const s = Math.floor((elapsed % 60000) / 1000);
+    el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+  update();
+  elapsedInterval = setInterval(update, 1000);
+}
+
+window.clockIn = async function() {
+  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  const today = todayDateString();
+  const docId = currentUser.uid + '_' + today;
+  const goalInput = $('tc-goal-input');
+  const goal = goalInput ? parseFloat(goalInput.value) || 0 : 0;
+  try {
+    await db.collection('timeclock').doc(docId).set({
+      uid: currentUser.uid,
+      email: currentUser.email,
+      date: today,
+      clockIn: firebase.firestore.FieldValue.serverTimestamp(),
+      revenueGoal: goal,
+      clockOut: null,
+      revenueAchieved: null
+    });
+    toast('Clocked in! ⏱️', 'success');
+    await loadTimeClock();
+  } catch (e) {
+    console.error('Clock in error:', e);
+    toast('Failed to clock in.', 'error');
+  }
+};
+
+window.clockOut = async function() {
+  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  const today = todayDateString();
+  const docId = currentUser.uid + '_' + today;
+  const achievedInput = $('tc-achieved-input');
+  const achieved = achievedInput ? parseFloat(achievedInput.value) || 0 : 0;
+  try {
+    await db.collection('timeclock').doc(docId).update({
+      clockOut: firebase.firestore.FieldValue.serverTimestamp(),
+      revenueAchieved: achieved
+    });
+    if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+    toast('Clocked out! ✅', 'success');
+    await loadTimeClock();
+  } catch (e) {
+    console.error('Clock out error:', e);
+    toast('Failed to clock out.', 'error');
+  }
+};
+
+window.resetTimeClock = async function() {
+  if (!currentUser || currentUser.email !== OWNER_EMAIL) return;
+  const ok = await confirm('Reset Time Clock', 'Clear today\'s session and start fresh?');
+  if (!ok) return;
+  const today = todayDateString();
+  const docId = currentUser.uid + '_' + today;
+  try {
+    await db.collection('timeclock').doc(docId).delete();
+    timeclockData = null;
+    renderTimeClock(null);
+    toast('Time clock reset.', 'info');
+  } catch (e) {
+    toast('Failed to reset.', 'error');
+  }
+};
