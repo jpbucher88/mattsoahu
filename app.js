@@ -3779,41 +3779,35 @@ async function loadDashboardFollowUps() {
       db.collection('vehicleNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', false)
-        .orderBy('createdAt', 'desc')
         .limit(100)
         .get(),
       db.collection('generalNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', false)
-        .orderBy('createdAt', 'desc')
         .limit(100)
         .get(),
       // Catch urgent vehicle notes that aren't marked isFollowUp
       db.collection('vehicleNotes')
         .where('urgent', '==', true)
         .where('done', '==', false)
-        .orderBy('createdAt', 'desc')
         .limit(50)
         .get(),
       // Catch urgent general notes that aren't marked isFollowUp
       db.collection('generalNotes')
         .where('urgent', '==', true)
         .where('done', '==', false)
-        .orderBy('createdAt', 'desc')
         .limit(50)
         .get(),
       // Completed vehicle follow-ups (for the completed bucket)
       db.collection('vehicleNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', true)
-        .orderBy('completedAt', 'desc')
         .limit(50)
         .get(),
       // Completed general follow-ups
       db.collection('generalNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', true)
-        .orderBy('completedAt', 'desc')
         .limit(50)
         .get()
     ]);
