@@ -5402,9 +5402,11 @@ function renderTimeClock(data) {
   if (!content) return;
   const today = todayDateString();
 
+  const savedGoal = data && data.revenueGoal ? data.revenueGoal : '';
+  const savedScheduled = data && data.scheduledStart ? data.scheduledStart : '';
+
   if (!data || !data.clockIn) {
-    // Not clocked in
-    const savedGoal = data && data.revenueGoal ? data.revenueGoal : '';
+    // ── NOT CLOCKED IN ──
     content.innerHTML = `
       <div class="tc-status tc-status-out">
         <div class="tc-status-dot"></div>
@@ -5413,82 +5415,192 @@ function renderTimeClock(data) {
           <div class="tc-date">${today}</div>
         </div>
       </div>
-      <div class="tc-goal-row">
-        <label class="tc-label">\ud83d\udcb0 Daily Revenue Goal</label>
-        <div class="tc-input-row">
-          <span class="tc-dollar">$</span>
-          <input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${savedGoal}">
+      <div class="tc-fields">
+        <div class="tc-field-row">
+          <label class="tc-label">🕐 Scheduled Start</label>
+          <input type="time" id="tc-scheduled-input" class="tc-input-time" value="${savedScheduled}">
+        </div>
+        <div class="tc-field-row">
+          <label class="tc-label">💰 Daily Revenue Goal</label>
+          <div class="tc-input-row">
+            <span class="tc-dollar">$</span>
+            <input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${savedGoal}">
+          </div>
         </div>
       </div>
-      <button class="btn btn-primary tc-btn" onclick="clockIn()">\u23f1\ufe0f Clock In</button>
+      <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In</button>
     `;
   } else if (data.clockIn && !data.clockOut) {
-    // Currently clocked in
+    // ── CLOCKED IN ──
     const clockInTime = data.clockIn.toDate ? data.clockIn.toDate() : new Date(data.clockIn);
     const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
     const goalStr = data.revenueGoal ? '$' + Number(data.revenueGoal).toLocaleString() : 'No goal set';
+    const onBreak = !!data.onBreak;
+
+    // Scheduled vs actual indicator
+    let scheduleRow = '';
+    if (data.scheduledStart) {
+      const [sh, sm] = data.scheduledStart.split(':').map(Number);
+      const schedMs = (sh * 60 + sm) * 60000;
+      const nowHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
+      const actMs = (nowHST.getHours() * 60 + nowHST.getMinutes()) * 60000;
+      const diffMin = Math.round((actMs - schedMs) / 60000);
+      const diffLabel = diffMin === 0 ? '✅ On time' : diffMin > 0
+        ? `<span class="tc-late">⚠️ ${diffMin}min late</span>`
+        : `<span class="tc-early">🌟 ${Math.abs(diffMin)}min early</span>`;
+      scheduleRow = `<div class="tc-info-row"><span class="tc-label">Scheduled</span><span class="tc-value">${data.scheduledStart} ${diffLabel}</span></div>`;
+    }
+
+    // Break count
+    const breaks = data.breaks || [];
+    const completedBreaks = breaks.filter(b => b.end);
+    const totalBreakMs = completedBreaks.reduce((sum, b) => {
+      const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
+      const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
+      return sum + (e - s);
+    }, 0);
+    const breakMins = Math.floor(totalBreakMs / 60000);
+    const breakLabel = completedBreaks.length
+      ? `${completedBreaks.length} break${completedBreaks.length > 1 ? 's' : ''} (${breakMins}min total)`
+      : 'None yet';
+
+    const achievedVal = data.revenueAchieved != null ? data.revenueAchieved : '';
+
     content.innerHTML = `
-      <div class="tc-status tc-status-in">
-        <div class="tc-status-dot tc-dot-green"></div>
+      <div class="tc-status ${onBreak ? 'tc-status-break' : 'tc-status-in'}">
+        <div class="tc-status-dot ${onBreak ? 'tc-dot-yellow' : 'tc-dot-green'}"></div>
         <div>
-          <div class="tc-status-label">Clocked In</div>
+          <div class="tc-status-label">${onBreak ? '☕ On Break' : '🟢 Punched In'}</div>
           <div class="tc-clock-time">Since ${clockInStr}</div>
         </div>
-        <div class="tc-elapsed-badge" id="tc-elapsed">00:00:00</div>
-      </div>
-      <div class="tc-info-row">
-        <span class="tc-label">Daily Goal:</span>
-        <span class="tc-value tc-goal-val">${goalStr}</span>
-      </div>
-      <div class="tc-goal-row">
-        <label class="tc-label">\ud83d\udcb0 Revenue Achieved Today</label>
-        <div class="tc-input-row">
-          <span class="tc-dollar">$</span>
-          <input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0">
+        <div class="tc-elapsed-wrap">
+          <div class="tc-elapsed-label">Time Worked</div>
+          <div class="tc-elapsed-badge" id="tc-elapsed">00:00:00</div>
         </div>
       </div>
-      <button class="btn btn-danger tc-btn" onclick="clockOut()">\u23f9\ufe0f Clock Out</button>
+      ${scheduleRow}
+      <div class="tc-info-row">
+        <span class="tc-label">Daily Goal</span>
+        <span class="tc-value tc-goal-val">${goalStr}</span>
+      </div>
+      <div class="tc-info-row">
+        <span class="tc-label">Breaks</span>
+        <span class="tc-value">${breakLabel}</span>
+      </div>
+      <div class="tc-field-row" style="margin-top:8px;">
+        <label class="tc-label">💰 Revenue Achieved So Far</label>
+        <div class="tc-input-row">
+          <span class="tc-dollar">$</span>
+          <input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0" value="${achievedVal}">
+        </div>
+      </div>
+      <div class="tc-action-row">
+        ${onBreak
+          ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">▶️ End Break</button>`
+          : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`}
+        <button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>
+      </div>
     `;
-    startElapsedTimer(clockInTime);
+    startElapsedTimer(clockInTime, data.breaks || [], onBreak ? (data.currentBreakStart ? (data.currentBreakStart.toDate ? data.currentBreakStart.toDate() : new Date(data.currentBreakStart)) : new Date()) : null);
+
   } else if (data.clockIn && data.clockOut) {
-    // Clocked out — show summary
+    // ── PUNCHED OUT — SUMMARY ──
     const clockInTime = data.clockIn.toDate ? data.clockIn.toDate() : new Date(data.clockIn);
     const clockOutTime = data.clockOut.toDate ? data.clockOut.toDate() : new Date(data.clockOut);
-    const msWorked = clockOutTime - clockInTime;
-    const hh = Math.floor(msWorked / 3600000);
-    const mm = Math.floor((msWorked % 3600000) / 60000);
-    const hoursLabel = `${hh}h ${mm}m`;
+
+    const breaks = data.breaks || [];
+    const totalBreakMs = breaks.filter(b => b.end).reduce((sum, b) => {
+      const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
+      const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
+      return sum + (e - s);
+    }, 0);
+    const grossMs = clockOutTime - clockInTime;
+    const netMs = Math.max(0, grossMs - totalBreakMs);
+
+    function fmtDuration(ms) {
+      const h = Math.floor(ms / 3600000);
+      const m = Math.floor((ms % 3600000) / 60000);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
     const inStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
     const outStr = clockOutTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const goalStr = data.revenueGoal ? '$' + Number(data.revenueGoal).toLocaleString() : '—';
-    const achievedStr = (data.revenueAchieved !== null && data.revenueAchieved !== undefined) ? '$' + Number(data.revenueAchieved).toLocaleString() : '—';
-    const pct = (data.revenueGoal && data.revenueAchieved !== undefined && data.revenueAchieved !== null)
-      ? Math.round((data.revenueAchieved / data.revenueGoal) * 100) : null;
-    const pctStr = pct !== null ? ` (${pct}%)` : '';
-    const pctClass = pct === null ? '' : pct >= 100 ? 'tc-great' : pct >= 75 ? 'tc-good' : 'tc-low';
+    const goal = data.revenueGoal || 0;
+    const achieved = data.revenueAchieved != null ? data.revenueAchieved : 0;
+    const diff = achieved - goal;
+    const diffStr = (diff >= 0 ? '+$' : '-$') + Math.abs(diff).toLocaleString();
+    const diffClass = diff >= 0 ? 'tc-diff-pos' : 'tc-diff-neg';
+
+    // Scheduled start row
+    let schedRow = '';
+    if (data.scheduledStart) {
+      const [sh, sm] = data.scheduledStart.split(':').map(Number);
+      const schedMs2 = (sh * 60 + sm) * 60000;
+      const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
+      const actMs2 = (inHST.getHours() * 60 + inHST.getMinutes()) * 60000;
+      const diffMin2 = Math.round((actMs2 - schedMs2) / 60000);
+      const onTimeLabel = diffMin2 === 0 ? '✅ On time'
+        : diffMin2 > 0 ? `⚠️ ${diffMin2}min late`
+        : `🌟 ${Math.abs(diffMin2)}min early`;
+      schedRow = `<div class="tc-summary-row"><span>Scheduled Start</span><span>${data.scheduledStart} · ${onTimeLabel}</span></div>`;
+    }
+
+    // Break rows
+    let breakRows = '';
+    if (breaks.filter(b => b.end).length > 0) {
+      breaks.filter(b => b.end).forEach((b, i) => {
+        const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
+        const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
+        const bStr = bs.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+        const beStr = be.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+        const bDur = fmtDuration(be - bs);
+        breakRows += `<div class="tc-summary-row tc-break-row"><span>Break ${i + 1}</span><span>${bStr} – ${beStr} (${bDur})</span></div>`;
+      });
+    }
+
     content.innerHTML = `
       <div class="tc-summary-card">
-        <div class="tc-summary-title">\ud83d\udccb Daily Summary — ${today}</div>
-        <div class="tc-summary-row"><span>Clock In</span><span>${inStr}</span></div>
-        <div class="tc-summary-row"><span>Clock Out</span><span>${outStr}</span></div>
-        <div class="tc-summary-row"><span>Time Worked</span><span><strong>${hoursLabel}</strong></span></div>
-        <div class="tc-summary-row"><span>Revenue Goal</span><span>${goalStr}</span></div>
-        <div class="tc-summary-row ${pctClass}"><span>Revenue Achieved</span><span><strong>${achievedStr}${pctStr}</strong></span></div>
+        <div class="tc-summary-title">📋 Daily Summary — ${today}</div>
+        ${schedRow}
+        <div class="tc-summary-row"><span>Punch In</span><span>${inStr}</span></div>
+        <div class="tc-summary-row"><span>Punch Out</span><span>${outStr}</span></div>
+        ${breakRows}
+        <div class="tc-summary-row"><span>Break Time</span><span>${fmtDuration(totalBreakMs)}</span></div>
+        <div class="tc-summary-row tc-highlight-row"><span>Net Time Worked</span><span><strong>${fmtDuration(netMs)}</strong></span></div>
+        <div class="tc-summary-divider"></div>
+        <div class="tc-summary-row"><span>Revenue Goal</span><span>$${Number(goal).toLocaleString()}</span></div>
+        <div class="tc-summary-row"><span>Revenue Achieved</span><span>$${Number(achieved).toLocaleString()}</span></div>
+        <div class="tc-summary-row tc-diff-row"><span>Difference</span><span class="${diffClass}"><strong>${diffStr}</strong></span></div>
       </div>
-      <button class="btn btn-outline tc-btn" style="margin-top:12px;" onclick="resetTimeClock()">\ud83d\udd04 Start New Session</button>
+      <button class="btn btn-outline tc-btn" style="margin-top:12px;" onclick="resetTimeClock()">🔄 New Session</button>
     `;
   }
 }
 
-function startElapsedTimer(clockInTime) {
+function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
   if (elapsedInterval) clearInterval(elapsedInterval);
+
+  // Calculate already-completed break ms
+  const completedBreakMs = (breaks || []).filter(b => b.end).reduce((sum, b) => {
+    const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
+    const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
+    return sum + (e - s);
+  }, 0);
+
   function update() {
     const el = $('tc-elapsed');
     if (!el) { clearInterval(elapsedInterval); elapsedInterval = null; return; }
-    const elapsed = Date.now() - clockInTime.getTime();
-    const h = Math.floor(elapsed / 3600000);
-    const m = Math.floor((elapsed % 3600000) / 60000);
-    const s = Math.floor((elapsed % 60000) / 1000);
+    const now = Date.now();
+    let gross = now - clockInTime.getTime();
+    let breakDeduct = completedBreakMs;
+    // If currently on break, deduct current break time too so counter pauses
+    if (currentBreakStart) {
+      breakDeduct += now - currentBreakStart.getTime();
+    }
+    const net = Math.max(0, gross - breakDeduct);
+    const h = Math.floor(net / 3600000);
+    const m = Math.floor((net % 3600000) / 60000);
+    const s = Math.floor((net % 60000) / 1000);
     el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
   }
   update();
@@ -5500,22 +5612,71 @@ window.clockIn = async function() {
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
   const goalInput = $('tc-goal-input');
+  const scheduledInput = $('tc-scheduled-input');
   const goal = goalInput ? parseFloat(goalInput.value) || 0 : 0;
+  const scheduledStart = scheduledInput ? scheduledInput.value : '';
   try {
     await db.collection('timeclock').doc(docId).set({
       uid: currentUser.uid,
       email: currentUser.email,
       date: today,
+      scheduledStart,
       clockIn: firebase.firestore.FieldValue.serverTimestamp(),
       revenueGoal: goal,
       clockOut: null,
-      revenueAchieved: null
+      revenueAchieved: null,
+      breaks: [],
+      onBreak: false,
+      currentBreakStart: null
     });
-    toast('Clocked in! ⏱️', 'success');
+    toast('Punched in! ⏱️', 'success');
     await loadTimeClock();
   } catch (e) {
     console.error('Clock in error:', e);
-    toast('Failed to clock in.', 'error');
+    toast('Failed to punch in.', 'error');
+  }
+};
+
+window.startBreak = async function() {
+  if (!currentUser) return;
+  const today = todayDateString();
+  const docId = currentUser.uid + '_' + today;
+  try {
+    await db.collection('timeclock').doc(docId).update({
+      onBreak: true,
+      currentBreakStart: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast('Break started. ☕', 'info');
+    await loadTimeClock();
+  } catch (e) {
+    console.error('Start break error:', e);
+    toast('Failed to start break.', 'error');
+  }
+};
+
+window.endBreak = async function() {
+  if (!currentUser) return;
+  const today = todayDateString();
+  const docId = currentUser.uid + '_' + today;
+  const snap = await db.collection('timeclock').doc(docId).get();
+  if (!snap.exists) return;
+  const d = snap.data();
+  const breakStart = d.currentBreakStart;
+  const breaks = d.breaks || [];
+  if (breakStart) {
+    breaks.push({ start: breakStart, end: firebase.firestore.Timestamp.now() });
+  }
+  try {
+    await db.collection('timeclock').doc(docId).update({
+      onBreak: false,
+      currentBreakStart: null,
+      breaks
+    });
+    toast('Break ended. Back to work! ▶️', 'success');
+    await loadTimeClock();
+  } catch (e) {
+    console.error('End break error:', e);
+    toast('Failed to end break.', 'error');
   }
 };
 
@@ -5525,31 +5686,44 @@ window.clockOut = async function() {
   const docId = currentUser.uid + '_' + today;
   const achievedInput = $('tc-achieved-input');
   const achieved = achievedInput ? parseFloat(achievedInput.value) || 0 : 0;
+
+  // Auto-end any open break on punch out
+  const snap = await db.collection('timeclock').doc(docId).get();
+  const d = snap.exists ? snap.data() : {};
+  const breaks = d.breaks || [];
+  if (d.onBreak && d.currentBreakStart) {
+    breaks.push({ start: d.currentBreakStart, end: firebase.firestore.Timestamp.now() });
+  }
+
   try {
     await db.collection('timeclock').doc(docId).update({
       clockOut: firebase.firestore.FieldValue.serverTimestamp(),
-      revenueAchieved: achieved
+      revenueAchieved: achieved,
+      onBreak: false,
+      currentBreakStart: null,
+      breaks
     });
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
-    toast('Clocked out! ✅', 'success');
+    toast('Punched out! ✅', 'success');
     await loadTimeClock();
   } catch (e) {
     console.error('Clock out error:', e);
-    toast('Failed to clock out.', 'error');
+    toast('Failed to punch out.', 'error');
   }
 };
 
 window.resetTimeClock = async function() {
   if (!currentUser) return;
-  const ok = await confirm('Reset Session', 'Clear today\'s session and start fresh?');
+  const ok = await confirm('New Session', 'Clear today\'s session and start fresh?');
   if (!ok) return;
+  if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
   try {
     await db.collection('timeclock').doc(docId).delete();
     timeclockData = null;
     renderTimeClock(null);
-    toast('Time clock reset.', 'info');
+    toast('Session cleared.', 'info');
   } catch (e) {
     toast('Failed to reset.', 'error');
   }
