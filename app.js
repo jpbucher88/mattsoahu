@@ -3621,9 +3621,10 @@ $('btn-save-note').addEventListener('click', async () => {
     toast('Enter a note first.', 'warning');
     return;
   }
-  const isFollowUp = $('note-followup').checked;
-  const dueDate = isFollowUp ? ($('note-due-date').value || '') : '';
   const isUrgent = $('note-urgent') ? $('note-urgent').checked : false;
+  // Urgent notes are always treated as follow-ups so they appear in the task panel
+  const isFollowUp = $('note-followup').checked || isUrgent;
+  const dueDate = isFollowUp ? ($('note-due-date').value || '') : '';
 
   try {
     const noteData = {
@@ -3632,6 +3633,7 @@ $('btn-save-note').addEventListener('click', async () => {
       isFollowUp,
       done: false,
       urgent: isUrgent,
+      taskStatus: isUrgent ? 'urgent' : 'scheduled',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email
@@ -3646,7 +3648,7 @@ $('btn-save-note').addEventListener('click', async () => {
     if ($('note-urgent')) $('note-urgent').checked = false;
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadVehicleNotes(selectedVehicle.id);
-    if (isFollowUp) loadDashboardFollowUps();
+    if (isFollowUp || isUrgent) loadDashboardFollowUps();
   } catch (err) {
     console.error('Save note error:', err);
     toast('Failed to save note.', 'error');
@@ -3737,6 +3739,28 @@ window.deleteNote = async function(docId) {
   }
 };
 
+// Current active tab in the task panel: 'all' | 'urgent' | 'scheduled' | 'monitoring'
+let currentTaskTab = 'all';
+// Cached items for re-filtering without refetch
+let cachedTaskItems = [];
+
+window.switchTaskTab = function(tab) {
+  currentTaskTab = tab;
+  document.querySelectorAll('.task-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  renderTaskAgenda(cachedTaskItems);
+};
+
+window.toggleCompletedBucket = function() {
+  const list = $('completed-bucket-list');
+  const arrow = $('completed-bucket-arrow');
+  if (!list) return;
+  const open = list.style.display !== 'none';
+  list.style.display = open ? 'none' : 'block';
+  if (arrow) arrow.textContent = open ? '▶' : '▼';
+};
+
 // Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
 async function loadDashboardFollowUps() {
   const overdueEl = $('followup-overdue');
@@ -3749,7 +3773,9 @@ async function loadDashboardFollowUps() {
   if (!overdueEl) return;
 
   try {
-    const [vehicleSnap, generalSnap] = await Promise.all([
+    // Fetch active follow-ups from both collections (isFollowUp = true)
+    // PLUS any urgent vehicle/general notes (urgent = true) even if not marked as follow-up
+    const [vFollowSnap, gFollowSnap, vUrgentSnap, gUrgentSnap, vDoneSnap, gDoneSnap] = await Promise.all([
       db.collection('vehicleNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', false)
@@ -3761,20 +3787,66 @@ async function loadDashboardFollowUps() {
         .where('done', '==', false)
         .orderBy('createdAt', 'desc')
         .limit(100)
+        .get(),
+      // Catch urgent vehicle notes that aren't marked isFollowUp
+      db.collection('vehicleNotes')
+        .where('urgent', '==', true)
+        .where('done', '==', false)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get(),
+      // Catch urgent general notes that aren't marked isFollowUp
+      db.collection('generalNotes')
+        .where('urgent', '==', true)
+        .where('done', '==', false)
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get(),
+      // Completed vehicle follow-ups (for the completed bucket)
+      db.collection('vehicleNotes')
+        .where('isFollowUp', '==', true)
+        .where('done', '==', true)
+        .orderBy('completedAt', 'desc')
+        .limit(50)
+        .get(),
+      // Completed general follow-ups
+      db.collection('generalNotes')
+        .where('isFollowUp', '==', true)
+        .where('done', '==', true)
+        .orderBy('completedAt', 'desc')
+        .limit(50)
         .get()
     ]);
 
+    // Merge, de-duplicate by id
+    const seen = new Set();
     const items = [];
-    vehicleSnap.forEach(doc => {
-      const d = doc.data();
-      items.push({ id: doc.id, collection: 'vehicleNotes', type: 'vehicle', ...d });
-    });
-    generalSnap.forEach(doc => {
-      const d = doc.data();
-      items.push({ id: doc.id, collection: 'generalNotes', type: 'general', ...d });
-    });
+    function addItems(snap, type, collection) {
+      snap.forEach(doc => {
+        if (seen.has(doc.id)) return;
+        seen.add(doc.id);
+        items.push({ id: doc.id, collection, type, ...doc.data() });
+      });
+    }
+    addItems(vFollowSnap, 'vehicle', 'vehicleNotes');
+    addItems(gFollowSnap, 'general', 'generalNotes');
+    addItems(vUrgentSnap, 'vehicle', 'vehicleNotes');
+    addItems(gUrgentSnap, 'general', 'generalNotes');
 
-    // Update badge count
+    // Completed items
+    const completedItems = [];
+    const seenDone = new Set();
+    function addDoneItems(snap, type, collection) {
+      snap.forEach(doc => {
+        if (seenDone.has(doc.id)) return;
+        seenDone.add(doc.id);
+        completedItems.push({ id: doc.id, collection, type, ...doc.data() });
+      });
+    }
+    addDoneItems(vDoneSnap, 'vehicle', 'vehicleNotes');
+    addDoneItems(gDoneSnap, 'general', 'generalNotes');
+
+    // Update badge count (active tasks)
     if (badgeEl) {
       badgeEl.textContent = items.length;
       badgeEl.classList.toggle('count-zero', items.length === 0);
@@ -3799,145 +3871,254 @@ async function loadDashboardFollowUps() {
     // Populate task calendar
     renderTaskCalendar(items);
 
-    if (items.length === 0) {
-      if (emptyEl) emptyEl.style.display = '';
-      overdueEl.style.display = 'none';
-      todayEl.style.display = 'none';
-      upcomingEl.style.display = 'none';
-      noDateEl.style.display = 'none';
-      return;
-    }
-    if (emptyEl) emptyEl.style.display = 'none';
+    // Cache items and render
+    cachedTaskItems = items;
+    renderTaskAgenda(items);
 
-    const today = todayDateString();
+    // Render completed bucket
+    renderCompletedBucket(completedItems);
 
-    // Categorize items
-    const overdue = [];
-    const todayItems = [];
-    const upcoming = []; // sorted by dueDate
-    const noDate = [];
-
-    for (const item of items) {
-      if (!item.dueDate) {
-        noDate.push(item);
-      } else if (item.dueDate < today) {
-        overdue.push(item);
-      } else if (item.dueDate === today) {
-        todayItems.push(item);
-      } else {
-        upcoming.push(item);
-      }
-    }
-
-    // Sort urgent first within each group, then by date
-    const urgentFirst = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0);
-    overdue.sort((a, b) => urgentFirst(a, b) || (a.dueDate || '').localeCompare(b.dueDate || ''));
-    upcoming.sort((a, b) => urgentFirst(a, b) || (a.dueDate || '').localeCompare(b.dueDate || ''));
-    todayItems.sort(urgentFirst);
-    noDate.sort(urgentFirst);
-
-    function renderAgendaItem(item) {
-      const isVehicle = item.type === 'vehicle';
-      const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
-      const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
-      let extraClass = '';
-      if (item.urgent) extraClass += ' followup-urgent';
-      if (item.dueDate && item.dueDate < today) extraClass += ' followup-overdue';
-      else if (item.dueDate === today) extraClass += ' followup-today-item';
-
-      let metaLabel;
-      if (isVehicle) {
-        const v = vehiclesCache.find(x => x.id === item.vehicleId);
-        metaLabel = '\ud83d\ude97 ' + escapeHtml(v ? v.plate : 'Unknown');
-      } else {
-        metaLabel = '\ud83d\udcdd General';
-      }
-
-      const urgentTag = item.urgent ? ' 🚨' : '';
-      const isOverdue = item.dueDate && item.dueDate < today;
-      const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
-      const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
-      // Context menu button — always visible
-      const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
-      return `
-        <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}" data-vid-key="${item.vehicleId || ''}">
-          <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
-          <div class="followup-item${extraClass}"${vidAttr}>
-            <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
-            <div class="followup-info">
-              <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
-              <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}</div>
-            </div>
-            ${menuBtn}
-          </div>
-        </div>`;
-    }
-
-    function renderGroup(el, title, cssClass, groupItems, showDateLabels) {
-      if (groupItems.length === 0) {
-        el.style.display = 'none';
-        return;
-      }
-      el.style.display = '';
-      let html = `<div class="agenda-group-title ${cssClass}">${title} (${groupItems.length})</div>`;
-      html += '<div class="followup-list">';
-
-      if (showDateLabels) {
-        let lastDate = '';
-        for (const item of groupItems) {
-          const d = item.dueDate || '';
-          if (d && d !== lastDate) {
-            const [y, m, dy] = d.split('-').map(Number);
-            const dt = new Date(y, m - 1, dy);
-            const label = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE });
-            html += `<div class="agenda-date-label">${label}</div>`;
-            lastDate = d;
-          }
-          html += renderAgendaItem(item);
-        }
-      } else {
-        for (const item of groupItems) {
-          html += renderAgendaItem(item);
-        }
-      }
-
-      html += '</div>';
-      el.innerHTML = html;
-    }
-
-    renderGroup(overdueEl, '\u26a0\ufe0f Overdue', 'agenda-overdue', overdue, true);
-    renderGroup(todayEl, '\ud83d\udfe2 Today', 'agenda-today', todayItems, false);
-    renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
-    renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
-
-    // Click a task item:
-    //   - if it has a dueDate → jump to that day in the calendar (within task panel)
-    //   - if vehicle task with no dueDate → navigate to the vehicle page
-    document.querySelectorAll('#task-panel-overlay .followup-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        // Ignore clicks on buttons inside the item
-        if (e.target.closest('button')) return;
-        const wrap = item.closest('.followup-item-wrap');
-        const dueDate = wrap ? wrap.dataset.due : '';
-        if (dueDate) {
-          // Scroll to calendar section and show that day
-          const calSection = $('task-calendar-grid');
-          if (calSection) {
-            calSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-          jumpToCalendarDay(dueDate);
-        } else if (item.dataset.vid) {
-          closeTaskPanel();
-          openVehiclePage(item.dataset.vid);
-        }
-      });
-    });
   } catch (err) {
     console.error('Load follow-ups error:', err);
   }
 }
 
+// Render the agenda based on current tab filter
+function renderTaskAgenda(allItems) {
+  const overdueEl = $('followup-overdue');
+  const todayEl = $('followup-today');
+  const upcomingEl = $('followup-upcoming');
+  const noDateEl = $('followup-no-date');
+  const emptyEl = $('followup-empty');
+  if (!overdueEl) return;
+
+  const today = todayDateString();
+
+  // Filter by current tab
+  let items = allItems;
+  if (currentTaskTab === 'urgent') {
+    items = allItems.filter(i => i.urgent);
+  } else if (currentTaskTab === 'scheduled') {
+    items = allItems.filter(i => !i.urgent && i.taskStatus !== 'monitoring' && i.dueDate);
+  } else if (currentTaskTab === 'monitoring') {
+    items = allItems.filter(i => i.taskStatus === 'monitoring');
+  }
+
+  if (items.length === 0) {
+    if (emptyEl) emptyEl.style.display = '';
+    overdueEl.style.display = 'none';
+    todayEl.style.display = 'none';
+    upcomingEl.style.display = 'none';
+    noDateEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  // Categorize items
+  const overdue = [];
+  const todayItems = [];
+  const upcoming = [];
+  const noDate = [];
+
+  for (const item of items) {
+    if (!item.dueDate) {
+      noDate.push(item);
+    } else if (item.dueDate < today) {
+      overdue.push(item);
+    } else if (item.dueDate === today) {
+      todayItems.push(item);
+    } else {
+      upcoming.push(item);
+    }
+  }
+
+  // Sort urgent first within each group, then by date
+  const urgentFirst = (a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0);
+  overdue.sort((a, b) => urgentFirst(a, b) || (a.dueDate || '').localeCompare(b.dueDate || ''));
+  upcoming.sort((a, b) => urgentFirst(a, b) || (a.dueDate || '').localeCompare(b.dueDate || ''));
+  todayItems.sort(urgentFirst);
+  noDate.sort(urgentFirst);
+
+  function renderAgendaItem(item) {
+    const isVehicle = item.type === 'vehicle';
+    const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
+    const taskStatus = item.taskStatus || (item.urgent ? 'urgent' : 'scheduled');
+    let extraClass = '';
+    if (item.urgent) extraClass += ' followup-urgent';
+    if (item.taskStatus === 'monitoring') extraClass += ' followup-monitoring';
+    if (item.dueDate && item.dueDate < today) extraClass += ' followup-overdue';
+    else if (item.dueDate === today) extraClass += ' followup-today-item';
+
+    let metaLabel;
+    if (isVehicle) {
+      const v = vehiclesCache.find(x => x.id === item.vehicleId);
+      metaLabel = '\ud83d\ude97 ' + escapeHtml(v ? v.plate : 'Unknown');
+    } else {
+      metaLabel = '\ud83d\udcdd General';
+    }
+
+    const urgentTag = item.urgent ? ' 🚨' : (item.taskStatus === 'monitoring' ? ' 🟢' : '');
+    const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
+    const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
+
+    // Status move buttons
+    let statusBtns = '';
+    const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    if (canManage) {
+      if (taskStatus !== 'urgent') {
+        statusBtns += `<button class="task-status-move-btn urgent-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','urgent')" title="Move to Urgent">🚨</button>`;
+      }
+      if (taskStatus !== 'scheduled') {
+        statusBtns += `<button class="task-status-move-btn scheduled-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','scheduled')" title="Move to Scheduled">🔵</button>`;
+      }
+      if (taskStatus !== 'monitoring') {
+        statusBtns += `<button class="task-status-move-btn monitoring-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','monitoring')" title="Move to Monitoring">🟢</button>`;
+      }
+    }
+
+    const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
+    const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
+    return `
+      <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}" data-vid-key="${item.vehicleId || ''}">
+        <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
+        <div class="followup-item${extraClass}"${vidAttr}>
+          <div class="followup-info">
+            <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
+            <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}</div>
+            ${statusBtns ? `<div class="task-status-btns">${statusBtns}</div>` : ''}
+          </div>
+          <div class="task-item-actions">
+            ${completeBtn}
+            ${menuBtn}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  function renderGroup(el, title, cssClass, groupItems, showDateLabels) {
+    if (groupItems.length === 0) {
+      el.style.display = 'none';
+      return;
+    }
+    el.style.display = '';
+    let html = `<div class="agenda-group-title ${cssClass}">${title} (${groupItems.length})</div>`;
+    html += '<div class="followup-list">';
+
+    if (showDateLabels) {
+      let lastDate = '';
+      for (const item of groupItems) {
+        const d = item.dueDate || '';
+        if (d && d !== lastDate) {
+          const [y, m, dy] = d.split('-').map(Number);
+          const dt = new Date(y, m - 1, dy);
+          const label = dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE });
+          html += `<div class="agenda-date-label">${label}</div>`;
+          lastDate = d;
+        }
+        html += renderAgendaItem(item);
+      }
+    } else {
+      for (const item of groupItems) {
+        html += renderAgendaItem(item);
+      }
+    }
+
+    html += '</div>';
+    el.innerHTML = html;
+  }
+
+  renderGroup(overdueEl, '\u26a0\ufe0f Overdue', 'agenda-overdue', overdue, true);
+  renderGroup(todayEl, '\ud83d\udfe2 Today', 'agenda-today', todayItems, false);
+  renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
+  renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
+
+  // Click task row → jump to calendar day (if has dueDate) or go to vehicle
+  document.querySelectorAll('#task-panel-overlay .followup-item').forEach(item => {
+    item.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      const wrap = item.closest('.followup-item-wrap');
+      const dueDate = wrap ? wrap.dataset.due : '';
+      if (dueDate) {
+        jumpToCalendarDay(dueDate);
+      } else if (item.dataset.vid) {
+        closeTaskPanel();
+        openVehiclePage(item.dataset.vid);
+      }
+    });
+  });
+}
+
+function renderCompletedBucket(completedItems) {
+  const listEl = $('completed-bucket-list');
+  const badge = $('completed-count-badge');
+  if (!listEl) return;
+  if (badge) badge.textContent = completedItems.length;
+  if (completedItems.length === 0) {
+    listEl.innerHTML = '<p class="hint" style="padding:10px 0;margin:0;">No completed tasks yet.</p>';
+    return;
+  }
+  const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+  let html = '';
+  completedItems.forEach(item => {
+    const isVehicle = item.type === 'vehicle';
+    const v = isVehicle ? vehiclesCache.find(x => x.id === item.vehicleId) : null;
+    const metaLabel = isVehicle ? '🚗 ' + escapeHtml(v ? v.plate : 'Unknown') : '📝 General';
+    const completedBy = item.completedByName ? ' · ✓ ' + escapeHtml(item.completedByName) : '';
+    const completedAt = item.completedAt ? ' · ' + new Date(item.completedAt.toDate()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE }) : '';
+    const reopenFn = isVehicle ? `agendaMarkUndone('${item.id}','vehicleNotes')` : `agendaMarkUndone('${item.id}','generalNotes')`;
+    html += `
+      <div class="completed-task-item">
+        <div class="completed-task-info">
+          <div class="completed-task-text">${escapeHtml(item.text)}</div>
+          <div class="completed-task-meta">${metaLabel}${completedBy}${completedAt}</div>
+        </div>
+        ${canManage ? `<button class="btn btn-sm btn-undo" onclick="${reopenFn}" title="Reopen">↩ Reopen</button>` : ''}
+      </div>`;
+  });
+  listEl.innerHTML = html;
+}
+
+// Move a task to a different status bucket
+window.moveTaskStatus = async function(docId, col, newStatus) {
+  try {
+    const updates = { taskStatus: newStatus };
+    // urgent status also sets the urgent flag; others clear it
+    if (newStatus === 'urgent') {
+      updates.urgent = true;
+      updates.isFollowUp = true;
+    } else if (newStatus === 'scheduled') {
+      updates.urgent = false;
+      updates.isFollowUp = true;
+    } else if (newStatus === 'monitoring') {
+      updates.urgent = false;
+      updates.isFollowUp = true;
+    }
+    await db.collection(col).doc(docId).update(updates);
+    const label = newStatus === 'urgent' ? '🚨 Urgent' : newStatus === 'monitoring' ? '🟢 Monitoring' : '🔵 Scheduled';
+    toast(`Moved to ${label}`, 'success');
+    loadDashboardFollowUps();
+    if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+    if (col === 'generalNotes') loadGeneralNotes();
+  } catch (err) {
+    console.error('Move task error:', err);
+    toast('Failed to move task.', 'error');
+  }
+};
+
+// Dispatch complete to correct collection
+window.agendaMarkDone_dispatch = async function(docId, col) {
+  if (col === 'vehicleNotes') {
+    await agendaMarkDoneVehicle(docId);
+  } else {
+    await agendaMarkDoneGeneral(docId);
+  }
+};
+
 window.agendaMarkDone = async function(docId) {
+  await agendaMarkDoneVehicle(docId);
+};
+
+async function agendaMarkDoneVehicle(docId) {
   try {
     await db.collection('vehicleNotes').doc(docId).update({
       done: true,
@@ -3945,15 +4126,20 @@ window.agendaMarkDone = async function(docId) {
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Follow-up done! ✓', 'success');
+    toast('Task completed! ✓', 'success');
     loadDashboardFollowUps();
+    if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
     console.error('Mark done error:', err);
     toast('Failed to update.', 'error');
   }
-};
+}
 
 window.agendaMarkGeneralDone = async function(docId) {
+  await agendaMarkDoneGeneral(docId);
+};
+
+async function agendaMarkDoneGeneral(docId) {
   try {
     await db.collection('generalNotes').doc(docId).update({
       done: true,
@@ -3961,13 +4147,27 @@ window.agendaMarkGeneralDone = async function(docId) {
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Follow-up done! ✓', 'success');
+    toast('Task completed! ✓', 'success');
     loadDashboardFollowUps();
     loadGeneralNotes();
   } catch (err) {
     console.error('Mark general done error:', err);
     toast('Failed to update.', 'error');
   }
+}
+
+window.agendaMarkUndone = async function(docId, col) {
+  try {
+    await db.collection(col).doc(docId).update({ done: false });
+    toast('Task reopened.', 'success');
+    loadDashboardFollowUps();
+    if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+    if (col === 'generalNotes') loadGeneralNotes();
+  } catch (err) {
+    console.error('Reopen task error:', err);
+    toast('Failed to reopen.', 'error');
+  }
+
 };
 
 // Undo completed vehicle note
@@ -4491,6 +4691,13 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
   menu.innerHTML = `
     <button class="task-ctx-item" id="ctx-edit">✏️ Edit Task</button>
     <button class="task-ctx-item" id="ctx-date">📅 Change Date</button>
+    <div class="task-ctx-divider"></div>
+    <div class="task-ctx-label">Move to:</div>
+    <button class="task-ctx-item ctx-move-urgent" id="ctx-move-urgent">🚨 Urgent</button>
+    <button class="task-ctx-item ctx-move-scheduled" id="ctx-move-scheduled">🔵 Scheduled</button>
+    <button class="task-ctx-item ctx-move-monitoring" id="ctx-move-monitoring">🟢 Monitoring</button>
+    <button class="task-ctx-item ctx-move-done" id="ctx-move-done">✅ Mark Complete</button>
+    <div class="task-ctx-divider"></div>
     <button class="task-ctx-item" id="ctx-vehicle">🚗 Go to Vehicle</button>
     <button class="task-ctx-item task-ctx-danger" id="ctx-delete">🗑️ Delete Task</button>
   `;
@@ -4498,10 +4705,11 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
 
   // Position near the trigger button
   const rect = triggerBtn.getBoundingClientRect();
-  const menuW = 200;
+  const menuW = 210;
   let left = rect.left - menuW + rect.width;
   if (left < 8) left = 8;
-  menu.style.top = (rect.bottom + window.scrollY + 4) + 'px';
+  const top = rect.bottom + window.scrollY + 4;
+  menu.style.top = top + 'px';
   menu.style.left = left + 'px';
 
   // Fetch doc to get current data for context
@@ -4512,7 +4720,6 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
 
   menu.querySelector('#ctx-edit').onclick = async () => {
     menu.remove();
-    // Open the edit modal which supports text + followup fields
     const d = await getData();
     if (!d) { toast('Task not found.', 'error'); return; }
     openFullEditTaskModal(docId, col, d);
@@ -4523,6 +4730,10 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
     const currentDue = d ? d.dueDate || '' : '';
     openRescheduleTask(docId, col, currentDue);
   };
+  menu.querySelector('#ctx-move-urgent').onclick = () => { menu.remove(); moveTaskStatus(docId, col, 'urgent'); };
+  menu.querySelector('#ctx-move-scheduled').onclick = () => { menu.remove(); moveTaskStatus(docId, col, 'scheduled'); };
+  menu.querySelector('#ctx-move-monitoring').onclick = () => { menu.remove(); moveTaskStatus(docId, col, 'monitoring'); };
+  menu.querySelector('#ctx-move-done').onclick = () => { menu.remove(); agendaMarkDone_dispatch(docId, col); };
   menu.querySelector('#ctx-vehicle').onclick = async () => {
     menu.remove();
     const d = await getData();
@@ -4608,11 +4819,11 @@ window.openFullEditTaskModal = function(docId, col, d) {
   overlay.querySelector('#btn-tfe-save').onclick = async () => {
     const newText = overlay.querySelector('#tfe-text').value.trim();
     if (!newText) { toast('Task text cannot be empty.', 'warning'); return; }
-    const isFollowUp = overlay.querySelector('#tfe-followup').checked;
-    const urgent = isFollowUp && overlay.querySelector('#tfe-urgent').checked;
+    const isFollowUp = overlay.querySelector('#tfe-followup').checked || overlay.querySelector('#tfe-urgent').checked;
+    const urgent = overlay.querySelector('#tfe-urgent').checked;
     const dueDate = isFollowUp ? overlay.querySelector('#tfe-due-date').value : '';
     const dueTime = isFollowUp ? overlay.querySelector('#tfe-due-time').value : '';
-    const updates = { text: newText, isFollowUp, urgent };
+    const updates = { text: newText, isFollowUp, urgent, taskStatus: urgent ? 'urgent' : 'scheduled' };
     if (dueDate) updates.dueDate = dueDate;
     else updates.dueDate = firebase.firestore.FieldValue.delete();
     if (dueTime) updates.dueTime = dueTime;
@@ -4745,9 +4956,10 @@ $('btn-save-general-note').addEventListener('click', async () => {
     toast('Enter a note first.', 'warning');
     return;
   }
-  const isFollowUp = $('general-note-followup').checked;
-  const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
   const isUrgent = $('general-note-urgent') ? $('general-note-urgent').checked : false;
+  // Urgent notes are always treated as follow-ups
+  const isFollowUp = $('general-note-followup').checked || isUrgent;
+  const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
 
   try {
     const noteData = {
@@ -4755,6 +4967,7 @@ $('btn-save-general-note').addEventListener('click', async () => {
       isFollowUp,
       done: false,
       urgent: isUrgent,
+      taskStatus: isUrgent ? 'urgent' : 'scheduled',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email
@@ -4769,7 +4982,7 @@ $('btn-save-general-note').addEventListener('click', async () => {
     if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadGeneralNotes();
-    if (isFollowUp) loadDashboardFollowUps();
+    if (isFollowUp || isUrgent) loadDashboardFollowUps();
   } catch (err) {
     console.error('Save general note error:', err);
     toast('Failed to save note.', 'error');

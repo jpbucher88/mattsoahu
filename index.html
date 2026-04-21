@@ -677,14 +677,34 @@
           </div>
         </div>
 
-        <!-- Follow-Up Agenda -->
+        <!-- Follow-Up Agenda with Status Tabs -->
         <div class="task-panel-section">
           <h4>📅 Follow-Up Agenda</h4>
-          <div id="followup-overdue" class="agenda-group" style="display:none;"></div>
-          <div id="followup-today" class="agenda-group" style="display:none;"></div>
-          <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
-          <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
-          <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No follow-ups. You're all caught up! ✅</p></div>
+          <!-- Status tabs -->
+          <div class="task-status-tabs">
+            <button class="task-tab active" data-tab="all" onclick="switchTaskTab('all')">All Active</button>
+            <button class="task-tab" data-tab="urgent" onclick="switchTaskTab('urgent')">🚨 Urgent</button>
+            <button class="task-tab" data-tab="scheduled" onclick="switchTaskTab('scheduled')">🔵 Scheduled</button>
+            <button class="task-tab" data-tab="monitoring" onclick="switchTaskTab('monitoring')">🟢 Monitoring</button>
+          </div>
+          <!-- Active task lists (filtered by tab) -->
+          <div id="task-tab-content">
+            <div id="followup-overdue" class="agenda-group" style="display:none;"></div>
+            <div id="followup-today" class="agenda-group" style="display:none;"></div>
+            <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
+            <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
+            <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No tasks in this view. ✅</p></div>
+          </div>
+          <!-- Completed tasks bucket (collapsible) -->
+          <div id="completed-tasks-bucket" class="completed-bucket" style="margin-top:12px;">
+            <button class="completed-bucket-toggle" onclick="toggleCompletedBucket()">
+              <span class="completed-bucket-icon">✅</span>
+              <span>Completed Tasks</span>
+              <span id="completed-count-badge" class="completed-count-badge">0</span>
+              <span id="completed-bucket-arrow" class="completed-bucket-arrow">▶</span>
+            </button>
+            <div id="completed-bucket-list" class="completed-bucket-list" style="display:none;"></div>
+          </div>
         </div>
 
         <!-- General Notes List -->
