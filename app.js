@@ -5394,6 +5394,7 @@ async function loadTimeClock() {
     renderTimeClock(timeclockData);
   } catch (e) {
     console.error('Load time clock error:', e);
+    renderTimeClock(null);
   }
 }
 

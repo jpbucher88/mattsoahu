@@ -72,7 +72,8 @@ service cloud.firestore {
 
     // Time clock - any registered user can read/write their own records
     match /timeclock/{recordId} {
-      allow read, write: if isAuth() && resource.data.uid == request.auth.uid;
+      allow read: if isAuth() && (resource == null || resource.data.uid == request.auth.uid);
+      allow update, delete: if isAuth() && resource.data.uid == request.auth.uid;
       allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
     }
   }
