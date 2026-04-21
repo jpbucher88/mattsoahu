@@ -5478,8 +5478,9 @@ function renderTimeClock() {
       ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">⏱</span>' : '')
       : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
     const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
-    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}">
-      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}</span>
+    const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
+    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${hasSessions && !isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
+      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}${hasSessions && !isToday ? ' <span class="tc-expand-hint">›</span>' : ''}</span>
       <span class="tc-day-hours">${hoursStr}</span>
       <span class="tc-day-rev">${revStr}</span>
     </div>`;
@@ -5515,6 +5516,10 @@ function renderTimeClock() {
           <span class="tc-session-num">Session ${idx + 1}${schedNote}</span>
           <span class="tc-session-time">${inStr} – ${outStr}</span>
           <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
+          <span class="tc-session-actions">
+            <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${today}',${idx})">✏️</button>
+            <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${today}',${idx})">🗑️</button>
+          </span>
         </div>`;
       });
       sessionsHTML += '</div>';
@@ -5766,12 +5771,197 @@ window.tcSaveRevenue = async function() {
 window.tcPrevWeek = async function() { await loadWeekData(currentWeekOffset - 1); };
 window.tcNextWeek = async function() { if (currentWeekOffset < 0) await loadWeekData(currentWeekOffset + 1); };
 
+// ── Expand past day into modal ──
+window.tcExpandDay = function(date) {
+  const dd = weeklyTimeclockData[date];
+  if (!dd) return;
+  const sessions = dd.sessions || [];
+  if (!sessions.length) return;
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const [, mo, dy] = date.split('-');
+  const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
+  const rows = sessions.map((s, idx) => {
+    const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
+    const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
+    const inStr = inT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+    const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+    const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
+      const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
+      const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
+      return sum + (be - bs);
+    }, 0);
+    const sessMs = outT ? Math.max(0, (outT - inT) - brkMs) : 0;
+    return `<div class="tc-session-row">
+      <span class="tc-session-num">Session ${idx + 1}</span>
+      <span class="tc-session-time">${inStr} – ${outStr}</span>
+      <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
+      <span class="tc-session-actions">
+        <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">✏️</button>
+        <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">🗑️</button>
+      </span>
+    </div>`;
+  }).join('');
+  const goalVal = dd.revenueGoal || '';
+  const achVal = dd.revenueAchieved != null ? dd.revenueAchieved : '';
+  let overlay = $('tc-day-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tc-day-overlay';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>📅 ${dateLabel} Sessions</h3>
+        <button class="modal-close" onclick="$('tc-day-overlay').style.display='none'">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tc-sessions-list">${rows}</div>
+        <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:flex;flex-direction:column;gap:10px;">
+          <div class="tc-rev-row">
+            <div class="tc-field-row">
+              <label class="tc-label">🎯 Daily Goal</label>
+              <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-goal-input" class="tc-input" min="0" step="100" value="${goalVal}"></div>
+            </div>
+            <div class="tc-field-row">
+              <label class="tc-label">💰 Revenue Achieved</label>
+              <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-achieved-input" class="tc-input" min="0" step="100" value="${achVal}"></div>
+            </div>
+          </div>
+          <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenueForDate('${date}')">💾 Save Revenue</button>
+        </div>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+};
+
+window.tcSaveRevenueForDate = async function(date) {
+  if (!currentUser) return;
+  const docId = currentUser.uid + '_' + date;
+  const goal = parseFloat($('tcd-goal-input')?.value) || 0;
+  const achieved = parseFloat($('tcd-achieved-input')?.value) || 0;
+  try {
+    await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
+    toast('Revenue saved! 💰', 'success');
+    $('tc-day-overlay').style.display = 'none';
+    await loadWeekData(currentWeekOffset);
+  } catch (e) {
+    toast('Failed to save.', 'error');
+  }
+};
+
+window.tcDeleteSession = async function(date, idx) {
+  const ok = await confirm('Delete Session', 'Remove this session permanently? This cannot be undone.');
+  if (!ok) return;
+  if (!currentUser) return;
+  const docId = currentUser.uid + '_' + date;
+  try {
+    const snap = await db.collection('timeclock').doc(docId).get();
+    if (!snap.exists) return;
+    const sessions = snap.data().sessions || [];
+    sessions.splice(idx, 1);
+    await db.collection('timeclock').doc(docId).update({ sessions });
+    toast('Session deleted.', 'info');
+    await loadWeekData(currentWeekOffset);
+    const overlay = $('tc-day-overlay');
+    if (overlay && overlay.style.display !== 'none') window.tcExpandDay(date);
+  } catch (e) {
+    console.error('Delete session error:', e);
+    toast('Failed to delete.', 'error');
+  }
+};
+
+window.tcEditSession = function(date, idx) {
+  const dd = weeklyTimeclockData[date];
+  if (!dd) return;
+  const s = (dd.sessions || [])[idx];
+  if (!s) return;
+  const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
+  const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
+  function toHHMM(d) {
+    return d.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).replace(/^24:/, '00:');
+  }
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const [, mo, dy] = date.split('-');
+  const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
+  let overlay = $('tc-edit-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tc-edit-overlay';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:380px;">
+      <div class="modal-header">
+        <h3>✏️ Edit Session — ${dateLabel}</h3>
+        <button class="modal-close" onclick="$('tc-edit-overlay').style.display='none'">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tc-fields">
+          <div class="tc-field-row">
+            <label class="tc-label">🕐 Scheduled Start</label>
+            <input type="time" id="tce-sched" class="tc-input-time" value="${s.scheduledStart || ''}">
+          </div>
+          <div class="tc-field-row">
+            <label class="tc-label">⏱️ Punch In</label>
+            <input type="time" id="tce-in" class="tc-input-time" value="${toHHMM(inT)}" required>
+          </div>
+          <div class="tc-field-row">
+            <label class="tc-label">⏹️ Punch Out</label>
+            <input type="time" id="tce-out" class="tc-input-time" value="${outT ? toHHMM(outT) : ''}">
+          </div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;">
+          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveEditSession('${date}',${idx})">💾 Save Changes</button>
+          <button class="btn btn-outline" style="flex:1;" onclick="$('tc-edit-overlay').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+};
+
+window.tcSaveEditSession = async function(date, idx) {
+  if (!currentUser) return;
+  const inVal = $('tce-in')?.value;
+  const outVal = $('tce-out')?.value;
+  const schedVal = $('tce-sched')?.value || null;
+  if (!inVal) { toast('Punch In time is required.', 'error'); return; }
+  // Convert HH:MM in HST to Firestore Timestamp
+  // HST = UTC-10, so midnight HST = 10:00 UTC
+  function toTimestamp(dateStr, timeStr) {
+    if (!timeStr) return null;
+    const [h, m] = timeStr.split(':').map(Number);
+    const utcMidnight = new Date(dateStr + 'T10:00:00.000Z');
+    const ms = utcMidnight.getTime() + (h * 60 + m) * 60000;
+    return firebase.firestore.Timestamp.fromMillis(ms);
+  }
+  const clockIn = toTimestamp(date, inVal);
+  const clockOut = outVal ? toTimestamp(date, outVal) : null;
+  if (clockOut && clockOut.toMillis() <= clockIn.toMillis()) {
+    toast('Punch Out must be after Punch In.', 'error'); return;
+  }
+  const docId = currentUser.uid + '_' + date;
+  try {
+    const snap = await db.collection('timeclock').doc(docId).get();
+    if (!snap.exists) return;
+    const sessions = snap.data().sessions || [];
+    sessions[idx] = { ...sessions[idx], clockIn, clockOut, scheduledStart: schedVal };
+    await db.collection('timeclock').doc(docId).update({ sessions });
+    toast('Session updated! ✅', 'success');
+    $('tc-edit-overlay').style.display = 'none';
+    await loadWeekData(currentWeekOffset);
+    const dayOverlay = $('tc-day-overlay');
+    if (dayOverlay && dayOverlay.style.display !== 'none') window.tcExpandDay(date);
+  } catch (e) {
+    console.error('Edit session error:', e);
+    toast('Failed to save.', 'error');
+  }
+};
 
 
 
-
-    // Break count
-    const breaks = data.breaks || [];
 function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
   if (elapsedInterval) clearInterval(elapsedInterval);
   const completedBreakMs = (breaks || []).filter(b => b.end).reduce((sum, b) => {
