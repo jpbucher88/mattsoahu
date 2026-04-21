@@ -22,9 +22,11 @@ function getStorage() {
 }
 
 // --------------- GLOBALS ---------------
-const APP_TIMEZONE = 'Pacific/Honolulu'; // Hawaii Standard Time
+const APP_TIMEZONE = 'Pacific/Honolulu'; // Hawaii Standard Time (used by entire app)
+const TC_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // user's local TZ, used only by time clock display
 let currentUser = null;
 let currentUserRole = null;
+let currentUserTimeclockAccess = false;
 let selectedVehicle = null;
 let selectedAdminPhotos = new Set();
 let selectedDate = todayDateString(); // dashboard photo date
@@ -213,6 +215,7 @@ auth.onAuthStateChanged(async (user) => {
       }
       const userData = userDoc.data();
       currentUserRole = userData.role || 'user';
+      currentUserTimeclockAccess = currentUserRole === 'admin' || userData.timeclockAccess === true;
 
       $('user-display').textContent = userData.displayName || user.email;
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
@@ -233,6 +236,7 @@ auth.onAuthStateChanged(async (user) => {
   } else {
     currentUser = null;
     currentUserRole = null;
+    currentUserTimeclockAccess = false;
     if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
     showPage('login');
@@ -2964,6 +2968,7 @@ async function loadAdminUsers() {
             <button class="btn btn-sm btn-outline" onclick="toggleUserRole('${doc.id}', '${data.role}')">
               Make ${nextRole.charAt(0).toUpperCase() + nextRole.slice(1)}
             </button>
+            <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
         </div>
@@ -2990,6 +2995,21 @@ window.toggleUserRole = async function (uid, currentRole) {
   } catch (err) {
     console.error('Toggle role error:', err);
     toast('Failed to update role.', 'error');
+  }
+};
+
+window.toggleTimeclockAccess = async function(uid, currentAccess) {
+  if (currentUserRole !== 'admin') return;
+  const newAccess = !currentAccess;
+  const ok = await confirm('Time Clock Access', `${newAccess ? 'Grant' : 'Revoke'} time clock access for this user?`);
+  if (!ok) return;
+  try {
+    await db.collection('users').doc(uid).update({ timeclockAccess: newAccess });
+    toast(`Time clock access ${newAccess ? 'granted ✅' : 'revoked 🚫'}.`, 'success');
+    loadAdminUsers();
+  } catch (err) {
+    console.error('Toggle timeclock access error:', err);
+    toast('Failed to update access.', 'error');
   }
 };
 
@@ -5382,6 +5402,10 @@ function startMailListener() {
 function initTimeClock() {
   if (!currentUser) return;
   const widget = $('time-clock-widget');
+  if (!currentUserTimeclockAccess) {
+    if (widget) widget.style.display = 'none';
+    return;
+  }
   if (widget) widget.style.display = '';
   loadWeekData(0);
 }
@@ -5503,8 +5527,8 @@ function renderTimeClock() {
       pastSessions.forEach((s, idx) => {
         const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
         const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
-        const inStr = inT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-        const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+        const inStr = inT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+        const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
         const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
           const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
           const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
@@ -5529,7 +5553,7 @@ function renderTimeClock() {
     let activeHTML = '';
     if (activeSession && activeSession.clockIn) {
       const clockInTime = activeSession.clockIn.toDate ? activeSession.clockIn.toDate() : new Date(activeSession.clockIn);
-      const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+      const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
       const onBreak = !!activeSession.onBreak;
       const compBreaks = (activeSession.breaks || []).filter(b => b.end);
       const compBreakMs = compBreaks.reduce((sum, b) => {
@@ -5544,7 +5568,7 @@ function renderTimeClock() {
       let schedNote = '';
       if (activeSession.scheduledStart) {
         const [sh, sm] = activeSession.scheduledStart.split(':').map(Number);
-        const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
+        const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: TC_TIMEZONE }));
         const diffMin = Math.round(((inHST.getHours() * 60 + inHST.getMinutes()) - (sh * 60 + sm)));
         schedNote = diffMin === 0 ? ' · ✅ On time'
           : diffMin > 0 ? ` · <span class="tc-late">⚠️ ${diffMin}m late</span>`
@@ -5748,8 +5772,10 @@ window.tcSaveRevenue = async function() {
   if (!currentUser) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
-  const goal = parseFloat($('tc-goal-input')?.value) || 0;
-  const achieved = parseFloat($('tc-achieved-input')?.value) || 0;
+  const goalStr = $('tc-goal-input')?.value;
+  const achStr = $('tc-achieved-input')?.value;
+  const goal = goalStr !== '' && goalStr != null ? parseFloat(goalStr) : null;
+  const achieved = achStr !== '' && achStr != null ? parseFloat(achStr) : null;
   try {
     const snap = await db.collection('timeclock').doc(docId).get();
     if (snap.exists) {
@@ -5783,8 +5809,8 @@ window.tcExpandDay = function(date) {
   const rows = sessions.map((s, idx) => {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
-    const inStr = inT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+    const inStr = inT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+    const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
     const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
       const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
       const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
@@ -5839,8 +5865,10 @@ window.tcExpandDay = function(date) {
 window.tcSaveRevenueForDate = async function(date) {
   if (!currentUser) return;
   const docId = currentUser.uid + '_' + date;
-  const goal = parseFloat($('tcd-goal-input')?.value) || 0;
-  const achieved = parseFloat($('tcd-achieved-input')?.value) || 0;
+  const goalStr = $('tcd-goal-input')?.value;
+  const achStr = $('tcd-achieved-input')?.value;
+  const goal = goalStr !== '' && goalStr != null ? parseFloat(goalStr) : null;
+  const achieved = achStr !== '' && achStr != null ? parseFloat(achStr) : null;
   try {
     await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
     toast('Revenue saved! 💰', 'success');
@@ -5880,7 +5908,7 @@ window.tcEditSession = function(date, idx) {
   const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
   const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
   function toHHMM(d) {
-    return d.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).replace(/^24:/, '00:');
+    return d.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).replace(/^24:/, '00:');
   }
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const [, mo, dy] = date.split('-');
@@ -5928,14 +5956,11 @@ window.tcSaveEditSession = async function(date, idx) {
   const outVal = $('tce-out')?.value;
   const schedVal = $('tce-sched')?.value || null;
   if (!inVal) { toast('Punch In time is required.', 'error'); return; }
-  // Convert HH:MM in HST to Firestore Timestamp
-  // HST = UTC-10, so midnight HST = 10:00 UTC
+  // Convert HH:MM in user's local timezone to Firestore Timestamp
   function toTimestamp(dateStr, timeStr) {
     if (!timeStr) return null;
-    const [h, m] = timeStr.split(':').map(Number);
-    const utcMidnight = new Date(dateStr + 'T10:00:00.000Z');
-    const ms = utcMidnight.getTime() + (h * 60 + m) * 60000;
-    return firebase.firestore.Timestamp.fromMillis(ms);
+    // new Date('YYYY-MM-DDTHH:MM:00') parses as local browser time → correct for any TZ
+    return firebase.firestore.Timestamp.fromMillis(new Date(dateStr + 'T' + timeStr + ':00').getTime());
   }
   const clockIn = toTimestamp(date, inVal);
   const clockOut = outVal ? toTimestamp(date, outVal) : null;
