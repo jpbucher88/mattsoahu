@@ -3791,6 +3791,8 @@ let mailUnsubscribe = null;
 // Time clock
 let elapsedInterval = null;
 let timeclockData = null;
+let weeklyTimeclockData = {};
+let currentWeekOffset = 0;
 const OWNER_EMAIL = 'mattaiscale@gmail.com';
 
 window.switchTaskTab = function(tab) {
@@ -5381,257 +5383,282 @@ function initTimeClock() {
   if (!currentUser) return;
   const widget = $('time-clock-widget');
   if (widget) widget.style.display = '';
-  loadTimeClock();
+  loadWeekData(0);
 }
 
-async function loadTimeClock() {
+// Returns 7 YYYY-MM-DD strings (Mon-Sun) for the week at the given offset from the current week
+function getWeekDates(offset) {
+  const todayStr = todayDateString();
+  const [y, mo, d] = todayStr.split('-').map(Number);
+  const today = new Date(y, mo - 1, d);
+  const dow = today.getDay(); // 0=Sun
+  const daysToMon = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(y, mo - 1, d + daysToMon + (offset || 0) * 7);
+  return Array.from({ length: 7 }, (_, i) => {
+    const dd = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    return `${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}-${String(dd.getDate()).padStart(2, '0')}`;
+  });
+}
+
+// Sum net ms for completed sessions on a day doc
+function calcDayCompletedMs(dayData) {
+  if (!dayData) return 0;
+  return (dayData.sessions || []).reduce((total, s) => {
+    if (!s.clockIn || !s.clockOut) return total;
+    const start = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
+    const end = s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut);
+    const breakMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
+      const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
+      const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
+      return sum + (be - bs);
+    }, 0);
+    return total + Math.max(0, (end - start) - breakMs);
+  }, 0);
+}
+
+function fmtMs(ms) {
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (ms < 60000) return '< 1m';
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+async function loadWeekData(offset) {
+  currentWeekOffset = offset;
   if (!currentUser) return;
-  const today = todayDateString();
-  const docId = currentUser.uid + '_' + today;
+  const dates = getWeekDates(offset);
   try {
-    const snap = await db.collection('timeclock').doc(docId).get();
-    timeclockData = snap.exists ? snap.data() : null;
-    renderTimeClock(timeclockData);
+    const snaps = await Promise.all(
+      dates.map(d => db.collection('timeclock').doc(currentUser.uid + '_' + d).get())
+    );
+    weeklyTimeclockData = {};
+    snaps.forEach((snap, i) => { weeklyTimeclockData[dates[i]] = snap.exists ? snap.data() : null; });
+    const today = todayDateString();
+    timeclockData = weeklyTimeclockData[today] || null;
+    renderTimeClock();
   } catch (e) {
-    console.error('Load time clock error:', e);
-    renderTimeClock(null);
+    console.error('Load week data error:', e);
+    renderTimeClock();
   }
 }
 
-function renderTimeClock(data) {
+function renderTimeClock() {
   const content = $('time-clock-content');
   if (!content) return;
+  if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+
   const today = todayDateString();
+  const dates = getWeekDates(currentWeekOffset);
+  const isCurrentWeek = currentWeekOffset === 0;
 
-  const savedGoal = data && data.revenueGoal ? data.revenueGoal : '';
-  const savedScheduled = data && data.scheduledStart ? data.scheduledStart : '';
+  // ── Week header label ──
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const fmtD = (str) => { const [, mo, d] = str.split('-'); return `${MONTHS[+mo - 1]} ${+d}`; };
+  const weekLabel = `${fmtD(dates[0])} – ${fmtD(dates[6])}, ${dates[6].slice(0, 4)}`;
 
-  if (!data || !data.clockIn) {
-    // ── NOT CLOCKED IN ──
-    content.innerHTML = `
-      <div class="tc-status tc-status-out">
-        <div class="tc-status-dot"></div>
-        <div>
-          <div class="tc-status-label">Not Clocked In</div>
-          <div class="tc-date">${today}</div>
-        </div>
-      </div>
-      <div class="tc-fields">
-        <div class="tc-field-row">
-          <label class="tc-label">🕐 Scheduled Start</label>
-          <input type="time" id="tc-scheduled-input" class="tc-input-time" value="${savedScheduled}">
-        </div>
-        <div class="tc-field-row">
-          <label class="tc-label">💰 Daily Revenue Goal</label>
-          <div class="tc-input-row">
-            <span class="tc-dollar">$</span>
-            <input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${savedGoal}">
-          </div>
-        </div>
-      </div>
-      <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In</button>
-    `;
-  } else if (data.clockIn && !data.clockOut) {
-    // ── CLOCKED IN ──
-    const clockInTime = data.clockIn.toDate ? data.clockIn.toDate() : new Date(data.clockIn);
-    const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const goalStr = data.revenueGoal ? '$' + Number(data.revenueGoal).toLocaleString() : 'No goal set';
-    const onBreak = !!data.onBreak;
+  // ── Weekly grid ──
+  const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  let weekRows = '';
+  let totalWeekMs = 0, totalGoal = 0, totalAchieved = 0;
 
-    // Scheduled vs actual indicator
-    let scheduleRow = '';
-    if (data.scheduledStart) {
-      const [sh, sm] = data.scheduledStart.split(':').map(Number);
-      const schedMs = (sh * 60 + sm) * 60000;
-      const nowHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
-      const actMs = (nowHST.getHours() * 60 + nowHST.getMinutes()) * 60000;
-      const diffMin = Math.round((actMs - schedMs) / 60000);
-      const diffLabel = diffMin === 0 ? '✅ On time' : diffMin > 0
-        ? `<span class="tc-late">⚠️ ${diffMin}min late</span>`
-        : `<span class="tc-early">🌟 ${Math.abs(diffMin)}min early</span>`;
-      scheduleRow = `<div class="tc-info-row"><span class="tc-label">Scheduled</span><span class="tc-value">${data.scheduledStart} ${diffLabel}</span></div>`;
+  for (let i = 0; i < 7; i++) {
+    const d = dates[i];
+    const dd = weeklyTimeclockData[d];
+    const isToday = d === today;
+    const netMs = calcDayCompletedMs(dd);
+    totalWeekMs += netMs;
+    const goal = dd?.revenueGoal || 0;
+    const achieved = dd?.revenueAchieved || 0;
+    totalGoal += goal;
+    totalAchieved += achieved;
+    const [, mo, dy] = d.split('-');
+    const dayLabel = `${DAYS[i]} ${+mo}/${+dy}`;
+    const hasActive = isToday && dd?.activeSession;
+    const hoursStr = netMs > 0
+      ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">⏱</span>' : '')
+      : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
+    const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
+    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}">
+      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}</span>
+      <span class="tc-day-hours">${hoursStr}</span>
+      <span class="tc-day-rev">${revStr}</span>
+    </div>`;
+  }
+  const totalRevStr = totalGoal > 0
+    ? `$${Number(totalAchieved).toLocaleString()} / $${Number(totalGoal).toLocaleString()}`
+    : '—';
+
+  // ── Today section (only on current week) ──
+  let todaySectionHTML = '';
+  if (isCurrentWeek) {
+    const todayData = weeklyTimeclockData[today] || null;
+    const activeSession = todayData?.activeSession || null;
+    const pastSessions = todayData?.sessions || [];
+
+    // Past sessions list
+    let sessionsHTML = '';
+    if (pastSessions.length > 0) {
+      sessionsHTML = '<div class="tc-sessions-list">';
+      pastSessions.forEach((s, idx) => {
+        const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
+        const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
+        const inStr = inT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+        const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+        const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
+          const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
+          const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
+          return sum + (be - bs);
+        }, 0);
+        const sessMs = outT ? Math.max(0, (outT - inT) - brkMs) : 0;
+        const schedNote = s.scheduledStart ? ` · sched ${s.scheduledStart}` : '';
+        sessionsHTML += `<div class="tc-session-row">
+          <span class="tc-session-num">Session ${idx + 1}${schedNote}</span>
+          <span class="tc-session-time">${inStr} – ${outStr}</span>
+          <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
+        </div>`;
+      });
+      sessionsHTML += '</div>';
     }
 
-    // Break count
-    const breaks = data.breaks || [];
-    const completedBreaks = breaks.filter(b => b.end);
-    const totalBreakMs = completedBreaks.reduce((sum, b) => {
-      const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
-      const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
-      return sum + (e - s);
-    }, 0);
-    const breakMins = Math.floor(totalBreakMs / 60000);
-    const breakLabel = completedBreaks.length
-      ? `${completedBreaks.length} break${completedBreaks.length > 1 ? 's' : ''} (${breakMins}min total)`
-      : 'None yet';
-
-    const achievedVal = data.revenueAchieved != null ? data.revenueAchieved : '';
-
-    content.innerHTML = `
-      <div class="tc-status ${onBreak ? 'tc-status-break' : 'tc-status-in'}">
-        <div class="tc-status-dot ${onBreak ? 'tc-dot-yellow' : 'tc-dot-green'}"></div>
-        <div>
-          <div class="tc-status-label">${onBreak ? '☕ On Break' : '🟢 Punched In'}</div>
-          <div class="tc-clock-time">Since ${clockInStr}</div>
-        </div>
-        <div class="tc-elapsed-wrap">
-          <div class="tc-elapsed-label">Time Worked</div>
-          <div class="tc-elapsed-badge" id="tc-elapsed">00:00:00</div>
-        </div>
-      </div>
-      ${scheduleRow}
-      <div class="tc-info-row">
-        <span class="tc-label">Daily Goal</span>
-        <span class="tc-value tc-goal-val">${goalStr}</span>
-      </div>
-      <div class="tc-info-row">
-        <span class="tc-label">Breaks</span>
-        <span class="tc-value">${breakLabel}</span>
-      </div>
-      <div class="tc-field-row" style="margin-top:8px;">
-        <label class="tc-label">💰 Revenue Achieved So Far</label>
-        <div class="tc-input-row">
-          <span class="tc-dollar">$</span>
-          <input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0" value="${achievedVal}">
-        </div>
-      </div>
-      <div class="tc-action-row">
-        ${onBreak
-          ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">▶️ End Break</button>`
-          : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`}
-        <button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>
-      </div>
-    `;
-    startElapsedTimer(clockInTime, data.breaks || [], onBreak ? (data.currentBreakStart ? (data.currentBreakStart.toDate ? data.currentBreakStart.toDate() : new Date(data.currentBreakStart)) : new Date()) : null);
-
-  } else if (data.clockIn && data.clockOut) {
-    // ── PUNCHED OUT — SUMMARY ──
-    const clockInTime = data.clockIn.toDate ? data.clockIn.toDate() : new Date(data.clockIn);
-    const clockOutTime = data.clockOut.toDate ? data.clockOut.toDate() : new Date(data.clockOut);
-
-    const breaks = data.breaks || [];
-    const totalBreakMs = breaks.filter(b => b.end).reduce((sum, b) => {
-      const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
-      const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
-      return sum + (e - s);
-    }, 0);
-    const grossMs = clockOutTime - clockInTime;
-    const netMs = Math.max(0, grossMs - totalBreakMs);
-
-    function fmtDuration(ms) {
-      const h = Math.floor(ms / 3600000);
-      const m = Math.floor((ms % 3600000) / 60000);
-      return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    }
-
-    const inStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const outStr = clockOutTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const goal = data.revenueGoal || 0;
-    const achieved = data.revenueAchieved != null ? data.revenueAchieved : 0;
-    const diff = achieved - goal;
-    const diffStr = (diff >= 0 ? '+$' : '-$') + Math.abs(diff).toLocaleString();
-    const diffClass = diff >= 0 ? 'tc-diff-pos' : 'tc-diff-neg';
-
-    // Scheduled start row
-    let schedRow = '';
-    if (data.scheduledStart) {
-      const [sh, sm] = data.scheduledStart.split(':').map(Number);
-      const schedMs2 = (sh * 60 + sm) * 60000;
-      const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
-      const actMs2 = (inHST.getHours() * 60 + inHST.getMinutes()) * 60000;
-      const diffMin2 = Math.round((actMs2 - schedMs2) / 60000);
-      const onTimeLabel = diffMin2 === 0 ? '✅ On time'
-        : diffMin2 > 0 ? `⚠️ ${diffMin2}min late`
-        : `🌟 ${Math.abs(diffMin2)}min early`;
-      schedRow = `<div class="tc-summary-row"><span>Scheduled Start</span><span>${data.scheduledStart} · ${onTimeLabel}</span></div>`;
-    }
-
-    // Break rows
-    let breakRows = '';
-    if (breaks.filter(b => b.end).length > 0) {
-      breaks.filter(b => b.end).forEach((b, i) => {
+    // Active session
+    let activeHTML = '';
+    if (activeSession && activeSession.clockIn) {
+      const clockInTime = activeSession.clockIn.toDate ? activeSession.clockIn.toDate() : new Date(activeSession.clockIn);
+      const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+      const onBreak = !!activeSession.onBreak;
+      const compBreaks = (activeSession.breaks || []).filter(b => b.end);
+      const compBreakMs = compBreaks.reduce((sum, b) => {
         const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
         const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
-        const bStr = bs.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-        const beStr = be.toLocaleTimeString('en-US', { timeZone: APP_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-        const bDur = fmtDuration(be - bs);
-        breakRows += `<div class="tc-summary-row tc-break-row"><span>Break ${i + 1}</span><span>${bStr} – ${beStr} (${bDur})</span></div>`;
-      });
+        return sum + (be - bs);
+      }, 0);
+      const breakLabel = compBreaks.length
+        ? `${compBreaks.length} break${compBreaks.length > 1 ? 's' : ''} (${Math.floor(compBreakMs / 60000)}m total)`
+        : 'No breaks';
+
+      let schedNote = '';
+      if (activeSession.scheduledStart) {
+        const [sh, sm] = activeSession.scheduledStart.split(':').map(Number);
+        const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: APP_TIMEZONE }));
+        const diffMin = Math.round(((inHST.getHours() * 60 + inHST.getMinutes()) - (sh * 60 + sm)));
+        schedNote = diffMin === 0 ? ' · ✅ On time'
+          : diffMin > 0 ? ` · <span class="tc-late">⚠️ ${diffMin}m late</span>`
+          : ` · <span class="tc-early">🌟 ${Math.abs(diffMin)}m early</span>`;
+      }
+
+      const currentBreakStart = onBreak && activeSession.currentBreakStart
+        ? (activeSession.currentBreakStart.toDate ? activeSession.currentBreakStart.toDate() : new Date(activeSession.currentBreakStart))
+        : null;
+
+      activeHTML = `
+        <div class="tc-status ${onBreak ? 'tc-status-break' : 'tc-status-in'}">
+          <div class="tc-status-dot ${onBreak ? 'tc-dot-yellow' : 'tc-dot-green'}"></div>
+          <div>
+            <div class="tc-status-label">${onBreak ? '☕ On Break' : `🟢 Session ${pastSessions.length + 1} Active`}</div>
+            <div class="tc-clock-time">Since ${clockInStr}${schedNote}</div>
+            <div class="tc-clock-time">${breakLabel}</div>
+          </div>
+          <div class="tc-elapsed-wrap">
+            <div class="tc-elapsed-label">This Session</div>
+            <div class="tc-elapsed-badge" id="tc-elapsed">00:00:00</div>
+          </div>
+        </div>
+        <div class="tc-action-row">
+          ${onBreak
+            ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">▶️ End Break</button>`
+            : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`}
+          <button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>
+        </div>`;
+      startElapsedTimer(clockInTime, activeSession.breaks || [], currentBreakStart);
+    } else {
+      activeHTML = `
+        <div class="tc-fields">
+          <div class="tc-field-row">
+            <label class="tc-label">🕐 Scheduled Start</label>
+            <input type="time" id="tc-scheduled-input" class="tc-input-time">
+          </div>
+        </div>
+        <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
     }
 
-    content.innerHTML = `
-      <div class="tc-summary-card">
-        <div class="tc-summary-title">📋 Daily Summary — ${today}</div>
-        ${schedRow}
-        <div class="tc-summary-row"><span>Punch In</span><span>${inStr}</span></div>
-        <div class="tc-summary-row"><span>Punch Out</span><span>${outStr}</span></div>
-        ${breakRows}
-        <div class="tc-summary-row"><span>Break Time</span><span>${fmtDuration(totalBreakMs)}</span></div>
-        <div class="tc-summary-row tc-highlight-row"><span>Net Time Worked</span><span><strong>${fmtDuration(netMs)}</strong></span></div>
-        <div class="tc-summary-divider"></div>
-        <div class="tc-summary-row"><span>Revenue Goal</span><span>$${Number(goal).toLocaleString()}</span></div>
-        <div class="tc-summary-row"><span>Revenue Achieved</span><span>$${Number(achieved).toLocaleString()}</span></div>
-        <div class="tc-summary-row tc-diff-row"><span>Difference</span><span class="${diffClass}"><strong>${diffStr}</strong></span></div>
+    // Revenue section
+    const goal = todayData?.revenueGoal ?? '';
+    const achieved = todayData?.revenueAchieved ?? '';
+    const revenueHTML = `
+      <div class="tc-revenue-section">
+        <div class="tc-rev-row">
+          <div class="tc-field-row">
+            <label class="tc-label">🎯 Daily Goal</label>
+            <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${goal}"></div>
+          </div>
+          <div class="tc-field-row">
+            <label class="tc-label">💰 End of Day Revenue</label>
+            <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0" value="${achieved}"></div>
+          </div>
+        </div>
+        <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">💾 Save Revenue</button>
+      </div>`;
+
+    todaySectionHTML = `
+      <div class="tc-today-section">
+        <div class="tc-today-title">📅 Today — ${today}</div>
+        ${sessionsHTML}
+        ${activeHTML}
+        ${revenueHTML}
+      </div>`;
+  }
+
+  content.innerHTML = `
+    <div class="tc-week-nav">
+      <button class="tc-nav-btn" onclick="tcPrevWeek()">‹ Prev</button>
+      <span class="tc-week-label">${weekLabel}</span>
+      <button class="tc-nav-btn" onclick="tcNextWeek()"${isCurrentWeek ? ' disabled style="opacity:.4;cursor:default;"' : ''}>Next ›</button>
+    </div>
+    <div class="tc-week-grid">
+      <div class="tc-week-header"><span>Day</span><span>Hours</span><span>Revenue</span></div>
+      ${weekRows}
+      <div class="tc-week-total">
+        <span>Week Total</span>
+        <span>${totalWeekMs > 0 ? fmtMs(totalWeekMs) : '—'}</span>
+        <span>${totalRevStr}</span>
       </div>
-      <button class="btn btn-outline tc-btn" style="margin-top:12px;" onclick="resetTimeClock()">🔄 New Session</button>
-    `;
-  }
+    </div>
+    ${todaySectionHTML}
+  `;
 }
 
-function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
-  if (elapsedInterval) clearInterval(elapsedInterval);
-
-  // Calculate already-completed break ms
-  const completedBreakMs = (breaks || []).filter(b => b.end).reduce((sum, b) => {
-    const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
-    const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
-    return sum + (e - s);
-  }, 0);
-
-  function update() {
-    const el = $('tc-elapsed');
-    if (!el) { clearInterval(elapsedInterval); elapsedInterval = null; return; }
-    const now = Date.now();
-    let gross = now - clockInTime.getTime();
-    let breakDeduct = completedBreakMs;
-    // If currently on break, deduct current break time too so counter pauses
-    if (currentBreakStart) {
-      breakDeduct += now - currentBreakStart.getTime();
-    }
-    const net = Math.max(0, gross - breakDeduct);
-    const h = Math.floor(net / 3600000);
-    const m = Math.floor((net % 3600000) / 60000);
-    const s = Math.floor((net % 60000) / 1000);
-    el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-  }
-  update();
-  elapsedInterval = setInterval(update, 1000);
-}
 
 window.clockIn = async function() {
   if (!currentUser) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
-  const goalInput = $('tc-goal-input');
   const scheduledInput = $('tc-scheduled-input');
-  const goal = goalInput ? parseFloat(goalInput.value) || 0 : 0;
   const scheduledStart = scheduledInput ? scheduledInput.value : '';
+  const newSession = {
+    scheduledStart: scheduledStart || null,
+    clockIn: firebase.firestore.FieldValue.serverTimestamp(),
+    clockOut: null,
+    breaks: [],
+    onBreak: false,
+    currentBreakStart: null
+  };
   try {
-    await db.collection('timeclock').doc(docId).set({
-      uid: currentUser.uid,
-      email: currentUser.email,
-      date: today,
-      scheduledStart,
-      clockIn: firebase.firestore.FieldValue.serverTimestamp(),
-      revenueGoal: goal,
-      clockOut: null,
-      revenueAchieved: null,
-      breaks: [],
-      onBreak: false,
-      currentBreakStart: null
-    });
+    const snap = await db.collection('timeclock').doc(docId).get();
+    if (snap.exists) {
+      await db.collection('timeclock').doc(docId).update({ activeSession: newSession });
+    } else {
+      await db.collection('timeclock').doc(docId).set({
+        uid: currentUser.uid,
+        email: currentUser.email,
+        date: today,
+        sessions: [],
+        activeSession: newSession,
+        revenueGoal: 0,
+        revenueAchieved: null
+      });
+    }
     toast('Punched in! ⏱️', 'success');
-    await loadTimeClock();
+    await loadWeekData(0);
   } catch (e) {
     console.error('Clock in error:', e);
     toast('Failed to punch in.', 'error');
@@ -5644,11 +5671,11 @@ window.startBreak = async function() {
   const docId = currentUser.uid + '_' + today;
   try {
     await db.collection('timeclock').doc(docId).update({
-      onBreak: true,
-      currentBreakStart: firebase.firestore.FieldValue.serverTimestamp()
+      'activeSession.onBreak': true,
+      'activeSession.currentBreakStart': firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Break started. ☕', 'info');
-    await loadTimeClock();
+    toast('Break started ☕', 'info');
+    await loadWeekData(0);
   } catch (e) {
     console.error('Start break error:', e);
     toast('Failed to start break.', 'error');
@@ -5661,20 +5688,19 @@ window.endBreak = async function() {
   const docId = currentUser.uid + '_' + today;
   const snap = await db.collection('timeclock').doc(docId).get();
   if (!snap.exists) return;
-  const d = snap.data();
-  const breakStart = d.currentBreakStart;
-  const breaks = d.breaks || [];
-  if (breakStart) {
-    breaks.push({ start: breakStart, end: firebase.firestore.Timestamp.now() });
+  const active = snap.data().activeSession || {};
+  const breaks = active.breaks || [];
+  if (active.currentBreakStart) {
+    breaks.push({ start: active.currentBreakStart, end: firebase.firestore.Timestamp.now() });
   }
   try {
     await db.collection('timeclock').doc(docId).update({
-      onBreak: false,
-      currentBreakStart: null,
-      breaks
+      'activeSession.onBreak': false,
+      'activeSession.currentBreakStart': null,
+      'activeSession.breaks': breaks
     });
-    toast('Break ended. Back to work! ▶️', 'success');
-    await loadTimeClock();
+    toast('Break ended ▶️', 'success');
+    await loadWeekData(0);
   } catch (e) {
     console.error('End break error:', e);
     toast('Failed to end break.', 'error');
@@ -5685,47 +5711,89 @@ window.clockOut = async function() {
   if (!currentUser) return;
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
-  const achievedInput = $('tc-achieved-input');
-  const achieved = achievedInput ? parseFloat(achievedInput.value) || 0 : 0;
-
-  // Auto-end any open break on punch out
   const snap = await db.collection('timeclock').doc(docId).get();
-  const d = snap.exists ? snap.data() : {};
-  const breaks = d.breaks || [];
-  if (d.onBreak && d.currentBreakStart) {
-    breaks.push({ start: d.currentBreakStart, end: firebase.firestore.Timestamp.now() });
+  if (!snap.exists) return;
+  const d = snap.data();
+  const active = d.activeSession;
+  if (!active || !active.clockIn) return;
+  const breaks = active.breaks || [];
+  if (active.onBreak && active.currentBreakStart) {
+    breaks.push({ start: active.currentBreakStart, end: firebase.firestore.Timestamp.now() });
   }
-
+  const completed = {
+    scheduledStart: active.scheduledStart || null,
+    clockIn: active.clockIn,
+    clockOut: firebase.firestore.Timestamp.now(),
+    breaks
+  };
+  const sessions = d.sessions || [];
+  sessions.push(completed);
   try {
-    await db.collection('timeclock').doc(docId).update({
-      clockOut: firebase.firestore.FieldValue.serverTimestamp(),
-      revenueAchieved: achieved,
-      onBreak: false,
-      currentBreakStart: null,
-      breaks
-    });
+    await db.collection('timeclock').doc(docId).update({ sessions, activeSession: null });
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
     toast('Punched out! ✅', 'success');
-    await loadTimeClock();
+    await loadWeekData(0);
   } catch (e) {
     console.error('Clock out error:', e);
     toast('Failed to punch out.', 'error');
   }
 };
 
-window.resetTimeClock = async function() {
+window.tcSaveRevenue = async function() {
   if (!currentUser) return;
-  const ok = await confirm('New Session', 'Clear today\'s session and start fresh?');
-  if (!ok) return;
-  if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
   const today = todayDateString();
   const docId = currentUser.uid + '_' + today;
+  const goal = parseFloat($('tc-goal-input')?.value) || 0;
+  const achieved = parseFloat($('tc-achieved-input')?.value) || 0;
   try {
-    await db.collection('timeclock').doc(docId).delete();
-    timeclockData = null;
-    renderTimeClock(null);
-    toast('Session cleared.', 'info');
+    const snap = await db.collection('timeclock').doc(docId).get();
+    if (snap.exists) {
+      await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
+    } else {
+      await db.collection('timeclock').doc(docId).set({
+        uid: currentUser.uid, email: currentUser.email, date: today,
+        sessions: [], activeSession: null, revenueGoal: goal, revenueAchieved: achieved
+      });
+    }
+    toast('Revenue saved! 💰', 'success');
+    await loadWeekData(currentWeekOffset);
   } catch (e) {
-    toast('Failed to reset.', 'error');
+    console.error('Save revenue error:', e);
+    toast('Failed to save revenue.', 'error');
   }
 };
+
+window.tcPrevWeek = async function() { await loadWeekData(currentWeekOffset - 1); };
+window.tcNextWeek = async function() { if (currentWeekOffset < 0) await loadWeekData(currentWeekOffset + 1); };
+
+
+
+
+
+    // Break count
+    const breaks = data.breaks || [];
+function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
+  if (elapsedInterval) clearInterval(elapsedInterval);
+  const completedBreakMs = (breaks || []).filter(b => b.end).reduce((sum, b) => {
+    const s = b.start.toDate ? b.start.toDate() : new Date(b.start);
+    const e = b.end.toDate ? b.end.toDate() : new Date(b.end);
+    return sum + (e - s);
+  }, 0);
+  function update() {
+    const el = $('tc-elapsed');
+    if (!el) { clearInterval(elapsedInterval); elapsedInterval = null; return; }
+    const now = Date.now();
+    let breakDeduct = completedBreakMs;
+    if (currentBreakStart) breakDeduct += now - currentBreakStart.getTime();
+    const net = Math.max(0, (now - clockInTime.getTime()) - breakDeduct);
+    const h = Math.floor(net / 3600000);
+    const m = Math.floor((net % 3600000) / 60000);
+    const s = Math.floor((net % 60000) / 1000);
+    el.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  }
+  update();
+  elapsedInterval = setInterval(update, 1000);
+}
+
+
+
