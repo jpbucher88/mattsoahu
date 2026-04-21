@@ -744,16 +744,21 @@ function renderLocationsWidget() {
       <div class="location-group-vehicles trip-list">`;
     for (const v of onTrip) {
       let returnLabel = '';
+      let returnBtn = '';
       if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
         const now = new Date();
         const isOverdue = rd < now;
         returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">\u21a9 ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+        if (isOverdue) {
+          returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
+        }
       }
       html += `<div class="trip-item">
         <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
+        ${returnBtn}
       </div>`;
     }
     html += '</div></div>';
@@ -2289,6 +2294,40 @@ $('btn-save-location').addEventListener('click', async () => {
     toast('Failed to save location.', 'error');
   }
 });
+
+// ================================================================
+// VEHICLE RETURNED - mark overdue trip vehicle as back home
+// ================================================================
+window.vehicleReturned = async function(vehicleId) {
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  if (!v) return;
+  const plate = v.plate || vehicleId;
+  const ok = await confirm('Vehicle Returned', `Mark ${plate} as returned to ${v.homeLocation || 'home'}? This will prompt for cleaning and photos.`);
+  if (!ok) return;
+  try {
+    await db.collection('vehicles').doc(vehicleId).update({
+      tripStatus: 'home',
+      tripReturnDate: firebase.firestore.FieldValue.delete(),
+      needsCleaning: true,
+      needsDamageCheck: true,
+      cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    // Update local cache
+    Object.assign(v, {
+      tripStatus: 'home',
+      needsCleaning: true,
+      needsDamageCheck: true,
+      cleaningFlaggedAt: { toDate: () => new Date() }
+    });
+    delete v.tripReturnDate;
+    toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
+    renderFleetDashboard();
+    renderLocationsWidget();
+  } catch (err) {
+    console.error('Vehicle returned error:', err);
+    toast('Failed to update vehicle status.', 'error');
+  }
+};
 
 // Locations button — scroll to Locations widget
 $('btn-locations').addEventListener('click', () => {

@@ -59,5 +59,21 @@ service cloud.firestore {
       allow read: if isRegistered();
       allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
     }
+
+    // Messages (internal mailbox) - any registered user can send/read own messages
+    match /messages/{msgId} {
+      allow read: if isRegistered() && (
+        resource.data.to == request.auth.uid || resource.data.from == request.auth.uid
+      );
+      allow create: if isRegistered();
+      allow update: if isRegistered() && resource.data.to == request.auth.uid; // mark read
+      allow delete: if isRegistered() && resource.data.to == request.auth.uid;
+    }
+
+    // Time clock - owner can read/write own records
+    match /timeclock/{recordId} {
+      allow read, write: if isAuth() && request.auth.uid == resource.data.uid;
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+    }
   }
 }

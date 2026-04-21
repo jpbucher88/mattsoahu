@@ -2991,6 +2991,20 @@ body {
   background: #fef2f2;
   font-weight: 700;
 }
+.btn-returned {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-top: 4px;
+  transition: background 0.15s;
+}
+.btn-returned:hover { background: #15803d; }
 .cleaning-vehicle-info {
   display: flex;
   align-items: center;
