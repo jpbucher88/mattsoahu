@@ -5281,17 +5281,21 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
     <button class="task-ctx-item ctx-move-monitoring" id="ctx-move-monitoring">🟢 Monitoring</button>
     <button class="task-ctx-item ctx-move-done" id="ctx-move-done">✅ Mark Complete</button>
     <div class="task-ctx-divider"></div>
-    <button class="task-ctx-item" id="ctx-vehicle">🚗 Go to Vehicle</button>
+    <button class="task-ctx-item" id="ctx-vehicle">🚗 Loading…</button>
     <button class="task-ctx-item task-ctx-danger" id="ctx-delete">🗑️ Delete Task</button>
   `;
   document.body.appendChild(menu);
 
-  // Position near the trigger button
+  // Position near the trigger button using fixed coordinates (no scrollY needed)
   const rect = triggerBtn.getBoundingClientRect();
   const menuW = 210;
-  let left = rect.left - menuW + rect.width;
+  const menuH = 340; // approximate
+  let left = rect.right - menuW;
   if (left < 8) left = 8;
-  const top = rect.bottom + window.scrollY + 4;
+  if (left + menuW > window.innerWidth - 8) left = window.innerWidth - menuW - 8;
+  let top = rect.bottom + 4;
+  if (top + menuH > window.innerHeight - 8) top = rect.top - menuH - 4;
+  if (top < 8) top = 8;
   menu.style.top = top + 'px';
   menu.style.left = left + 'px';
 
@@ -5300,6 +5304,21 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
     const snap = await db.collection(col).doc(docId).get();
     return snap.exists ? snap.data() : null;
   }
+
+  // Set vehicle button label once data loads
+  getData().then(d => {
+    const vBtn = menu.querySelector('#ctx-vehicle');
+    if (!vBtn) return;
+    if (d && d.vehicleId) {
+      const v = vehiclesCache.find(x => x.id === d.vehicleId);
+      vBtn.textContent = '🚗 Go to Vehicle' + (v ? ' (' + v.plate + ')' : '');
+    } else {
+      vBtn.textContent = '🔗 Link Vehicle';
+    }
+  }).catch(() => {
+    const vBtn = menu.querySelector('#ctx-vehicle');
+    if (vBtn) vBtn.textContent = '🔗 Link Vehicle';
+  });
 
   menu.querySelector('#ctx-edit').onclick = async () => {
     menu.remove();
@@ -5324,7 +5343,7 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
       closeTaskPanel();
       openVehiclePage(d.vehicleId);
     } else {
-      toast('No vehicle linked to this task.', 'info');
+      openLinkVehicleModal(docId, col);
     }
   };
   menu.querySelector('#ctx-delete').onclick = async () => {
@@ -5351,6 +5370,51 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
       }
     });
   }, 10);
+};
+
+// Link a vehicle to any task (vehicleNotes or generalNotes)
+window.openLinkVehicleModal = function(docId, col) {
+  const existing = document.querySelector('.link-vehicle-overlay');
+  if (existing) existing.remove();
+
+  const sorted = [...vehiclesCache].sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
+  const opts = sorted.map(v =>
+    `<option value="${v.id}">${escapeHtml(v.plate)} — ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</option>`
+  ).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'link-vehicle-overlay';
+  overlay.innerHTML = `
+    <div class="link-vehicle-modal">
+      <h4>🔗 Link Vehicle</h4>
+      <p style="font-size:0.85rem;color:#6b7280;margin:0 0 14px;">Choose a vehicle to associate with this task.</p>
+      <select id="link-vehicle-select" class="form-select" style="width:100%;">
+        <option value="">— Select vehicle —</option>
+        ${opts}
+      </select>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-primary" id="btn-link-vehicle-save">Link Vehicle</button>
+        <button class="btn btn-outline" id="btn-link-vehicle-cancel">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector('#btn-link-vehicle-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#btn-link-vehicle-save').onclick = async () => {
+    const vehicleId = overlay.querySelector('#link-vehicle-select').value;
+    if (!vehicleId) { toast('Please select a vehicle.', 'warning'); return; }
+    const v = vehiclesCache.find(x => x.id === vehicleId);
+    try {
+      await db.collection(col).doc(docId).update({ vehicleId, vehiclePlate: v ? v.plate : '' });
+      toast('Vehicle linked! 🚗', 'success');
+      overlay.remove();
+      loadDashboardFollowUps();
+    } catch (err) {
+      console.error('Link vehicle error:', err);
+      toast('Failed to link vehicle.', 'error');
+    }
+  };
 };
 
 // Full edit modal: allows editing text + followup/urgent/dueDate
