@@ -3555,6 +3555,88 @@ body {
 .tc-icon-del:hover { background: #fee2e2; }
 .tc-expand-hint { color: #9ca3af; font-size: 0.8rem; margin-left: 4px; font-weight: 400; }
 
+/* ============ VEHICLE COMPLIANCE ============ */
+.compliance-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+.compliance-field { display: flex; flex-direction: column; gap: 4px; }
+.compliance-label { font-size: 0.78rem; font-weight: 600; color: #374151; }
+.compliance-input {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 0.85rem;
+  width: 100%;
+  box-sizing: border-box;
+  background: #f8fafc;
+}
+.compliance-status {
+  font-size: 0.75rem;
+  font-weight: 600;
+  min-height: 16px;
+  line-height: 1.2;
+}
+.compliance-ok { color: #16a34a; }
+.compliance-warn { color: #d97706; }
+.compliance-urgent { color: #dc2626; }
+.compliance-badge {
+  position: absolute;
+  bottom: 7px;
+  right: 7px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 4px;
+  padding: 1px 4px;
+  line-height: 1.4;
+}
+
+/* ============ BACKGROUND UPLOAD TOAST ============ */
+.bg-upload-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 240px;
+  background: #1e293b;
+  color: #f1f5f9;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  z-index: 9999;
+  overflow: hidden;
+  transition: height 0.2s ease;
+}
+.bg-upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  background: #0f172a;
+}
+.bg-upload-minimize {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 4px;
+}
+.bg-upload-body {
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bg-upload-minimized .bg-upload-body { display: none; }
+
 /* Status bar */
 .tc-status {
   display: flex;

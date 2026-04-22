@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260420g">
+  <link rel="stylesheet" href="style.css?v=20260421a">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -207,9 +207,14 @@
             <label for="vehicle-trip-status">📍 Status:</label>
             <select id="vehicle-trip-status" class="vehicle-location-select">
               <option value="home">At Home</option>
+              <option value="scheduled">⏰ Scheduled Trip</option>
               <option value="on-trip">On Trip</option>
               <option value="repair-shop">Repair Shop</option>
             </select>
+          </div>
+          <div id="trip-scheduled-row" class="loc-field" style="display:none;">
+            <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+            <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom">
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
@@ -234,6 +239,36 @@
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
         <div id="stale-alert" class="stale-alert" style="display:none;"></div>
+      </section>
+
+      <!-- Vehicle Compliance Section -->
+      <section id="compliance-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>📋 Compliance &amp; Info</h3>
+          <button id="btn-save-compliance" class="btn btn-sm btn-primary">Save</button>
+        </div>
+        <div class="compliance-grid">
+          <div class="compliance-field">
+            <label class="compliance-label">🔍 Safety Inspection</label>
+            <div id="safety-status" class="compliance-status"></div>
+            <input type="month" id="compliance-safety" class="compliance-input" placeholder="MM/YYYY">
+          </div>
+          <div class="compliance-field">
+            <label class="compliance-label">📝 Registration</label>
+            <div id="registration-status" class="compliance-status"></div>
+            <input type="month" id="compliance-registration" class="compliance-input" placeholder="MM/YYYY">
+          </div>
+          <div class="compliance-field">
+            <label class="compliance-label">🛡️ Insurance</label>
+            <div id="insurance-status" class="compliance-status"></div>
+            <input type="month" id="compliance-insurance" class="compliance-input" placeholder="MM/YYYY">
+          </div>
+          <div class="compliance-field">
+            <label class="compliance-label">🔢 VIN</label>
+            <div class="compliance-status" style="visibility:hidden;">—</div>
+            <input type="text" id="compliance-vin" class="compliance-input" placeholder="Vehicle Identification Number" maxlength="17" style="text-transform:uppercase;">
+          </div>
+        </div>
       </section>
 
       <!-- Camera / Upload Section -->
@@ -794,5 +829,17 @@
 
   <script src="firebase-config.js"></script>
   <script src="app.js"></script>
+
+  <!-- Floating background upload progress -->
+  <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">
+    <div class="bg-upload-header">
+      <span id="bg-upload-title">⬆️ Uploading photos…</span>
+      <button class="bg-upload-minimize" onclick="$('bg-upload-toast').classList.toggle('bg-upload-minimized')">—</button>
+    </div>
+    <div class="bg-upload-body">
+      <div class="progress-bar"><div id="bg-upload-fill" class="progress-fill"></div></div>
+      <span id="bg-upload-text">0 / 0</span>
+    </div>
+  </div>
 </body>
 </html>

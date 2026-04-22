@@ -445,6 +445,9 @@ async function loadVehicles() {
   });
   await Promise.all(checks);
 
+  // Auto-start scheduled trips whose start time has passed
+  await autoStartScheduledTrips();
+
   // Populate admin dropdown
   populateVehicleSelect($('admin-vehicle-select'));
   // Update vehicle count badge
@@ -456,6 +459,38 @@ async function loadVehicles() {
   loadDashboardFollowUps();
   loadGeneralNotes();
 }
+
+// Auto-flip "scheduled" vehicles to "on-trip" when their start time arrives
+async function autoStartScheduledTrips() {
+  const now = Date.now();
+  const toFlip = vehiclesCache.filter(v => {
+    if (v.tripStatus !== 'scheduled' || !v.tripScheduledStart) return false;
+    const ss = v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart);
+    return ss.getTime() <= now;
+  });
+  if (!toFlip.length) return;
+  await Promise.all(toFlip.map(v =>
+    db.collection('vehicles').doc(v.id).update({
+      tripStatus: 'on-trip',
+      location: 'On Trip',
+      tripScheduledStart: firebase.firestore.FieldValue.delete()
+    }).then(() => {
+      v.tripStatus = 'on-trip';
+      v.location = 'On Trip';
+      delete v.tripScheduledStart;
+      toast(`🚗 ${v.plate} trip started automatically!`, 'info');
+    }).catch(e => console.error('Auto-start trip error:', e))
+  ));
+  if (toFlip.length) renderFleetDashboard();
+}
+
+// Check every minute for trips that should auto-start
+setInterval(async () => {
+  if (!currentUser) return;
+  const hasScheduled = vehiclesCache.some(v => v.tripStatus === 'scheduled' && v.tripScheduledStart);
+  if (!hasScheduled) return;
+  await autoStartScheduledTrips();
+}, 60000);
 
 function populateVehicleSelect(selectEl) {
   const MS_24H = 24 * 60 * 60 * 1000;
@@ -549,6 +584,11 @@ function renderFleetDashboard() {
     } else if (v.tripStatus === 'repair-shop') {
       locDisplay = '🔧 Repair Shop';
       locCls = 'status-danger';
+    } else if (v.tripStatus === 'scheduled') {
+      const ss = v.tripScheduledStart ? (v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart)) : null;
+      const ssStr = ss ? ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+      locDisplay = `⏰ Scheduled${ssStr ? ' · ' + ssStr : ''}`;
+      locCls = 'status-muted';
     } else if (v.homeLocation) {
       locDisplay = `🏠 ${escapeHtml(v.homeLocation)}`;
       locCls = 'status-ok';
@@ -556,9 +596,15 @@ function renderFleetDashboard() {
       locDisplay = 'No location set';
       locCls = 'status-muted';
     }
+    // Compliance badge
+    const compFields = [v.complianceSafety, v.complianceRegistration, v.complianceInsurance];
+    const compExpired = compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return new Date(Date.UTC(y,m,0,23,59,59)) < Date.now(); });
+    const compDue = !compExpired && compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return (new Date(Date.UTC(y,m,0,23,59,59)) - Date.now()) / 86400000 <= 30; });
+    const compBadge = compExpired ? '<span class="compliance-badge">EXPIRED</span>' : compDue ? '<span class="compliance-badge" style="background:#d97706;">DUE</span>' : '';
     const cleaningFlag = v.needsCleaning ? '<span class="fleet-cleaning-flag">🧹</span>' : '';
     html += `<div class="fleet-card${needsPhotos ? ' fleet-card-alert' : ''}" data-vid="${v.id}">
       ${needsPhotos ? '<span class="fleet-card-badge">⚠️</span>' : ''}
+      ${compBadge}
       ${cleaningFlag}
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
       <div class="fleet-card-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
@@ -975,12 +1021,20 @@ async function openVehiclePage(vid) {
   if (homeLocSelect) {
     homeLocSelect.value = selectedVehicle.homeLocation || '';
     tripStatusSelect.value = selectedVehicle.tripStatus || 'home';
-    // Show/hide return row for on-trip and repair-shop
-    tripReturnRow.style.display = (tripStatusSelect.value === 'on-trip' || tripStatusSelect.value === 'repair-shop') ? '' : 'none';
-    repairPartsRow.style.display = tripStatusSelect.value === 'repair-shop' ? '' : 'none';
+    const ts = tripStatusSelect.value;
+    // Show/hide rows based on status
+    $('trip-scheduled-row').style.display = ts === 'scheduled' ? '' : 'none';
+    tripReturnRow.style.display = (ts === 'on-trip' || ts === 'repair-shop') ? '' : 'none';
+    repairPartsRow.style.display = ts === 'repair-shop' ? '' : 'none';
+    // Populate scheduled start
+    if (selectedVehicle.tripScheduledStart) {
+      const ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
+      $('vehicle-trip-scheduled-start').value = ss.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
+    } else {
+      $('vehicle-trip-scheduled-start').value = '';
+    }
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
-      // Format for datetime-local input in HST (sv-SE gives ISO-like "YYYY-MM-DD HH:MM:SS")
       tripReturnInput.value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
     } else {
       tripReturnInput.value = '';
@@ -989,6 +1043,13 @@ async function openVehiclePage(vid) {
     $('repair-shop-name').value = selectedVehicle.repairShopName || '';
     $('repair-order-number').value = selectedVehicle.repairOrderNumber || '';
     $('repair-parts-eta').value = selectedVehicle.repairPartsEta || '';
+    // React to trip status dropdown changes
+    tripStatusSelect.onchange = function() {
+      const v = this.value;
+      $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
+      tripReturnRow.style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
+      repairPartsRow.style.display = v === 'repair-shop' ? '' : 'none';
+    };
   }
 
   // Show "Needs Cleaning" button if vehicle is home and not already flagged
@@ -1096,6 +1157,9 @@ async function openVehiclePage(vid) {
   loadMileage(vid);
   loadMaintenanceHistory(vid);
   loadVehicleNotes(vid);
+
+  // Load compliance data
+  loadComplianceData(selectedVehicle);
 }
 
 // ================================================================
@@ -1194,10 +1258,45 @@ $('btn-mileage-edit').addEventListener('click', () => {
 });
 
 // ================================================================
-// PHOTO UPLOAD
+// PHOTO UPLOAD — background parallel uploads
 // ================================================================
 
 $('file-input').addEventListener('change', handlePhotoFiles);
+
+let bgUploadTotal = 0;
+let bgUploadDone = 0;
+let bgUploadActive = false;
+
+function bgUploadShow(total) {
+  bgUploadTotal = total;
+  bgUploadDone = 0;
+  bgUploadActive = true;
+  const toast = $('bg-upload-toast');
+  if (toast) {
+    toast.style.display = '';
+    toast.classList.remove('bg-upload-minimized');
+    $('bg-upload-title').textContent = `⬆️ Uploading ${total} photo${total > 1 ? 's' : ''}…`;
+    $('bg-upload-text').textContent = `0 / ${total}`;
+    $('bg-upload-fill').style.width = '0%';
+  }
+}
+
+function bgUploadTick(success) {
+  bgUploadDone++;
+  const pct = Math.round((bgUploadDone / bgUploadTotal) * 100);
+  const fillEl = $('bg-upload-fill');
+  const textEl = $('bg-upload-text');
+  if (fillEl) fillEl.style.width = pct + '%';
+  if (textEl) textEl.textContent = `${bgUploadDone} / ${bgUploadTotal}`;
+  if (bgUploadDone >= bgUploadTotal) {
+    bgUploadActive = false;
+    $('bg-upload-title').textContent = `✅ Upload complete`;
+    setTimeout(() => {
+      const t = $('bg-upload-toast');
+      if (t) t.style.display = 'none';
+    }, 3000);
+  }
+}
 
 async function handlePhotoFiles(e) {
   const files = Array.from(e.target.files);
@@ -1209,51 +1308,50 @@ async function handlePhotoFiles(e) {
     return;
   }
 
-  const queue = $('photo-queue');
-  const progressSection = $('upload-progress');
-  progressSection.style.display = 'block';
-
-  let uploaded = 0;
   const total = files.length;
+  bgUploadShow(total);
+  e.target.value = '';
 
-  updateProgress(uploaded, total);
-
-  const uploadedUrls = [];
-  for (const file of files) {
+  // Add thumbnail previews immediately (UI feedback before upload completes)
+  const queue = $('photo-queue');
+  const thumbMap = new Map();
+  files.forEach(file => {
     const item = document.createElement('div');
     item.className = 'photo-queue-item';
     const thumb = document.createElement('img');
     thumb.src = URL.createObjectURL(file);
     item.appendChild(thumb);
-
     const statusIcon = document.createElement('div');
     statusIcon.className = 'status-icon status-uploading';
     statusIcon.textContent = '⏳';
     item.appendChild(statusIcon);
     queue.prepend(item);
+    thumbMap.set(file, { item, statusIcon });
+  });
 
+  // Upload all files in parallel (background)
+  const uploadPromises = files.map(async file => {
+    const { item, statusIcon } = thumbMap.get(file);
     try {
       const compressed = await compressImage(file);
-      const url = await uploadPhoto(compressed);
-      uploadedUrls.push(url);
-
+      await uploadPhoto(compressed);
       statusIcon.className = 'status-icon status-done';
       statusIcon.textContent = '✓';
-      uploaded++;
-      updateProgress(uploaded, total);
+      bgUploadTick(true);
     } catch (err) {
       console.error('Upload error:', err);
       statusIcon.className = 'status-icon status-error';
       statusIcon.textContent = '✗';
-      uploaded++;
-      updateProgress(uploaded, total);
-      toast(`Failed to upload: ${file.name}`, 'error');
+      bgUploadTick(false);
     }
-  }
+  });
 
-  toast(`${uploaded} photo(s) uploaded!`, 'success');
-  e.target.value = '';
-  await loadPhotosForDate(selectedVehicle.id, selectedDate);
+  // Refresh photos for the current date when all uploads finish
+  Promise.all(uploadPromises).then(async () => {
+    if (selectedVehicle) {
+      await loadPhotosForDate(selectedVehicle.id, selectedDate);
+    }
+  });
 }
 
 // Core upload function — used by both file picker and camera
@@ -1575,7 +1673,8 @@ $('camera-close').addEventListener('click', async () => {
 
 function formatDisplayDate(dateStr) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(y, m - 1, d);
+  // Use UTC noon so local timezone never causes an off-by-one when formatted in HST
+  const dt = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
   const opts = { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE };
   const label = dt.toLocaleDateString('en-US', opts);
   return dateStr === todayDateString() ? label + ' (Today)' : label;
@@ -1643,11 +1742,12 @@ async function loadPhotoDates(vehicleId, refDate) {
 function renderMiniCalendar(refDate) {
   const cal = $('mini-calendar');
   const [y, m] = refDate.split('-').map(Number);
-  const firstDay = new Date(y, m - 1, 1).getDay();
-  const daysInMonth = new Date(y, m, 0).getDate();
+  const firstDay = new Date(Date.UTC(y, m - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const todayStr = todayDateString();
 
-  const monthLabel = new Date(y, m - 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  // Use UTC noon to avoid local-timezone midnight causing off-by-one day-of-week
+  const monthLabel = new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
   let html = `<div class="cal-header">
     <button class="cal-nav" id="cal-prev-month">&lsaquo;</button>
@@ -2225,8 +2325,17 @@ $('btn-save-location').addEventListener('click', async () => {
   const updateData = { homeLocation, tripStatus };
 
   // Compute the display location for backward compat
-  if (tripStatus === 'on-trip') {
+  if (tripStatus === 'scheduled') {
+    updateData.location = homeLocation;
+    const schedVal = $('vehicle-trip-scheduled-start').value;
+    updateData.tripScheduledStart = schedVal ? firebase.firestore.Timestamp.fromDate(new Date(schedVal)) : firebase.firestore.FieldValue.delete();
+    updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
+    updateData.repairShopName = firebase.firestore.FieldValue.delete();
+    updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
+    updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
+  } else if (tripStatus === 'on-trip') {
     updateData.location = 'On Trip';
+    updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
       // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
       updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
@@ -2238,6 +2347,7 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   } else if (tripStatus === 'repair-shop') {
     updateData.location = 'Repair Shop';
+    updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
       // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
       updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
@@ -2252,6 +2362,7 @@ $('btn-save-location').addEventListener('click', async () => {
     }
   } else {
     updateData.location = homeLocation;
+    updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
@@ -3801,6 +3912,65 @@ window.deleteNote = async function(docId) {
     toast('Failed to delete note.', 'error');
   }
 };
+
+// ================================================================
+// VEHICLE COMPLIANCE (Safety / Registration / Insurance / VIN)
+// ================================================================
+
+function complianceMonthStatus(yyyyMM) {
+  if (!yyyyMM) return { label: '—', cls: '' };
+  const [y, m] = yyyyMM.split('-').map(Number);
+  // Last day of that month
+  const expDate = new Date(Date.UTC(y, m, 0, 23, 59, 59));
+  const nowMs = Date.now();
+  const daysLeft = Math.ceil((expDate.getTime() - nowMs) / 86400000);
+  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent' };
+  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn' };
+  return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok' };
+}
+
+function loadComplianceData(v) {
+  const section = $('compliance-section');
+  if (section) section.style.display = '';
+  const fields = [
+    { id: 'compliance-safety', statusId: 'safety-status', val: v.complianceSafety },
+    { id: 'compliance-registration', statusId: 'registration-status', val: v.complianceRegistration },
+    { id: 'compliance-insurance', statusId: 'insurance-status', val: v.complianceInsurance },
+  ];
+  fields.forEach(({ id, statusId, val }) => {
+    const input = $(id);
+    const statusEl = $(statusId);
+    if (input) input.value = val || '';
+    if (statusEl) {
+      const { label, cls } = complianceMonthStatus(val);
+      statusEl.textContent = label;
+      statusEl.className = 'compliance-status ' + cls;
+    }
+  });
+  const vinInput = $('compliance-vin');
+  if (vinInput) vinInput.value = v.vin || '';
+}
+
+$('btn-save-compliance').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const data = {
+    complianceSafety: $('compliance-safety').value || null,
+    complianceRegistration: $('compliance-registration').value || null,
+    complianceInsurance: $('compliance-insurance').value || null,
+    vin: $('compliance-vin').value.toUpperCase().trim() || null,
+  };
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update(data);
+    Object.assign(selectedVehicle, data);
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) Object.assign(cached, data);
+    loadComplianceData(selectedVehicle);
+    toast('Compliance info saved! ✅', 'success');
+  } catch (e) {
+    console.error('Save compliance error:', e);
+    toast('Failed to save compliance info.', 'error');
+  }
+});
 
 // Current active tab in the task panel: 'all' | 'urgent' | 'scheduled' | 'monitoring'
 let currentTaskTab = 'all';
