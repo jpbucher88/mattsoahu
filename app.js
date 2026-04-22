@@ -27,6 +27,9 @@ const TC_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // user's 
 let currentUser = null;
 let currentUserRole = null;
 let currentUserTimeclockAccess = false;
+let currentUserCanViewAllTimeclocks = false;
+let tcViewingUid = null;   // null = own timeclock
+let tcEmployees = [];      // [{uid, name, email}] populated for view-all users
 let selectedVehicle = null;
 let selectedAdminPhotos = new Set();
 let selectedDate = todayDateString(); // dashboard photo date
@@ -216,6 +219,7 @@ auth.onAuthStateChanged(async (user) => {
       const userData = userDoc.data();
       currentUserRole = userData.role || 'user';
       currentUserTimeclockAccess = currentUserRole === 'admin' || userData.timeclockAccess === true;
+      currentUserCanViewAllTimeclocks = currentUserRole === 'admin' || userData.canViewAllTimeclocks === true;
 
       $('user-display').textContent = userData.displayName || user.email;
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
@@ -473,11 +477,15 @@ async function autoStartScheduledTrips() {
     db.collection('vehicles').doc(v.id).update({
       tripStatus: 'on-trip',
       location: 'On Trip',
-      tripScheduledStart: firebase.firestore.FieldValue.delete()
+      tripScheduledStart: firebase.firestore.FieldValue.delete(),
+      tripReturnDate: v.tripExpectedEnd || firebase.firestore.FieldValue.delete(),
+      tripExpectedEnd: firebase.firestore.FieldValue.delete()
     }).then(() => {
       v.tripStatus = 'on-trip';
       v.location = 'On Trip';
+      if (v.tripExpectedEnd) { v.tripReturnDate = v.tripExpectedEnd; }
       delete v.tripScheduledStart;
+      delete v.tripExpectedEnd;
       toast(`🚗 ${v.plate} trip started automatically!`, 'info');
     }).catch(e => console.error('Auto-start trip error:', e))
   ));
@@ -1024,6 +1032,7 @@ async function openVehiclePage(vid) {
     const ts = tripStatusSelect.value;
     // Show/hide rows based on status
     $('trip-scheduled-row').style.display = ts === 'scheduled' ? '' : 'none';
+    $('trip-expected-end-row').style.display = ts === 'scheduled' ? '' : 'none';
     tripReturnRow.style.display = (ts === 'on-trip' || ts === 'repair-shop') ? '' : 'none';
     repairPartsRow.style.display = ts === 'repair-shop' ? '' : 'none';
     // Populate scheduled start
@@ -1032,6 +1041,13 @@ async function openVehiclePage(vid) {
       $('vehicle-trip-scheduled-start').value = ss.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
     } else {
       $('vehicle-trip-scheduled-start').value = '';
+    }
+    // Populate expected end
+    if (selectedVehicle.tripExpectedEnd) {
+      const ee = selectedVehicle.tripExpectedEnd.toDate ? selectedVehicle.tripExpectedEnd.toDate() : new Date(selectedVehicle.tripExpectedEnd);
+      $('vehicle-trip-expected-end').value = ee.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
+    } else {
+      $('vehicle-trip-expected-end').value = '';
     }
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
@@ -1047,6 +1063,7 @@ async function openVehiclePage(vid) {
     tripStatusSelect.onchange = function() {
       const v = this.value;
       $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
+      $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
       tripReturnRow.style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
       repairPartsRow.style.display = v === 'repair-shop' ? '' : 'none';
     };
@@ -2329,6 +2346,8 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.location = homeLocation;
     const schedVal = $('vehicle-trip-scheduled-start').value;
     updateData.tripScheduledStart = schedVal ? firebase.firestore.Timestamp.fromDate(new Date(schedVal)) : firebase.firestore.FieldValue.delete();
+    const endVal = $('vehicle-trip-expected-end').value;
+    updateData.tripExpectedEnd = endVal ? firebase.firestore.Timestamp.fromDate(new Date(endVal)) : firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
@@ -2336,6 +2355,7 @@ $('btn-save-location').addEventListener('click', async () => {
   } else if (tripStatus === 'on-trip') {
     updateData.location = 'On Trip';
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
+    updateData.tripExpectedEnd = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
       // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
       updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
@@ -2348,6 +2368,7 @@ $('btn-save-location').addEventListener('click', async () => {
   } else if (tripStatus === 'repair-shop') {
     updateData.location = 'Repair Shop';
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
+    updateData.tripExpectedEnd = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
       // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
       updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
@@ -2363,14 +2384,15 @@ $('btn-save-location').addEventListener('click', async () => {
   } else {
     updateData.location = homeLocation;
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
+    updateData.tripExpectedEnd = firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   }
 
-  // If vehicle was on-trip and now returning home, flag for cleaning + damage check
-  const wasOnTrip = selectedVehicle.tripStatus === 'on-trip';
+  // If vehicle was on-trip or repair-shop and now returning home, flag for cleaning + damage check
+  const wasOnTrip = selectedVehicle.tripStatus === 'on-trip' || selectedVehicle.tripStatus === 'repair-shop';
   const nowHome = tripStatus === 'home';
   if (wasOnTrip && nowHome) {
     updateData.needsCleaning = true;
@@ -3080,6 +3102,7 @@ async function loadAdminUsers() {
               Make ${nextRole.charAt(0).toUpperCase() + nextRole.slice(1)}
             </button>
             <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
+            <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">👁 View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
         </div>
@@ -3112,15 +3135,26 @@ window.toggleUserRole = async function (uid, currentRole) {
 window.toggleTimeclockAccess = async function(uid, currentAccess) {
   if (currentUserRole !== 'admin') return;
   const newAccess = !currentAccess;
-  const ok = await confirm('Time Clock Access', `${newAccess ? 'Grant' : 'Revoke'} time clock access for this user?`);
-  if (!ok) return;
   try {
     await db.collection('users').doc(uid).update({ timeclockAccess: newAccess });
-    toast(`Time clock access ${newAccess ? 'granted ✅' : 'revoked 🚫'}.`, 'success');
+    toast(newAccess ? 'Time clock access granted.' : 'Time clock access removed.', 'success');
     loadAdminUsers();
-  } catch (err) {
-    console.error('Toggle timeclock access error:', err);
+  } catch(e) {
+    console.error('toggleTimeclockAccess error:', e);
     toast('Failed to update access.', 'error');
+  }
+};
+
+window.toggleTimeclockViewAll = async function(uid, currentVal) {
+  if (currentUserRole !== 'admin') return;
+  const newVal = !currentVal;
+  try {
+    await db.collection('users').doc(uid).update({ canViewAllTimeclocks: newVal });
+    toast(newVal ? 'User can now view all timeclocks.' : 'Restricted to own timeclock.', 'success');
+    loadAdminUsers();
+  } catch(e) {
+    console.error('toggleTimeclockViewAll error:', e);
+    toast('Failed to update permission.', 'error');
   }
 };
 
@@ -3918,37 +3952,70 @@ window.deleteNote = async function(docId) {
 // ================================================================
 
 function complianceMonthStatus(yyyyMM) {
-  if (!yyyyMM) return { label: '—', cls: '' };
+  if (!yyyyMM) return { label: '—', cls: '', nextDue: '' };
   const [y, m] = yyyyMM.split('-').map(Number);
   // Last day of that month
   const expDate = new Date(Date.UTC(y, m, 0, 23, 59, 59));
   const nowMs = Date.now();
   const daysLeft = Math.ceil((expDate.getTime() - nowMs) / 86400000);
-  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent' };
-  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn' };
-  return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok' };
+  // Next cycle = same month, next year
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const nextDue = `${MONTHS[m - 1]} ${y + 1}`;
+  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent', nextDue };
+  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn', nextDue };
+  return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok', nextDue };
 }
 
 function loadComplianceData(v) {
   const section = $('compliance-section');
   if (section) section.style.display = '';
   const fields = [
-    { id: 'compliance-safety', statusId: 'safety-status', val: v.complianceSafety },
-    { id: 'compliance-registration', statusId: 'registration-status', val: v.complianceRegistration },
-    { id: 'compliance-insurance', statusId: 'insurance-status', val: v.complianceInsurance },
+    { id: 'compliance-safety', statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety },
+    { id: 'compliance-registration', statusId: 'registration-status', nextId: 'registration-next-due', val: v.complianceRegistration },
+    { id: 'compliance-insurance', statusId: 'insurance-status', nextId: null, val: v.complianceInsurance },
   ];
-  fields.forEach(({ id, statusId, val }) => {
+  let warnings = [];
+  fields.forEach(({ id, statusId, nextId, val }) => {
     const input = $(id);
     const statusEl = $(statusId);
     if (input) input.value = val || '';
     if (statusEl) {
-      const { label, cls } = complianceMonthStatus(val);
+      const { label, cls, nextDue } = complianceMonthStatus(val);
       statusEl.textContent = label;
       statusEl.className = 'compliance-status ' + cls;
+      if (cls === 'compliance-warn' || cls === 'compliance-urgent') {
+        warnings.push(label + ' — ' + id.replace('compliance-', ''));
+      }
+      if (nextId) {
+        const nextEl = $(nextId);
+        if (nextEl) nextEl.textContent = val ? `Next due: ${nextDue}` : '';
+      }
     }
   });
   const vinInput = $('compliance-vin');
   if (vinInput) vinInput.value = v.vin || '';
+  // Insurance doc link
+  const docLink = $('insurance-doc-link');
+  if (docLink) {
+    if (v.complianceInsuranceDoc) {
+      const name = v.complianceInsuranceDocName || 'Policy Document';
+      docLink.innerHTML = `<a href="${escapeHtml(v.complianceInsuranceDoc)}" target="_blank" class="compliance-doc-anchor">📎 ${escapeHtml(name)}</a>`;
+    } else {
+      docLink.innerHTML = '<span style="font-size:0.73rem;color:#9ca3af;">No document uploaded</span>';
+    }
+  }
+  // Reminder banner
+  let banner = section.querySelector('.compliance-reminder-banner');
+  if (warnings.length > 0) {
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.className = 'compliance-reminder-banner';
+      section.querySelector('.section-header').insertAdjacentElement('afterend', banner);
+    }
+    banner.textContent = '⚠️ Action needed: ' + warnings.join(' · ');
+  } else if (banner) {
+    banner.remove();
+  }
 }
 
 $('btn-save-compliance').addEventListener('click', async () => {
@@ -3969,6 +4036,38 @@ $('btn-save-compliance').addEventListener('click', async () => {
   } catch (e) {
     console.error('Save compliance error:', e);
     toast('Failed to save compliance info.', 'error');
+  }
+});
+
+// Insurance document upload
+$('compliance-insurance-upload').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file || !selectedVehicle) return;
+  const st = getStorage();
+  if (!st) { toast('Storage not available. Contact admin.', 'error'); e.target.value = ''; return; }
+  const plate = sanitizePlate(selectedVehicle.plate);
+  const ext = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const safeExt = ['pdf','jpg','jpeg','png','gif','webp'].includes(ext) ? ext : 'bin';
+  const fileName = `insurance_${Date.now()}.${safeExt}`;
+  const storagePath = `vehicles/${plate}/documents/${fileName}`;
+  try {
+    showLoading('Uploading document…');
+    const ref = st.ref(storagePath);
+    await ref.put(file, { contentType: file.type });
+    const url = await ref.getDownloadURL();
+    const docData = { complianceInsuranceDoc: url, complianceInsuranceDocName: file.name };
+    await db.collection('vehicles').doc(selectedVehicle.id).update(docData);
+    Object.assign(selectedVehicle, docData);
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) Object.assign(cached, docData);
+    loadComplianceData(selectedVehicle);
+    toast('Insurance document uploaded! ✅', 'success');
+  } catch (err) {
+    console.error('Insurance doc upload error:', err);
+    toast('Failed to upload document.', 'error');
+  } finally {
+    hideLoading();
+    e.target.value = '';
   }
 });
 
@@ -5577,7 +5676,25 @@ function initTimeClock() {
     return;
   }
   if (widget) widget.style.display = '';
-  loadWeekData(0);
+  tcViewingUid = currentUser.uid;
+  if (currentUserCanViewAllTimeclocks) {
+    loadTcEmployees().then(() => loadWeekData(0));
+  } else {
+    loadWeekData(0);
+  }
+}
+
+async function loadTcEmployees() {
+  try {
+    const snap = await db.collection('users').get();
+    tcEmployees = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (d.timeclockAccess || d.role === 'admin') {
+        tcEmployees.push({ uid: doc.id, name: d.displayName || d.email, email: d.email });
+      }
+    });
+  } catch(e) { console.error('loadTcEmployees error:', e); }
 }
 
 // Returns 7 YYYY-MM-DD strings (Mon-Sun) for the week at the given offset from the current week
@@ -5620,10 +5737,11 @@ function fmtMs(ms) {
 async function loadWeekData(offset) {
   currentWeekOffset = offset;
   if (!currentUser) return;
+  const viewUid = tcViewingUid || currentUser.uid;
   const dates = getWeekDates(offset);
   try {
     const snaps = await Promise.all(
-      dates.map(d => db.collection('timeclock').doc(currentUser.uid + '_' + d).get())
+      dates.map(d => db.collection('timeclock').doc(viewUid + '_' + d).get())
     );
     weeklyTimeclockData = {};
     snaps.forEach((snap, i) => { weeklyTimeclockData[dates[i]] = snap.exists ? snap.data() : null; });
@@ -5641,6 +5759,7 @@ function renderTimeClock() {
   if (!content) return;
   if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
 
+  const isOwnClock = !tcViewingUid || tcViewingUid === currentUser.uid;
   const today = todayDateString();
   const dates = getWeekDates(currentWeekOffset);
   const isCurrentWeek = currentWeekOffset === 0;
@@ -5763,13 +5882,14 @@ function renderTimeClock() {
           </div>
         </div>
         <div class="tc-action-row">
-          ${onBreak
+          ${isOwnClock ? (onBreak
             ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">▶️ End Break</button>`
-            : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`}
-          <button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>
+            : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`)
+            : ''}
+          ${isOwnClock ? `<button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>` : ''}
         </div>`;
       startElapsedTimer(clockInTime, activeSession.breaks || [], currentBreakStart);
-    } else {
+    } else if (isOwnClock) {
       activeHTML = `
         <div class="tc-fields">
           <div class="tc-field-row">
@@ -5780,10 +5900,10 @@ function renderTimeClock() {
         <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
     }
 
-    // Revenue section
+    // Revenue section (read-only for view-all)
     const goal = todayData?.revenueGoal ?? '';
     const achieved = todayData?.revenueAchieved ?? '';
-    const revenueHTML = `
+    const revenueHTML = isOwnClock ? `
       <div class="tc-revenue-section">
         <div class="tc-rev-row">
           <div class="tc-field-row">
@@ -5796,7 +5916,10 @@ function renderTimeClock() {
           </div>
         </div>
         <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">💾 Save Revenue</button>
-      </div>`;
+      </div>` : (goal || achieved ? `
+      <div class="tc-revenue-section" style="opacity:0.7;">
+        <div style="font-size:0.78rem;color:#6b7280;">Revenue: $${Number(achieved||0).toLocaleString()} / $${Number(goal||0).toLocaleString()}</div>
+      </div>` : '');
 
     todaySectionHTML = `
       <div class="tc-today-section">
@@ -5807,7 +5930,23 @@ function renderTimeClock() {
       </div>`;
   }
 
+  const selectorHTML = (currentUserCanViewAllTimeclocks && tcEmployees.length > 0) ? `
+    <div class="tc-user-selector-row">
+      <label class="tc-label" style="font-size:0.78rem;white-space:nowrap;">👥 Viewing:</label>
+      <select class="tc-user-select" onchange="tcSwitchUser(this.value)">
+        <option value="${currentUser.uid}"${isOwnClock ? ' selected' : ''}>My Timeclock</option>
+        ${tcEmployees.filter(e => e.uid !== currentUser.uid).map(e =>
+          `<option value="${e.uid}"${tcViewingUid === e.uid ? ' selected' : ''}>${escapeHtml(e.name)}</option>`
+        ).join('')}
+      </select>
+    </div>` : '';
+
+  const viewingBanner = !isOwnClock ? `
+    <div class="tc-viewing-banner">👁️ Viewing: ${escapeHtml(tcEmployees.find(e => e.uid === tcViewingUid)?.name || 'Employee')}</div>` : '';
+
   content.innerHTML = `
+    ${selectorHTML}
+    ${viewingBanner}
     <div class="tc-week-nav">
       <button class="tc-nav-btn" onclick="tcPrevWeek()">‹ Prev</button>
       <span class="tc-week-label">${weekLabel}</span>
@@ -5967,6 +6106,11 @@ window.tcSaveRevenue = async function() {
 window.tcPrevWeek = async function() { await loadWeekData(currentWeekOffset - 1); };
 window.tcNextWeek = async function() { if (currentWeekOffset < 0) await loadWeekData(currentWeekOffset + 1); };
 
+window.tcSwitchUser = async function(uid) {
+  tcViewingUid = uid;
+  await loadWeekData(0);
+};
+
 // ── Expand past day into modal ──
 window.tcExpandDay = function(date) {
   const dd = weeklyTimeclockData[date];
@@ -5976,6 +6120,7 @@ window.tcExpandDay = function(date) {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const [, mo, dy] = date.split('-');
   const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
+  const isOwnClockExpand = !tcViewingUid || tcViewingUid === currentUser.uid;
   const rows = sessions.map((s, idx) => {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
@@ -5992,8 +6137,10 @@ window.tcExpandDay = function(date) {
       <span class="tc-session-time">${inStr} – ${outStr}</span>
       <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
       <span class="tc-session-actions">
+        ${isOwnClockExpand ? `
         <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">✏️</button>
         <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">🗑️</button>
+        ` : ''}
       </span>
     </div>`;
   }).join('');

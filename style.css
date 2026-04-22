@@ -3594,6 +3594,36 @@ body {
   padding: 1px 4px;
   line-height: 1.4;
 }
+.compliance-next-due { font-size: 0.72rem; color: #6b7280; margin-top: 2px; min-height: 14px; }
+.compliance-doc-row { margin: 4px 0 2px; min-height: 16px; font-size: 0.75rem; }
+.compliance-doc-anchor { color: #2563eb; text-decoration: underline; }
+.compliance-upload-btn {
+  display: inline-block;
+  cursor: pointer;
+  font-size: 0.73rem;
+  color: #2563eb;
+  padding: 3px 8px;
+  border: 1px solid #93c5fd;
+  border-radius: 5px;
+  background: #eff6ff;
+  margin-top: 3px;
+  transition: background 0.15s;
+}
+.compliance-upload-btn:hover { background: #dbeafe; }
+.compliance-reminder-banner {
+  background: #fef3c7;
+  border: 1px solid #fbbf24;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  color: #92400e;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+/* Timeclock view-all */
+.tc-user-selector-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #e5e7eb; }
+.tc-user-select { border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 8px; font-size: 0.82rem; background: #f8fafc; cursor: pointer; }
+.tc-viewing-banner { background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 6px 10px; font-size: 0.78rem; color: #92400e; margin-bottom: 10px; text-align: center; font-weight: 600; }
 
 /* ============ BACKGROUND UPLOAD TOAST ============ */
 .bg-upload-toast {

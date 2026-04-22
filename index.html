@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260421a">
+  <link rel="stylesheet" href="style.css?v=20260421b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -156,6 +156,7 @@
           <button class="collapse-btn" id="time-clock-toggle">&#8722;</button>
         </div>
         <div id="time-clock-body" class="collapsible-body">
+          <div id="tc-view-banner" style="display:none;"></div>
           <div id="time-clock-content" class="time-clock-content"></div>
         </div>
       </section>
@@ -216,6 +217,10 @@
             <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
             <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom">
           </div>
+          <div id="trip-expected-end-row" class="loc-field" style="display:none;">
+            <label for="vehicle-trip-expected-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+            <input type="datetime-local" id="vehicle-trip-expected-end" class="vehicle-location-custom">
+          </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
             <input type="datetime-local" id="vehicle-trip-return" class="vehicle-location-custom">
@@ -252,16 +257,23 @@
             <label class="compliance-label">🔍 Safety Inspection</label>
             <div id="safety-status" class="compliance-status"></div>
             <input type="month" id="compliance-safety" class="compliance-input" placeholder="MM/YYYY">
+            <div id="safety-next-due" class="compliance-next-due"></div>
           </div>
           <div class="compliance-field">
             <label class="compliance-label">📝 Registration</label>
             <div id="registration-status" class="compliance-status"></div>
             <input type="month" id="compliance-registration" class="compliance-input" placeholder="MM/YYYY">
+            <div id="registration-next-due" class="compliance-next-due"></div>
           </div>
           <div class="compliance-field">
             <label class="compliance-label">🛡️ Insurance</label>
             <div id="insurance-status" class="compliance-status"></div>
             <input type="month" id="compliance-insurance" class="compliance-input" placeholder="MM/YYYY">
+            <div id="insurance-doc-link" class="compliance-doc-row"></div>
+            <label class="compliance-upload-btn" title="Upload insurance policy PDF or image">
+              📎 Upload Policy
+              <input type="file" id="compliance-insurance-upload" accept=".pdf,image/*" style="display:none;">
+            </label>
           </div>
           <div class="compliance-field">
             <label class="compliance-label">🔢 VIN</label>
