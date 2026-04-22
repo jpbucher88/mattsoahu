@@ -4153,7 +4153,8 @@ function loadComplianceData(v) {
   if (uploadBtn) uploadBtn.style.display = canEditCompliance ? '' : 'none';
   const uploadInput = $('compliance-insurance-upload');
   if (uploadInput) uploadInput.disabled = !canEditCompliance;
-  const fields = [ statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety },
+  const fields = [
+    { id: 'compliance-safety', statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety },
     { id: 'compliance-registration', statusId: 'registration-status', nextId: 'registration-next-due', val: v.complianceRegistration },
     { id: 'compliance-insurance', statusId: 'insurance-status', nextId: null, val: v.complianceInsurance },
   ];
