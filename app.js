@@ -4453,6 +4453,8 @@ function renderTaskAgenda(allItems) {
     items = allItems.filter(i => !i.urgent && i.taskStatus !== 'monitoring' && i.dueDate);
   } else if (currentTaskTab === 'monitoring') {
     items = allItems.filter(i => i.taskStatus === 'monitoring');
+  } else if (currentTaskTab === 'compliance') {
+    items = allItems.filter(i => i.sourceType === 'compliance');
   }
 
   if (items.length === 0) {
@@ -4890,6 +4892,11 @@ function renderUrgentBanner(items) {
       reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅 Reassign</button>`;
     }
 
+    const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    const editBtn = canManage
+      ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit / Downgrade">✏️ Edit</button>`
+      : '';
+
     html += `
       <div class="urgent-banner-item"${vidAttr}>
         <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
@@ -4897,7 +4904,10 @@ function renderUrgentBanner(items) {
           <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
           <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
         </div>
-        ${reassignBtn}
+        <div class="urgent-banner-actions">
+          ${reassignBtn}
+          ${editBtn}
+        </div>
       </div>`;
   }
   list.innerHTML = html;

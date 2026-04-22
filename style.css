@@ -2272,6 +2272,18 @@ body {
 .urgent-banner-item:hover {
   background: #fff5f5;
 }
+.urgent-banner-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  align-items: flex-end;
+}
+.urgent-edit-btn {
+  font-size: 0.75rem !important;
+  padding: 3px 8px !important;
+  white-space: nowrap;
+}
 .urgent-banner-info {
   flex: 1;
   min-width: 0;
