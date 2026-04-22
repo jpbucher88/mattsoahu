@@ -128,6 +128,17 @@ function todayDateString() {
   return parts; // returns YYYY-MM-DD
 }
 
+// Render a task activity log array as HTML
+function renderTaskLogEntries(log) {
+  if (!log || log.length === 0) return '<p class="task-log-empty">No log entries yet.</p>';
+  // Show newest first
+  return [...log].reverse().map(entry => `
+    <div class="task-log-entry">
+      <div class="task-log-entry-text">${escapeHtml(entry.text || '')}</div>
+      <div class="task-log-entry-meta">${escapeHtml(entry.by || 'Unknown')} · ${escapeHtml(entry.at || '')}</div>
+    </div>`).join('');
+}
+
 function formatTime(date) {
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', timeZone: APP_TIMEZONE });
 }
@@ -4537,13 +4548,16 @@ function renderTaskAgenda(allItems) {
 
     const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
     const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
+    const logCount = item.taskLog && item.taskLog.length > 0
+      ? ` · <span class="task-log-badge" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="View log">📋 ${item.taskLog.length} note${item.taskLog.length > 1 ? 's' : ''}</span>`
+      : '';
     return `
       <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}" data-vid-key="${item.vehicleId || ''}">
         <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
         <div class="followup-item${extraClass}"${vidAttr}>
           <div class="followup-info">
             <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
-            <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}</div>
+            <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}${logCount}</div>
             ${statusBtns ? `<div class="task-status-btns">${statusBtns}</div>` : ''}
           </div>
           <div class="task-item-actions">
@@ -4798,6 +4812,14 @@ window.openNoteEditModal = async function(docId, collection) {
           <input type="time" id="ne-due-time" class="form-select" value="${d.dueTime || ''}">
         </div>
       </div>
+      <div class="task-log-section">
+        <div class="note-edit-section-label" style="margin-bottom:6px;">📋 Activity Log</div>
+        <div id="ne-log-entries" class="task-log-entries">${renderTaskLogEntries(d.taskLog || [])}</div>
+        <div class="task-log-input-row">
+          <textarea id="ne-log-input" class="task-log-textarea" placeholder="Add a note or update…" rows="2"></textarea>
+          <button class="btn btn-sm btn-outline" id="btn-ne-log-add">Add</button>
+        </div>
+      </div>
       <div class="note-edit-actions">
         <button class="btn btn-primary" id="btn-ne-save">Save Changes</button>
         <button class="btn btn-outline" id="btn-ne-cancel">Cancel</button>
@@ -4825,6 +4847,34 @@ window.openNoteEditModal = async function(docId, collection) {
   });
 
   overlay.querySelector('#btn-ne-cancel').onclick = () => overlay.remove();
+
+  // Log entry
+  overlay.querySelector('#btn-ne-log-add').onclick = async () => {
+    const logText = overlay.querySelector('#ne-log-input').value.trim();
+    if (!logText) return;
+    const entry = {
+      text: logText,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })
+    };
+    try {
+      await db.collection(collection).doc(docId).update({
+        taskLog: firebase.firestore.FieldValue.arrayUnion(entry)
+      });
+      overlay.querySelector('#ne-log-input').value = '';
+      const snap = await db.collection(collection).doc(docId).get();
+      const updated = snap.data();
+      overlay.querySelector('#ne-log-entries').innerHTML = renderTaskLogEntries(updated.taskLog || []);
+      toast('Log entry added.', 'success');
+    } catch (err) {
+      console.error('Log add error:', err);
+      toast('Failed to add log entry.', 'error');
+    }
+  };
+  overlay.querySelector('#ne-log-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); overlay.querySelector('#btn-ne-log-add').click(); }
+  });
+
   overlay.querySelector('#btn-ne-save').onclick = async () => {
     const isFollowUp = followupEl.checked;
     const urgent = isFollowUp && selectedStatus === 'urgent';
@@ -5450,6 +5500,14 @@ window.openFullEditTaskModal = function(docId, col, d) {
           <input type="time" id="tfe-due-time" class="form-select" value="${d.dueTime || ''}">
         </div>
       </div>
+      <div class="task-log-section">
+        <div class="note-edit-section-label" style="margin-bottom:6px;">📋 Activity Log</div>
+        <div id="tfe-log-entries" class="task-log-entries">${renderTaskLogEntries(d.taskLog || [])}</div>
+        <div class="task-log-input-row">
+          <textarea id="tfe-log-input" class="task-log-textarea" placeholder="Add a note or update…" rows="2"></textarea>
+          <button class="btn btn-sm btn-outline" id="btn-tfe-log-add">Add</button>
+        </div>
+      </div>
       <div class="reassign-modal-actions">
         <button class="btn btn-primary" id="btn-tfe-save">Save Changes</button>
         <button class="btn btn-outline" id="btn-tfe-cancel">Cancel</button>
@@ -5463,6 +5521,34 @@ window.openFullEditTaskModal = function(docId, col, d) {
   });
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
   overlay.querySelector('#btn-tfe-cancel').onclick = () => overlay.remove();
+
+  // Log entry
+  overlay.querySelector('#btn-tfe-log-add').onclick = async () => {
+    const logText = overlay.querySelector('#tfe-log-input').value.trim();
+    if (!logText) return;
+    const entry = {
+      text: logText,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })
+    };
+    try {
+      await db.collection(col).doc(docId).update({
+        taskLog: firebase.firestore.FieldValue.arrayUnion(entry)
+      });
+      overlay.querySelector('#tfe-log-input').value = '';
+      const snap = await db.collection(col).doc(docId).get();
+      const updated = snap.data();
+      overlay.querySelector('#tfe-log-entries').innerHTML = renderTaskLogEntries(updated.taskLog || []);
+      toast('Log entry added.', 'success');
+    } catch (err) {
+      console.error('Log add error:', err);
+      toast('Failed to add log entry.', 'error');
+    }
+  };
+  overlay.querySelector('#tfe-log-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); overlay.querySelector('#btn-tfe-log-add').click(); }
+  });
+
   overlay.querySelector('#btn-tfe-save').onclick = async () => {
     const newText = overlay.querySelector('#tfe-text').value.trim();
     if (!newText) { toast('Task text cannot be empty.', 'warning'); return; }

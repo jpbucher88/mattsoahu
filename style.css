@@ -2846,6 +2846,18 @@ body {
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
 }
 .link-vehicle-modal h4 { margin: 0 0 4px; color: #1e3a5f; }
+
+/* ============ TASK ACTIVITY LOG ============ */
+.task-log-section { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
+.task-log-entries { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.task-log-empty { font-size: 0.78rem; color: #9ca3af; margin: 0; padding: 4px 0; }
+.task-log-entry { background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 6px; padding: 7px 10px; }
+.task-log-entry-text { font-size: 0.88rem; color: #1f2937; word-break: break-word; }
+.task-log-entry-meta { font-size: 0.73rem; color: #9ca3af; margin-top: 3px; }
+.task-log-input-row { display: flex; gap: 6px; align-items: flex-start; }
+.task-log-textarea { flex: 1; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; font-size: 0.85rem; font-family: inherit; resize: none; min-height: 44px; }
+.task-log-textarea:focus { outline: none; border-color: #2563eb; }
+.task-log-badge { cursor: pointer; color: #2563eb; font-size: 0.75rem; font-weight: 600; }
 .schedule-custom-section {
   margin-top: 14px;
   border-top: 1px dashed #cbd5e1;
