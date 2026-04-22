@@ -24,6 +24,23 @@ function getStorage() {
 // --------------- GLOBALS ---------------
 const APP_TIMEZONE = 'Pacific/Honolulu'; // Hawaii Standard Time (used by entire app)
 const TC_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone; // user's local TZ, used only by time clock display
+
+// Get short TZ abbreviation (e.g. "HST", "EST") for display
+function tzAbbr(tz) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' }).formatToParts(new Date());
+    const abbr = (parts.find(p => p.type === 'timeZoneName') || {}).value || '';
+    return abbr;
+  } catch (e) { return ''; }
+}
+
+// Format a Date in a given timezone as HH:MM AM/PM TZ
+function fmtTcTime(date, tz) {
+  const zone = tz || TC_TIMEZONE;
+  const time = date.toLocaleTimeString('en-US', { timeZone: zone, hour: '2-digit', minute: '2-digit' });
+  const abbr = tzAbbr(zone);
+  return abbr ? `${time} ${abbr}` : time;
+}
 let currentUser = null;
 let currentUserRole = null;
 let currentUserTimeclockAccess = false;
@@ -6215,8 +6232,9 @@ function renderTimeClock() {
       pastSessions.forEach((s, idx) => {
         const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
         const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
-        const inStr = inT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-        const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+        const sTz = s.timezone || TC_TIMEZONE;
+        const inStr = fmtTcTime(inT, sTz);
+        const outStr = outT ? fmtTcTime(outT, sTz) : '—';
         const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
           const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
           const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
@@ -6241,7 +6259,8 @@ function renderTimeClock() {
     let activeHTML = '';
     if (activeSession && activeSession.clockIn) {
       const clockInTime = activeSession.clockIn.toDate ? activeSession.clockIn.toDate() : new Date(activeSession.clockIn);
-      const clockInStr = clockInTime.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
+      const aTz = activeSession.timezone || TC_TIMEZONE;
+      const clockInStr = fmtTcTime(clockInTime, aTz);
       const onBreak = !!activeSession.onBreak;
       const compBreaks = (activeSession.breaks || []).filter(b => b.end);
       const compBreakMs = compBreaks.reduce((sum, b) => {
@@ -6256,7 +6275,7 @@ function renderTimeClock() {
       let schedNote = '';
       if (activeSession.scheduledStart) {
         const [sh, sm] = activeSession.scheduledStart.split(':').map(Number);
-        const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: TC_TIMEZONE }));
+        const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: aTz }));
         const diffMin = Math.round(((inHST.getHours() * 60 + inHST.getMinutes()) - (sh * 60 + sm)));
         schedNote = diffMin === 0 ? ' · ✅ On time'
           : diffMin > 0 ? ` · <span class="tc-late">⚠️ ${diffMin}m late</span>`
@@ -6377,7 +6396,8 @@ window.clockIn = async function() {
     clockOut: null,
     breaks: [],
     onBreak: false,
-    currentBreakStart: null
+    currentBreakStart: null,
+    timezone: TC_TIMEZONE
   };
   try {
     const snap = await db.collection('timeclock').doc(docId).get();
@@ -6523,8 +6543,9 @@ window.tcExpandDay = function(date) {
   const rows = sessions.map((s, idx) => {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
-    const inStr = inT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+    const sTz = s.timezone || TC_TIMEZONE;
+    const inStr = fmtTcTime(inT, sTz);
+    const outStr = outT ? fmtTcTime(outT, sTz) : '—';
     const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
       const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
       const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
@@ -6624,7 +6645,8 @@ window.tcEditSession = function(date, idx) {
   const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
   const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
   function toHHMM(d) {
-    return d.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).replace(/^24:/, '00:');
+    const sTz = s.timezone || TC_TIMEZONE;
+    return d.toLocaleTimeString('en-US', { timeZone: sTz, hour: '2-digit', minute: '2-digit', hour12: false }).replace(/^24:/, '00:');
   }
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const [, mo, dy] = date.split('-');
