@@ -1,4 +1,4 @@
-// ================================================================
+﻿// ================================================================
 // Aloha Fleet Management System - Main Application
 // ================================================================
 
@@ -141,12 +141,12 @@ function sanitizePlate(plate) {
 // 2560px wide at 92% quality = ~500KB-1.2MB per photo (high detail for damage docs)
 function compressImage(file, maxWidth = 2560, quality = 0.92) {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Image processing timed out — the file format may not be supported by this browser.')), 15000);
+    const timeout = setTimeout(() => reject(new Error('Image processing timed out â€” the file format may not be supported by this browser.')), 15000);
     const reader = new FileReader();
     reader.onerror = () => { clearTimeout(timeout); reject(new Error('Could not read the image file.')); };
     reader.onload = (e) => {
       const img = new Image();
-      img.onerror = () => { clearTimeout(timeout); reject(new Error('Could not decode image — the format may not be supported. Try taking a screenshot or converting to JPEG first.')); };
+      img.onerror = () => { clearTimeout(timeout); reject(new Error('Could not decode image â€” the format may not be supported. Try taking a screenshot or converting to JPEG first.')); };
       img.onload = () => {
         clearTimeout(timeout);
         const canvas = document.createElement('canvas');
@@ -486,7 +486,7 @@ async function autoStartScheduledTrips() {
       if (v.tripExpectedEnd) { v.tripReturnDate = v.tripExpectedEnd; }
       delete v.tripScheduledStart;
       delete v.tripExpectedEnd;
-      toast(`🚗 ${v.plate} trip started automatically!`, 'info');
+      toast(`ðŸš— ${v.plate} trip started automatically!`, 'info');
     }).catch(e => console.error('Auto-start trip error:', e))
   ));
   if (toFlip.length) renderFleetDashboard();
@@ -507,8 +507,8 @@ function populateVehicleSelect(selectEl) {
     const opt = document.createElement('option');
     opt.value = v.id;
     const stale = v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
-    const prefix = stale ? '⚠️ ' : '';
-    opt.textContent = `${prefix}${v.plate} — ${v.make} ${v.model}`;
+    const prefix = stale ? 'âš ï¸ ' : '';
+    opt.textContent = `${prefix}${v.plate} â€” ${v.make} ${v.model}`;
     if (stale) opt.style.color = '#b91c1c';
     selectEl.appendChild(opt);
   });
@@ -541,40 +541,40 @@ function renderFleetDashboard() {
     let photoStatus, photoCls;
     if (suppressPhoto) {
       if (isOnTrip) {
-        photoStatus = '📷 On trip';
+        photoStatus = 'ðŸ“· On trip';
         photoCls = 'status-muted';
       } else if (isAtRepair) {
-        photoStatus = '📷 At shop';
+        photoStatus = 'ðŸ“· At shop';
         photoCls = 'status-muted';
       } else {
-        photoStatus = '📷 Awaiting cleaning';
+        photoStatus = 'ðŸ“· Awaiting cleaning';
         photoCls = 'status-muted';
       }
     } else if (v.lastPhotoAge === Infinity || v.lastPhotoAge == null) {
-      photoStatus = '📷 No photos';
+      photoStatus = 'ðŸ“· No photos';
       photoCls = 'status-danger';
     } else if (v.lastPhotoAge > MS_24H) {
       const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
       const days = Math.floor(hrs / 24);
-      photoStatus = `📷 ${days}d ${hrs % 24}h ago`;
+      photoStatus = `ðŸ“· ${days}d ${hrs % 24}h ago`;
       photoCls = 'status-warn';
     } else {
       const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
       const mins = Math.floor((v.lastPhotoAge / (1000 * 60)) % 60);
-      photoStatus = hrs > 0 ? `📷 ${hrs}h ${mins}m ago` : `📷 ${mins}m ago`;
+      photoStatus = hrs > 0 ? `ðŸ“· ${hrs}h ${mins}m ago` : `ðŸ“· ${mins}m ago`;
       photoCls = 'status-ok';
     }
 
     // Maintenance status
     let maintStatus, maintCls;
     if (!v.mileage) {
-      maintStatus = '🔧 No mileage set';
+      maintStatus = 'ðŸ”§ No mileage set';
       maintCls = 'status-muted';
     } else if (v.overdueCount > 0) {
-      maintStatus = `🔧 ${v.overdueCount} overdue`;
+      maintStatus = `ðŸ”§ ${v.overdueCount} overdue`;
       maintCls = 'status-danger';
     } else {
-      maintStatus = '🔧 Up to date';
+      maintStatus = 'ðŸ”§ Up to date';
       maintCls = 'status-ok';
     }
 
@@ -585,20 +585,20 @@ function renderFleetDashboard() {
       let returnInfo = '';
       if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        returnInfo = ' · Return ' + rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
+        returnInfo = ' Â· Return ' + rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
       }
-      locDisplay = `🚗 On Trip${returnInfo}`;
+      locDisplay = `ðŸš— On Trip${returnInfo}`;
       locCls = 'status-warn';
     } else if (v.tripStatus === 'repair-shop') {
-      locDisplay = '🔧 Repair Shop';
+      locDisplay = 'ðŸ”§ Repair Shop';
       locCls = 'status-danger';
     } else if (v.tripStatus === 'scheduled') {
       const ss = v.tripScheduledStart ? (v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart)) : null;
       const ssStr = ss ? ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
-      locDisplay = `⏰ Scheduled${ssStr ? ' · ' + ssStr : ''}`;
+      locDisplay = `â° Scheduled${ssStr ? ' Â· ' + ssStr : ''}`;
       locCls = 'status-muted';
     } else if (v.homeLocation) {
-      locDisplay = `🏠 ${escapeHtml(v.homeLocation)}`;
+      locDisplay = `ðŸ  ${escapeHtml(v.homeLocation)}`;
       locCls = 'status-ok';
     } else {
       locDisplay = 'No location set';
@@ -609,9 +609,9 @@ function renderFleetDashboard() {
     const compExpired = compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return new Date(Date.UTC(y,m,0,23,59,59)) < Date.now(); });
     const compDue = !compExpired && compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return (new Date(Date.UTC(y,m,0,23,59,59)) - Date.now()) / 86400000 <= 30; });
     const compBadge = compExpired ? '<span class="compliance-badge">EXPIRED</span>' : compDue ? '<span class="compliance-badge" style="background:#d97706;">DUE</span>' : '';
-    const cleaningFlag = v.needsCleaning ? '<span class="fleet-cleaning-flag">🧹</span>' : '';
+    const cleaningFlag = v.needsCleaning ? '<span class="fleet-cleaning-flag">ðŸ§¹</span>' : '';
     html += `<div class="fleet-card${needsPhotos ? ' fleet-card-alert' : ''}" data-vid="${v.id}">
-      ${needsPhotos ? '<span class="fleet-card-badge">⚠️</span>' : ''}
+      ${needsPhotos ? '<span class="fleet-card-badge">âš ï¸</span>' : ''}
       ${compBadge}
       ${cleaningFlag}
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
@@ -626,11 +626,11 @@ function renderFleetDashboard() {
   // Populate jump dropdown
   const jumpSelect = $('fleet-jump-select');
   if (jumpSelect) {
-    jumpSelect.innerHTML = '<option value="">— Select vehicle —</option>';
+    jumpSelect.innerHTML = '<option value="">â€” Select vehicle â€”</option>';
     vehiclesCache.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = `${v.plate} — ${v.make} ${v.model}`;
+      opt.textContent = `${v.plate} â€” ${v.make} ${v.model}`;
       jumpSelect.appendChild(opt);
     });
     jumpSelect.onchange = function() {
@@ -741,8 +741,8 @@ function renderLocationsWidget() {
           ${photoTag}
         </div>
         <div class="cleaning-actions">
-          ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
-          <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>✓ Cleaned</button>
+          ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">ðŸ” Inspect</button>` : '<span class="damage-ok-badge">âœ… Inspected</span>'}
+          <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>âœ“ Cleaned</button>
           ${alsoNeedsPhotos ? `<button class="btn btn-sm btn-outline photo-done-btn" data-vid="${v.id}">\ud83d\udcf7</button>` : ''}
         </div>
       </div>`;
@@ -782,15 +782,15 @@ function renderLocationsWidget() {
     return s;
   }
 
-  // Needs Cleaning (+ photos if both) — split by location
-  html += renderCleaningSection('Needs Cleaning — HNL', cleaningHNL);
-  html += renderCleaningSection('Needs Cleaning — 1585 Kapiolani', cleaning1585);
-  if (cleaningOther.length > 0) html += renderCleaningSection('Needs Cleaning — Other', cleaningOther);
+  // Needs Cleaning (+ photos if both) â€” split by location
+  html += renderCleaningSection('Needs Cleaning â€” HNL', cleaningHNL);
+  html += renderCleaningSection('Needs Cleaning â€” 1585 Kapiolani', cleaning1585);
+  if (cleaningOther.length > 0) html += renderCleaningSection('Needs Cleaning â€” Other', cleaningOther);
 
-  // Photos Only (not cleaning) — split by location
-  html += renderPhotosSection('Needs Photos — HNL', photosOnlyHNL);
-  html += renderPhotosSection('Needs Photos — 1585 Kapiolani', photosOnly1585);
-  if (photosOnlyOther.length > 0) html += renderPhotosSection('Needs Photos — Other', photosOnlyOther);
+  // Photos Only (not cleaning) â€” split by location
+  html += renderPhotosSection('Needs Photos â€” HNL', photosOnlyHNL);
+  html += renderPhotosSection('Needs Photos â€” 1585 Kapiolani', photosOnly1585);
+  if (photosOnlyOther.length > 0) html += renderPhotosSection('Needs Photos â€” Other', photosOnlyOther);
 
   // On the Road
   if (onTrip.length > 0) {
@@ -809,7 +809,7 @@ function renderLocationsWidget() {
         const isOverdue = rd < now;
         returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">\u21a9 ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
         if (isOverdue) {
-          returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
+          returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">ðŸ  Returned</button>`;
         }
       }
       html += `<div class="trip-item">
@@ -822,7 +822,7 @@ function renderLocationsWidget() {
     html += '</div></div>';
   }
 
-  // At Home — 1585 Kapiolani
+  // At Home â€” 1585 Kapiolani
   if (atHome1585.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header">
@@ -834,7 +834,7 @@ function renderLocationsWidget() {
     html += '</div></div>';
   }
 
-  // At Home — HNL
+  // At Home â€” HNL
   if (atHomeHNL.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header">
@@ -846,7 +846,7 @@ function renderLocationsWidget() {
     html += '</div></div>';
   }
 
-  // Repair Shop — with return date + parts info
+  // Repair Shop â€” with return date + parts info
   if (atRepair.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#dc2626;">
@@ -904,7 +904,7 @@ function renderLocationsWidget() {
     chip.addEventListener('click', () => openVehiclePage(chip.dataset.vid));
   });
 
-  // Damage inspection button handler — show checklist modal
+  // Damage inspection button handler â€” show checklist modal
   container.querySelectorAll('.damage-check-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -941,7 +941,7 @@ function renderLocationsWidget() {
     });
   });
 
-  // Photo done button handler — opens vehicle page to take photos
+  // Photo done button handler â€” opens vehicle page to take photos
   container.querySelectorAll('.photo-done-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -950,64 +950,197 @@ function renderLocationsWidget() {
   });
 }
 
-// Damage check modal
+// Damage check modal — Pass / Fail per item
 function showDamageCheckModal(vid, plate) {
-  // Remove existing modal if any
   const existing = document.querySelector('.damage-check-overlay');
   if (existing) existing.remove();
 
+  // Per-item state: 'none' | 'pass' | 'fail'
+  const itemState = {};
+  INSPECTION_ITEMS.forEach(i => { itemState[i.key] = 'none'; });
+  const failFiles = {}; // key -> File[]
+
   const overlay = document.createElement('div');
   overlay.className = 'damage-check-overlay';
+
+  function buildItemHTML(item) {
+    return `
+      <div class="dmg-item" id="dmg-item-${item.key}">
+        <div class="dmg-item-header">
+          <span class="dmg-item-label">${escapeHtml(item.label)}</span>
+          <div class="dmg-pf-btns">
+            <button class="dmg-pass-btn" data-check="${item.key}">Pass</button>
+            <button class="dmg-fail-btn" data-check="${item.key}">Fail</button>
+          </div>
+        </div>
+        <div class="dmg-fail-details" id="dmg-fail-${item.key}" style="display:none;">
+          <textarea class="dmg-fail-notes" id="dmg-notes-${item.key}" placeholder="Describe the issue..." rows="2"></textarea>
+          <label class="dmg-fail-upload-label">
+            Add Photos
+            <input type="file" class="dmg-fail-photos" id="dmg-photos-${item.key}" accept="image/*" multiple style="display:none;" data-check="${item.key}">
+          </label>
+          <div class="dmg-fail-photo-previews" id="dmg-previews-${item.key}"></div>
+        </div>
+      </div>`;
+  }
+
   overlay.innerHTML = `
-    <div class="damage-check-modal">
-      <h4>\ud83d\udd0d Vehicle Inspection \u2014 ${escapeHtml(plate)}</h4>
-      <p>Complete all checks before marking as cleaned:</p>
-      <div class="damage-checklist">
-        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="exterior"> Exterior \u2014 No new damage</label>
-        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="interior"> Interior \u2014 No new damage</label>
-        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="tires"> Tires \u2014 Good condition</label>
-        <label class="damage-check-item"><input type="checkbox" class="dmg-check" data-check="clean"> Vehicle cleaned</label>
+    <div class="damage-check-modal dmg-modal-pf">
+      <div class="dmg-modal-header">
+        <h4>Vehicle Inspection - ${escapeHtml(plate)}</h4>
+        <p>Mark each item Pass or Fail. Issues will be logged as urgent follow-ups.</p>
+      </div>
+      <div class="damage-checklist dmg-pf-list">
+        ${INSPECTION_ITEMS.map(buildItemHTML).join('')}
       </div>
       <div class="damage-check-actions">
         <button class="btn btn-sm btn-outline dmg-cancel-btn">Cancel</button>
-        <button class="btn btn-sm btn-primary dmg-confirm-btn" disabled>✓ Confirm All Clear</button>
+        <button class="btn btn-sm btn-primary dmg-confirm-btn" disabled>Submit Inspection</button>
       </div>
     </div>
   `;
   document.body.appendChild(overlay);
 
-  const checks = overlay.querySelectorAll('.dmg-check');
   const confirmBtn = overlay.querySelector('.dmg-confirm-btn');
 
-  // Enable confirm only when all checked
-  checks.forEach(cb => {
-    cb.addEventListener('change', () => {
-      const allChecked = Array.from(checks).every(c => c.checked);
-      confirmBtn.disabled = !allChecked;
+  function refreshConfirmBtn() {
+    const allDecided = INSPECTION_ITEMS.every(i => itemState[i.key] !== 'none');
+    const failsHaveNotes = INSPECTION_ITEMS
+      .filter(i => itemState[i.key] === 'fail')
+      .every(i => (overlay.querySelector('#dmg-notes-' + i.key) || {value:' '}).value.trim().length > 0);
+    confirmBtn.disabled = !(allDecided && failsHaveNotes);
+    const failCount = INSPECTION_ITEMS.filter(i => itemState[i.key] === 'fail').length;
+    confirmBtn.textContent = failCount > 0
+      ? 'Submit (' + failCount + ' issue' + (failCount > 1 ? 's' : '') + ')'
+      : 'Submit - All Clear';
+  }
+
+  overlay.querySelectorAll('.dmg-pass-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.check;
+      itemState[key] = 'pass';
+      const itemEl = overlay.querySelector('#dmg-item-' + key);
+      itemEl.classList.remove('dmg-state-fail');
+      itemEl.classList.add('dmg-state-pass');
+      overlay.querySelector('#dmg-fail-' + key).style.display = 'none';
+      refreshConfirmBtn();
+    });
+  });
+
+  overlay.querySelectorAll('.dmg-fail-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.check;
+      itemState[key] = 'fail';
+      const itemEl = overlay.querySelector('#dmg-item-' + key);
+      itemEl.classList.remove('dmg-state-pass');
+      itemEl.classList.add('dmg-state-fail');
+      overlay.querySelector('#dmg-fail-' + key).style.display = '';
+      overlay.querySelector('#dmg-notes-' + key).focus();
+      refreshConfirmBtn();
+    });
+  });
+
+  overlay.querySelectorAll('.dmg-fail-notes').forEach(ta => {
+    ta.addEventListener('input', refreshConfirmBtn);
+  });
+
+  overlay.querySelectorAll('.dmg-fail-photos').forEach(input => {
+    input.addEventListener('change', () => {
+      const key = input.dataset.check;
+      const files = Array.from(input.files);
+      if (!failFiles[key]) failFiles[key] = [];
+      failFiles[key].push(...files);
+      const previewEl = overlay.querySelector('#dmg-previews-' + key);
+      files.forEach(f => {
+        const img = document.createElement('img');
+        img.src = URL.createObjectURL(f);
+        img.className = 'dmg-fail-preview-img';
+        previewEl.appendChild(img);
+      });
+      input.value = '';
     });
   });
 
   overlay.querySelector('.dmg-cancel-btn').addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
   confirmBtn.addEventListener('click', async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = 'Submitting...';
+    const failItems = INSPECTION_ITEMS.filter(i => itemState[i.key] === 'fail');
+    const st = getStorage();
+    const vehicleObj = vehiclesCache.find(v => v.id === vid);
+    const safePlate = vehicleObj ? sanitizePlate(vehicleObj.plate) : 'unknown';
+
     try {
+      for (const item of failItems) {
+        const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
+        const photoFiles = failFiles[item.key] || [];
+        const photoUrls = [];
+
+        if (st && photoFiles.length > 0) {
+          for (const file of photoFiles) {
+            try {
+              const compressed = await compressImage(file);
+              const fileName = 'insp_' + item.key + '_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) + '.jpg';
+              const ref = st.ref('vehicles/' + safePlate + '/inspection/' + fileName);
+              await ref.put(compressed, { contentType: 'image/jpeg' });
+              photoUrls.push(await ref.getDownloadURL());
+            } catch(e) { console.error('Inspection photo upload error:', e); }
+          }
+        }
+
+        const noteData = {
+          vehicleId: vid,
+          text: 'INSPECTION FAIL - ' + item.label + (notes ? ': ' + notes : ''),
+          isFollowUp: true,
+          done: false,
+          urgent: true,
+          taskStatus: 'urgent',
+          sourceType: 'inspection',
+          inspectionKey: item.key,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+        };
+        if (photoUrls.length > 0) noteData.photos = photoUrls;
+        await db.collection('vehicleNotes').add(noteData);
+      }
+
       await db.collection('vehicles').doc(vid).update({
         needsDamageCheck: false,
         lastInspectedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        lastInspectedBy: currentUser.displayName || currentUser.email
+        lastInspectedBy: currentUser.displayName || currentUser.email,
       });
       const cached = vehiclesCache.find(v => v.id === vid);
       if (cached) cached.needsDamageCheck = false;
-      toast('Inspection complete! \u2713', 'success');
+
+      if (failItems.length > 0) {
+        toast('Inspection submitted - ' + failItems.length + ' issue(s) logged as urgent', 'warning');
+        loadDashboardFollowUps();
+      } else {
+        toast('Inspection complete - All Clear', 'success');
+      }
       overlay.remove();
       renderLocationsWidget();
-    } catch (err) {
-      console.error('Damage check error:', err);
-      toast('Failed to update.', 'error');
+    } catch(err) {
+      console.error('Inspection submit error:', err);
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = 'Submit Inspection';
+      toast('Failed to submit inspection.', 'error');
     }
   });
 }
+
+// INSPECTION ITEMS LIST
+// ================================================================
+const INSPECTION_ITEMS = [
+  { key: 'exterior', label: 'Exterior - No new damage' },
+  { key: 'interior', label: 'Interior - No new damage' },
+  { key: 'tires',    label: 'Tires - Good condition' },
+  { key: 'smoking',  label: 'Smoking / Odor - None detected' },
+  { key: 'clean',    label: 'Vehicle Cleaned' },
+];
 
 // Open the vehicle detail page
 async function openVehiclePage(vid) {
@@ -1090,20 +1223,20 @@ async function openVehiclePage(vid) {
   // Show last photo timestamp
   const lastPhotoEl = $('last-photo-time');
   if (selectedVehicle.lastPhotoDate) {
-    lastPhotoEl.textContent = '📷 Last photo: ' + selectedVehicle.lastPhotoDate.toLocaleString('en-US', {
+    lastPhotoEl.textContent = 'ðŸ“· Last photo: ' + selectedVehicle.lastPhotoDate.toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
       timeZone: APP_TIMEZONE
     });
     lastPhotoEl.style.display = 'block';
   } else if (selectedVehicle.lastPhotoAge === Infinity) {
-    lastPhotoEl.textContent = '📷 No photos taken yet';
+    lastPhotoEl.textContent = 'ðŸ“· No photos taken yet';
     lastPhotoEl.style.display = 'block';
   } else {
     lastPhotoEl.style.display = 'none';
   }
 
-  // Show stale photo alert — suppress for on-trip, needs-cleaning, and 2hr grace after return
+  // Show stale photo alert â€” suppress for on-trip, needs-cleaning, and 2hr grace after return
   const MS_24H = 24 * 60 * 60 * 1000;
   const MS_2H = 2 * 60 * 60 * 1000;
   const staleAlert = $('stale-alert');
@@ -1180,7 +1313,7 @@ async function openVehiclePage(vid) {
 }
 
 // ================================================================
-// MILEAGE PROMPT — required before photo upload
+// MILEAGE PROMPT â€” required before photo upload
 // ================================================================
 
 let mileageConfirmed = false;
@@ -1243,7 +1376,7 @@ function confirmMileage() {
         });
         if (anyUrgent) {
           await urgentBatch.commit();
-          toast('⚠️ Service coming up within 500 miles!', 'warning');
+          toast('âš ï¸ Service coming up within 500 miles!', 'warning');
           loadDashboardFollowUps();
         }
       } catch (e) { /* ignore */ }
@@ -1275,7 +1408,7 @@ $('btn-mileage-edit').addEventListener('click', () => {
 });
 
 // ================================================================
-// PHOTO UPLOAD — background parallel uploads
+// PHOTO UPLOAD â€” background parallel uploads
 // ================================================================
 
 $('file-input').addEventListener('change', handlePhotoFiles);
@@ -1292,7 +1425,7 @@ function bgUploadShow(total) {
   if (toast) {
     toast.style.display = '';
     toast.classList.remove('bg-upload-minimized');
-    $('bg-upload-title').textContent = `⬆️ Uploading ${total} photo${total > 1 ? 's' : ''}…`;
+    $('bg-upload-title').textContent = `â¬†ï¸ Uploading ${total} photo${total > 1 ? 's' : ''}â€¦`;
     $('bg-upload-text').textContent = `0 / ${total}`;
     $('bg-upload-fill').style.width = '0%';
   }
@@ -1307,7 +1440,7 @@ function bgUploadTick(success) {
   if (textEl) textEl.textContent = `${bgUploadDone} / ${bgUploadTotal}`;
   if (bgUploadDone >= bgUploadTotal) {
     bgUploadActive = false;
-    $('bg-upload-title').textContent = `✅ Upload complete`;
+    $('bg-upload-title').textContent = `âœ… Upload complete`;
     setTimeout(() => {
       const t = $('bg-upload-toast');
       if (t) t.style.display = 'none';
@@ -1320,7 +1453,7 @@ async function handlePhotoFiles(e) {
   if (!files.length || !selectedVehicle) return;
 
   if (!getStorage()) {
-    toast('Photo uploads not available — Firebase Storage is not enabled yet. Contact your admin.', 'error');
+    toast('Photo uploads not available â€” Firebase Storage is not enabled yet. Contact your admin.', 'error');
     e.target.value = '';
     return;
   }
@@ -1340,7 +1473,7 @@ async function handlePhotoFiles(e) {
     item.appendChild(thumb);
     const statusIcon = document.createElement('div');
     statusIcon.className = 'status-icon status-uploading';
-    statusIcon.textContent = '⏳';
+    statusIcon.textContent = 'â³';
     item.appendChild(statusIcon);
     queue.prepend(item);
     thumbMap.set(file, { item, statusIcon });
@@ -1353,12 +1486,12 @@ async function handlePhotoFiles(e) {
       const compressed = await compressImage(file);
       await uploadPhoto(compressed);
       statusIcon.className = 'status-icon status-done';
-      statusIcon.textContent = '✓';
+      statusIcon.textContent = 'âœ“';
       bgUploadTick(true);
     } catch (err) {
       console.error('Upload error:', err);
       statusIcon.className = 'status-icon status-error';
-      statusIcon.textContent = '✗';
+      statusIcon.textContent = 'âœ—';
       bgUploadTick(false);
     }
   });
@@ -1371,7 +1504,7 @@ async function handlePhotoFiles(e) {
   });
 }
 
-// Core upload function — used by both file picker and camera
+// Core upload function â€” used by both file picker and camera
 async function uploadPhoto(blobOrFile) {
   const st = getStorage();
   if (!st) {
@@ -1510,7 +1643,7 @@ async function startCameraStream() {
       if (Object.keys(constraintUpdates).length) {
         await track.applyConstraints({ advanced: [constraintUpdates] });
       }
-    } catch (e) { /* zoom/torch not supported — ok */ }
+    } catch (e) { /* zoom/torch not supported â€” ok */ }
   }
   updateFlashButton();
 
@@ -1524,13 +1657,13 @@ async function startCameraStream() {
     await video.play();
   } catch (playErr) {
     console.warn('video.play() rejected, attempting again:', playErr);
-    // Some iOS versions reject the first play — short delay and retry
+    // Some iOS versions reject the first play â€” short delay and retry
     await new Promise(r => setTimeout(r, 300));
     await video.play();
   }
 }
 
-// Shutter button — captures frame and queues upload
+// Shutter button â€” captures frame and queues upload
 $('camera-shutter').addEventListener('click', () => {
   const video = $('camera-video');
   const canvas = $('camera-canvas');
@@ -1583,7 +1716,7 @@ function updateCameraUploadBar() {
   if (pending > 0) {
     $('camera-upload-text').textContent = `Uploading... ${cameraUploadedCount}/${cameraTotalQueued}`;
   } else {
-    $('camera-upload-text').textContent = `All ${cameraTotalQueued} uploaded ✓`;
+    $('camera-upload-text').textContent = `All ${cameraTotalQueued} uploaded âœ“`;
   }
   const pct = cameraTotalQueued > 0 ? (cameraUploadedCount / cameraTotalQueued) * 100 : 0;
   $('camera-upload-fill').style.width = pct + '%';
@@ -1618,7 +1751,7 @@ async function processCameraQueue() {
 function updateFlashButton() {
   const btn = $('camera-flash');
   if (!btn) return;
-  btn.textContent = cameraFlashOn ? '⚡ On' : '⚡ Off';
+  btn.textContent = cameraFlashOn ? 'âš¡ On' : 'âš¡ Off';
   btn.classList.toggle('camera-flash-active', cameraFlashOn);
 
   // Hide flash button if torch not available
@@ -1732,7 +1865,7 @@ $('btn-date-display').addEventListener('click', () => {
 });
 
 // ================================================================
-// MINI CALENDAR — shows month grid with dots on days that have photos
+// MINI CALENDAR â€” shows month grid with dots on days that have photos
 // ================================================================
 
 async function loadPhotoDates(vehicleId, refDate) {
@@ -1833,7 +1966,7 @@ async function loadPhotosForDate(vehicleId, dateStr) {
   $('vehicle-photo-count').textContent = `${snapshot.size} photos`;
 
   if (snapshot.empty) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos for this date</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ“·</div><p>No photos for this date</p></div>';
     return;
   }
 
@@ -1841,16 +1974,16 @@ async function loadPhotosForDate(vehicleId, dateStr) {
     const data = doc.data();
     const item = document.createElement('div');
     item.className = 'photo-grid-item' + (data.protected ? ' photo-kept' : '');
-    item.dataset.lightboxInfo = `${data.plate} — ${data.date}`;
-    const keepBadge = data.protected ? '<div class="keep-badge">🔒</div>' : '';
-    const adminDelete = currentUserRole === 'admin' ? `<button class="photo-delete-btn" data-doc-id="${doc.id}" data-storage-path="${escapeHtml(data.storagePath || '')}" title="Delete photo">✕</button>` : '';
+    item.dataset.lightboxInfo = `${data.plate} â€” ${data.date}`;
+    const keepBadge = data.protected ? '<div class="keep-badge">ðŸ”’</div>' : '';
+    const adminDelete = currentUserRole === 'admin' ? `<button class="photo-delete-btn" data-doc-id="${doc.id}" data-storage-path="${escapeHtml(data.storagePath || '')}" title="Delete photo">âœ•</button>` : '';
     item.innerHTML = `
       ${keepBadge}
       ${adminDelete}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
       <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
     `;
-    item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
+    item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} â€” ${data.date}`));
     const delBtn = item.querySelector('.photo-delete-btn');
     if (delBtn) {
       delBtn.addEventListener('click', async (e) => {
@@ -1933,7 +2066,7 @@ $('btn-download-all').addEventListener('click', async () => {
     }
 
     if (files.length === 0) {
-      toast('Download failed — opening photos in new tabs instead. Right-click or long-press to save each.', 'warning');
+      toast('Download failed â€” opening photos in new tabs instead. Right-click or long-press to save each.', 'warning');
       for (const photo of photos) { window.open(photo.url, '_blank'); }
       hideLoading();
       return;
@@ -1948,7 +2081,7 @@ $('btn-download-all').addEventListener('click', async () => {
 
       const shareFiles = files.map(f => new File([new Uint8Array(f.buf)], f.name, { type: 'image/jpeg' }));
 
-      // Try native share first — lets user "Save to Photos" all at once
+      // Try native share first â€” lets user "Save to Photos" all at once
       if (navigator.canShare && navigator.canShare({ files: shareFiles })) {
         try {
           await navigator.share({ files: shareFiles });
@@ -1956,7 +2089,7 @@ $('btn-download-all').addEventListener('click', async () => {
           return;
         } catch (err) {
           if (err.name === 'AbortError') return; // user cancelled, done
-          // Share failed — fall through to gallery
+          // Share failed â€” fall through to gallery
         }
       }
 
@@ -1974,11 +2107,11 @@ $('btn-download-all').addEventListener('click', async () => {
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <span style="color:#fff;font-size:17px;font-weight:600;">${files.length} Photos</span>
             <div style="display:flex;gap:8px;">
-              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">📥 Save All to Photos</button>
+              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">ðŸ“¥ Save All to Photos</button>
               <button id="save-gallery-done" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">Done</button>
             </div>
           </div>
-          <div style="color:#aaa;font-size:13px;margin-top:6px;">Tap "Save All to Photos" or hold any image → Save</div>
+          <div style="color:#aaa;font-size:13px;margin-top:6px;">Tap "Save All to Photos" or hold any image â†’ Save</div>
         </div>
         <div id="save-gallery-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:4px;"></div>
       `;
@@ -2065,7 +2198,7 @@ function openLightbox(url, info) {
   lightboxPhotos = [];
   document.querySelectorAll('#recent-photos .photo-grid-item img, #admin-photos .photo-grid-item img').forEach(img => {
     const item = img.closest('.photo-grid-item');
-    // Get the info from the click handler — store it as data attribute
+    // Get the info from the click handler â€” store it as data attribute
     lightboxPhotos.push({
       url: img.src,
       info: item.dataset.lightboxInfo || ''
@@ -2136,7 +2269,7 @@ function reencodeAsJpeg(arrayBuf) {
   });
 }
 
-// Save a single photo — share sheet on mobile, direct download on desktop
+// Save a single photo â€” share sheet on mobile, direct download on desktop
 async function saveOnePhoto(url, name) {
   try {
     const resp = await fetch(url, { mode: 'cors' });
@@ -2166,7 +2299,7 @@ async function saveOnePhoto(url, name) {
     if (err.name === 'AbortError') return;
     console.error('Save photo error:', err);
     // Fallback: open in new tab so user can long-press / right-click to save
-    toast('Direct download failed — opening photo in new tab. Right-click or long-press to save.', 'warning');
+    toast('Direct download failed â€” opening photo in new tab. Right-click or long-press to save.', 'warning');
     window.open(url, '_blank');
   }
 }
@@ -2189,7 +2322,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { $('lightbox').style.display = 'none'; $('lightbox-img').src = ''; }
 });
 
-// Touch swipe — smooth iOS handling with visual slide
+// Touch swipe â€” smooth iOS handling with visual slide
 (function() {
   let startX = 0, startY = 0, moveX = 0, tracking = false;
   const lb = $('lightbox');
@@ -2457,7 +2590,7 @@ window.vehicleReturned = async function(vehicleId) {
       cleaningFlaggedAt: { toDate: () => new Date() }
     });
     delete v.tripReturnDate;
-    toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
+    toast(`${plate} marked as returned â€” please complete cleaning & photos.`, 'success');
     renderFleetDashboard();
     renderLocationsWidget();
   } catch (err) {
@@ -2466,7 +2599,7 @@ window.vehicleReturned = async function(vehicleId) {
   }
 };
 
-// Locations button — scroll to Locations widget
+// Locations button â€” scroll to Locations widget
 $('btn-locations').addEventListener('click', () => {
   const widget = $('locations-widget');
   if (widget) {
@@ -2554,12 +2687,12 @@ function loadAdminVehicles() {
   $('vehicle-count').textContent = vehiclesCache.length;
 
   if (!vehiclesCache.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🚗</div><p>No vehicles added yet</p></div>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸš—</div><p>No vehicles added yet</p></div>';
     return;
   }
 
   list.innerHTML = vehiclesCache.map(v => {
-    const hasPhoto = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="v-list-thumb" alt="">` : '<div class="v-list-thumb-empty">📷</div>';
+    const hasPhoto = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="v-list-thumb" alt="">` : '<div class="v-list-thumb-empty">ðŸ“·</div>';
     return `
     <div class="data-list-item">
       <div class="v-list-thumb-wrap">${hasPhoto}</div>
@@ -2783,7 +2916,7 @@ async function loadAdminPhotos() {
     $('btn-unkeep-selected').style.display = snapshot.size > 0 ? '' : 'none';
 
     if (snapshot.empty) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos found</p></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ“·</div><p>No photos found</p></div>';
       hideLoading();
       return;
     }
@@ -2795,8 +2928,8 @@ async function loadAdminPhotos() {
       item.dataset.id = doc.id;
       item.dataset.storagePath = data.storagePath || '';
       item.dataset.protected = data.protected ? '1' : '0';
-      item.dataset.lightboxInfo = `${data.plate || ''} — ${data.date}`;
-      const keepBadge = data.protected ? '<div class="keep-badge">🔒 Kept</div>' : '';
+      item.dataset.lightboxInfo = `${data.plate || ''} â€” ${data.date}`;
+      const keepBadge = data.protected ? '<div class="keep-badge">ðŸ”’ Kept</div>' : '';
       item.innerHTML = `
         ${keepBadge}
         <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
@@ -3078,7 +3211,7 @@ async function loadAdminUsers() {
     $('user-count').textContent = snapshot.size;
 
     if (snapshot.empty) {
-      list.innerHTML = '<div class="empty-state"><div class="empty-icon">👤</div><p>No users found</p></div>';
+      list.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ‘¤</div><p>No users found</p></div>';
       return;
     }
 
@@ -3094,15 +3227,15 @@ async function loadAdminUsers() {
       item.innerHTML = `
         <div class="item-info">
           <div class="item-title">${escapeHtml(data.displayName || 'Unknown')} ${isSelf ? '(You)' : ''}</div>
-          <div class="item-subtitle">${escapeHtml(data.email)} · <span class="badge ${roleBadgeClass}">${data.role}</span></div>
+          <div class="item-subtitle">${escapeHtml(data.email)} Â· <span class="badge ${roleBadgeClass}">${data.role}</span></div>
         </div>
         <div class="item-actions">
           ${!isSelf ? `
             <button class="btn btn-sm btn-outline" onclick="toggleUserRole('${doc.id}', '${data.role}')">
               Make ${nextRole.charAt(0).toUpperCase() + nextRole.slice(1)}
             </button>
-            <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
-            <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">👁 View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
+            <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">ðŸ• TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
+            <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">ðŸ‘ View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
         </div>
@@ -3183,20 +3316,20 @@ window.deleteUser = async function (uid, name) {
 
 // Manufacturer-standard recommended service intervals (miles)
 const MAINTENANCE_SCHEDULE = [
-  { service: 'Oil Change',          interval: 5000,   icon: '🛢️' },
-  { service: 'Tire Rotation',       interval: 7500,   icon: '🔄' },
-  { service: 'Air Filter',          interval: 15000,  icon: '💨' },
-  { service: 'Cabin Filter',        interval: 15000,  icon: '🌬️' },
-  { service: 'Brake Inspection',    interval: 20000,  icon: '🔍' },
-  { service: 'Transmission Fluid',  interval: 30000,  icon: '⚙️' },
-  { service: 'Coolant Flush',       interval: 30000,  icon: '❄️' },
-  { service: 'Spark Plugs',         interval: 30000,  icon: '⚡' },
-  { service: 'Wiper Blades',        interval: 15000,  icon: '🌧️' },
-  { service: 'Belts/Hoses',         interval: 60000,  icon: '🔧' },
-  { service: 'Battery',             interval: 50000,  icon: '🔋' },
-  { service: 'Tires (New)',         interval: 40000,  icon: '🛞' },
-  { service: 'Alignment',           interval: 25000,  icon: '📐' },
-  { service: 'Brake Pads/Rotors',   interval: 40000,  icon: '🛑' },
+  { service: 'Oil Change',          interval: 5000,   icon: 'ðŸ›¢ï¸' },
+  { service: 'Tire Rotation',       interval: 7500,   icon: 'ðŸ”„' },
+  { service: 'Air Filter',          interval: 15000,  icon: 'ðŸ’¨' },
+  { service: 'Cabin Filter',        interval: 15000,  icon: 'ðŸŒ¬ï¸' },
+  { service: 'Brake Inspection',    interval: 20000,  icon: 'ðŸ”' },
+  { service: 'Transmission Fluid',  interval: 30000,  icon: 'âš™ï¸' },
+  { service: 'Coolant Flush',       interval: 30000,  icon: 'â„ï¸' },
+  { service: 'Spark Plugs',         interval: 30000,  icon: 'âš¡' },
+  { service: 'Wiper Blades',        interval: 15000,  icon: 'ðŸŒ§ï¸' },
+  { service: 'Belts/Hoses',         interval: 60000,  icon: 'ðŸ”§' },
+  { service: 'Battery',             interval: 50000,  icon: 'ðŸ”‹' },
+  { service: 'Tires (New)',         interval: 40000,  icon: 'ðŸ›ž' },
+  { service: 'Alignment',           interval: 25000,  icon: 'ðŸ“' },
+  { service: 'Brake Pads/Rotors',   interval: 40000,  icon: 'ðŸ›‘' },
 ];
 
 // Get schedule for a vehicle, merging custom overrides with defaults
@@ -3322,7 +3455,7 @@ async function updateRecommendedServices(vehicleId) {
 
   if (timeDue.length === 0 && timeUpcoming.length === 0 && due.length === 0 && upcoming.length === 0 && miIntervalDue.length === 0 && miIntervalWarn.length === 0) {
     container.style.display = mileage ? 'block' : 'none';
-    if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
+    if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">âœ… All services up to date!</p>';
     return;
   }
 
@@ -3331,45 +3464,45 @@ async function updateRecommendedServices(vehicleId) {
 
   // Time-based items first
   if (timeDue.length > 0 || timeUpcoming.length > 0) {
-    html += '<div class="rec-section-title">⏱ Time-Based</div>';
+    html += '<div class="rec-section-title">â± Time-Based</div>';
     timeDue.sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
     timeDue.forEach(s => {
-      html += `<div class="rec-item rec-time rec-time-overdue">🗓️ <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue</span> · Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
+      html += `<div class="rec-item rec-time rec-time-overdue">ðŸ—“ï¸ <strong>${escapeHtml(s.service)}</strong> â€” <span class="text-danger">Overdue</span> Â· Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
     });
     timeUpcoming.sort((a, b) => a.daysUntil - b.daysUntil);
     timeUpcoming.forEach(s => {
-      html += `<div class="rec-item rec-time rec-time-upcoming">🗓️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span></div>`;
+      html += `<div class="rec-item rec-time rec-time-upcoming">ðŸ—“ï¸ <strong>${escapeHtml(s.service)}</strong> â€” Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span></div>`;
     });
   }
 
   // Custom mileage-interval items
   if (miIntervalDue.length > 0 || miIntervalWarn.length > 0) {
-    html += '<div class="rec-section-title">🛣 Custom Mileage Intervals</div>';
+    html += '<div class="rec-section-title">ðŸ›£ Custom Mileage Intervals</div>';
     miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
     miIntervalDue.forEach(s => {
       const over = Math.abs(s.milesLeft).toLocaleString();
-      html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> · Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+      html += `<div class="rec-item rec-overdue">ðŸ”§ <strong>${escapeHtml(s.service)}</strong> â€” <span class="text-danger">Overdue by ${over} mi</span> Â· Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
     });
     miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
     miIntervalWarn.forEach(s => {
-      html += `<div class="rec-item rec-upcoming">⚠️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.milesLeft.toLocaleString()} mi · at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+      html += `<div class="rec-item rec-upcoming">âš ï¸ <strong>${escapeHtml(s.service)}</strong> â€” Due in ${s.milesLeft.toLocaleString()} mi Â· at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
     });
   }
 
   // Standard mileage-based items
   if (due.length > 0 || upcoming.length > 0) {
-    if (timeDue.length > 0 || timeUpcoming.length > 0 || miIntervalDue.length > 0 || miIntervalWarn.length > 0) html += '<div class="rec-section-title">📋 Standard Schedule</div>';
+    if (timeDue.length > 0 || timeUpcoming.length > 0 || miIntervalDue.length > 0 || miIntervalWarn.length > 0) html += '<div class="rec-section-title">ðŸ“‹ Standard Schedule</div>';
     due.sort((a, b) => a.milesUntil - b.milesUntil);
     upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
     due.forEach(s => {
       const overMiles = Math.abs(s.milesUntil).toLocaleString();
-      html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+      html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> â€” <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
     });
     upcoming.forEach(s => {
       const untilMiles = s.milesUntil.toLocaleString();
       const warnClass = s.milesUntil <= 500 ? 'rec-overdue' : 'rec-upcoming';
-      const warnIcon = s.milesUntil <= 500 ? '⚠️' : s.icon;
-      html += `<div class="rec-item ${warnClass}">${warnIcon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+      const warnIcon = s.milesUntil <= 500 ? 'âš ï¸' : s.icon;
+      html += `<div class="rec-item ${warnClass}">${warnIcon} <strong>${escapeHtml(s.service)}</strong> â€” Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
     });
   }
 
@@ -3412,7 +3545,7 @@ $('btn-save-mileage').addEventListener('click', async () => {
       });
       if (anyUrgent) {
         await urgentBatch.commit();
-        toast('⚠️ Service coming up within 500 miles!', 'warning');
+        toast('âš ï¸ Service coming up within 500 miles!', 'warning');
         loadDashboardFollowUps();
       }
     } catch (e) { /* ignore */ }
@@ -3468,7 +3601,7 @@ function addCustomScheduleRow(name = '', interval = '') {
       <input type="number" class="custom-service-interval" placeholder="mi interval" value="${escapeHtml(String(interval))}" min="100" max="999999" inputmode="numeric">
       <span class="schedule-unit">mi</span>
     </div>
-    <button type="button" class="btn btn-sm btn-danger btn-remove-custom-row" title="Remove">✕</button>
+    <button type="button" class="btn btn-sm btn-danger btn-remove-custom-row" title="Remove">âœ•</button>
   `;
   row.querySelector('.btn-remove-custom-row').addEventListener('click', () => row.remove());
   container.appendChild(row);
@@ -3562,8 +3695,8 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
   $('m-interval').value = '';
   $('m-mile-interval').value = '';
-  $('m-next-due-display').textContent = '—';
-  $('m-next-due-mileage-display').textContent = '—';
+  $('m-next-due-display').textContent = 'â€”';
+  $('m-next-due-mileage-display').textContent = 'â€”';
   $('m-custom-row').style.display = 'none';
   $('m-custom-type').value = '';
   $('m-type').value = '';
@@ -3577,7 +3710,7 @@ function updateNextDueDisplay() {
   const months = parseInt($('m-interval').value);
   const dateDisplay = $('m-next-due-display');
   if (!dateVal || !months) {
-    dateDisplay.textContent = '—';
+    dateDisplay.textContent = 'â€”';
   } else {
     const [y, mo, d] = dateVal.split('-').map(Number);
     const next = new Date(y, mo - 1 + months, d);
@@ -3588,7 +3721,7 @@ function updateNextDueDisplay() {
   const mileInt = parseInt($('m-mile-interval').value);
   const mileDisplay = $('m-next-due-mileage-display');
   if (!mileInt || !serviceMileage) {
-    mileDisplay.textContent = mileInt && !serviceMileage ? 'Enter mileage at service' : '—';
+    mileDisplay.textContent = mileInt && !serviceMileage ? 'Enter mileage at service' : 'â€”';
   } else {
     const nextMi = serviceMileage + mileInt;
     mileDisplay.textContent = nextMi.toLocaleString() + ' mi (warn at ' + (nextMi - 500).toLocaleString() + ' mi)';
@@ -3602,8 +3735,8 @@ $('m-mile-interval').addEventListener('input', updateNextDueDisplay);
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
-  $('m-next-due-display').textContent = '—';
-  $('m-next-due-mileage-display').textContent = '—';
+  $('m-next-due-display').textContent = 'â€”';
+  $('m-next-due-mileage-display').textContent = 'â€”';
   $('m-custom-row').style.display = 'none';
 });
 
@@ -3677,7 +3810,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         const noteRef = db.collection('vehicleNotes').doc();
         batch.set(noteRef, {
           vehicleId: selectedVehicle.id,
-          text: `🔧 ${serviceType} due (every ${intervalLabel})`,
+          text: `ðŸ”§ ${serviceType} due (every ${intervalLabel})`,
           isFollowUp: true,
           done: false,
           urgent: false,
@@ -3697,7 +3830,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         const mileNoteRef = db.collection('vehicleNotes').doc();
         batch.set(mileNoteRef, {
           vehicleId: selectedVehicle.id,
-          text: `🛢️ ${serviceType} due at ${nextDueMileage.toLocaleString()} mi (every ${intervalMiles.toLocaleString()} mi)`,
+          text: `ðŸ›¢ï¸ ${serviceType} due at ${nextDueMileage.toLocaleString()} mi (every ${intervalMiles.toLocaleString()} mi)`,
           isFollowUp: true,
           done: false,
           urgent: false,
@@ -3732,8 +3865,8 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     toast('Maintenance record saved!', 'success');
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
-    $('m-next-due-display').textContent = '—';
-    $('m-next-due-mileage-display').textContent = '—';
+    $('m-next-due-display').textContent = 'â€”';
+    $('m-next-due-mileage-display').textContent = 'â€”';
     $('m-custom-row').style.display = 'none';
     loadMaintenanceHistory(selectedVehicle.id);
     updateRecommendedServices(selectedVehicle.id);
@@ -3755,7 +3888,7 @@ async function loadMaintenanceHistory(vehicleId) {
       .get();
 
     if (snap.empty) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon">🔧</div><p>No maintenance records yet</p></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ”§</div><p>No maintenance records yet</p></div>';
       return;
     }
 
@@ -3765,23 +3898,23 @@ async function loadMaintenanceHistory(vehicleId) {
       const costStr = d.cost != null ? `$${d.cost.toFixed(2)}` : '';
       const mileStr = d.mileage ? `${d.mileage.toLocaleString()} mi` : '';
       const locStr = d.location ? d.location : '';
-      const meta = [mileStr, costStr, locStr].filter(Boolean).join(' · ');
+      const meta = [mileStr, costStr, locStr].filter(Boolean).join(' Â· ');
       const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
       let intervalBadge = '';
       if (d.intervalMonths) {
         const lbl = d.intervalMonths === 1 ? '1 Mo' : d.intervalMonths === 12 ? '1 Yr' : d.intervalMonths === 24 ? '2 Yr' : `${d.intervalMonths} Mo`;
-        intervalBadge += `<span class="interval-badge">🔁 Every ${lbl}</span>`;
+        intervalBadge += `<span class="interval-badge">ðŸ” Every ${lbl}</span>`;
       }
       if (d.intervalMiles) {
-        intervalBadge += `<span class="interval-badge" style="background:#d1fae5;color:#065f46;">🛣 Every ${d.intervalMiles.toLocaleString()} mi</span>`;
+        intervalBadge += `<span class="interval-badge" style="background:#d1fae5;color:#065f46;">ðŸ›£ Every ${d.intervalMiles.toLocaleString()} mi</span>`;
       }
-      const nextDueStr = d.nextDueDate ? ` · Next: ${d.nextDueDate}` : '';
-      const nextDueMiStr = d.nextDueMileage ? ` · Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
+      const nextDueStr = d.nextDueDate ? ` Â· Next: ${d.nextDueDate}` : '';
+      const nextDueMiStr = d.nextDueMileage ? ` Â· Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
       html += `
         <div class="data-list-item">
           <div class="item-info">
             <div class="item-title">${escapeHtml(d.serviceType)}${intervalBadge}</div>
-            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
+            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' Â· ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' â€” ' + escapeHtml(d.notes) : ''}</div>
           </div>
           ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
         </div>
@@ -3885,14 +4018,14 @@ async function loadVehicleNotes(vehicleId) {
       if (d.isFollowUp) {
         if (d.done) {
           const completer = d.completedByName ? ` by ${escapeHtml(d.completedByName)}` : '';
-          const completedDate = d.completedAt ? ' · ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
-          followUpBadge = `<span class="note-badge note-badge-done">✅ Done${completer}${completedDate}</span>`;
+          const completedDate = d.completedAt ? ' Â· ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+          followUpBadge = `<span class="note-badge note-badge-done">âœ… Done${completer}${completedDate}</span>`;
         } else {
-          const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
-          followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
+          const dueLabel = d.dueDate ? ` Â· Due ${d.dueDate}` : '';
+          followUpBadge = `<span class="note-badge note-badge-followup">âš‘ Follow Up${dueLabel}</span>`;
         }
       }
-      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
+      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">ðŸš¨ Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
       const canDelete = (currentUserRole === 'admin');
@@ -3901,12 +4034,12 @@ async function loadVehicleNotes(vehicleId) {
           <div class="note-content">
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
-            <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
+            <div class="note-meta">ðŸ‘¤ ${escapeHtml(d.createdByName || 'Unknown')} Â· ${dateStr}</div>
           </div>
           <div class="note-actions">
-            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">✓ Done</button>` : ''}
-            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markNoteUndone('${doc.id}')">↩ Undo</button>` : ''}
-            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'vehicleNotes')">✏️ Edit</button>` : ''}
+            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">âœ“ Done</button>` : ''}
+            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markNoteUndone('${doc.id}')">â†© Undo</button>` : ''}
+            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'vehicleNotes')">âœï¸ Edit</button>` : ''}
             ${canDelete ? `<button class="btn btn-sm btn-danger" onclick="deleteNote('${doc.id}')">Delete</button>` : ''}
           </div>
         </div>`;
@@ -3952,7 +4085,7 @@ window.deleteNote = async function(docId) {
 // ================================================================
 
 function complianceMonthStatus(yyyyMM) {
-  if (!yyyyMM) return { label: '—', cls: '', nextDue: '' };
+  if (!yyyyMM) return { label: 'â€”', cls: '', nextDue: '' };
   const [y, m] = yyyyMM.split('-').map(Number);
   // Last day of that month
   const expDate = new Date(Date.UTC(y, m, 0, 23, 59, 59));
@@ -3962,7 +4095,7 @@ function complianceMonthStatus(yyyyMM) {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const nextDue = `${MONTHS[m - 1]} ${y + 1}`;
   if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent', nextDue };
-  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn', nextDue };
+  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d âš ï¸`, cls: 'compliance-warn', nextDue };
   return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok', nextDue };
 }
 
@@ -3984,11 +4117,19 @@ function loadComplianceData(v) {
       statusEl.textContent = label;
       statusEl.className = 'compliance-status ' + cls;
       if (cls === 'compliance-warn' || cls === 'compliance-urgent') {
-        warnings.push(label + ' — ' + id.replace('compliance-', ''));
+        warnings.push(label + ' â€” ' + id.replace('compliance-', ''));
       }
       if (nextId) {
         const nextEl = $(nextId);
-        if (nextEl) nextEl.textContent = val ? `Next due: ${nextDue}` : '';
+        if (nextEl) {
+          if (val) {
+            const [ny, nm] = val.split('-').map(Number);
+            const nextYYYYMM = `${ny + 1}-${String(nm).padStart(2, '0')}`;
+            nextEl.innerHTML = `<span class="compliance-next-label">Next renewal:</span> <strong>${nextDue}</strong> <span class="compliance-next-yyyymm">(${nextYYYYMM})</span>`;
+          } else {
+            nextEl.innerHTML = '';
+          }
+        }
       }
     }
   });
@@ -3999,7 +4140,7 @@ function loadComplianceData(v) {
   if (docLink) {
     if (v.complianceInsuranceDoc) {
       const name = v.complianceInsuranceDocName || 'Policy Document';
-      docLink.innerHTML = `<a href="${escapeHtml(v.complianceInsuranceDoc)}" target="_blank" class="compliance-doc-anchor">📎 ${escapeHtml(name)}</a>`;
+      docLink.innerHTML = `<a href="${escapeHtml(v.complianceInsuranceDoc)}" target="_blank" class="compliance-doc-anchor">ðŸ“Ž ${escapeHtml(name)}</a>`;
     } else {
       docLink.innerHTML = '<span style="font-size:0.73rem;color:#9ca3af;">No document uploaded</span>';
     }
@@ -4012,7 +4153,7 @@ function loadComplianceData(v) {
       banner.className = 'compliance-reminder-banner';
       section.querySelector('.section-header').insertAdjacentElement('afterend', banner);
     }
-    banner.textContent = '⚠️ Action needed: ' + warnings.join(' · ');
+    banner.textContent = 'âš ï¸ Action needed: ' + warnings.join(' Â· ');
   } else if (banner) {
     banner.remove();
   }
@@ -4032,11 +4173,44 @@ $('btn-save-compliance').addEventListener('click', async () => {
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, data);
     loadComplianceData(selectedVehicle);
-    toast('Compliance info saved! ✅', 'success');
+    toast('Compliance info saved! âœ…', 'success');
   } catch (e) {
     console.error('Save compliance error:', e);
     toast('Failed to save compliance info.', 'error');
   }
+});
+
+// Live preview next-due when compliance month inputs change
+function updateComplianceLivePreview(inputId, statusId, nextId) {
+  const input = $(inputId);
+  const statusEl = $(statusId);
+  const nextEl = $(nextId);
+  if (!input) return;
+  const val = input.value;
+  if (!val) {
+    if (statusEl) { statusEl.textContent = ''; statusEl.className = 'compliance-status'; }
+    if (nextEl) nextEl.innerHTML = '';
+    return;
+  }
+  const { label, cls, nextDue } = complianceMonthStatus(val);
+  if (statusEl) { statusEl.textContent = label; statusEl.className = 'compliance-status ' + cls; }
+  if (nextEl) {
+    const [y, m] = val.split('-').map(Number);
+    const nextYYYYMM = `${y + 1}-${String(m).padStart(2, '0')}`;
+    nextEl.innerHTML = `<span class="compliance-next-label">Next renewal:</span> <strong>${nextDue}</strong> <span class="compliance-next-yyyymm">(${nextYYYYMM})</span>`;
+  }
+}
+
+$('compliance-safety').addEventListener('change', () => updateComplianceLivePreview('compliance-safety', 'safety-status', 'safety-next-due'));
+$('compliance-registration').addEventListener('change', () => updateComplianceLivePreview('compliance-registration', 'registration-status', 'registration-next-due'));
+$('compliance-insurance').addEventListener('change', () => {
+  const val = $('compliance-insurance').value;
+  const statusEl = $('insurance-status');
+  if (!statusEl) return;
+  if (!val) { statusEl.textContent = ''; statusEl.className = 'compliance-status'; return; }
+  const { label, cls } = complianceMonthStatus(val);
+  statusEl.textContent = label;
+  statusEl.className = 'compliance-status ' + cls;
 });
 
 // Insurance document upload
@@ -4051,7 +4225,7 @@ $('compliance-insurance-upload').addEventListener('change', async function(e) {
   const fileName = `insurance_${Date.now()}.${safeExt}`;
   const storagePath = `vehicles/${plate}/documents/${fileName}`;
   try {
-    showLoading('Uploading document…');
+    showLoading('Uploading documentâ€¦');
     const ref = st.ref(storagePath);
     await ref.put(file, { contentType: file.type });
     const url = await ref.getDownloadURL();
@@ -4061,7 +4235,7 @@ $('compliance-insurance-upload').addEventListener('change', async function(e) {
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, docData);
     loadComplianceData(selectedVehicle);
-    toast('Insurance document uploaded! ✅', 'success');
+    toast('Insurance document uploaded! âœ…', 'success');
   } catch (err) {
     console.error('Insurance doc upload error:', err);
     toast('Failed to upload document.', 'error');
@@ -4098,7 +4272,7 @@ window.toggleCompletedBucket = function() {
   if (!list) return;
   const open = list.style.display !== 'none';
   list.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.textContent = open ? '▶' : '▼';
+  if (arrow) arrow.textContent = open ? 'â–¶' : 'â–¼';
 };
 
 // Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
@@ -4291,30 +4465,30 @@ function renderTaskAgenda(allItems) {
       metaLabel = '\ud83d\udcdd General';
     }
 
-    const urgentTag = item.urgent ? ' 🚨' : (item.taskStatus === 'monitoring' ? ' 🟢' : '');
-    const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
-    const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
+    const urgentTag = item.urgent ? ' ðŸš¨' : (item.taskStatus === 'monitoring' ? ' ðŸŸ¢' : '');
+    const creatorLabel = item.createdByName ? ' Â· ðŸ‘¤ ' + escapeHtml(item.createdByName) : '';
+    const dueLabelStr = item.dueDate ? ` Â· ðŸ“… ${item.dueDate}` : '';
 
     // Status move buttons
     let statusBtns = '';
     const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
     if (canManage) {
       if (taskStatus !== 'urgent') {
-        statusBtns += `<button class="task-status-move-btn urgent-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','urgent')" title="Move to Urgent">🚨</button>`;
+        statusBtns += `<button class="task-status-move-btn urgent-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','urgent')" title="Move to Urgent">ðŸš¨</button>`;
       }
       if (taskStatus !== 'scheduled') {
-        statusBtns += `<button class="task-status-move-btn scheduled-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','scheduled')" title="Move to Scheduled">🔵</button>`;
+        statusBtns += `<button class="task-status-move-btn scheduled-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','scheduled')" title="Move to Scheduled">ðŸ”µ</button>`;
       }
       if (taskStatus !== 'monitoring') {
-        statusBtns += `<button class="task-status-move-btn monitoring-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','monitoring')" title="Move to Monitoring">🟢</button>`;
+        statusBtns += `<button class="task-status-move-btn monitoring-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','monitoring')" title="Move to Monitoring">ðŸŸ¢</button>`;
       }
     }
 
-    const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
-    const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
+    const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">â‹¯</button>`;
+    const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">âœ“ Done</button>`;
     return `
       <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}" data-vid-key="${item.vehicleId || ''}">
-        <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
+        <div class="swipe-action-bg"><span>ðŸ“…</span>Reschedule</div>
         <div class="followup-item${extraClass}"${vidAttr}>
           <div class="followup-info">
             <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
@@ -4366,7 +4540,7 @@ function renderTaskAgenda(allItems) {
   renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
   renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
 
-  // Click task row → jump to calendar day (if has dueDate) or go to vehicle
+  // Click task row â†’ jump to calendar day (if has dueDate) or go to vehicle
   document.querySelectorAll('#task-panel-overlay .followup-item').forEach(item => {
     item.addEventListener('click', (e) => {
       if (e.target.closest('button')) return;
@@ -4396,9 +4570,9 @@ function renderCompletedBucket(completedItems) {
   completedItems.forEach(item => {
     const isVehicle = item.type === 'vehicle';
     const v = isVehicle ? vehiclesCache.find(x => x.id === item.vehicleId) : null;
-    const metaLabel = isVehicle ? '🚗 ' + escapeHtml(v ? v.plate : 'Unknown') : '📝 General';
-    const completedBy = item.completedByName ? ' · ✓ ' + escapeHtml(item.completedByName) : '';
-    const completedAt = item.completedAt ? ' · ' + new Date(item.completedAt.toDate()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE }) : '';
+    const metaLabel = isVehicle ? 'ðŸš— ' + escapeHtml(v ? v.plate : 'Unknown') : 'ðŸ“ General';
+    const completedBy = item.completedByName ? ' Â· âœ“ ' + escapeHtml(item.completedByName) : '';
+    const completedAt = item.completedAt ? ' Â· ' + new Date(item.completedAt.toDate()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE }) : '';
     const reopenFn = isVehicle ? `agendaMarkUndone('${item.id}','vehicleNotes')` : `agendaMarkUndone('${item.id}','generalNotes')`;
     html += `
       <div class="completed-task-item">
@@ -4406,7 +4580,7 @@ function renderCompletedBucket(completedItems) {
           <div class="completed-task-text">${escapeHtml(item.text)}</div>
           <div class="completed-task-meta">${metaLabel}${completedBy}${completedAt}</div>
         </div>
-        ${canManage ? `<button class="btn btn-sm btn-undo" onclick="${reopenFn}" title="Reopen">↩ Reopen</button>` : ''}
+        ${canManage ? `<button class="btn btn-sm btn-undo" onclick="${reopenFn}" title="Reopen">â†© Reopen</button>` : ''}
       </div>`;
   });
   listEl.innerHTML = html;
@@ -4428,7 +4602,7 @@ window.moveTaskStatus = async function(docId, col, newStatus) {
       updates.isFollowUp = true;
     }
     await db.collection(col).doc(docId).update(updates);
-    const label = newStatus === 'urgent' ? '🚨 Urgent' : newStatus === 'monitoring' ? '🟢 Monitoring' : '🔵 Scheduled';
+    const label = newStatus === 'urgent' ? 'ðŸš¨ Urgent' : newStatus === 'monitoring' ? 'ðŸŸ¢ Monitoring' : 'ðŸ”µ Scheduled';
     toast(`Moved to ${label}`, 'success');
     loadDashboardFollowUps();
     if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
@@ -4460,7 +4634,7 @@ async function agendaMarkDoneVehicle(docId) {
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Task completed! ✓', 'success');
+    toast('Task completed! âœ“', 'success');
     loadDashboardFollowUps();
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
@@ -4481,7 +4655,7 @@ async function agendaMarkDoneGeneral(docId) {
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Task completed! ✓', 'success');
+    toast('Task completed! âœ“', 'success');
     loadDashboardFollowUps();
     loadGeneralNotes();
   } catch (err) {
@@ -4549,16 +4723,16 @@ window.openNoteEditModal = async function(docId, collection) {
   overlay.className = 'note-edit-overlay';
   overlay.innerHTML = `
     <div class="note-edit-modal">
-      <h4>✏️ Edit Note</h4>
+      <h4>âœï¸ Edit Note</h4>
       <div class="form-group">
         <label class="note-followup-label">
-          <input type="checkbox" id="ne-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
+          <input type="checkbox" id="ne-followup" ${d.isFollowUp ? 'checked' : ''}> âš‘ Follow Up Task
         </label>
       </div>
       <div id="ne-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
         <div class="form-group">
           <label class="note-followup-label">
-            <input type="checkbox" id="ne-urgent" ${d.urgent ? 'checked' : ''}> 🚨 Urgent
+            <input type="checkbox" id="ne-urgent" ${d.urgent ? 'checked' : ''}> ðŸš¨ Urgent
           </label>
         </div>
         <div class="form-group">
@@ -4670,7 +4844,7 @@ function renderUrgentBanner(items) {
     const isOverdue = item.dueDate && item.dueDate < today;
     let reassignBtn = '';
     if (currentUserRole === 'admin' && isOverdue) {
-      reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅 Reassign</button>`;
+      reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">ðŸ“… Reassign</button>`;
     }
 
     html += `
@@ -4802,20 +4976,20 @@ window.showCalendarDetail = function(dateStr) {
     const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
     const isOverdue = item.dueDate < today;
     const v = isVehicle ? vehiclesCache.find(x => x.id === item.vehicleId) : null;
-    const metaLabel = isVehicle ? '🚗 ' + escapeHtml(v ? v.plate : 'Unknown') : '📝 General';
-    const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
-    const urgentTag = item.urgent ? '<span class="cal-urgent-tag">🚨</span> ' : '';
+    const metaLabel = isVehicle ? 'ðŸš— ' + escapeHtml(v ? v.plate : 'Unknown') : 'ðŸ“ General';
+    const creatorLabel = item.createdByName ? ' Â· ðŸ‘¤ ' + escapeHtml(item.createdByName) : '';
+    const urgentTag = item.urgent ? '<span class="cal-urgent-tag">ðŸš¨</span> ' : '';
     const timeLabel = item.dueTime ? `<span class="cal-item-time">${item.dueTime}</span> ` : '';
     let actionBtns = '';
     if (isAdmin && isOverdue) {
-      actionBtns += `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅</button>`;
+      actionBtns += `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">ðŸ“…</button>`;
     }
     if (canAdd) {
-      actionBtns += `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openNoteEditModal('${item.id}', '${item.collection}')" title="Edit">✏️</button>`;
+      actionBtns += `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openNoteEditModal('${item.id}', '${item.collection}')" title="Edit">âœï¸</button>`;
     }
     if (isAdmin) {
       const delFn = isVehicle ? 'deleteNote' : 'deleteGeneralNote';
-      actionBtns += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); ${delFn}('${item.id}')" title="Delete">✕</button>`;
+      actionBtns += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); ${delFn}('${item.id}')" title="Delete">âœ•</button>`;
     }
     return `
       <div class="cal-detail-item${item.urgent ? ' cal-detail-urgent' : ''}${isOverdue ? ' cal-detail-overdue' : ''}">
@@ -4834,11 +5008,11 @@ window.showCalendarDetail = function(dateStr) {
   if (canAdd) {
     html += `
       <div class="cal-add-task-form">
-        <h5>➕ Add Task for this date</h5>
+        <h5>âž• Add Task for this date</h5>
         <textarea id="cal-add-task-text" class="note-textarea" placeholder="Enter task description..." maxlength="500" rows="2"></textarea>
         <div class="cal-add-task-controls">
           <input type="time" id="cal-add-task-time" class="cal-time-input" title="Set time (optional)">
-          <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> 🚨 Urgent</label>
+          <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> ðŸš¨ Urgent</label>
           <button class="btn btn-sm btn-primary" onclick="calendarAddTask('${dateStr}')">Save Task</button>
         </div>
       </div>`;
@@ -4848,7 +5022,7 @@ window.showCalendarDetail = function(dateStr) {
   const timedTasks = tasks.filter(t => t.dueTime).sort((a, b) => a.dueTime.localeCompare(b.dueTime));
   const untimedTasks = tasks.filter(t => !t.dueTime).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
 
-  // Hourly blocks 6 AM – 9 PM
+  // Hourly blocks 6 AM â€“ 9 PM
   const HOUR_START = 6, HOUR_END = 21;
   const earlyTasks = timedTasks.filter(t => t.dueTime < '06:00');
   const lateTasks  = timedTasks.filter(t => t.dueTime >= '22:00');
@@ -4937,7 +5111,7 @@ window.openReassignTask = function(docId, collection, currentDueDate) {
   overlay.className = 'reassign-modal-overlay';
   overlay.innerHTML = `
     <div class="reassign-modal">
-      <h4>📅 Reassign Task</h4>
+      <h4>ðŸ“… Reassign Task</h4>
       <p>Current due date: <strong>${currentDueDate}</strong></p>
       <div class="form-group">
         <label>New Due Date</label>
@@ -5015,7 +5189,7 @@ window.jumpToCalendarDay = function(dateStr) {
   setTimeout(() => window.showCalendarDetail(dateStr), 200);
 };
 
-// ---- Task context menu (⋯ button on each agenda item) ----
+// ---- Task context menu (â‹¯ button on each agenda item) ----
 window.openTaskContextMenu = function(docId, col, triggerBtn) {
   // Remove any existing menus
   document.querySelectorAll('.task-ctx-menu').forEach(m => m.remove());
@@ -5023,17 +5197,17 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
   const menu = document.createElement('div');
   menu.className = 'task-ctx-menu';
   menu.innerHTML = `
-    <button class="task-ctx-item" id="ctx-edit">✏️ Edit Task</button>
-    <button class="task-ctx-item" id="ctx-date">📅 Change Date</button>
+    <button class="task-ctx-item" id="ctx-edit">âœï¸ Edit Task</button>
+    <button class="task-ctx-item" id="ctx-date">ðŸ“… Change Date</button>
     <div class="task-ctx-divider"></div>
     <div class="task-ctx-label">Move to:</div>
-    <button class="task-ctx-item ctx-move-urgent" id="ctx-move-urgent">🚨 Urgent</button>
-    <button class="task-ctx-item ctx-move-scheduled" id="ctx-move-scheduled">🔵 Scheduled</button>
-    <button class="task-ctx-item ctx-move-monitoring" id="ctx-move-monitoring">🟢 Monitoring</button>
-    <button class="task-ctx-item ctx-move-done" id="ctx-move-done">✅ Mark Complete</button>
+    <button class="task-ctx-item ctx-move-urgent" id="ctx-move-urgent">ðŸš¨ Urgent</button>
+    <button class="task-ctx-item ctx-move-scheduled" id="ctx-move-scheduled">ðŸ”µ Scheduled</button>
+    <button class="task-ctx-item ctx-move-monitoring" id="ctx-move-monitoring">ðŸŸ¢ Monitoring</button>
+    <button class="task-ctx-item ctx-move-done" id="ctx-move-done">âœ… Mark Complete</button>
     <div class="task-ctx-divider"></div>
-    <button class="task-ctx-item" id="ctx-vehicle">🚗 Go to Vehicle</button>
-    <button class="task-ctx-item task-ctx-danger" id="ctx-delete">🗑️ Delete Task</button>
+    <button class="task-ctx-item" id="ctx-vehicle">ðŸš— Go to Vehicle</button>
+    <button class="task-ctx-item task-ctx-danger" id="ctx-delete">ðŸ—‘ï¸ Delete Task</button>
   `;
   document.body.appendChild(menu);
 
@@ -5112,20 +5286,20 @@ window.openFullEditTaskModal = function(docId, col, d) {
   overlay.className = 'task-full-edit-overlay';
   overlay.innerHTML = `
     <div class="task-full-edit-modal">
-      <h4>✏️ Edit Task</h4>
+      <h4>âœï¸ Edit Task</h4>
       <div class="form-group">
         <label>Task Text</label>
         <textarea id="tfe-text" class="note-textarea" rows="3" maxlength="500">${escapeHtml(d.text || '')}</textarea>
       </div>
       <div class="form-group">
         <label class="note-followup-label">
-          <input type="checkbox" id="tfe-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
+          <input type="checkbox" id="tfe-followup" ${d.isFollowUp ? 'checked' : ''}> âš‘ Follow Up Task
         </label>
       </div>
       <div id="tfe-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
         <div class="form-group">
           <label class="note-followup-label">
-            <input type="checkbox" id="tfe-urgent" ${d.urgent ? 'checked' : ''}> 🚨 Urgent
+            <input type="checkbox" id="tfe-urgent" ${d.urgent ? 'checked' : ''}> ðŸš¨ Urgent
           </label>
         </div>
         <div class="form-group">
@@ -5176,7 +5350,7 @@ window.openFullEditTaskModal = function(docId, col, d) {
   };
 };
 
-// ---- Reschedule task (swipe / hold) — works for all roles ----
+// ---- Reschedule task (swipe / hold) â€” works for all roles ----
 window.openRescheduleTask = function(docId, col, currentDue) {
   if (!docId || !col) return;
   const existing = document.querySelector('.reassign-modal-overlay');
@@ -5185,7 +5359,7 @@ window.openRescheduleTask = function(docId, col, currentDue) {
   overlay.className = 'reassign-modal-overlay';
   overlay.innerHTML = `
     <div class="reassign-modal">
-      <h4>📅 Reschedule Task</h4>
+      <h4>ðŸ“… Reschedule Task</h4>
       ${currentDue ? `<p>Current due date: <strong>${currentDue}</strong></p>` : '<p>Set a due date for this task</p>'}
       <div class="form-group">
         <label>New Due Date</label>
@@ -5348,26 +5522,26 @@ async function loadGeneralNotes() {
       if (d.isFollowUp) {
         if (d.done) {
           const completer = d.completedByName ? ` by ${escapeHtml(d.completedByName)}` : '';
-          const completedDate = d.completedAt ? ' · ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
-          followUpBadge = `<span class="note-badge note-badge-done">✅ Done${completer}${completedDate}</span>`;
+          const completedDate = d.completedAt ? ' Â· ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+          followUpBadge = `<span class="note-badge note-badge-done">âœ… Done${completer}${completedDate}</span>`;
         } else {
-          const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
-          followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
+          const dueLabel = d.dueDate ? ` Â· Due ${d.dueDate}` : '';
+          followUpBadge = `<span class="note-badge note-badge-followup">âš‘ Follow Up${dueLabel}</span>`;
         }
       }
-      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
+      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">ðŸš¨ Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       html += `
         <div class="note-item${doneClass}">
           <div class="note-content">
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
-            <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
+            <div class="note-meta">ðŸ‘¤ ${escapeHtml(d.createdByName || 'Unknown')} Â· ${dateStr}</div>
           </div>
           <div class="note-actions">
-            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markGeneralNoteDone('${doc.id}')">✓ Done</button>` : ''}
-            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markGeneralNoteUndone('${doc.id}')">↩ Undo</button>` : ''}
-            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'generalNotes')">✏️ Edit</button>` : ''}
+            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markGeneralNoteDone('${doc.id}')">âœ“ Done</button>` : ''}
+            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markGeneralNoteUndone('${doc.id}')">â†© Undo</button>` : ''}
+            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'generalNotes')">âœï¸ Edit</button>` : ''}
             ${canDelete ? `<button class="btn btn-sm btn-danger" onclick="deleteGeneralNote('${doc.id}')">Delete</button>` : ''}
           </div>
         </div>`;
@@ -5452,7 +5626,7 @@ async function loadMailboxUsers() {
   if (!sel) return;
   try {
     const snap = await db.collection('users').orderBy('displayName').get();
-    sel.innerHTML = '<option value="">— Select recipient —</option>';
+    sel.innerHTML = '<option value="">â€” Select recipient â€”</option>';
     snap.forEach(doc => {
       if (doc.id === currentUser.uid) return;
       const d = doc.data();
@@ -5502,7 +5676,7 @@ function renderMailboxInbox(snap) {
     const unread = !m.read;
     const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
     const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    const preview = m.body ? m.body.substring(0, 90) + (m.body.length > 90 ? '…' : '') : '';
+    const preview = m.body ? m.body.substring(0, 90) + (m.body.length > 90 ? 'â€¦' : '') : '';
     return `
       <div class="mb-message-item ${unread ? 'mb-unread' : ''}" id="mb-msg-${m.id}">
         <div class="mb-msg-header" onclick="openMessage('${m.id}')">
@@ -5511,8 +5685,8 @@ function renderMailboxInbox(snap) {
         </div>
         <div class="mb-msg-preview" onclick="openMessage('${m.id}')">${escapeHtml(preview)}</div>
         <div class="mb-msg-actions">
-          <button class="btn btn-sm btn-outline" onclick="replyToMessage('${m.from}', '${escapeHtml((m.fromName||'').replace(/'/g,''))}')">↩ Reply</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteMessage('${m.id}')">🗑️</button>
+          <button class="btn btn-sm btn-outline" onclick="replyToMessage('${m.from}', '${escapeHtml((m.fromName||'').replace(/'/g,''))}')">â†© Reply</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteMessage('${m.id}')">ðŸ—‘ï¸</button>
         </div>
       </div>`;
   }).join('');
@@ -5542,7 +5716,7 @@ async function loadMailboxSent() {
     list.innerHTML = msgs.map(m => {
       const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
       const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const preview = m.body ? m.body.substring(0, 100) + (m.body.length > 100 ? '…' : '') : '';
+      const preview = m.body ? m.body.substring(0, 100) + (m.body.length > 100 ? 'â€¦' : '') : '';
       return `
         <div class="mb-message-item mb-sent-item">
           <div class="mb-msg-header">
@@ -5612,7 +5786,7 @@ window.sendMailMessage = async function() {
     });
     body.value = '';
     sel.value = '';
-    toast('Message sent! ✉️', 'success');
+    toast('Message sent! âœ‰ï¸', 'success');
     loadMailboxSent();
     switchMailTab('sent');
   } catch (e) {
@@ -5764,12 +5938,12 @@ function renderTimeClock() {
   const dates = getWeekDates(currentWeekOffset);
   const isCurrentWeek = currentWeekOffset === 0;
 
-  // ── Week header label ──
+  // â”€â”€ Week header label â”€â”€
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmtD = (str) => { const [, mo, d] = str.split('-'); return `${MONTHS[+mo - 1]} ${+d}`; };
-  const weekLabel = `${fmtD(dates[0])} – ${fmtD(dates[6])}, ${dates[6].slice(0, 4)}`;
+  const weekLabel = `${fmtD(dates[0])} â€“ ${fmtD(dates[6])}, ${dates[6].slice(0, 4)}`;
 
-  // ── Weekly grid ──
+  // â”€â”€ Weekly grid â”€â”€
   const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let weekRows = '';
   let totalWeekMs = 0, totalGoal = 0, totalAchieved = 0;
@@ -5788,21 +5962,21 @@ function renderTimeClock() {
     const dayLabel = `${DAYS[i]} ${+mo}/${+dy}`;
     const hasActive = isToday && dd?.activeSession;
     const hoursStr = netMs > 0
-      ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">⏱</span>' : '')
-      : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
-    const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
+      ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">â±</span>' : '')
+      : (hasActive ? '<span class="tc-live-dot">â± In Progress</span>' : 'â€”');
+    const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : 'â€”';
     const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
     weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${hasSessions && !isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
-      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}${hasSessions && !isToday ? ' <span class="tc-expand-hint">›</span>' : ''}</span>
+      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}${hasSessions && !isToday ? ' <span class="tc-expand-hint">â€º</span>' : ''}</span>
       <span class="tc-day-hours">${hoursStr}</span>
       <span class="tc-day-rev">${revStr}</span>
     </div>`;
   }
   const totalRevStr = totalGoal > 0
     ? `$${Number(totalAchieved).toLocaleString()} / $${Number(totalGoal).toLocaleString()}`
-    : '—';
+    : 'â€”';
 
-  // ── Today section (only on current week) ──
+  // â”€â”€ Today section (only on current week) â”€â”€
   let todaySectionHTML = '';
   if (isCurrentWeek) {
     const todayData = weeklyTimeclockData[today] || null;
@@ -5817,21 +5991,21 @@ function renderTimeClock() {
         const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
         const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
         const inStr = inT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-        const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+        const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : 'â€”';
         const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
           const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
           const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
           return sum + (be - bs);
         }, 0);
         const sessMs = outT ? Math.max(0, (outT - inT) - brkMs) : 0;
-        const schedNote = s.scheduledStart ? ` · sched ${s.scheduledStart}` : '';
+        const schedNote = s.scheduledStart ? ` Â· sched ${s.scheduledStart}` : '';
         sessionsHTML += `<div class="tc-session-row">
           <span class="tc-session-num">Session ${idx + 1}${schedNote}</span>
-          <span class="tc-session-time">${inStr} – ${outStr}</span>
+          <span class="tc-session-time">${inStr} â€“ ${outStr}</span>
           <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
           <span class="tc-session-actions">
-            <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${today}',${idx})">✏️</button>
-            <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${today}',${idx})">🗑️</button>
+            <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${today}',${idx})">âœï¸</button>
+            <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${today}',${idx})">ðŸ—‘ï¸</button>
           </span>
         </div>`;
       });
@@ -5859,9 +6033,9 @@ function renderTimeClock() {
         const [sh, sm] = activeSession.scheduledStart.split(':').map(Number);
         const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: TC_TIMEZONE }));
         const diffMin = Math.round(((inHST.getHours() * 60 + inHST.getMinutes()) - (sh * 60 + sm)));
-        schedNote = diffMin === 0 ? ' · ✅ On time'
-          : diffMin > 0 ? ` · <span class="tc-late">⚠️ ${diffMin}m late</span>`
-          : ` · <span class="tc-early">🌟 ${Math.abs(diffMin)}m early</span>`;
+        schedNote = diffMin === 0 ? ' Â· âœ… On time'
+          : diffMin > 0 ? ` Â· <span class="tc-late">âš ï¸ ${diffMin}m late</span>`
+          : ` Â· <span class="tc-early">ðŸŒŸ ${Math.abs(diffMin)}m early</span>`;
       }
 
       const currentBreakStart = onBreak && activeSession.currentBreakStart
@@ -5872,7 +6046,7 @@ function renderTimeClock() {
         <div class="tc-status ${onBreak ? 'tc-status-break' : 'tc-status-in'}">
           <div class="tc-status-dot ${onBreak ? 'tc-dot-yellow' : 'tc-dot-green'}"></div>
           <div>
-            <div class="tc-status-label">${onBreak ? '☕ On Break' : `🟢 Session ${pastSessions.length + 1} Active`}</div>
+            <div class="tc-status-label">${onBreak ? 'â˜• On Break' : `ðŸŸ¢ Session ${pastSessions.length + 1} Active`}</div>
             <div class="tc-clock-time">Since ${clockInStr}${schedNote}</div>
             <div class="tc-clock-time">${breakLabel}</div>
           </div>
@@ -5883,21 +6057,21 @@ function renderTimeClock() {
         </div>
         <div class="tc-action-row">
           ${isOwnClock ? (onBreak
-            ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">▶️ End Break</button>`
-            : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`)
+            ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">â–¶ï¸ End Break</button>`
+            : `<button class="btn tc-break-btn" onclick="startBreak()">â˜• Start Break</button>`)
             : ''}
-          ${isOwnClock ? `<button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>` : ''}
+          ${isOwnClock ? `<button class="btn btn-danger tc-btn-half" onclick="clockOut()">â¹ï¸ Punch Out</button>` : ''}
         </div>`;
       startElapsedTimer(clockInTime, activeSession.breaks || [], currentBreakStart);
     } else if (isOwnClock) {
       activeHTML = `
         <div class="tc-fields">
           <div class="tc-field-row">
-            <label class="tc-label">🕐 Scheduled Start</label>
+            <label class="tc-label">ðŸ• Scheduled Start</label>
             <input type="time" id="tc-scheduled-input" class="tc-input-time">
           </div>
         </div>
-        <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
+        <button class="btn btn-primary tc-btn" onclick="clockIn()">â±ï¸ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
     }
 
     // Revenue section (read-only for view-all)
@@ -5907,15 +6081,15 @@ function renderTimeClock() {
       <div class="tc-revenue-section">
         <div class="tc-rev-row">
           <div class="tc-field-row">
-            <label class="tc-label">🎯 Daily Goal</label>
+            <label class="tc-label">ðŸŽ¯ Daily Goal</label>
             <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${goal}"></div>
           </div>
           <div class="tc-field-row">
-            <label class="tc-label">💰 End of Day Revenue</label>
+            <label class="tc-label">ðŸ’° End of Day Revenue</label>
             <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0" value="${achieved}"></div>
           </div>
         </div>
-        <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">💾 Save Revenue</button>
+        <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">ðŸ’¾ Save Revenue</button>
       </div>` : (goal || achieved ? `
       <div class="tc-revenue-section" style="opacity:0.7;">
         <div style="font-size:0.78rem;color:#6b7280;">Revenue: $${Number(achieved||0).toLocaleString()} / $${Number(goal||0).toLocaleString()}</div>
@@ -5923,7 +6097,7 @@ function renderTimeClock() {
 
     todaySectionHTML = `
       <div class="tc-today-section">
-        <div class="tc-today-title">📅 Today — ${today}</div>
+        <div class="tc-today-title">ðŸ“… Today â€” ${today}</div>
         ${sessionsHTML}
         ${activeHTML}
         ${revenueHTML}
@@ -5932,7 +6106,7 @@ function renderTimeClock() {
 
   const selectorHTML = (currentUserCanViewAllTimeclocks && tcEmployees.length > 0) ? `
     <div class="tc-user-selector-row">
-      <label class="tc-label" style="font-size:0.78rem;white-space:nowrap;">👥 Viewing:</label>
+      <label class="tc-label" style="font-size:0.78rem;white-space:nowrap;">ðŸ‘¥ Viewing:</label>
       <select class="tc-user-select" onchange="tcSwitchUser(this.value)">
         <option value="${currentUser.uid}"${isOwnClock ? ' selected' : ''}>My Timeclock</option>
         ${tcEmployees.filter(e => e.uid !== currentUser.uid).map(e =>
@@ -5942,22 +6116,22 @@ function renderTimeClock() {
     </div>` : '';
 
   const viewingBanner = !isOwnClock ? `
-    <div class="tc-viewing-banner">👁️ Viewing: ${escapeHtml(tcEmployees.find(e => e.uid === tcViewingUid)?.name || 'Employee')}</div>` : '';
+    <div class="tc-viewing-banner">ðŸ‘ï¸ Viewing: ${escapeHtml(tcEmployees.find(e => e.uid === tcViewingUid)?.name || 'Employee')}</div>` : '';
 
   content.innerHTML = `
     ${selectorHTML}
     ${viewingBanner}
     <div class="tc-week-nav">
-      <button class="tc-nav-btn" onclick="tcPrevWeek()">‹ Prev</button>
+      <button class="tc-nav-btn" onclick="tcPrevWeek()">â€¹ Prev</button>
       <span class="tc-week-label">${weekLabel}</span>
-      <button class="tc-nav-btn" onclick="tcNextWeek()"${isCurrentWeek ? ' disabled style="opacity:.4;cursor:default;"' : ''}>Next ›</button>
+      <button class="tc-nav-btn" onclick="tcNextWeek()"${isCurrentWeek ? ' disabled style="opacity:.4;cursor:default;"' : ''}>Next â€º</button>
     </div>
     <div class="tc-week-grid">
       <div class="tc-week-header"><span>Day</span><span>Hours</span><span>Revenue</span></div>
       ${weekRows}
       <div class="tc-week-total">
         <span>Week Total</span>
-        <span>${totalWeekMs > 0 ? fmtMs(totalWeekMs) : '—'}</span>
+        <span>${totalWeekMs > 0 ? fmtMs(totalWeekMs) : 'â€”'}</span>
         <span>${totalRevStr}</span>
       </div>
     </div>
@@ -5995,7 +6169,7 @@ window.clockIn = async function() {
         revenueAchieved: null
       });
     }
-    toast('Punched in! ⏱️', 'success');
+    toast('Punched in! â±ï¸', 'success');
     await loadWeekData(0);
   } catch (e) {
     console.error('Clock in error:', e);
@@ -6012,7 +6186,7 @@ window.startBreak = async function() {
       'activeSession.onBreak': true,
       'activeSession.currentBreakStart': firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Break started ☕', 'info');
+    toast('Break started â˜•', 'info');
     await loadWeekData(0);
   } catch (e) {
     console.error('Start break error:', e);
@@ -6037,7 +6211,7 @@ window.endBreak = async function() {
       'activeSession.currentBreakStart': null,
       'activeSession.breaks': breaks
     });
-    toast('Break ended ▶️', 'success');
+    toast('Break ended â–¶ï¸', 'success');
     await loadWeekData(0);
   } catch (e) {
     console.error('End break error:', e);
@@ -6069,7 +6243,7 @@ window.clockOut = async function() {
   try {
     await db.collection('timeclock').doc(docId).update({ sessions, activeSession: null });
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
-    toast('Punched out! ✅', 'success');
+    toast('Punched out! âœ…', 'success');
     await loadWeekData(0);
   } catch (e) {
     console.error('Clock out error:', e);
@@ -6095,7 +6269,7 @@ window.tcSaveRevenue = async function() {
         sessions: [], activeSession: null, revenueGoal: goal, revenueAchieved: achieved
       });
     }
-    toast('Revenue saved! 💰', 'success');
+    toast('Revenue saved! ðŸ’°', 'success');
     await loadWeekData(currentWeekOffset);
   } catch (e) {
     console.error('Save revenue error:', e);
@@ -6111,7 +6285,7 @@ window.tcSwitchUser = async function(uid) {
   await loadWeekData(0);
 };
 
-// ── Expand past day into modal ──
+// â”€â”€ Expand past day into modal â”€â”€
 window.tcExpandDay = function(date) {
   const dd = weeklyTimeclockData[date];
   if (!dd) return;
@@ -6125,7 +6299,7 @@ window.tcExpandDay = function(date) {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
     const inStr = inT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' });
-    const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : '—';
+    const outStr = outT ? outT.toLocaleTimeString('en-US', { timeZone: TC_TIMEZONE, hour: '2-digit', minute: '2-digit' }) : 'â€”';
     const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
       const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
       const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
@@ -6134,12 +6308,12 @@ window.tcExpandDay = function(date) {
     const sessMs = outT ? Math.max(0, (outT - inT) - brkMs) : 0;
     return `<div class="tc-session-row">
       <span class="tc-session-num">Session ${idx + 1}</span>
-      <span class="tc-session-time">${inStr} – ${outStr}</span>
+      <span class="tc-session-time">${inStr} â€“ ${outStr}</span>
       <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
       <span class="tc-session-actions">
         ${isOwnClockExpand ? `
-        <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">✏️</button>
-        <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">🗑️</button>
+        <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">âœï¸</button>
+        <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">ðŸ—‘ï¸</button>
         ` : ''}
       </span>
     </div>`;
@@ -6156,7 +6330,7 @@ window.tcExpandDay = function(date) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:480px;">
       <div class="modal-header">
-        <h3>📅 ${dateLabel} Sessions</h3>
+        <h3>ðŸ“… ${dateLabel} Sessions</h3>
         <button class="modal-close" onclick="$('tc-day-overlay').style.display='none'">&times;</button>
       </div>
       <div class="modal-body">
@@ -6164,15 +6338,15 @@ window.tcExpandDay = function(date) {
         <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:flex;flex-direction:column;gap:10px;">
           <div class="tc-rev-row">
             <div class="tc-field-row">
-              <label class="tc-label">🎯 Daily Goal</label>
+              <label class="tc-label">ðŸŽ¯ Daily Goal</label>
               <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-goal-input" class="tc-input" min="0" step="100" value="${goalVal}"></div>
             </div>
             <div class="tc-field-row">
-              <label class="tc-label">💰 Revenue Achieved</label>
+              <label class="tc-label">ðŸ’° Revenue Achieved</label>
               <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-achieved-input" class="tc-input" min="0" step="100" value="${achVal}"></div>
             </div>
           </div>
-          <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenueForDate('${date}')">💾 Save Revenue</button>
+          <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenueForDate('${date}')">ðŸ’¾ Save Revenue</button>
         </div>
       </div>
     </div>`;
@@ -6188,7 +6362,7 @@ window.tcSaveRevenueForDate = async function(date) {
   const achieved = achStr !== '' && achStr != null ? parseFloat(achStr) : null;
   try {
     await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
-    toast('Revenue saved! 💰', 'success');
+    toast('Revenue saved! ðŸ’°', 'success');
     $('tc-day-overlay').style.display = 'none';
     await loadWeekData(currentWeekOffset);
   } catch (e) {
@@ -6240,26 +6414,26 @@ window.tcEditSession = function(date, idx) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:380px;">
       <div class="modal-header">
-        <h3>✏️ Edit Session — ${dateLabel}</h3>
+        <h3>âœï¸ Edit Session â€” ${dateLabel}</h3>
         <button class="modal-close" onclick="$('tc-edit-overlay').style.display='none'">&times;</button>
       </div>
       <div class="modal-body">
         <div class="tc-fields">
           <div class="tc-field-row">
-            <label class="tc-label">🕐 Scheduled Start</label>
+            <label class="tc-label">ðŸ• Scheduled Start</label>
             <input type="time" id="tce-sched" class="tc-input-time" value="${s.scheduledStart || ''}">
           </div>
           <div class="tc-field-row">
-            <label class="tc-label">⏱️ Punch In</label>
+            <label class="tc-label">â±ï¸ Punch In</label>
             <input type="time" id="tce-in" class="tc-input-time" value="${toHHMM(inT)}" required>
           </div>
           <div class="tc-field-row">
-            <label class="tc-label">⏹️ Punch Out</label>
+            <label class="tc-label">â¹ï¸ Punch Out</label>
             <input type="time" id="tce-out" class="tc-input-time" value="${outT ? toHHMM(outT) : ''}">
           </div>
         </div>
         <div style="margin-top:16px;display:flex;gap:8px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveEditSession('${date}',${idx})">💾 Save Changes</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveEditSession('${date}',${idx})">ðŸ’¾ Save Changes</button>
           <button class="btn btn-outline" style="flex:1;" onclick="$('tc-edit-overlay').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -6276,7 +6450,7 @@ window.tcSaveEditSession = async function(date, idx) {
   // Convert HH:MM in user's local timezone to Firestore Timestamp
   function toTimestamp(dateStr, timeStr) {
     if (!timeStr) return null;
-    // new Date('YYYY-MM-DDTHH:MM:00') parses as local browser time → correct for any TZ
+    // new Date('YYYY-MM-DDTHH:MM:00') parses as local browser time â†’ correct for any TZ
     return firebase.firestore.Timestamp.fromMillis(new Date(dateStr + 'T' + timeStr + ':00').getTime());
   }
   const clockIn = toTimestamp(date, inVal);
@@ -6291,7 +6465,7 @@ window.tcSaveEditSession = async function(date, idx) {
     const sessions = snap.data().sessions || [];
     sessions[idx] = { ...sessions[idx], clockIn, clockOut, scheduledStart: schedVal };
     await db.collection('timeclock').doc(docId).update({ sessions });
-    toast('Session updated! ✅', 'success');
+    toast('Session updated! âœ…', 'success');
     $('tc-edit-overlay').style.display = 'none';
     await loadWeekData(currentWeekOffset);
     const dayOverlay = $('tc-day-overlay');

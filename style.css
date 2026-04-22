@@ -3139,6 +3139,32 @@ body {
   justify-content: flex-end;
 }
 
+/* ============ INSPECTION PASS / FAIL ============ */
+.dmg-modal-pf { max-width: 500px; max-height: 90vh; overflow-y: auto; }
+.dmg-modal-header { margin-bottom: 10px; }
+.dmg-modal-header p { font-size: 0.82rem; color: #6b7280; margin: 4px 0 12px; }
+.dmg-pf-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.dmg-item { border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; background: #f9fafb; transition: border-color 0.15s; }
+.dmg-item-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; gap: 8px; }
+.dmg-item-label { font-size: 0.9rem; font-weight: 500; color: #374151; flex: 1; }
+.dmg-pf-btns { display: flex; gap: 6px; flex-shrink: 0; }
+.dmg-pass-btn, .dmg-fail-btn { padding: 5px 14px; border-radius: 6px; font-size: 0.8rem; font-weight: 700; cursor: pointer; border: 2px solid transparent; transition: all 0.15s; background: none; }
+.dmg-pass-btn { border-color: #86efac; color: #16a34a; background: #f0fdf4; }
+.dmg-pass-btn:hover { background: #dcfce7; }
+.dmg-fail-btn { border-color: #fca5a5; color: #dc2626; background: #fef2f2; }
+.dmg-fail-btn:hover { background: #fee2e2; }
+.dmg-state-pass { border-color: #86efac; background: #f0fdf4; }
+.dmg-state-pass .dmg-pass-btn { background: #16a34a; border-color: #16a34a; color: #fff; }
+.dmg-state-fail { border-color: #fca5a5; background: #fef2f2; }
+.dmg-state-fail .dmg-fail-btn { background: #dc2626; border-color: #dc2626; color: #fff; }
+.dmg-fail-details { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 8px; }
+.dmg-fail-notes { width: 100%; border: 1px solid #d1d5db; border-radius: 6px; padding: 6px 8px; font-size: 0.85rem; resize: vertical; min-height: 52px; box-sizing: border-box; font-family: inherit; }
+.dmg-fail-notes:focus { outline: none; border-color: #dc2626; }
+.dmg-fail-upload-label { display: inline-block; cursor: pointer; font-size: 0.78rem; color: #2563eb; padding: 4px 10px; border: 1px solid #93c5fd; border-radius: 5px; background: #eff6ff; transition: background 0.15s; }
+.dmg-fail-upload-label:hover { background: #dbeafe; }
+.dmg-fail-photo-previews { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.dmg-fail-preview-img { width: 64px; height: 64px; object-fit: cover; border-radius: 4px; border: 1px solid #e5e7eb; }
+
 /* ============ TASK STATUS TABS ============ */
 .task-status-tabs {
   display: flex;
@@ -3594,7 +3620,9 @@ body {
   padding: 1px 4px;
   line-height: 1.4;
 }
-.compliance-next-due { font-size: 0.72rem; color: #6b7280; margin-top: 2px; min-height: 14px; }
+.compliance-next-due { font-size: 0.8rem; color: #1d4ed8; font-weight: 600; margin-top: 4px; min-height: 16px; }
+.compliance-next-due .compliance-next-label { font-weight: 500; color: #374151; }
+.compliance-next-due .compliance-next-yyyymm { font-size: 0.72rem; color: #6b7280; font-weight: 400; }
 .compliance-doc-row { margin: 4px 0 2px; min-height: 16px; font-size: 0.75rem; }
 .compliance-doc-anchor { color: #2563eb; text-decoration: underline; }
 .compliance-upload-btn {
