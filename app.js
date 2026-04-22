@@ -4375,12 +4375,19 @@ let timeclockData = null;
 let weeklyTimeclockData = {};
 let currentWeekOffset = 0;
 const OWNER_EMAIL = 'mattaiscale@gmail.com';
+let currentTaskUserFilter = 'all'; // 'all' | uid — admin-only filter
 
 window.switchTaskTab = function(tab) {
   currentTaskTab = tab;
   document.querySelectorAll('.task-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
+  renderTaskAgenda(cachedTaskItems);
+};
+
+// Admin user-filter change handler
+window.applyTaskUserFilter = function(uid) {
+  currentTaskUserFilter = uid || 'all';
   renderTaskAgenda(cachedTaskItems);
 };
 
@@ -4531,8 +4538,14 @@ function renderTaskAgenda(allItems) {
   } else if (currentTaskTab === 'compliance') {
     items = allItems.filter(i => i.sourceType === 'compliance');
   } else if (currentTaskTab === 'mine') {
-    // Show tasks assigned to me OR unassigned (team tasks)
+    // Show tasks assigned to me OR unassigned (team tasks visible to everyone)
     items = allItems.filter(i => !i.assignedTo || i.assignedTo === currentUser.uid);
+  }
+
+  // Admin user-filter: when a specific user is selected in the dropdown,
+  // show tasks assigned to that user + all unassigned (team) tasks
+  if (currentUserRole === 'admin' && currentTaskUserFilter && currentTaskUserFilter !== 'all') {
+    items = items.filter(i => !i.assignedTo || i.assignedTo === currentTaskUserFilter);
   }
 
   if (items.length === 0) {
@@ -5346,29 +5359,11 @@ $('cal-detail-close').addEventListener('click', () => {
   $('task-calendar-detail').style.display = 'none';
 });
 
-// Load users into an assignee <select> dropdown (called on Follow Up toggle)
-window.loadTaskAssigneeOptions = async function(selectId) {
-  const sel = $(selectId);
-  if (!sel || sel.dataset.loaded) return;
-  try {
-    const snap = await db.collection('users').orderBy('displayName').get();
-    snap.forEach(doc => {
-      if (doc.id === currentUser.uid) return; // skip self — "me" is just "unassigned"
-      const d = doc.data();
-      const opt = document.createElement('option');
-      opt.value = doc.id;
-      opt.dataset.name = d.displayName || d.email;
-      opt.textContent = d.displayName || d.email;
-      sel.appendChild(opt);
-    });
-    sel.dataset.loaded = '1';
-  } catch (e) { /* non-critical */ }
-};
-
 // Task panel open/close
 function openTaskPanel() {
   const panel = $('task-panel-overlay');
   if (panel) panel.style.display = 'flex';
+  initTaskPanelForRole();
   loadDashboardFollowUps();
   loadGeneralNotes();
 }
@@ -5378,6 +5373,49 @@ function closeTaskPanel() {
 }
 window.openTaskPanel = openTaskPanel;
 window.closeTaskPanel = closeTaskPanel;
+
+// Set up role-specific UI in the task panel (admin filter, assignee dropdown)
+let _taskPanelUsersLoaded = false;
+async function initTaskPanelForRole() {
+  // Show/hide the admin user-filter row
+  const filterRow = $('task-user-filter-row');
+  if (filterRow) filterRow.style.display = (currentUserRole === 'admin') ? '' : 'none';
+
+  if (!_taskPanelUsersLoaded) {
+    _taskPanelUsersLoaded = true;
+    try {
+      const snap = await db.collection('users').orderBy('displayName').get();
+
+      // Populate admin user-filter dropdown
+      const filterSel = $('task-user-filter');
+      if (filterSel && currentUserRole === 'admin') {
+        // Remove all options except the first "All Users"
+        while (filterSel.options.length > 1) filterSel.remove(1);
+        snap.forEach(doc => {
+          const d = doc.data();
+          const opt = document.createElement('option');
+          opt.value = doc.id;
+          opt.textContent = d.displayName || d.email;
+          filterSel.appendChild(opt);
+        });
+      }
+
+      // Populate assignee dropdown in the note form
+      const assignSel = $('general-note-assignee');
+      if (assignSel && assignSel.options.length <= 1) {
+        snap.forEach(doc => {
+          if (doc.id === currentUser.uid) return;
+          const d = doc.data();
+          const opt = document.createElement('option');
+          opt.value = doc.id;
+          opt.dataset.name = d.displayName || d.email;
+          opt.textContent = d.displayName || d.email;
+          assignSel.appendChild(opt);
+        });
+      }
+    } catch (e) { /* non-critical */ }
+  }
+}
 
 // Jump to a specific day in the task calendar (inside the task panel)
 window.jumpToCalendarDay = function(dateStr) {
@@ -5802,8 +5840,9 @@ $('btn-save-general-note').addEventListener('click', async () => {
   // Urgent notes are always treated as follow-ups
   const isFollowUp = $('general-note-followup').checked || isUrgent;
   const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
+  // Assignee is always available (not gated on Follow Up)
   const assignSel = $('general-note-assignee');
-  const assignedTo = (isFollowUp && assignSel && assignSel.value) ? assignSel.value : null;
+  const assignedTo = (assignSel && assignSel.value) ? assignSel.value : null;
   const assignedToName = assignedTo ? (assignSel.options[assignSel.selectedIndex] ? assignSel.options[assignSel.selectedIndex].dataset.name || assignSel.options[assignSel.selectedIndex].textContent.trim() : null) : null;
 
   try {
@@ -5825,9 +5864,7 @@ $('btn-save-general-note').addEventListener('click', async () => {
     if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     $('general-note-due-date').value = '';
     $('general-note-due-row').style.display = 'none';
-    $('general-note-assignee-row').style.display = 'none';
     if (assignSel) assignSel.value = '';
-    if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadGeneralNotes();
     if (isFollowUp || isUrgent) loadDashboardFollowUps();

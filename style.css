@@ -2946,6 +2946,30 @@ body {
   max-width: 180px;
 }
 
+/* Admin user-filter bar above task agenda */
+.task-user-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+}
+.task-user-filter-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #0369a1;
+  white-space: nowrap;
+}
+.task-user-filter-row .note-assignee-select {
+  flex: 1;
+  max-width: 100%;
+  border-color: #7dd3fc;
+  background: #fff;
+}
+
 /* ============ TASK ACTIVITY LOG ============ */
 .task-log-section { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
 .task-log-entries { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }

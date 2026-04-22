@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260422a">
+  <link rel="stylesheet" href="style.css?v=20260422b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -775,15 +775,15 @@
           <h4>📝 Add General Note</h4>
           <textarea id="general-note-text" class="note-textarea" placeholder="Add a general note..." maxlength="500" rows="2"></textarea>
           <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="var v=this.checked?'':'none';document.getElementById('general-note-due-row').style.display=v;document.getElementById('general-note-assignee-row').style.display=v;if(this.checked)loadTaskAssigneeOptions('general-note-assignee')"> &#9873; Follow Up</label>
+            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="var v=this.checked?'':'none';document.getElementById('general-note-due-row').style.display=v;" > &#9873; Follow Up</label>
             <div id="general-note-due-row" class="note-due-row" style="display:none;">
               <label class="note-due-label">Due:</label>
               <input type="date" id="general-note-due-date" class="note-due-input">
             </div>
-            <div id="general-note-assignee-row" class="note-due-row" style="display:none;">
+            <div class="note-due-row">
               <label class="note-due-label">Assign:</label>
-              <select id="general-note-assignee" class="note-assignee-select">
-                <option value="">— Team (unassigned) —</option>
+              <select id="general-note-assignee" class="note-assignee-select" onchange="void 0">
+                <option value="">— Team (everyone) —</option>
               </select>
             </div>
             <label class="note-urgent-label"><input type="checkbox" id="general-note-urgent"> 🚨 Urgent</label>
@@ -794,6 +794,13 @@
         <!-- Follow-Up Agenda with Status Tabs -->
         <div class="task-panel-section">
           <h4>📅 Follow-Up Agenda</h4>
+          <!-- Admin user filter (hidden for non-admins via JS) -->
+          <div id="task-user-filter-row" class="task-user-filter-row" style="display:none;">
+            <label class="task-user-filter-label">👁 View:</label>
+            <select id="task-user-filter" class="note-assignee-select" onchange="applyTaskUserFilter(this.value)">
+              <option value="all">All Users</option>
+            </select>
+          </div>
           <!-- Status tabs -->
           <div class="task-status-tabs">
             <button class="task-tab active" data-tab="all" onclick="switchTaskTab('all')">All Active</button>
