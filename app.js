@@ -950,7 +950,7 @@ function renderLocationsWidget() {
   });
 }
 
-// Damage check modal � Pass / Fail per item
+// Damage check modal � Pass / Fail per item
 function showDamageCheckModal(vid, plate) {
   const existing = document.querySelector('.damage-check-overlay');
   if (existing) existing.remove();
@@ -4085,7 +4085,7 @@ window.deleteNote = async function(docId) {
 // ================================================================
 
 function complianceMonthStatus(yyyyMM) {
-  if (!yyyyMM) return { label: '—', cls: '', nextDue: '' };
+  if (!yyyyMM) return { label: '—', cls: '', nextDue: '', daysLeft: null };
   const [y, m] = yyyyMM.split('-').map(Number);
   // Last day of that month
   const expDate = new Date(Date.UTC(y, m, 0, 23, 59, 59));
@@ -4094,9 +4094,10 @@ function complianceMonthStatus(yyyyMM) {
   // Next cycle = same month, next year
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const nextDue = `${MONTHS[m - 1]} ${y + 1}`;
-  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent', nextDue };
-  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn', nextDue };
-  return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok', nextDue };
+  if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent', nextDue, daysLeft };
+  if (daysLeft <= 15) return { label: `Due in ${daysLeft}d 🚨`, cls: 'compliance-urgent', nextDue, daysLeft };
+  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn', nextDue, daysLeft };
+  return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok', nextDue, daysLeft };
 }
 
 function loadComplianceData(v) {
@@ -4108,6 +4109,7 @@ function loadComplianceData(v) {
     { id: 'compliance-insurance', statusId: 'insurance-status', nextId: null, val: v.complianceInsurance },
   ];
   let warnings = [];
+  const urgentCompliance = []; // {complianceType, label}
   fields.forEach(({ id, statusId, nextId, val }) => {
     const input = $(id);
     const statusEl = $(statusId);
@@ -4118,6 +4120,9 @@ function loadComplianceData(v) {
       statusEl.className = 'compliance-status ' + cls;
       if (cls === 'compliance-warn' || cls === 'compliance-urgent') {
         warnings.push(label + ' — ' + id.replace('compliance-', ''));
+      }
+      if (cls === 'compliance-urgent' && (id === 'compliance-safety' || id === 'compliance-registration')) {
+        urgentCompliance.push({ complianceType: id.replace('compliance-', ''), label });
       }
       if (nextId) {
         const nextEl = $(nextId);
@@ -4156,6 +4161,44 @@ function loadComplianceData(v) {
     banner.textContent = '⚠️ Action needed: ' + warnings.join(' · ');
   } else if (banner) {
     banner.remove();
+  }
+  // Auto-create urgent follow-up notes for compliance items at ≤15 days / expired
+  if (urgentCompliance.length > 0 && v.id) {
+    urgentCompliance.forEach(({ complianceType, label }) => {
+      ensureComplianceFollowUp(v.id, v.plate, complianceType, label);
+    });
+  }
+}
+
+// Auto-create an urgent follow-up note when a compliance item is ≤15 days or expired.
+// Checks for an existing open note first to avoid duplicates.
+async function ensureComplianceFollowUp(vehicleId, plate, complianceType, statusLabel) {
+  try {
+    const existing = await db.collection('vehicleNotes')
+      .where('vehicleId', '==', vehicleId)
+      .where('sourceType', '==', 'compliance')
+      .where('complianceType', '==', complianceType)
+      .where('done', '==', false)
+      .limit(1)
+      .get();
+    if (!existing.empty) return; // already has an open urgent note
+    const typeName = complianceType === 'safety' ? 'Safety Inspection' : 'Registration';
+    await db.collection('vehicleNotes').add({
+      vehicleId,
+      text: `🚨 ${typeName} — ${statusLabel} for ${plate || vehicleId}. Renew immediately.`,
+      isFollowUp: true,
+      done: false,
+      urgent: true,
+      taskStatus: 'urgent',
+      sourceType: 'compliance',
+      complianceType,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: (currentUser && currentUser.uid) || 'system',
+      createdByName: (currentUser && (currentUser.displayName || currentUser.email)) || 'System',
+    });
+    loadDashboardFollowUps();
+  } catch (e) {
+    console.warn('ensureComplianceFollowUp error:', e);
   }
 }
 
