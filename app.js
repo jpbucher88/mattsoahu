@@ -4137,8 +4137,23 @@ function complianceMonthStatus(yyyyMM) {
 function loadComplianceData(v) {
   const section = $('compliance-section');
   if (section) section.style.display = '';
-  const fields = [
-    { id: 'compliance-safety', statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety },
+  const canEditCompliance = (currentUserRole === 'admin');
+  // Show/hide Save button and lock inputs for non-admins
+  const saveBtn = $('btn-save-compliance');
+  if (saveBtn) saveBtn.style.display = 'none'; // always hidden — auto-save used instead
+  const complianceInputs = ['compliance-safety','compliance-registration','compliance-insurance','compliance-vin'];
+  complianceInputs.forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.disabled = !canEditCompliance;
+    el.style.opacity = canEditCompliance ? '' : '0.65';
+    el.style.cursor = canEditCompliance ? '' : 'not-allowed';
+  });
+  const uploadBtn = document.querySelector('label[for="compliance-insurance-upload"], label.compliance-upload-btn');
+  if (uploadBtn) uploadBtn.style.display = canEditCompliance ? '' : 'none';
+  const uploadInput = $('compliance-insurance-upload');
+  if (uploadInput) uploadInput.disabled = !canEditCompliance;
+  const fields = [ statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety },
     { id: 'compliance-registration', statusId: 'registration-status', nextId: 'registration-next-due', val: v.complianceRegistration },
     { id: 'compliance-insurance', statusId: 'insurance-status', nextId: null, val: v.complianceInsurance },
   ];
@@ -4237,25 +4252,35 @@ async function ensureComplianceFollowUp(vehicleId, plate, complianceType, status
 }
 
 $('btn-save-compliance').addEventListener('click', async () => {
-  if (!selectedVehicle) return;
-  const data = {
-    complianceSafety: $('compliance-safety').value || null,
-    complianceRegistration: $('compliance-registration').value || null,
-    complianceInsurance: $('compliance-insurance').value || null,
-    vin: $('compliance-vin').value.toUpperCase().trim() || null,
-  };
-  try {
-    await db.collection('vehicles').doc(selectedVehicle.id).update(data);
-    Object.assign(selectedVehicle, data);
-    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) Object.assign(cached, data);
-    loadComplianceData(selectedVehicle);
-    toast('Compliance info saved! ✅', 'success');
-  } catch (e) {
-    console.error('Save compliance error:', e);
-    toast('Failed to save compliance info.', 'error');
-  }
+  // Legacy handler — kept so the DOM doesn't throw; actual saving is auto via change listeners
 });
+
+// Auto-save compliance data whenever an admin changes a field
+let _complianceSaveTimer = null;
+async function autoSaveCompliance() {
+  if (currentUserRole !== 'admin') return;
+  if (!selectedVehicle) return;
+  clearTimeout(_complianceSaveTimer);
+  _complianceSaveTimer = setTimeout(async () => {
+    const data = {
+      complianceSafety: $('compliance-safety').value || null,
+      complianceRegistration: $('compliance-registration').value || null,
+      complianceInsurance: $('compliance-insurance').value || null,
+      vin: $('compliance-vin').value.toUpperCase().trim() || null,
+    };
+    try {
+      await db.collection('vehicles').doc(selectedVehicle.id).update(data);
+      Object.assign(selectedVehicle, data);
+      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cached) Object.assign(cached, data);
+      loadComplianceData(selectedVehicle);
+      toast('Saved \u2705', 'success');
+    } catch (e) {
+      console.error('Auto-save compliance error:', e);
+      toast('Failed to save.', 'error');
+    }
+  }, 800);
+}
 
 // Live preview next-due when compliance month inputs change
 function updateComplianceLivePreview(inputId, statusId, nextId) {
@@ -4278,16 +4303,31 @@ function updateComplianceLivePreview(inputId, statusId, nextId) {
   }
 }
 
-$('compliance-safety').addEventListener('change', () => updateComplianceLivePreview('compliance-safety', 'safety-status', 'safety-next-due'));
-$('compliance-registration').addEventListener('change', () => updateComplianceLivePreview('compliance-registration', 'registration-status', 'registration-next-due'));
+$('compliance-safety').addEventListener('change', () => {
+  updateComplianceLivePreview('compliance-safety', 'safety-status', 'safety-next-due');
+  autoSaveCompliance();
+});
+$('compliance-registration').addEventListener('change', () => {
+  updateComplianceLivePreview('compliance-registration', 'registration-status', 'registration-next-due');
+  autoSaveCompliance();
+});
 $('compliance-insurance').addEventListener('change', () => {
   const val = $('compliance-insurance').value;
   const statusEl = $('insurance-status');
   if (!statusEl) return;
-  if (!val) { statusEl.textContent = ''; statusEl.className = 'compliance-status'; return; }
-  const { label, cls } = complianceMonthStatus(val);
-  statusEl.textContent = label;
-  statusEl.className = 'compliance-status ' + cls;
+  if (!val) { statusEl.textContent = ''; statusEl.className = 'compliance-status'; }
+  else {
+    const { label, cls } = complianceMonthStatus(val);
+    statusEl.textContent = label;
+    statusEl.className = 'compliance-status ' + cls;
+  }
+  autoSaveCompliance();
+});
+$('compliance-vin').addEventListener('change', () => autoSaveCompliance());
+$('compliance-vin').addEventListener('blur', () => {
+  const el = $('compliance-vin');
+  if (el) el.value = el.value.toUpperCase().trim();
+  autoSaveCompliance();
 });
 
 // Insurance document upload
