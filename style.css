@@ -2847,6 +2847,105 @@ body {
 }
 .link-vehicle-modal h4 { margin: 0 0 4px; color: #1e3a5f; }
 
+/* ============ MESSAGE DETAIL MODAL ============ */
+.msg-detail-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 10100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.msg-detail-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 520px;
+  width: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.22);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.msg-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.msg-detail-from { font-size: 0.92rem; color: #1e3a5f; }
+.msg-detail-time { font-size: 0.78rem; color: #9ca3af; }
+.msg-detail-body {
+  flex: 1;
+  overflow-y: auto;
+  font-size: 0.93rem;
+  color: #1f2937;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding: 4px 0 14px;
+}
+.msg-detail-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+/* ============ CREATE TASK FROM MESSAGE MODAL ============ */
+.msg-task-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 10101;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.msg-task-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  max-width: 460px;
+  width: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.22);
+}
+.msg-task-modal h4 { margin: 0 0 14px; color: #1e3a5f; }
+
+/* ============ TASK ASSIGNEE BADGE ============ */
+.task-assignee-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.task-assignee-team {
+  color: #6b7280;
+  background: #f3f4f6;
+}
+
+/* ============ ASSIGNEE SELECT IN NOTE FORM ============ */
+.note-assignee-select {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.82rem;
+  color: #374151;
+  background: #fff;
+  max-width: 180px;
+}
+
 /* ============ TASK ACTIVITY LOG ============ */
 .task-log-section { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
 .task-log-entries { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }

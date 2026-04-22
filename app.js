@@ -4489,6 +4489,9 @@ function renderTaskAgenda(allItems) {
     items = allItems.filter(i => i.taskStatus === 'monitoring');
   } else if (currentTaskTab === 'compliance') {
     items = allItems.filter(i => i.sourceType === 'compliance');
+  } else if (currentTaskTab === 'mine') {
+    // Show tasks assigned to me OR unassigned (team tasks)
+    items = allItems.filter(i => !i.assignedTo || i.assignedTo === currentUser.uid);
   }
 
   if (items.length === 0) {
@@ -4547,6 +4550,7 @@ function renderTaskAgenda(allItems) {
     const urgentTag = item.urgent ? ' 🚨' : (item.taskStatus === 'monitoring' ? ' 🟢' : '');
     const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
     const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
+    const assigneeLabel = item.assignedToName ? ` · <span class="task-assignee-badge">🎯 ${escapeHtml(item.assignedToName)}</span>` : (item.assignedTo ? '' : ' · <span class="task-assignee-badge task-assignee-team">👥 Team</span>');
 
     // Status move buttons
     let statusBtns = '';
@@ -4574,7 +4578,7 @@ function renderTaskAgenda(allItems) {
         <div class="followup-item${extraClass}"${vidAttr}>
           <div class="followup-info">
             <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
-            <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}${logCount}</div>
+            <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}${assigneeLabel}${logCount}</div>
             ${statusBtns ? `<div class="task-status-btns">${statusBtns}</div>` : ''}
           </div>
           <div class="task-item-actions">
@@ -5301,6 +5305,25 @@ $('cal-detail-close').addEventListener('click', () => {
   $('task-calendar-detail').style.display = 'none';
 });
 
+// Load users into an assignee <select> dropdown (called on Follow Up toggle)
+window.loadTaskAssigneeOptions = async function(selectId) {
+  const sel = $(selectId);
+  if (!sel || sel.dataset.loaded) return;
+  try {
+    const snap = await db.collection('users').orderBy('displayName').get();
+    snap.forEach(doc => {
+      if (doc.id === currentUser.uid) return; // skip self — "me" is just "unassigned"
+      const d = doc.data();
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.dataset.name = d.displayName || d.email;
+      opt.textContent = d.displayName || d.email;
+      sel.appendChild(opt);
+    });
+    sel.dataset.loaded = '1';
+  } catch (e) { /* non-critical */ }
+};
+
 // Task panel open/close
 function openTaskPanel() {
   const panel = $('task-panel-overlay');
@@ -5516,6 +5539,12 @@ window.openFullEditTaskModal = function(docId, col, d) {
           <label>Due Time <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
           <input type="time" id="tfe-due-time" class="form-select" value="${d.dueTime || ''}">
         </div>
+        <div class="form-group">
+          <label>Assign To <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
+          <select id="tfe-assignee" class="form-select">
+            <option value="">— Team (unassigned) —</option>
+          </select>
+        </div>
       </div>
       <div class="task-log-section">
         <div class="note-edit-section-label" style="margin-bottom:6px;">📋 Activity Log</div>
@@ -5538,6 +5567,23 @@ window.openFullEditTaskModal = function(docId, col, d) {
   });
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
   overlay.querySelector('#btn-tfe-cancel').onclick = () => overlay.remove();
+
+  // Populate assignee dropdown
+  (async () => {
+    const sel = overlay.querySelector('#tfe-assignee');
+    try {
+      const snap = await db.collection('users').orderBy('displayName').get();
+      snap.forEach(doc => {
+        const ud = doc.data();
+        const opt = document.createElement('option');
+        opt.value = doc.id;
+        opt.dataset.name = ud.displayName || ud.email;
+        opt.textContent = ud.displayName || ud.email;
+        if (doc.id === (d.assignedTo || '')) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    } catch (e) { /* non-critical */ }
+  })();
 
   // Log entry
   overlay.querySelector('#btn-tfe-log-add').onclick = async () => {
@@ -5573,11 +5619,16 @@ window.openFullEditTaskModal = function(docId, col, d) {
     const urgent = overlay.querySelector('#tfe-urgent').checked;
     const dueDate = isFollowUp ? overlay.querySelector('#tfe-due-date').value : '';
     const dueTime = isFollowUp ? overlay.querySelector('#tfe-due-time').value : '';
+    const assignSel = overlay.querySelector('#tfe-assignee');
+    const assignedTo = (isFollowUp && assignSel && assignSel.value) ? assignSel.value : null;
+    const assignedToName = assignedTo ? (assignSel.options[assignSel.selectedIndex] ? assignSel.options[assignSel.selectedIndex].dataset.name || assignSel.options[assignSel.selectedIndex].textContent.trim() : null) : null;
     const updates = { text: newText, isFollowUp, urgent, taskStatus: urgent ? 'urgent' : 'scheduled' };
     if (dueDate) updates.dueDate = dueDate;
     else updates.dueDate = firebase.firestore.FieldValue.delete();
     if (dueTime) updates.dueTime = dueTime;
     else updates.dueTime = firebase.firestore.FieldValue.delete();
+    if (assignedTo) { updates.assignedTo = assignedTo; updates.assignedToName = assignedToName; }
+    else { updates.assignedTo = firebase.firestore.FieldValue.delete(); updates.assignedToName = firebase.firestore.FieldValue.delete(); }
     try {
       await db.collection(col).doc(docId).update(updates);
       toast('Task updated!', 'success');
@@ -5710,6 +5761,9 @@ $('btn-save-general-note').addEventListener('click', async () => {
   // Urgent notes are always treated as follow-ups
   const isFollowUp = $('general-note-followup').checked || isUrgent;
   const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
+  const assignSel = $('general-note-assignee');
+  const assignedTo = (isFollowUp && assignSel && assignSel.value) ? assignSel.value : null;
+  const assignedToName = assignedTo ? (assignSel.options[assignSel.selectedIndex] ? assignSel.options[assignSel.selectedIndex].dataset.name || assignSel.options[assignSel.selectedIndex].textContent.trim() : null) : null;
 
   try {
     const noteData = {
@@ -5723,12 +5777,15 @@ $('btn-save-general-note').addEventListener('click', async () => {
       createdByName: currentUser.displayName || currentUser.email
     };
     if (dueDate) noteData.dueDate = dueDate;
+    if (assignedTo) { noteData.assignedTo = assignedTo; noteData.assignedToName = assignedToName; }
     await db.collection('generalNotes').add(noteData);
     $('general-note-text').value = '';
     $('general-note-followup').checked = false;
     if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     $('general-note-due-date').value = '';
     $('general-note-due-row').style.display = 'none';
+    $('general-note-assignee-row').style.display = 'none';
+    if (assignSel) assignSel.value = '';
     if ($('general-note-urgent')) $('general-note-urgent').checked = false;
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadGeneralNotes();
@@ -5974,12 +6031,70 @@ async function loadMailboxSent() {
 }
 
 window.openMessage = async function(msgId) {
+  // Mark as read
   try {
     await db.collection('messages').doc(msgId).update({ read: true });
     const el = $('mb-msg-' + msgId);
     if (el) el.classList.remove('mb-unread');
     updateMailBadge();
   } catch (e) { /* ignore */ }
+
+  // Fetch and display message in a modal
+  try {
+    const doc = await db.collection('messages').doc(msgId).get();
+    if (!doc.exists) return;
+    const m = doc.data();
+    const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
+    const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+
+    const existing = document.querySelector('.msg-detail-overlay');
+    if (existing) existing.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'msg-detail-overlay';
+    overlay.innerHTML = `
+      <div class="msg-detail-modal">
+        <div class="msg-detail-header">
+          <div class="msg-detail-from"><strong>From:</strong> ${escapeHtml(m.fromName || 'Unknown')}</div>
+          <div class="msg-detail-time">${timeStr}</div>
+        </div>
+        <div class="msg-detail-body">${escapeHtml(m.body || '').replace(/\n/g, '<br>')}</div>
+        <div class="msg-detail-actions">
+          <button class="btn btn-sm btn-outline" id="btn-msg-reply">↩ Reply</button>
+          <button class="btn btn-sm btn-outline" id="btn-msg-create-task">📋 Create Task</button>
+          <button class="btn btn-sm btn-danger" id="btn-msg-delete">🗑️ Delete</button>
+          <button class="btn btn-sm btn-outline" id="btn-msg-close">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+    overlay.querySelector('#btn-msg-close').onclick = () => overlay.remove();
+
+    overlay.querySelector('#btn-msg-reply').onclick = () => {
+      overlay.remove();
+      replyToMessage(m.from, m.fromName || '');
+    };
+
+    overlay.querySelector('#btn-msg-delete').onclick = async () => {
+      const ok = await confirm('Delete Message', 'Permanently delete this message?');
+      if (!ok) return;
+      try {
+        await db.collection('messages').doc(msgId).delete();
+        toast('Message deleted.', 'success');
+        overlay.remove();
+        loadMailboxInbox();
+        updateMailBadge();
+      } catch (e) { toast('Failed to delete.', 'error'); }
+    };
+
+    overlay.querySelector('#btn-msg-create-task').onclick = () => {
+      overlay.remove();
+      openCreateTaskFromMessage(m.fromName || '', m.body || '');
+    };
+  } catch (e) {
+    console.error('openMessage display error:', e);
+  }
 };
 
 window.replyToMessage = function(fromUid, fromName) {
@@ -5991,6 +6106,88 @@ window.replyToMessage = function(fromUid, fromName) {
   }
   const body = $('mb-message-body');
   if (body) body.focus();
+};
+
+// Create a general follow-up task pre-filled from a message
+window.openCreateTaskFromMessage = async function(fromName, msgBody) {
+  const existing = document.querySelector('.msg-task-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'msg-task-overlay';
+  const prefill = (fromName ? `[From: ${fromName}] ` : '') + msgBody.substring(0, 300);
+  overlay.innerHTML = `
+    <div class="msg-task-modal">
+      <h4>📋 Create Task from Message</h4>
+      <div class="form-group">
+        <label>Task Description</label>
+        <textarea id="mct-text" class="note-textarea" rows="3" maxlength="500">${escapeHtml(prefill)}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Due Date <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
+        <input type="date" id="mct-due" class="form-select">
+      </div>
+      <div class="form-group">
+        <label class="note-followup-label"><input type="checkbox" id="mct-urgent"> 🚨 Urgent</label>
+      </div>
+      <div class="form-group">
+        <label>Assign To <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
+        <select id="mct-assignee" class="form-select">
+          <option value="">— Team (unassigned) —</option>
+        </select>
+      </div>
+      <div class="reassign-modal-actions">
+        <button class="btn btn-primary" id="btn-mct-save">Create Task</button>
+        <button class="btn btn-outline" id="btn-mct-cancel">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  overlay.querySelector('#btn-mct-cancel').onclick = () => overlay.remove();
+
+  // Populate users
+  try {
+    const snap = await db.collection('users').orderBy('displayName').get();
+    const sel = overlay.querySelector('#mct-assignee');
+    snap.forEach(doc => {
+      if (doc.id === currentUser.uid) return;
+      const d = doc.data();
+      const opt = document.createElement('option');
+      opt.value = doc.id;
+      opt.dataset.name = d.displayName || d.email;
+      opt.textContent = d.displayName || d.email;
+      sel.appendChild(opt);
+    });
+  } catch (e) { /* non-critical */ }
+
+  overlay.querySelector('#btn-mct-save').onclick = async () => {
+    const text = overlay.querySelector('#mct-text').value.trim();
+    if (!text) { toast('Enter a task description.', 'warning'); return; }
+    const urgent = overlay.querySelector('#mct-urgent').checked;
+    const dueDate = overlay.querySelector('#mct-due').value;
+    const assignSel = overlay.querySelector('#mct-assignee');
+    const assignedTo = assignSel.value || null;
+    const assignedToName = assignedTo ? (assignSel.options[assignSel.selectedIndex].dataset.name || assignSel.options[assignSel.selectedIndex].textContent.trim()) : null;
+    const data = {
+      text,
+      isFollowUp: true,
+      done: false,
+      urgent,
+      taskStatus: urgent ? 'urgent' : 'scheduled',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email
+    };
+    if (dueDate) data.dueDate = dueDate;
+    if (assignedTo) { data.assignedTo = assignedTo; data.assignedToName = assignedToName; }
+    try {
+      await db.collection('generalNotes').add(data);
+      toast('Task created from message! 📋', 'success');
+      overlay.remove();
+    } catch (e) {
+      console.error('Create task from message error:', e);
+      toast('Failed to create task.', 'error');
+    }
+  };
 };
 
 window.deleteMessage = async function(msgId) {
