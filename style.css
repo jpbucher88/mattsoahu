@@ -2681,6 +2681,25 @@ body {
   margin: 0 0 16px;
   color: #1e3a5f;
 }
+.note-edit-section-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #6b7280;
+  display: block;
+  margin-bottom: 6px;
+}
+/* Status picker buttons in edit modal */
+.ne-status-btns { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 2px; }
+.ne-status-btn { padding: 6px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; cursor: pointer; border: 2px solid #e5e7eb; background: #f9fafb; color: #374151; transition: all 0.15s; }
+.ne-status-btn:hover { border-color: #9ca3af; }
+.ne-status-active-urgent { background: #fee2e2; border-color: #dc2626; color: #dc2626; }
+.ne-status-active-scheduled { background: #eff6ff; border-color: #2563eb; color: #2563eb; }
+.ne-status-active-monitoring { background: #f0fdf4; border-color: #16a34a; color: #16a34a; }
+/* Dual upload row in inspection fail */
+.dmg-fail-upload-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.dmg-fail-camera-label { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
 .note-edit-actions {
   display: flex;
   gap: 8px;

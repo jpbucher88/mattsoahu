@@ -975,10 +975,16 @@ function showDamageCheckModal(vid, plate) {
         </div>
         <div class="dmg-fail-details" id="dmg-fail-${item.key}" style="display:none;">
           <textarea class="dmg-fail-notes" id="dmg-notes-${item.key}" placeholder="Describe the issue..." rows="2"></textarea>
-          <label class="dmg-fail-upload-label">
-            Add Photos
-            <input type="file" class="dmg-fail-photos" id="dmg-photos-${item.key}" accept="image/*" multiple style="display:none;" data-check="${item.key}">
-          </label>
+          <div class="dmg-fail-upload-row">
+            <label class="dmg-fail-upload-label">
+              📁 Upload / Photos
+              <input type="file" class="dmg-fail-photos" id="dmg-photos-${item.key}" accept="image/*" multiple style="display:none;" data-check="${item.key}">
+            </label>
+            <label class="dmg-fail-upload-label dmg-fail-camera-label">
+              📷 Camera
+              <input type="file" class="dmg-fail-photos" id="dmg-camera-${item.key}" accept="image/*" capture="environment" style="display:none;" data-check="${item.key}">
+            </label>
+          </div>
           <div class="dmg-fail-photo-previews" id="dmg-previews-${item.key}"></div>
         </div>
       </div>`;
@@ -4776,9 +4782,12 @@ window.openNoteEditModal = async function(docId, collection) {
       </div>
       <div id="ne-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
         <div class="form-group">
-          <label class="note-followup-label">
-            <input type="checkbox" id="ne-urgent" ${d.urgent ? 'checked' : ''}> 🚨 Urgent
-          </label>
+          <label class="note-edit-section-label">Status</label>
+          <div class="ne-status-btns">
+            <button type="button" class="ne-status-btn ${(d.taskStatus === 'urgent' || d.urgent) ? 'ne-status-active-urgent' : ''}" data-status="urgent">🚨 Urgent</button>
+            <button type="button" class="ne-status-btn ${(d.taskStatus === 'scheduled' && !d.urgent) ? 'ne-status-active-scheduled' : ''}" data-status="scheduled">🔵 Scheduled</button>
+            <button type="button" class="ne-status-btn ${d.taskStatus === 'monitoring' ? 'ne-status-active-monitoring' : ''}" data-status="monitoring">🟢 Monitoring</button>
+          </div>
         </div>
         <div class="form-group">
           <label>Due Date</label>
@@ -4804,13 +4813,26 @@ window.openNoteEditModal = async function(docId, collection) {
   });
 
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  // Status button selection
+  let selectedStatus = (d.taskStatus === 'monitoring') ? 'monitoring' : (d.taskStatus === 'scheduled' && !d.urgent) ? 'scheduled' : 'urgent';
+  overlay.querySelectorAll('.ne-status-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedStatus = btn.dataset.status;
+      overlay.querySelectorAll('.ne-status-btn').forEach(b => {
+        b.className = 'ne-status-btn' + (b.dataset.status === selectedStatus ? ' ne-status-active-' + selectedStatus : '');
+      });
+    });
+  });
+
   overlay.querySelector('#btn-ne-cancel').onclick = () => overlay.remove();
   overlay.querySelector('#btn-ne-save').onclick = async () => {
     const isFollowUp = followupEl.checked;
-    const urgent = isFollowUp && overlay.querySelector('#ne-urgent').checked;
+    const urgent = isFollowUp && selectedStatus === 'urgent';
+    const taskStatus = isFollowUp ? selectedStatus : null;
     const dueDate = isFollowUp ? overlay.querySelector('#ne-due-date').value : '';
     const dueTime = isFollowUp ? overlay.querySelector('#ne-due-time').value : '';
     const updates = { isFollowUp, urgent };
+    if (taskStatus) updates.taskStatus = taskStatus;
     if (dueDate) { updates.dueDate = dueDate; }
     else { updates.dueDate = firebase.firestore.FieldValue.delete(); }
     if (dueTime) { updates.dueTime = dueTime; }
