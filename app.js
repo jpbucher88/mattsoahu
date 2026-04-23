@@ -5863,19 +5863,20 @@ async function loadLearningItems() {
 
   try {
     // Query by uid only — no orderBy to avoid composite index requirement; sort client-side
-    const [mySnap, sharedSnap] = await Promise.all([
-      db.collection('learningItems')
-        .where('uid', '==', filterUid)
-        .limit(100)
-        .get(),
-      db.collection('learningItems')
-        .where('scope', '==', 'shared')
-        .limit(50)
-        .get(),
-    ]);
-    // Filter to personal items, sort by createdAt desc client-side
+    const queries = [
+      db.collection('learningItems').where('uid', '==', filterUid).limit(100).get(),
+      db.collection('learningItems').where('scope', '==', 'shared').limit(50).get(),
+    ];
+    // If admin is viewing another user's items, also fetch current user's wishlist separately
+    const needsOwnWishlist = filterUid !== currentUser.uid;
+    if (needsOwnWishlist) {
+      queries.push(db.collection('learningItems').where('uid', '==', currentUser.uid).where('scope', '==', 'wishlist').limit(50).get());
+    }
+    const results = await Promise.all(queries);
+    const [mySnap, sharedSnap, ownWishSnap] = results;
+    // Filter to personal items only (scope === 'personal'), sort by createdAt desc
     const personalDocs = mySnap.docs
-      .filter(d => d.data().scope !== 'shared')
+      .filter(d => d.data().scope === 'personal')
       .sort((a, b) => {
         const av = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
         const bv = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
@@ -5889,6 +5890,16 @@ async function loadLearningItems() {
     const toSnap = (arr) => ({ empty: arr.length === 0, forEach: (fn) => arr.forEach(fn) });
     renderLearningList(myList, toSnap(personalDocs), canEditPersonal);
     renderLearningList(sharedList, toSnap(sharedDocs), currentUserRole === 'admin');
+    // Wishlist: always current user's own goals
+    const wishSourceDocs = needsOwnWishlist
+      ? (ownWishSnap ? ownWishSnap.docs : [])
+      : mySnap.docs.filter(d => d.data().scope === 'wishlist' && d.data().uid === currentUser.uid);
+    const wishDocs = wishSourceDocs.sort((a, b) => {
+        const av = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+        const bv = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+        return av - bv; // oldest first for a goal list
+      });
+    renderWishlist(wishDocs);
   } catch(e) {
     console.error('Load learning items error', e);
     myList.innerHTML = '<p class="hint">Error loading items.</p>';
@@ -6048,6 +6059,64 @@ window.logLearningCompletion = async function(docId) {
     toast('Completion logged ✅', 'success');
     loadLearningItems();
   } catch(e) { console.error(e); toast('Failed to log.', 'error'); }
+};
+
+// ================================================================
+// WANT TO LEARN (personal goal wishlist)
+// ================================================================
+function renderWishlist(docs) {
+  const list = $('want-to-learn-list');
+  if (!list) return;
+  if (!docs.length) {
+    list.innerHTML = '<p class="hint wl-empty">No goals yet — add something you want to learn!</p>';
+    return;
+  }
+  list.innerHTML = docs.map(doc => {
+    const d = doc.data();
+    return `<div class="wl-item" id="wl-${doc.id}">
+      <span class="wl-text">${escapeHtml(d.title || d.content || '')}</span>
+      <div class="wl-actions">
+        <button class="btn btn-sm wl-start-btn" onclick="startWishlistItem('${doc.id}','${escapeHtml((d.title||d.content||'')).replace(/'/g,"&#39;")}')" title="Move to My Learning Items">📚 Start</button>
+        <button class="btn btn-sm wl-remove-btn" onclick="removeWishlistItem('${doc.id}')" title="Remove goal">✕</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+window.addWantToLearn = async function() {
+  const input = $('wl-new-item');
+  const text = (input.value || '').trim();
+  if (!text) { input.focus(); return; }
+  try {
+    await db.collection('learningItems').add({
+      title: text,
+      type: 'note',
+      content: '',
+      scope: 'wishlist',
+      uid: currentUser.uid,
+      userName: currentUser.displayName || currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    input.value = '';
+    loadLearningItems();
+  } catch(e) { console.error(e); toast('Failed to add goal.', 'error'); }
+};
+
+window.removeWishlistItem = async function(docId) {
+  try {
+    await db.collection('learningItems').doc(docId).delete();
+    loadLearningItems();
+  } catch(e) { toast('Remove failed.', 'error'); }
+};
+
+window.startWishlistItem = async function(docId, title) {
+  // Convert wishlist item → personal learning item (opens the add modal pre-filled)
+  try {
+    await db.collection('learningItems').doc(docId).update({ scope: 'personal' });
+    toast('Moved to My Learning Items ✅', 'success');
+    loadLearningItems();
+  } catch(e) { toast('Failed.', 'error'); }
 };
 
 window.saveLearningItem = async function() {

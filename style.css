@@ -4301,4 +4301,43 @@ body {
   animation: mailBounce 0.6s ease-in-out;
 }
 
+/* ---- Want to Learn / Wishlist ---- */
+.want-to-learn-card { border-left: 4px solid #f59e0b; background: #fffbeb; }
+.wl-add-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.wl-list { display: flex; flex-direction: column; gap: 6px; }
+.wl-empty { color: #92400e; }
+.wl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 8px 12px;
+  flex-wrap: wrap;
+}
+.wl-text { flex: 1; font-size: 0.9rem; color: #1c1917; min-width: 0; }
+.wl-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.wl-start-btn {
+  background: #eff6ff;
+  border: 1.5px solid #93c5fd;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.wl-start-btn:hover { background: #dbeafe; }
+.wl-remove-btn {
+  background: none;
+  border: 1.5px solid #e5e7eb;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  padding: 3px 7px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.wl-remove-btn:hover { background: #fee2e2; border-color: #fca5a5; color: #dc2626; }
+
 

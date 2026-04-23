@@ -86,5 +86,14 @@ service cloud.firestore {
       allow update, delete: if isAuth() && resource.data.uid == request.auth.uid;
       allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
     }
+
+    // Learning items - any registered user can read all; own items writable; admins can write shared
+    match /learningItems/{itemId} {
+      allow read: if isRegistered();
+      allow create: if isRegistered() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isRegistered() && (
+        resource.data.uid == request.auth.uid || isAdmin()
+      );
+    }
   }
 }
