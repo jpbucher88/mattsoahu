@@ -4462,4 +4462,64 @@ body {
 }
 .inc-resolve-btn:hover { background: #dcfce7; }
 
+/* Incidents embedded in task card */
+.incidents-sub-section {
+  border-top: 2px solid #fecaca;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+.incidents-sub-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.incidents-sub-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #dc2626;
+}
+.inc-badge-inline {
+  background: #fee2e2;
+  color: #dc2626;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+/* Photo thumbnails */
+.inc-photos { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.inc-thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1.5px solid #e5e7eb;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.inc-thumb:hover { opacity: 0.85; }
+.inc-thumb-preview {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 7px;
+  border: 1.5px solid #93c5fd;
+  margin: 3px;
+}
+.inc-photo-previews { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+/* Follow-up date chip */
+.inc-followup {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.78rem;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin: 4px 0 2px;
+}
+
 

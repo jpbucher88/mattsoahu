@@ -7205,34 +7205,28 @@ function startIncidentListener() {
   if (!currentUser) return;
   if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
   const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
-  const section = $('incidents-dashboard-section');
-  if (!isPriv) { if (section) section.style.display = 'none'; return; }
-  if (section) section.style.display = '';
+  const sub = $('incidents-sub-section');
+  if (!isPriv) { if (sub) sub.style.display = 'none'; return; }
+  if (sub) sub.style.display = '';
   try {
     incidentUnsubscribe = db.collection('incidents')
       .where('status', 'in', ['open', 'in_progress'])
-      .onSnapshot(snap => {
-        const count = snap.size;
-        const badge = $('incidents-dashboard-badge');
-        if (badge) { badge.textContent = count; badge.style.display = count > 0 ? '' : 'none'; }
-        loadAllOpenIncidentsDashboard();
-      }, () => loadAllOpenIncidentsDashboard());
+      .onSnapshot(() => loadAllOpenIncidentsDashboard(), () => loadAllOpenIncidentsDashboard());
   } catch(e) { loadAllOpenIncidentsDashboard(); }
 }
 
 async function loadAllOpenIncidentsDashboard() {
-  const section = $('incidents-dashboard-section');
+  const sub  = $('incidents-sub-section');
   const list = $('incidents-dashboard-list');
   if (!list) return;
   const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
-  if (!isPriv) { if (section) section.style.display = 'none'; return; }
-  if (section) section.style.display = '';
+  if (!isPriv) { if (sub) sub.style.display = 'none'; return; }
+  if (sub) sub.style.display = '';
   try {
     const snap = await db.collection('incidents').get();
     const docs = snap.docs.sort((a, b) => {
-      // Open/urgent first, then by date desc
-      const as = a.data().status, bs = b.data().status;
-      const aOpen = as !== 'resolved' ? 1 : 0, bOpen = bs !== 'resolved' ? 1 : 0;
+      const as = a.data().status, bs2 = b.data().status;
+      const aOpen = as !== 'resolved' ? 1 : 0, bOpen = bs2 !== 'resolved' ? 1 : 0;
       if (aOpen !== bOpen) return bOpen - aOpen;
       const au = a.data().urgent ? 1 : 0, bu = b.data().urgent ? 1 : 0;
       if (au !== bu) return bu - au;
@@ -7240,17 +7234,20 @@ async function loadAllOpenIncidentsDashboard() {
       const bt = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
       return bt - at;
     });
-    // Also keep currentVehicleIncidents in sync if we're on vehicle page
+    // Sync vehicle page incidents if open
     if (selectedVehicle) {
       const vid = selectedVehicle.id || selectedVehicle;
       currentVehicleIncidents = docs.filter(d => d.data().vehicleId === vid);
       renderIncidentsList(currentVehicleIncidents);
     }
-    const badge = $('incidents-dashboard-badge');
     const openCount = docs.filter(d => d.data().status !== 'resolved').length;
-    if (badge) { badge.textContent = openCount; badge.style.display = openCount > 0 ? '' : 'none'; }
+    [$('incidents-dashboard-badge'), $('incidents-dashboard-badge2')].forEach(b => {
+      if (!b) return;
+      b.textContent = openCount > 0 ? openCount + ' open' : '';
+      b.style.display = openCount > 0 ? '' : 'none';
+    });
     if (!docs.length) {
-      list.innerHTML = '<p class="hint">No incidents reported yet.</p>';
+      list.innerHTML = '<p class="hint">No incidents reported yet. Use + Report Incident to log one.</p>';
       return;
     }
     list.innerHTML = docs.map(doc => {
@@ -7258,6 +7255,12 @@ async function loadAllOpenIncidentsDashboard() {
       const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
       const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
       const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+      const photosHTML = (d.photoUrls && d.photoUrls.length)
+        ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="incident photo"></a>`).join('')}</div>`
+        : '';
+      const followUpHTML = d.followUpDate
+        ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>`
+        : '';
       const resolvedBlock = d.status === 'resolved' && d.resolution
         ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
         : '';
@@ -7273,10 +7276,10 @@ async function loadAllOpenIncidentsDashboard() {
         <div class="inc-title">${escapeHtml(d.title||'')}</div>
         ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
         <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
-        ${resolvedBlock}
+        ${followUpHTML}${photosHTML}${resolvedBlock}
         <div class="inc-actions">
-          ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openResolveModal('${doc.id}','${escapeHtml((d.title||'')).replace(/'/g,"&#39;")}')">Resolve</button>` : ''}
-          <button class="btn btn-sm btn-outline" onclick="openIncidentEditFromDashboard('${doc.id}')">Edit</button>
+          ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openIncidentEditFromDashboard('${doc.id}',true)">Update Status</button>` : ''}
+          <button class="btn btn-sm btn-outline" onclick="openIncidentEditFromDashboard('${doc.id}',false)">Edit</button>
           ${currentUserRole === 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
         </div>
       </div>`;
@@ -7319,26 +7322,25 @@ function renderIncidentsList(docs) {
   }
   list.innerHTML = docs.map(doc => {
     const d = doc.data();
-    const typeInfo  = INCIDENT_TYPES[d.type]  || INCIDENT_TYPES.other;
+    const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
     const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
-    const dateStr   = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+    const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
     const urgentBadge = d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : '';
+    const photosHTML = (d.photoUrls && d.photoUrls.length)
+      ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="photo"></a>`).join('')}</div>`
+      : '';
+    const followUpHTML = d.followUpDate ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
-      ? `<div class="inc-resolution">
-          <span class="inc-res-label">✅ Resolution:</span>
-          <span>${escapeHtml(d.resolution)}</span>
-          ${d.resolvedByName ? `<span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}
-        </div>`
+      ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
       : '';
     const canResolve = isPriv && d.status !== 'resolved';
     const canEdit    = isPriv || d.reportedBy === currentUser.uid;
     const canDelete  = currentUserRole === 'admin';
-    const actionBtns = `
-      <div class="inc-actions">
-        ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openResolveModal('${doc.id}','${escapeHtml((d.title||'')).replace(/'/g,"&#39;")}')">Resolve</button>` : ''}
-        ${canEdit    ? `<button class="btn btn-sm btn-outline" onclick="openIncidentModal('${doc.id}')">Edit</button>` : ''}
-        ${canDelete  ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
-      </div>`;
+    const actionBtns = `<div class="inc-actions">
+      ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openIncidentEditFromDashboard('${doc.id}',true)">Update Status</button>` : ''}
+      ${canEdit    ? `<button class="btn btn-sm btn-outline" onclick="openIncidentEditFromDashboard('${doc.id}',false)">Edit</button>` : ''}
+      ${canDelete  ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
+    </div>`;
     return `<div class="inc-card ${d.status === 'resolved' ? 'inc-resolved' : ''} ${d.urgent ? 'inc-urgent' : ''}">
       <div class="inc-header">
         <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
@@ -7349,39 +7351,61 @@ function renderIncidentsList(docs) {
       <div class="inc-title">${escapeHtml(d.title || '')}</div>
       ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
       <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || '—')}</div>
-      ${resolvedBlock}
+      ${followUpHTML}${photosHTML}${resolvedBlock}
       ${actionBtns}
     </div>`;
   }).join('');
 }
 
-// ---- Open "Report / Edit" modal ----
-window.openIncidentModal = function(incidentId) {
+// Photo file staging for incident modal
+let incidentStagedFiles = [];
+
+// ---- Open "Report / Edit / Resolve" modal ----
+window.openIncidentModal = function(incidentId, focusResolve) {
   const overlay = $('incident-overlay');
   if (!overlay) return;
-  const vehicleRow = $('incident-vehicle-row');
-  const vehicleSel = $('incident-vehicle-select');
+  incidentStagedFiles = [];
+  const previews = $('incident-photo-previews');
+  if (previews) previews.innerHTML = '';
+  const statusSel = $('incident-status-select');
+  const resRow    = $('incident-resolution-row');
 
   $('incident-edit-id').value = incidentId || '';
   $('incident-modal-title').textContent = incidentId ? '✏️ Edit Incident' : '🚨 Report Incident';
 
   if (incidentId) {
-    // Editing — pull from cached list (vehicle page or dashboard)
-    const allCached = [...currentVehicleIncidents];
-    const doc = allCached.find(d => d.id === incidentId);
+    const doc = currentVehicleIncidents.find(d => d.id === incidentId);
     if (!doc) return;
     const d = doc.data();
-    $('incident-type').value        = d.type || 'other';
-    $('incident-title').value       = d.title || '';
-    $('incident-description').value = d.description || '';
-    $('incident-urgent').checked    = !!d.urgent;
+    $('incident-type').value              = d.type || 'other';
+    $('incident-title').value             = d.title || '';
+    $('incident-description').value       = d.description || '';
+    $('incident-urgent').checked          = !!d.urgent;
+    $('incident-followup-date').value     = d.followUpDate || '';
+    if (statusSel) statusSel.value        = d.status || 'open';
+    if (resRow) resRow.style.display      = (d.status === 'in_progress' || d.status === 'resolved') ? '' : 'none';
+    const inlineRes = $('incident-resolution-inline');
+    if (inlineRes) inlineRes.value        = d.resolution || '';
+    // Show existing photos
+    if (previews && d.photoUrls && d.photoUrls.length) {
+      previews.innerHTML = d.photoUrls.map(url =>
+        `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb-preview" alt="photo"></a>`
+      ).join('');
+    }
+    const vehicleRow = $('incident-vehicle-row');
     if (vehicleRow) vehicleRow.style.display = 'none';
   } else {
-    $('incident-type').value        = 'damage';
-    $('incident-title').value       = '';
-    $('incident-description').value = '';
-    $('incident-urgent').checked    = false;
-    // Always show vehicle picker — pre-select current vehicle if on vehicle page
+    $('incident-type').value          = 'damage';
+    $('incident-title').value         = '';
+    $('incident-description').value   = '';
+    $('incident-urgent').checked      = false;
+    $('incident-followup-date').value = '';
+    if (statusSel) statusSel.value    = 'open';
+    if (resRow) resRow.style.display  = 'none';
+    const inlineRes = $('incident-resolution-inline');
+    if (inlineRes) inlineRes.value    = '';
+    const vehicleRow = $('incident-vehicle-row');
+    const vehicleSel = $('incident-vehicle-select');
     if (vehicleRow) vehicleRow.style.display = '';
     if (vehicleSel) {
       vehicleSel.innerHTML = vehiclesCache.map(v =>
@@ -7390,18 +7414,53 @@ window.openIncidentModal = function(incidentId) {
       if (selectedVehicle) vehicleSel.value = selectedVehicle.id || selectedVehicle;
     }
   }
+
+  // Wire status change to show/hide resolution field
+  if (statusSel) {
+    statusSel.onchange = () => {
+      if (resRow) resRow.style.display = (statusSel.value === 'in_progress' || statusSel.value === 'resolved') ? '' : 'none';
+    };
+  }
+
+  // Wire photo input
+  const photoInput = $('incident-photo-input');
+  if (photoInput) {
+    photoInput.value = '';
+    photoInput.onchange = function() {
+      const files = Array.from(this.files);
+      incidentStagedFiles = [...incidentStagedFiles, ...files];
+      const prev = $('incident-photo-previews');
+      if (prev) {
+        const newPreviews = files.map(f => {
+          const url = URL.createObjectURL(f);
+          return `<img src="${url}" class="inc-thumb-preview" alt="${escapeHtml(f.name)}">`;
+        }).join('');
+        prev.innerHTML += newPreviews;
+      }
+    };
+  }
+
   overlay.style.display = 'flex';
+  if (focusResolve && statusSel) {
+    statusSel.value = 'in_progress';
+    if (resRow) resRow.style.display = '';
+    setTimeout(() => { const r = $('incident-resolution-inline'); if (r) r.focus(); }, 100);
+  }
 };
 
-// Edit from dashboard (need to load from Firestore since currentVehicleIncidents may not have it)
-window.openIncidentEditFromDashboard = async function(incidentId) {
+// Edit from dashboard (load from Firestore since currentVehicleIncidents may not have dashboard items)
+window.openIncidentEditFromDashboard = async function(incidentId, focusResolve) {
   try {
     const snap = await db.collection('incidents').doc(incidentId).get();
     if (!snap.exists) return;
-    // Temporarily inject into currentVehicleIncidents so openIncidentModal can find it
     const existing = currentVehicleIncidents.find(d => d.id === incidentId);
     if (!existing) currentVehicleIncidents.push(snap);
-    openIncidentModal(incidentId);
+    else {
+      // replace stale entry
+      const idx = currentVehicleIncidents.findIndex(d => d.id === incidentId);
+      currentVehicleIncidents[idx] = snap;
+    }
+    openIncidentModal(incidentId, focusResolve);
   } catch(e) { toast('Failed to load incident.', 'error'); }
 };
 
@@ -7414,82 +7473,108 @@ window.saveIncident = async function() {
   const title = ($('incident-title').value || '').trim();
   if (!title) { $('incident-title').focus(); toast('Please enter a title / summary.', 'error'); return; }
 
-  const editId  = $('incident-edit-id').value;
-  const type    = $('incident-type').value;
-  const desc    = ($('incident-description').value || '').trim();
-  const urgent  = $('incident-urgent').checked;
+  const editId     = $('incident-edit-id').value;
+  const type       = $('incident-type').value;
+  const desc       = ($('incident-description').value || '').trim();
+  const urgent     = $('incident-urgent').checked;
+  const status     = $('incident-status-select') ? $('incident-status-select').value : 'open';
+  const resolution = ($('incident-resolution-inline') ? $('incident-resolution-inline').value : '').trim();
+  const followUpDate = ($('incident-followup-date') ? $('incident-followup-date').value : '').trim();
 
-  const vehicleId   = selectedVehicle ? selectedVehicle.id   : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
+  const vehicleId    = selectedVehicle ? (selectedVehicle.id || selectedVehicle) : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
   const vehiclePlate = selectedVehicle ? selectedVehicle.plate : (vehiclesCache.find(v => v.id === vehicleId) || {}).plate || '';
 
+  const statusEl = $('incident-upload-status');
+  if (statusEl) statusEl.textContent = '';
+
+  // Upload any staged photos
+  let newPhotoUrls = [];
+  if (incidentStagedFiles.length) {
+    if (statusEl) statusEl.textContent = `Uploading ${incidentStagedFiles.length} photo(s)…`;
+    try {
+      const incId = editId || ('temp_' + Date.now());
+      newPhotoUrls = await Promise.all(incidentStagedFiles.map(async (file, i) => {
+        const ext  = file.name.split('.').pop() || 'jpg';
+        const path = `incidents/${vehicleId || 'general'}/${incId}_${Date.now()}_${i}.${ext}`;
+        const ref  = storage.ref(path);
+        await ref.put(file);
+        return await ref.getDownloadURL();
+      }));
+    } catch(e) {
+      console.error(e);
+      toast('Photo upload failed. Saving without photos.', 'error');
+      newPhotoUrls = [];
+    }
+    if (statusEl) statusEl.textContent = '';
+  }
+
   try {
+    let docId = editId;
     if (editId) {
-      await db.collection('incidents').doc(editId).update({
-        type, title, description: desc, urgent,
+      const existingDoc = currentVehicleIncidents.find(d => d.id === editId);
+      const existingUrls = existingDoc ? (existingDoc.data().photoUrls || []) : [];
+      const updateData = {
+        type, title, description: desc, urgent, status,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      });
+        photoUrls: [...existingUrls, ...newPhotoUrls],
+      };
+      if (followUpDate) updateData.followUpDate = followUpDate;
+      if (resolution) {
+        updateData.resolution     = resolution;
+        updateData.resolvedBy     = currentUser.uid;
+        updateData.resolvedByName = currentUser.displayName || currentUser.email;
+        if (status === 'resolved') updateData.resolvedAt = firebase.firestore.FieldValue.serverTimestamp();
+      }
+      await db.collection('incidents').doc(editId).update(updateData);
       toast('Incident updated.', 'success');
     } else {
-      await db.collection('incidents').add({
+      const docRef = await db.collection('incidents').add({
         vehicleId,
         vehiclePlate,
         type,
         title,
         description: desc,
         urgent,
-        status: 'open',
+        status,
+        resolution: resolution || '',
+        resolvedBy: resolution ? currentUser.uid : '',
+        resolvedByName: resolution ? (currentUser.displayName || currentUser.email) : '',
+        resolvedAt: (resolution && status === 'resolved') ? firebase.firestore.FieldValue.serverTimestamp() : null,
+        followUpDate: followUpDate || '',
+        photoUrls: newPhotoUrls,
         reportedBy: currentUser.uid,
         reportedByName: currentUser.displayName || currentUser.email,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        resolution: '',
-        resolvedBy: '',
-        resolvedByName: '',
-        resolvedAt: null,
       });
+      docId = docRef.id;
       toast('Incident reported.', 'success');
     }
+
+    // If a follow-up date was set, create/update a generalNotes calendar task
+    if (followUpDate) {
+      const taskText = `🚨 Incident Follow-Up: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
+      await db.collection('generalNotes').add({
+        text: taskText,
+        isFollowUp: true,
+        done: false,
+        urgent: urgent,
+        dueDate: followUpDate,
+        sourceType: 'incident',
+        incidentDocId: docId,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: currentUser.displayName || currentUser.email,
+      });
+      loadGeneralNotes();
+      loadDashboardFollowUps();
+    }
+
+    incidentStagedFiles = [];
     closeIncidentModal();
     if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
     loadAllOpenIncidentsDashboard();
   } catch(e) { console.error(e); toast('Failed to save incident.', 'error'); }
-};
-
-// ---- Resolve modal ----
-window.openResolveModal = function(incidentId, title) {
-  const overlay = $('incident-resolve-overlay');
-  if (!overlay) return;
-  $('resolve-incident-id').value = incidentId;
-  $('resolve-incident-title-display').textContent = title || '';
-  $('resolve-status').value = 'resolved';
-  $('resolve-notes').value = '';
-  overlay.style.display = 'flex';
-};
-
-window.closeResolveModal = function() {
-  const overlay = $('incident-resolve-overlay');
-  if (overlay) overlay.style.display = 'none';
-};
-
-window.saveIncidentResolution = async function() {
-  const notes = ($('resolve-notes').value || '').trim();
-  if (!notes) { $('resolve-notes').focus(); toast('Please enter resolution notes.', 'error'); return; }
-  const docId  = $('resolve-incident-id').value;
-  const status = $('resolve-status').value;
-  try {
-    await db.collection('incidents').doc(docId).update({
-      status,
-      resolution:     notes,
-      resolvedBy:     currentUser.uid,
-      resolvedByName: currentUser.displayName || currentUser.email,
-      resolvedAt:     firebase.firestore.FieldValue.serverTimestamp(),
-      updatedAt:      firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    toast(status === 'resolved' ? 'Incident resolved ✅' : 'Status updated.', 'success');
-    closeResolveModal();
-    if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
-    loadAllOpenIncidentsDashboard();
-  } catch(e) { console.error(e); toast('Failed to save resolution.', 'error'); }
 };
 
 // ---- Delete ----
