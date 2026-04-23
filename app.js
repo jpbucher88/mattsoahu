@@ -620,7 +620,7 @@ function renderFleetDashboard() {
     } else if (v.tripStatus === 'repair-shop') {
       locDisplay = '🔧 Repair Shop';
       locCls = 'status-danger';
-    } else if (v.tripStatus === 'scheduled') {
+    } else if (v.tripStatus === 'private-trip') {\n      const ptName = v.privateTripCustomerName ? ` \u2014 ${escapeHtml(v.privateTripCustomerName)}` : '';\n      locDisplay = `\ud83d\udd12 Private Trip${ptName}`;\n      locCls = 'status-warn';\n    } else if (v.tripStatus === 'scheduled') {
       const ss = v.tripScheduledStart ? (v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart)) : null;
       const ssStr = ss ? ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
       locDisplay = `⏰ Scheduled${ssStr ? ' · ' + ssStr : ''}`;
@@ -994,6 +994,19 @@ function showDamageCheckModal(vid, plate) {
   overlay.className = 'damage-check-overlay';
 
   function buildItemHTML(item) {
+    // Yes/No style (no fail notes needed)
+    if (item.yesno) {
+      return `
+      <div class="dmg-item" id="dmg-item-${item.key}">
+        <div class="dmg-item-header">
+          <span class="dmg-item-label">${escapeHtml(item.label)}</span>
+          <div class="dmg-pf-btns">
+            <button class="dmg-pass-btn" data-check="${item.key}" style="background:#fef9c3;border-color:#ca8a04;color:#92400e;">Yes 🐞</button>
+            <button class="dmg-fail-btn" data-check="${item.key}" style="background:#f0fdf4;border-color:#16a34a;color:#15803d;">No ✅</button>
+          </div>
+        </div>
+      </div>`;
+    }
     return `
       <div class="dmg-item" id="dmg-item-${item.key}">
         <div class="dmg-item-header">
@@ -1042,13 +1055,15 @@ function showDamageCheckModal(vid, plate) {
   function refreshConfirmBtn() {
     const allDecided = INSPECTION_ITEMS.every(i => itemState[i.key] !== 'none');
     const failsHaveNotes = INSPECTION_ITEMS
-      .filter(i => itemState[i.key] === 'fail')
+      .filter(i => !i.yesno && itemState[i.key] === 'fail')
       .every(i => (overlay.querySelector('#dmg-notes-' + i.key) || {value:' '}).value.trim().length > 0);
     confirmBtn.disabled = !(allDecided && failsHaveNotes);
-    const failCount = INSPECTION_ITEMS.filter(i => itemState[i.key] === 'fail').length;
+    const failCount = INSPECTION_ITEMS.filter(i => !i.yesno && itemState[i.key] === 'fail').length;
+    const bugsYes = itemState['bugs'] === 'pass';
+    const extras = bugsYes ? ' +🐞 bugs' : '';
     confirmBtn.textContent = failCount > 0
-      ? 'Submit (' + failCount + ' issue' + (failCount > 1 ? 's' : '') + ')'
-      : 'Submit - All Clear';
+      ? `Submit (${failCount} issue${failCount > 1 ? 's' : ''}${extras})`
+      : (bugsYes ? 'Submit — Bugs Noted' : 'Submit — All Clear');
   }
 
   overlay.querySelectorAll('.dmg-pass-btn').forEach(btn => {
@@ -1103,13 +1118,29 @@ function showDamageCheckModal(vid, plate) {
   confirmBtn.addEventListener('click', async () => {
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Submitting...';
-    const failItems = INSPECTION_ITEMS.filter(i => itemState[i.key] === 'fail');
+    const failItems = INSPECTION_ITEMS.filter(i => {
+      if (i.yesno) return itemState[i.key] === 'pass'; // 'pass' = yes bugs spotted
+      return itemState[i.key] === 'fail';
+    });
     const st = getStorage();
     const vehicleObj = vehiclesCache.find(v => v.id === vid);
     const safePlate = vehicleObj ? sanitizePlate(vehicleObj.plate) : 'unknown';
 
     try {
       for (const item of failItems) {
+        // Bugs-spotted: create a scheduled task (not urgent) and skip photo/notes
+        if (item.yesno) {
+          await db.collection('vehicleNotes').add({
+            vehicleId: vid,
+            text: 'Bugs spotted during inspection — treatment needed.',
+            isFollowUp: true, done: false, urgent: false, taskStatus: 'scheduled',
+            sourceType: 'inspection', inspectionKey: item.key,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid,
+            createdByName: currentUser.displayName || currentUser.email,
+          });
+          continue;
+        }
         const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
         const photoFiles = failFiles[item.key] || [];
         const photoUrls = [];
@@ -1176,6 +1207,7 @@ const INSPECTION_ITEMS = [
   { key: 'tires',    label: 'Tires - Good condition' },
   { key: 'smoking',  label: 'Smoking / Odor - None detected' },
   { key: 'clean',    label: 'Vehicle Cleaned' },
+  { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
 ];
 
 // Open the vehicle detail page
@@ -1204,6 +1236,35 @@ async function openVehiclePage(vid) {
     $('trip-expected-end-row').style.display = ts === 'scheduled' ? '' : 'none';
     tripReturnRow.style.display = (ts === 'on-trip' || ts === 'repair-shop') ? '' : 'none';
     repairPartsRow.style.display = ts === 'repair-shop' ? '' : 'none';
+    $('hnl-parking-row').style.display = (homeLocSelect.value === 'HNL') ? '' : 'none';
+    $('hnl-parking-row-val').value = selectedVehicle.parkingRow || '';
+    $('hnl-parking-level').value = selectedVehicle.parkingLevel || '';
+    $('private-trip-row').style.display = ts === 'private-trip' ? '' : 'none';
+    // Populate private trip fields
+    if (ts === 'private-trip') {
+      $('private-customer-name').value = selectedVehicle.privateTripCustomerName || '';
+      $('private-customer-phone').value = selectedVehicle.privateTripCustomerPhone || '';
+      $('private-customer-email').value = selectedVehicle.privateTripCustomerEmail || '';
+      $('private-trip-cost').value = selectedVehicle.privateTripDailyRate || '';
+      $('private-trip-get').value = selectedVehicle.privateTripGET ?? '4.712';
+      $('private-trip-daily-tax').value = selectedVehicle.privateTripDailyTax || '';
+      if (selectedVehicle.tripScheduledStart) {
+        const ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
+        $('private-trip-start').value = ss.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
+      }
+      if (selectedVehicle.tripExpectedEnd) {
+        const ee = selectedVehicle.tripExpectedEnd.toDate ? selectedVehicle.tripExpectedEnd.toDate() : new Date(selectedVehicle.tripExpectedEnd);
+        $('private-trip-end').value = ee.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
+      }
+      if (selectedVehicle.tripReturnDate) {
+        const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
+        $('private-trip-return').value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
+      }
+      // Show contract if already uploaded
+      const preview = $('private-contract-preview');
+      if (preview) preview.innerHTML = selectedVehicle.privateTripContractUrl
+        ? `<a href="${escapeHtml(selectedVehicle.privateTripContractUrl)}" target="_blank" class="compliance-doc-anchor">📄 View Contract</a>` : '';
+    }
     // Populate scheduled start
     if (selectedVehicle.tripScheduledStart) {
       const ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
@@ -1276,7 +1337,7 @@ async function openVehiclePage(vid) {
   const MS_24H = 24 * 60 * 60 * 1000;
   const MS_2H = 2 * 60 * 60 * 1000;
   const staleAlert = $('stale-alert');
-  const isOnTrip = selectedVehicle.tripStatus === 'on-trip';
+  const isOnTrip = selectedVehicle.tripStatus === 'on-trip' || selectedVehicle.tripStatus === 'private-trip';
   const isAtRepairShop = selectedVehicle.tripStatus === 'repair-shop';
   const stillNeedsCleaning = selectedVehicle.needsCleaning;
   // Grace: 2 hours after cleaning was flagged (vehicle returned)
@@ -1325,6 +1386,10 @@ async function openVehiclePage(vid) {
 
   // Show notes section
   $('notes-section').style.display = 'block';
+
+  // Show Vehicle Info section
+  $('vehicle-info-section').style.display = 'block';
+  loadVehicleInfoSection(selectedVehicle);
 
   // Show admin button if admin
   $('btn-admin-from-vehicle').style.display = currentUserRole === 'admin' ? '' : 'none';
@@ -2462,13 +2527,21 @@ $('brand-home-admin').addEventListener('click', () => {
 });
 
 // Location dropdown handlers
+$('vehicle-home-location').addEventListener('change', function() {
+  $('hnl-parking-row').style.display = this.value === 'HNL' ? '' : 'none';
+});
+
 $('vehicle-trip-status').addEventListener('change', function() {
-  $('trip-return-row').style.display = (this.value === 'on-trip' || this.value === 'repair-shop') ? '' : 'none';
-  $('repair-parts-row').style.display = this.value === 'repair-shop' ? '' : 'none';
+  const v = this.value;
+  $('trip-return-row').style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
+  $('repair-parts-row').style.display = v === 'repair-shop' ? '' : 'none';
+  $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
+  $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
+  $('private-trip-row').style.display = v === 'private-trip' ? '' : 'none';
   // Hide needs-cleaning btn if switching to trip/repair
   const needsCleanBtn = $('btn-needs-cleaning');
   if (needsCleanBtn && selectedVehicle) {
-    const showCleanBtn = this.value !== 'on-trip' && this.value !== 'repair-shop' && !selectedVehicle.needsCleaning;
+    const showCleanBtn = v !== 'on-trip' && v !== 'repair-shop' && v !== 'private-trip' && !selectedVehicle.needsCleaning;
     needsCleanBtn.style.display = showCleanBtn ? '' : 'none';
   }
 });
@@ -2502,13 +2575,19 @@ $('btn-save-location').addEventListener('click', async () => {
   const repairShopName = $('repair-shop-name').value.trim();
   const repairOrderNumber = $('repair-order-number').value.trim();
   const repairPartsEta = $('repair-parts-eta').value;
+  // HNL parking
+  const parkingRow = homeLocation === 'HNL' ? ($('hnl-parking-row-val').value.trim() || null) : null;
+  const parkingLevel = homeLocation === 'HNL' ? ($('hnl-parking-level').value.trim() || null) : null;
 
   if (!homeLocation) {
     toast('Please select a home location.', 'warning');
     return;
   }
 
-  const updateData = { homeLocation, tripStatus };
+  const updateData = { homeLocation, tripStatus,
+    parkingRow: parkingRow || firebase.firestore.FieldValue.delete(),
+    parkingLevel: parkingLevel || firebase.firestore.FieldValue.delete(),
+  };
 
   // Compute the display location for backward compat
   if (tripStatus === 'scheduled') {
@@ -2521,6 +2600,39 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
+    // clear private fields
+    ['privateTripCustomerName','privateTripCustomerPhone','privateTripCustomerEmail',
+     'privateTripDailyRate','privateTripGET','privateTripDailyTax'].forEach(k => {
+      updateData[k] = firebase.firestore.FieldValue.delete();
+    });
+  } else if (tripStatus === 'private-trip') {
+    updateData.location = 'Private Trip';
+    const ptStart = $('private-trip-start').value;
+    const ptEnd = $('private-trip-end').value;
+    const ptReturn = $('private-trip-return').value;
+    updateData.tripScheduledStart = ptStart ? firebase.firestore.Timestamp.fromDate(new Date(ptStart)) : firebase.firestore.FieldValue.delete();
+    updateData.tripExpectedEnd = ptEnd ? firebase.firestore.Timestamp.fromDate(new Date(ptEnd)) : firebase.firestore.FieldValue.delete();
+    updateData.tripReturnDate = ptReturn ? firebase.firestore.Timestamp.fromDate(new Date(ptReturn + ':00-10:00')) : firebase.firestore.FieldValue.delete();
+    updateData.repairShopName = firebase.firestore.FieldValue.delete();
+    updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
+    updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
+    updateData.privateTripCustomerName = $('private-customer-name').value.trim() || null;
+    updateData.privateTripCustomerPhone = $('private-customer-phone').value.trim() || null;
+    updateData.privateTripCustomerEmail = $('private-customer-email').value.trim() || null;
+    updateData.privateTripDailyRate = parseFloat($('private-trip-cost').value) || null;
+    updateData.privateTripGET = parseFloat($('private-trip-get').value) || null;
+    updateData.privateTripDailyTax = parseFloat($('private-trip-daily-tax').value) || null;
+    // Handle contract upload
+    const contractFile = $('private-contract-upload').files[0];
+    if (contractFile) {
+      try {
+        const st = getStorage();
+        const ref = st.ref('vehicles/' + (selectedVehicle.plate || selectedVehicle.id) + '/contracts/' + Date.now() + '_' + contractFile.name);
+        await ref.put(contractFile);
+        updateData.privateTripContractUrl = await ref.getDownloadURL();
+        $('private-contract-upload').value = '';
+      } catch(e) { console.warn('Contract upload failed', e); }
+    }
   } else if (tripStatus === 'on-trip') {
     updateData.location = 'On Trip';
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
@@ -2560,8 +2672,8 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
   }
 
-  // If vehicle was on-trip or repair-shop and now returning home, flag for cleaning + damage check
-  const wasOnTrip = selectedVehicle.tripStatus === 'on-trip' || selectedVehicle.tripStatus === 'repair-shop';
+  // If vehicle was on-trip, private-trip, or repair-shop and now returning home, flag for cleaning
+  const wasOnTrip = ['on-trip', 'repair-shop', 'private-trip'].includes(selectedVehicle.tripStatus);
   const nowHome = tripStatus === 'home';
   if (wasOnTrip && nowHome) {
     updateData.needsCleaning = true;
@@ -5569,6 +5681,267 @@ async function autoCleanupResolvedComplianceNotes() {
     }
   }
 }
+
+// ================================================================
+// VEHICLE INFO TAB (key photo, videos, customer notes)
+// ================================================================
+window.switchVInfoTab = function(tab) {
+  document.querySelectorAll('.vinfo-tab').forEach(b => b.classList.toggle('active', b.dataset.vtab === tab));
+  ['keys','videos','notes'].forEach(t => {
+    const el = $('vinfo-tab-' + t);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  });
+};
+
+function loadVehicleInfoSection(v) {
+  // Key photo
+  const img = $('vinfo-key-img');
+  const wrap = $('vinfo-key-img-wrap');
+  const lbl = $('vinfo-key-upload-label');
+  if (v.vehicleInfoKeyPhotoUrl && img) {
+    img.src = v.vehicleInfoKeyPhotoUrl;
+    if (wrap) wrap.style.display = '';
+    if (lbl) lbl.style.display = 'none';
+  } else {
+    if (wrap) wrap.style.display = 'none';
+    if (lbl) lbl.style.display = '';
+  }
+  // Videos
+  renderVInfoVideos(v.vehicleInfoVideos || []);
+  // Customer notes
+  const notesEl = $('vinfo-customer-notes');
+  if (notesEl) notesEl.value = v.vehicleInfoNotes || '';
+}
+
+function renderVInfoVideos(videos) {
+  const list = $('vinfo-videos-list');
+  if (!list) return;
+  if (!videos.length) { list.innerHTML = '<p class="hint">No videos added yet.</p>'; return; }
+  list.innerHTML = videos.map((url, i) => {
+    const videoId = extractYouTubeId(url);
+    const thumb = videoId ? `<img src="https://img.youtube.com/vi/${videoId}/default.jpg" class="vinfo-video-thumb">` : '';
+    return `<div class="vinfo-video-row">
+      ${thumb}
+      <a href="${escapeHtml(url)}" target="_blank" class="compliance-doc-anchor vinfo-video-link">${escapeHtml(url)}</a>
+      <button class="btn btn-sm btn-danger" onclick="removeVInfoVideo(${i})" title="Remove">\u00d7</button>
+    </div>`;
+  }).join('');
+}
+
+function extractYouTubeId(url) {
+  const m = url.match(/(?:v=|youtu\.be\/|embed\/)([a-zA-Z0-9_-]{11})/);
+  return m ? m[1] : null;
+}
+
+window.addVInfoVideo = function() {
+  const input = $('vinfo-video-url');
+  const url = (input.value || '').trim();
+  if (!url) return;
+  const videos = [...(selectedVehicle.vehicleInfoVideos || []), url];
+  selectedVehicle.vehicleInfoVideos = videos;
+  input.value = '';
+  renderVInfoVideos(videos);
+};
+
+window.removeVInfoVideo = function(idx) {
+  const videos = (selectedVehicle.vehicleInfoVideos || []).filter((_, i) => i !== idx);
+  selectedVehicle.vehicleInfoVideos = videos;
+  renderVInfoVideos(videos);
+};
+
+$('vinfo-key-upload').addEventListener('change', async function() {
+  const file = this.files[0];
+  if (!file || !selectedVehicle) return;
+  $('vinfo-key-uploading').style.display = '';
+  try {
+    const st = getStorage();
+    const ref = st.ref('vehicles/' + sanitizePlate(selectedVehicle.plate) + '/info/key_placement.jpg');
+    await ref.put(await compressImage(file), { contentType: 'image/jpeg' });
+    const url = await ref.getDownloadURL();
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ vehicleInfoKeyPhotoUrl: url });
+    selectedVehicle.vehicleInfoKeyPhotoUrl = url;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.vehicleInfoKeyPhotoUrl = url;
+    loadVehicleInfoSection(selectedVehicle);
+    toast('Key photo saved \u2705', 'success');
+  } catch(e) { console.error('Key photo upload error', e); toast('Upload failed.', 'error'); }
+  finally { $('vinfo-key-uploading').style.display = 'none'; this.value = ''; }
+});
+
+$('btn-save-vehicle-info').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  try {
+    const notesVal = $('vinfo-customer-notes').value.trim();
+    const data = {
+      vehicleInfoNotes: notesVal || null,
+      vehicleInfoVideos: selectedVehicle.vehicleInfoVideos || [],
+    };
+    await db.collection('vehicles').doc(selectedVehicle.id).update(data);
+    Object.assign(selectedVehicle, data);
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) Object.assign(cached, data);
+    toast('Vehicle info saved \u2705', 'success');
+  } catch(e) { console.error('Save vehicle info error', e); toast('Save failed.', 'error'); }
+});
+
+// ================================================================
+// LEARNING CENTER
+// ================================================================
+const pages_extended = {};
+pages_extended.learning = $('page-learning');
+
+window.openLearningPage = function() {
+  const disp = $('learning-diploma-name');
+  if (disp && currentUser) disp.textContent = currentUser.displayName || currentUser.email;
+  const shareBtn = $('btn-add-shared-resource');
+  if (shareBtn) shareBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
+  // Use the showPage mechanism but add the page if it's not registered
+  Object.values(pages).forEach(p => p.classList.remove('active'));
+  const pg = $('page-learning');
+  if (pg) pg.classList.add('active');
+  window.scrollTo(0, 0);
+  loadLearningItems();
+};
+
+window.closeLearningPage = function() {
+  showPage('dashboard');
+};
+
+async function loadLearningItems() {
+  const myList = $('learning-items-list');
+  const sharedList = $('shared-resources-list');
+  if (!myList || !sharedList || !currentUser) return;
+
+  myList.innerHTML = '<p class="hint">Loading\u2026</p>';
+  sharedList.innerHTML = '<p class="hint">Loading\u2026</p>';
+
+  try {
+    const [mySnap, sharedSnap] = await Promise.all([
+      db.collection('learningItems')
+        .where('uid', '==', currentUser.uid)
+        .where('scope', '==', 'personal')
+        .orderBy('createdAt', 'desc')
+        .limit(100)
+        .get(),
+      db.collection('learningItems')
+        .where('scope', '==', 'shared')
+        .orderBy('createdAt', 'desc')
+        .limit(50)
+        .get(),
+    ]);
+    renderLearningList(myList, mySnap, true);
+    renderLearningList(sharedList, sharedSnap, currentUserRole === 'admin');
+  } catch(e) {
+    console.error('Load learning items error', e);
+    myList.innerHTML = '<p class="hint">Error loading items.</p>';
+  }
+}
+
+function renderLearningList(container, snap, canEdit) {
+  if (snap.empty) { container.innerHTML = '<p class="hint">Nothing here yet.</p>'; return; }
+  let html = '';
+  snap.forEach(doc => {
+    const d = doc.data();
+    let contentHtml = '';
+    if (d.type === 'video') {
+      const vid = extractYouTubeId(d.content || '');
+      contentHtml = vid
+        ? `<div class="li-embed"><iframe width="100%" height="200" src="https://www.youtube.com/embed/${vid}" frameborder="0" allowfullscreen loading="lazy"></iframe></div>`
+        : `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">${escapeHtml(d.content)}</a>`;
+    } else if (d.type === 'link') {
+      contentHtml = `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">\ud83d\udd17 ${escapeHtml(d.title || d.content)}</a>`;
+    } else {
+      contentHtml = `<p class="li-text">${escapeHtml(d.content || '').replace(/\n/g, '<br>')}</p>`;
+    }
+    const editBtns = canEdit ? `
+      <button class="btn btn-sm btn-outline" onclick="editLearningItem('${doc.id}','${escapeHtml(JSON.stringify(d)).replace(/'/g,"&#39;")}')">Edit</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteLearningItem('${doc.id}')">Delete</button>` : '';
+    html += `<div class="li-card">
+      <div class="li-header"><span class="li-title">${escapeHtml(d.title || 'Untitled')}</span><div class="li-actions">${editBtns}</div></div>
+      ${contentHtml}
+    </div>`;
+  });
+  container.innerHTML = html;
+}
+
+window.openAddLearningItem = function(scope) {
+  $('li-edit-id').value = '';
+  $('li-title').value = '';
+  $('li-content-text').value = '';
+  $('li-video-url').value = '';
+  $('li-link-url').value = '';
+  $('li-video-preview').innerHTML = '';
+  $('li-type').value = 'note';
+  $('li-scope').value = scope || 'personal';
+  onLearningTypeChange();
+  $('learning-modal-title').textContent = '\u2795 Add Learning Item';
+  $('learning-item-overlay').style.display = 'flex';
+};
+
+window.editLearningItem = function(docId, dataJson) {
+  try {
+    const d = typeof dataJson === 'string' ? JSON.parse(dataJson) : dataJson;
+    $('li-edit-id').value = docId;
+    $('li-title').value = d.title || '';
+    $('li-type').value = d.type || 'note';
+    $('li-scope').value = d.scope || 'personal';
+    $('li-content-text').value = d.type === 'note' ? (d.content || '') : '';
+    $('li-video-url').value = d.type === 'video' ? (d.content || '') : '';
+    $('li-link-url').value = d.type === 'link' ? (d.content || '') : '';
+    onLearningTypeChange();
+    $('learning-modal-title').textContent = '\u270f\ufe0f Edit Learning Item';
+    $('learning-item-overlay').style.display = 'flex';
+  } catch(e) { console.error(e); }
+};
+
+window.onLearningTypeChange = function() {
+  const t = $('li-type').value;
+  $('li-content-note').style.display = t === 'note' ? '' : 'none';
+  $('li-content-video').style.display = t === 'video' ? '' : 'none';
+  $('li-content-link').style.display = t === 'link' ? '' : 'none';
+};
+
+window.closeLearningItemModal = function() {
+  $('learning-item-overlay').style.display = 'none';
+};
+
+window.saveLearningItem = async function() {
+  const title = $('li-title').value.trim();
+  const type = $('li-type').value;
+  const scope = $('li-scope').value;
+  const editId = $('li-edit-id').value;
+  let content = '';
+  if (type === 'note') content = $('li-content-text').value.trim();
+  else if (type === 'video') content = $('li-video-url').value.trim();
+  else if (type === 'link') content = $('li-link-url').value.trim();
+  if (!title && !content) { toast('Enter a title or content.', 'warning'); return; }
+  const data = {
+    title, type, scope, content,
+    uid: currentUser.uid,
+    userName: currentUser.displayName || currentUser.email,
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  try {
+    if (editId) {
+      await db.collection('learningItems').doc(editId).update(data);
+    } else {
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('learningItems').add(data);
+    }
+    closeLearningItemModal();
+    loadLearningItems();
+    toast('Saved \u2705', 'success');
+  } catch(e) { console.error(e); toast('Save failed.', 'error'); }
+};
+
+window.deleteLearningItem = async function(docId) {
+  if (!confirm('Delete this item?')) return;
+  try {
+    await db.collection('learningItems').doc(docId).delete();
+    loadLearningItems();
+    toast('Deleted.', 'success');
+  } catch(e) { toast('Delete failed.', 'error'); }
+};
 
 // Set up role-specific UI in the task panel (admin filter, assignee dropdown)
 let _taskPanelUsersLoaded = false;

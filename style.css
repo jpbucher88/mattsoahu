@@ -4149,8 +4149,87 @@ body {
 .tc-diff-pos { color: #16a34a; font-weight: 800; font-size: 0.95rem; }
 .tc-diff-neg { color: #dc2626; font-weight: 800; font-size: 0.95rem; }
 
+/* ================================================================
+   PHASE 4 STYLES
+   ================================================================ */
 
+/* Vehicle Info Tabs */
+.vehicle-info-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.vinfo-tab {
+  background: none;
+  border: 1.5px solid #d1d5db;
+  color: #6b7280;
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.vinfo-tab.active { background: #1e3a5f; color: #fff; border-color: #1e3a5f; }
+.vinfo-key-img-wrap { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.vinfo-key-img { max-width: 100%; max-height: 300px; border-radius: 10px; object-fit: contain; border: 1px solid #e5e7eb; }
+.vinfo-upload-label { cursor: pointer; font-size: 0.9rem; color: #0369a1; }
+.vinfo-videos-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.vinfo-video-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vinfo-video-thumb { width: 60px; height: 45px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
+.vinfo-video-link { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vinfo-add-video-row { display: flex; gap: 8px; align-items: center; }
 
+/* Private trip contract preview */
+.private-contract-preview { margin-top: 8px; font-size: 0.85rem; }
+.private-contract-preview img { max-width: 120px; border-radius: 8px; }
 
+/* HNL parking row */
+.loc-parts-row { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0; }
+.loc-parts-row .loc-field { display: flex; flex-direction: column; gap: 4px; min-width: 100px; }
+
+/* Learning Section */
+#page-learning .page-header { position: sticky; top: 0; z-index: 10; }
+.learning-diploma {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, #1e3a5f, #0369a1);
+  color: #fff;
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.diploma-seal { font-size: 3rem; line-height: 1; }
+.diploma-title { font-size: 1.1rem; font-weight: 700; }
+.diploma-subtitle { font-size: 0.9rem; opacity: 0.85; margin-top: 4px; }
+.learning-items-list, .shared-resources-list { display: flex; flex-direction: column; gap: 10px; }
+.li-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #fff;
+}
+.li-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; gap: 8px; }
+.li-title { font-weight: 700; font-size: 0.95rem; color: #1e3a5f; }
+.li-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.li-text { font-size: 0.88rem; color: #374151; white-space: pre-wrap; margin: 0; }
+.li-embed { border-radius: 8px; overflow: hidden; }
+#learning-item-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.learning-item-modal {
+  background: #fff;
+  border-radius: 14px;
+  padding: 24px 20px;
+  max-width: 480px;
+  width: 90vw;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.learning-item-modal h3 { margin: 0 0 14px; font-size: 1.05rem; color: #1e3a5f; }
 
 
