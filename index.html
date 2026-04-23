@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423b">
+  <link rel="stylesheet" href="style.css?v=20260423c">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -701,6 +701,30 @@
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button class="btn btn-primary" onclick="saveLearningItem()">Save</button>
         <button class="btn btn-outline" onclick="closeLearningItemModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Training Task modal -->
+  <div id="learning-task-overlay" class="overlay" style="display:none;">
+    <div class="learning-item-modal card">
+      <h4>📅 Schedule Training Task</h4>
+      <p class="hint" style="margin-bottom:10px;">Topic: <strong id="lt-title-display"></strong></p>
+      <div class="form-group">
+        <label>Assign To</label>
+        <select id="lt-assignee" class="form-select"></select>
+      </div>
+      <div class="form-group">
+        <label>Due Date <span class="hint">(optional)</span></label>
+        <input type="date" id="lt-due-date" class="form-select">
+      </div>
+      <div class="form-group">
+        <label>Notes <span class="hint">(optional)</span></label>
+        <input type="text" id="lt-notes" class="vehicle-location-custom" placeholder="e.g. Review with manager after" maxlength="150" style="width:100%;">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary" onclick="saveTrainingTask()">Schedule Task</button>
+        <button class="btn btn-outline" onclick="closeLearningTaskModal()">Cancel</button>
       </div>
     </div>
   </div>

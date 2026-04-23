@@ -5862,26 +5862,33 @@ async function loadLearningItems() {
   }
 
   try {
-    // Query by uid only (no compound index needed), filter scope client-side
+    // Query by uid only — no orderBy to avoid composite index requirement; sort client-side
     const [mySnap, sharedSnap] = await Promise.all([
       db.collection('learningItems')
         .where('uid', '==', filterUid)
-        .orderBy('createdAt', 'desc')
         .limit(100)
         .get(),
       db.collection('learningItems')
         .where('scope', '==', 'shared')
-        .orderBy('createdAt', 'desc')
         .limit(50)
         .get(),
     ]);
-    // Filter to personal items only (exclude shared from personal list)
-    const personalDocs = { docs: mySnap.docs.filter(d => d.data().scope !== 'shared'), empty: false };
-    personalDocs.empty = personalDocs.docs.length === 0;
-    // Wrap as iterable with forEach
+    // Filter to personal items, sort by createdAt desc client-side
+    const personalDocs = mySnap.docs
+      .filter(d => d.data().scope !== 'shared')
+      .sort((a, b) => {
+        const av = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+        const bv = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+        return bv - av;
+      });
+    const sharedDocs = sharedSnap.docs.sort((a, b) => {
+      const av = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+      const bv = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+      return bv - av;
+    });
     const toSnap = (arr) => ({ empty: arr.length === 0, forEach: (fn) => arr.forEach(fn) });
-    renderLearningList(myList, toSnap(personalDocs.docs), canEditPersonal);
-    renderLearningList(sharedList, sharedSnap, currentUserRole === 'admin');
+    renderLearningList(myList, toSnap(personalDocs), canEditPersonal);
+    renderLearningList(sharedList, toSnap(sharedDocs), currentUserRole === 'admin');
   } catch(e) {
     console.error('Load learning items error', e);
     myList.innerHTML = '<p class="hint">Error loading items.</p>';
@@ -5900,16 +5907,34 @@ function renderLearningList(container, snap, canEdit) {
         ? `<div class="li-embed"><iframe width="100%" height="200" src="https://www.youtube.com/embed/${vid}" frameborder="0" allowfullscreen loading="lazy"></iframe></div>`
         : `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">${escapeHtml(d.content)}</a>`;
     } else if (d.type === 'link') {
-      contentHtml = `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">\ud83d\udd17 ${escapeHtml(d.title || d.content)}</a>`;
+      contentHtml = `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">🔗 ${escapeHtml(d.title || d.content)}</a>`;
     } else {
       contentHtml = `<p class="li-text">${escapeHtml(d.content || '').replace(/\n/g, '<br>')}</p>`;
     }
-    const editBtns = canEdit ? `
-      <button class="btn btn-sm btn-outline" onclick="editLearningItem('${doc.id}','${escapeHtml(JSON.stringify(d)).replace(/'/g,"&#39;")}')">Edit</button>
-      <button class="btn btn-sm btn-danger" onclick="deleteLearningItem('${doc.id}')">Delete</button>` : '';
+    // Completion log
+    const completions = d.completions || [];
+    const myCompletion = completions.find(c => c.uid === currentUser.uid);
+    const completionBadge = myCompletion
+      ? `<span class="li-completed-badge">✅ ${myCompletion.date}</span>`
+      : '';
+    const allCompletions = completions.length > 0
+      ? `<div class="li-completions">${completions.map(c => `<span class="li-comp-chip">✅ ${escapeHtml(c.name || c.uid)} · ${c.date}</span>`).join('')}</div>`
+      : '';
+    const editBtns = canEdit
+      ? `<button class="btn btn-sm btn-outline" onclick="editLearningItem('${doc.id}','${escapeHtml(JSON.stringify(d)).replace(/'/g, "&#39;")}')">Edit</button>
+         <button class="btn btn-sm btn-danger" onclick="deleteLearningItem('${doc.id}')">Delete</button>`
+      : '';
     html += `<div class="li-card">
-      <div class="li-header"><span class="li-title">${escapeHtml(d.title || 'Untitled')}</span><div class="li-actions">${editBtns}</div></div>
+      <div class="li-header">
+        <span class="li-title">${escapeHtml(d.title || 'Untitled')}</span>${completionBadge}
+        <div class="li-actions">
+          <button class="btn btn-sm li-schedule-btn" onclick="scheduleTrainingTask('${doc.id}','${escapeHtml((d.title||'Training')).replace(/'/g,"&#39;")}')">📅 Schedule</button>
+          <button class="btn btn-sm ${myCompletion ? 'li-complete-done' : 'li-complete-btn'}" onclick="logLearningCompletion('${doc.id}')">${myCompletion ? '✅ Done' : '🎓 Log Done'}</button>
+          ${editBtns}
+        </div>
+      </div>
       ${contentHtml}
+      ${allCompletions}
     </div>`;
   });
   container.innerHTML = html;
@@ -5954,6 +5979,75 @@ window.onLearningTypeChange = function() {
 
 window.closeLearningItemModal = function() {
   $('learning-item-overlay').style.display = 'none';
+};
+
+// ---- Schedule Training as a follow-up task ----
+let _scheduleTrainingDocId = null;
+let _scheduleTrainingTitle = '';
+window.scheduleTrainingTask = async function(docId, title) {
+  _scheduleTrainingDocId = docId;
+  _scheduleTrainingTitle = title;
+  const sel = $('lt-assignee');
+  sel.innerHTML = `<option value="">👥 Whole Team</option><option value="${currentUser.uid}">${escapeHtml(currentUser.displayName || currentUser.email)}</option>`;
+  try {
+    const snap = await db.collection('users').get();
+    snap.forEach(d => {
+      if (d.id === currentUser.uid) return;
+      const u = d.data();
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = u.displayName || u.email || d.id;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+  $('lt-title-display').textContent = title;
+  $('lt-due-date').value = '';
+  $('lt-notes').value = '';
+  $('learning-task-overlay').style.display = 'flex';
+};
+
+window.closeLearningTaskModal = function() {
+  $('learning-task-overlay').style.display = 'none';
+};
+
+window.saveTrainingTask = async function() {
+  const dueDate = $('lt-due-date').value;
+  const sel = $('lt-assignee');
+  const assigneeUid = sel.value;
+  const assigneeName = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.trim() : '';
+  const notes = $('lt-notes').value.trim();
+  const taskText = '🎓 Training: ' + _scheduleTrainingTitle + (notes ? ' — ' + notes : '');
+  const taskData = {
+    text: taskText,
+    isFollowUp: true,
+    done: false,
+    urgent: false,
+    taskStatus: 'scheduled',
+    sourceType: 'learning',
+    learningDocId: _scheduleTrainingDocId,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: currentUser.uid,
+    createdByName: currentUser.displayName || currentUser.email,
+  };
+  if (dueDate) taskData.dueDate = dueDate;
+  if (assigneeUid) { taskData.assignedTo = assigneeUid; taskData.assignedToName = assigneeName; }
+  try {
+    await db.collection('generalNotes').add(taskData);
+    closeLearningTaskModal();
+    toast('Training task scheduled ✅', 'success');
+  } catch(e) { console.error(e); toast('Failed to schedule.', 'error'); }
+};
+
+// ---- Log self-taught completion ----
+window.logLearningCompletion = async function(docId) {
+  const entry = { uid: currentUser.uid, name: currentUser.displayName || currentUser.email, date: todayDateString() };
+  try {
+    await db.collection('learningItems').doc(docId).update({
+      completions: firebase.firestore.FieldValue.arrayUnion(entry),
+    });
+    toast('Completion logged ✅', 'success');
+    loadLearningItems();
+  } catch(e) { console.error(e); toast('Failed to log.', 'error'); }
 };
 
 window.saveLearningItem = async function() {
@@ -6966,12 +7060,46 @@ function startMailListener() {
         });
         const inboxCount = $('mb-inbox-count');
         if (inboxCount) inboxCount.textContent = count || '';
+        updateMailboxIcon(count);
       }, () => {
-        // Fallback polling on listener error (e.g. missing composite index)
+        // Fallback polling on listener error
         updateMailBadge();
       });
   } catch (e) {
     updateMailBadge();
+  }
+}
+
+function updateMailboxIcon(count) {
+  const btn = $('btn-mailbox');
+  if (!btn) return;
+  const iconEl = btn.querySelector('.task-alert-icon');
+  if (!iconEl) return;
+  if (count > 0) {
+    if (!btn._mailAnimRunning) {
+      btn._mailAnimRunning = true;
+      let open = true;
+      iconEl.textContent = '📬';
+      iconEl.classList.add('mail-bounce');
+      btn._mailAnimIv = setInterval(() => {
+        const currentCount = parseInt(($('mail-unread-count') || {}).textContent) || 0;
+        if (currentCount === 0) {
+          clearInterval(btn._mailAnimIv);
+          btn._mailAnimRunning = false;
+          iconEl.textContent = '📪';
+          iconEl.classList.remove('mail-bounce');
+          return;
+        }
+        open = !open;
+        iconEl.textContent = open ? '📬' : '📪';
+        iconEl.classList.toggle('mail-bounce', open);
+      }, 1200);
+    }
+  } else {
+    if (btn._mailAnimIv) clearInterval(btn._mailAnimIv);
+    btn._mailAnimRunning = false;
+    iconEl.textContent = '📪';
+    iconEl.classList.remove('mail-bounce');
   }
 }
 

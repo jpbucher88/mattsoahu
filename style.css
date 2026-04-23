@@ -4232,4 +4232,73 @@ body {
 }
 .learning-item-modal h3 { margin: 0 0 14px; font-size: 1.05rem; color: #1e3a5f; }
 
+/* Learning card action buttons */
+.li-schedule-btn {
+  background: #eff6ff;
+  border: 1.5px solid #93c5fd;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.li-schedule-btn:hover { background: #dbeafe; }
+.li-complete-btn {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  color: #16a34a;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.li-complete-btn:hover { background: #dcfce7; }
+.li-complete-done {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  color: #15803d;
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: default;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.li-completed-badge {
+  font-size: 0.72rem;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 10px;
+  padding: 1px 7px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+.li-completions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+.li-comp-chip {
+  font-size: 0.72rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 2px 8px;
+  color: #15803d;
+}
+/* Mailbox bounce animation */
+@keyframes mailBounce {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  25% { transform: scale(1.25) rotate(-8deg); }
+  75% { transform: scale(1.15) rotate(6deg); }
+}
+.mail-bounce {
+  display: inline-block;
+  animation: mailBounce 0.6s ease-in-out;
+}
+
 
