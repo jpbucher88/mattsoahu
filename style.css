@@ -3481,6 +3481,44 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 .task-complete-btn:hover { background: #16a34a; color: #fff; }
+.task-delete-btn {
+  background: none;
+  border: 1.5px solid #ef4444;
+  color: #ef4444;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.task-delete-btn:hover { background: #ef4444; color: #fff; }
+/* Urgent banner action buttons */
+.urgent-done-btn {
+  font-size: 0.75rem !important;
+  padding: 3px 8px !important;
+  background: none;
+  border: 1.5px solid #16a34a;
+  color: #16a34a;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.urgent-done-btn:hover { background: #16a34a; color: #fff; }
+.urgent-delete-btn {
+  font-size: 0.75rem !important;
+  padding: 3px 8px !important;
+  background: none;
+  border: 1.5px solid #ef4444;
+  color: #ef4444;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.urgent-delete-btn:hover { background: #ef4444; color: #fff; }
 
 /* Status move buttons (small inline badges) */
 .task-status-btns {

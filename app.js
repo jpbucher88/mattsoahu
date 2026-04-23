@@ -4626,6 +4626,8 @@ function renderTaskAgenda(allItems) {
 
     const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
     const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
+    const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    const deleteBtn = canDelete ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>` : '';
     const logCount = item.taskLog && item.taskLog.length > 0
       ? ` · <span class="task-log-badge" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="View log">📋 ${item.taskLog.length} note${item.taskLog.length > 1 ? 's' : ''}</span>`
       : '';
@@ -4640,6 +4642,7 @@ function renderTaskAgenda(allItems) {
           </div>
           <div class="task-item-actions">
             ${completeBtn}
+            ${deleteBtn}
             ${menuBtn}
           </div>
         </div>
@@ -4871,6 +4874,21 @@ async function agendaMarkDoneGeneral(docId) {
   }
 }
 
+// Delete a task note (admin/manager only)
+window.deleteTaskNote = async function(docId, col) {
+  if (!confirm('Delete this task permanently?')) return;
+  try {
+    await db.collection(col).doc(docId).delete();
+    toast('Task deleted.', 'success');
+    loadDashboardFollowUps();
+    if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+    if (col === 'generalNotes') loadGeneralNotes();
+  } catch (err) {
+    console.error('Delete task error:', err);
+    toast('Failed to delete.', 'error');
+  }
+};
+
 window.agendaMarkUndone = async function(docId, col) {
   try {
     await db.collection(col).doc(docId).update({ done: false });
@@ -5057,10 +5075,8 @@ function renderUrgentBanner(items) {
   if (!banner || !list) return;
 
   const today = todayDateString();
-  // Exclude non-overdue compliance items — they have a dedicated widget/tab
-  const urgentItems = items.filter(i =>
-    i.urgent && !(i.sourceType === 'compliance' && i.dueDate && i.dueDate >= today)
-  );
+  // Compliance items belong to the Fleet Compliance widget only — never show here
+  const urgentItems = items.filter(i => i.urgent && i.sourceType !== 'compliance');
 
   if (urgentItems.length === 0) {
     banner.style.display = 'none';
@@ -5111,19 +5127,24 @@ function renderUrgentBanner(items) {
 
     const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
     const editBtn = canManage
-      ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit / Downgrade">✏️ Edit</button>`
+      ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit">✏️ Edit</button>`
+      : '';
+    const doneBtn = `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
+    const deleteBtn = canManage
+      ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>`
       : '';
 
     html += `
       <div class="urgent-banner-item"${vidAttr}>
-        <button class="followup-check" onclick="event.stopPropagation(); ${markFn}('${item.id}')" title="Mark done">&#9744;</button>
         <div class="urgent-banner-info">
           <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
           <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
         </div>
         <div class="urgent-banner-actions">
           ${reassignBtn}
+          ${doneBtn}
           ${editBtn}
+          ${deleteBtn}
         </div>
       </div>`;
   }
@@ -5459,6 +5480,9 @@ function loadFleetComplianceWidget() {
   const navBadge = $('compliance-alert-count');
   if (!section || !list) return;
 
+  // Auto-cleanup: delete open compliance notes for vehicles that are now compliant
+  autoCleanupResolvedComplianceNotes();
+
   // Collect vehicles with compliance issues (≤30 days or expired)
   const issues = [];
   vehiclesCache.forEach(v => {
@@ -5518,6 +5542,33 @@ window.openVehicleCompliancePage = function(vehicleId) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 500);
 };
+
+// Automatically delete open compliance follow-up notes when the vehicle is now compliant (>30 days left)
+async function autoCleanupResolvedComplianceNotes() {
+  for (const v of vehiclesCache) {
+    const checks = [
+      { type: 'safety', status: complianceMonthStatus(v.complianceSafety) },
+      { type: 'registration', status: complianceMonthStatus(v.complianceRegistration) },
+    ];
+    for (const { type, status } of checks) {
+      // Only clean up if truly compliant (not just warn — give benefit of doubt to warn range)
+      if (status.cls !== 'compliance-ok') continue;
+      try {
+        const snap = await db.collection('vehicleNotes')
+          .where('vehicleId', '==', v.id)
+          .where('sourceType', '==', 'compliance')
+          .where('complianceType', '==', type)
+          .where('done', '==', false)
+          .limit(10)
+          .get();
+        if (snap.empty) continue;
+        const batch = db.batch();
+        snap.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+      } catch (e) { /* non-critical */ }
+    }
+  }
+}
 
 // Set up role-specific UI in the task panel (admin filter, assignee dropdown)
 let _taskPanelUsersLoaded = false;
