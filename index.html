@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423d">
+  <link rel="stylesheet" href="style.css?v=20260423e">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -63,6 +63,10 @@
       <button id="btn-mailbox" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
         <span class="task-alert-icon">📬</span>
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
+      </button>
+      <button id="btn-incidents" class="task-alert-btn" title="Open Incidents" onclick="openAllIncidentsView()" style="display:none;">
+        <span class="task-alert-icon">🚨</span>
+        <span id="incident-open-count" class="task-alert-count count-zero">0</span>
       </button>
       <button id="btn-compliance" class="task-alert-btn" title="Fleet Compliance" onclick="openComplianceView()">
         <span class="task-alert-icon">✅</span>
@@ -203,6 +207,10 @@
         <button id="btn-mailbox-vehicle" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
           <span class="task-alert-icon">📬</span>
           <span id="mail-unread-count-vehicle" class="task-alert-count count-zero">0</span>
+        </button>
+        <button id="btn-incidents-vehicle" class="task-alert-btn" title="This Vehicle's Incidents" onclick="openIncidentModal()" style="display:none;">
+          <span class="task-alert-icon">🚨</span>
+          <span id="incident-count-vehicle" class="task-alert-count count-zero">0</span>
         </button>
         <button id="btn-admin-from-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
         <button id="btn-logout-vehicle" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
@@ -605,6 +613,15 @@
         </div>
       </section>
 
+      <!-- Incident Reports Section -->
+      <section id="incidents-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>🚨 Incident Reports</h3>
+          <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+        </div>
+        <div id="incidents-list" class="incidents-list"></div>
+      </section>
+
       <!-- Vehicle Notes Section -->
       <section id="notes-section" class="card" style="display:none;">
         <div class="section-header">
@@ -719,6 +736,80 @@
 
   <!-- Schedule Training Task modal -->
   <div id="learning-task-overlay" class="overlay" style="display:none;">
+
+  <!-- ==================== INCIDENT REPORT MODAL ==================== -->
+  <div id="incident-overlay" class="overlay" style="display:none;">
+    <div class="incident-modal card">
+      <h4 id="incident-modal-title">🚨 Report Incident</h4>
+      <input type="hidden" id="incident-edit-id">
+
+      <div class="form-row">
+        <div class="form-group" style="flex:1;">
+          <label>Type</label>
+          <select id="incident-type" class="form-select">
+            <option value="damage">🛠️ Vehicle Damage</option>
+            <option value="accident">💥 Accident / Collision</option>
+            <option value="key_lost">🔑 Key Lost</option>
+            <option value="theft">🚔 Theft / Break-in</option>
+            <option value="complaint">📢 Customer Complaint</option>
+            <option value="other">📝 Other</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;justify-content:flex-end;align-items:flex-end;">
+          <label class="note-urgent-label" style="margin-top:28px;">
+            <input type="checkbox" id="incident-urgent"> 🚨 Urgent
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Title / Summary <span style="color:#ef4444;">*</span></label>
+        <input type="text" id="incident-title" class="vehicle-location-custom" placeholder="e.g. Dent on rear bumper, Key missing from lockbox" maxlength="120" style="width:100%;">
+      </div>
+
+      <div class="form-group">
+        <label>Details</label>
+        <textarea id="incident-description" class="note-textarea" rows="4" placeholder="Describe what happened, when, and any other relevant info..." maxlength="1000"></textarea>
+      </div>
+
+      <div class="form-group" id="incident-vehicle-row">
+        <label>Vehicle</label>
+        <select id="incident-vehicle-select" class="form-select"></select>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-danger" onclick="saveIncident()">Submit Report</button>
+        <button class="btn btn-outline" onclick="closeIncidentModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== INCIDENT RESOLVE MODAL ==================== -->
+  <div id="incident-resolve-overlay" class="overlay" style="display:none;">
+    <div class="incident-modal card">
+      <h4>✅ Resolve Incident</h4>
+      <p class="hint" id="resolve-incident-title-display" style="margin-bottom:10px;"></p>
+      <input type="hidden" id="resolve-incident-id">
+
+      <div class="form-group">
+        <label>Status</label>
+        <select id="resolve-status" class="form-select">
+          <option value="in_progress">🔄 In Progress</option>
+          <option value="resolved">✅ Resolved</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Resolution Notes <span style="color:#ef4444;">*</span></label>
+        <textarea id="resolve-notes" class="note-textarea" rows="3" placeholder="What was done to resolve this? e.g. Key found in glovebox, Claim filed with insurer, Repair scheduled..." maxlength="500"></textarea>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-primary" onclick="saveIncidentResolution()">Save</button>
+        <button class="btn btn-outline" onclick="closeResolveModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
     <div class="learning-item-modal card">
       <h4>📅 Schedule Training Task</h4>
       <p class="hint" style="margin-bottom:10px;">Topic: <strong id="lt-title-display"></strong></p>

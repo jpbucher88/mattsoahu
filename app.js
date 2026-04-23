@@ -258,6 +258,7 @@ auth.onAuthStateChanged(async (user) => {
       await loadVehicles();
       showPage('dashboard');
       startMailListener();
+      startIncidentListener();
       initTimeClock();
     } catch (err) {
       console.error('Auth state error:', err);
@@ -270,6 +271,7 @@ auth.onAuthStateChanged(async (user) => {
     currentUserRole = null;
     currentUserTimeclockAccess = false;
     if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
+    if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
     showPage('login');
   }
@@ -1390,6 +1392,10 @@ async function openVehiclePage(vid) {
 
   // Show notes section
   $('notes-section').style.display = 'block';
+
+  // Show incidents section and load
+  $('incidents-section').style.display = 'block';
+  loadVehicleIncidents(vid);
 
   // Show Vehicle Info section
   $('vehicle-info-section').style.display = 'block';
@@ -4488,6 +4494,9 @@ let currentTaskTab = 'all';
 let cachedTaskItems = [];
 // Mailbox
 let mailUnsubscribe = null;
+// Incidents
+let incidentUnsubscribe = null;
+let currentVehicleIncidents = [];
 // Time clock
 let elapsedInterval = null;
 let timeclockData = null;
@@ -7171,6 +7180,319 @@ function updateMailboxIcon(count) {
     iconEl.classList.remove('mail-bounce');
   }
 }
+
+// ================================================================
+// INCIDENT REPORTS
+// ================================================================
+
+const INCIDENT_TYPES = {
+  damage:    { label: '🛠️ Vehicle Damage',      color: '#f59e0b' },
+  accident:  { label: '💥 Accident / Collision', color: '#ef4444' },
+  key_lost:  { label: '🔑 Key Lost',             color: '#8b5cf6' },
+  theft:     { label: '🚔 Theft / Break-in',     color: '#dc2626' },
+  complaint: { label: '📢 Customer Complaint',   color: '#0ea5e9' },
+  other:     { label: '📝 Other',                color: '#6b7280' },
+};
+
+const INCIDENT_STATUS = {
+  open:        { label: '🔴 Open',        cls: 'inc-status-open' },
+  in_progress: { label: '🔄 In Progress', cls: 'inc-status-inprogress' },
+  resolved:    { label: '✅ Resolved',    cls: 'inc-status-resolved' },
+};
+
+// ---- Real-time badge listener (open incidents for admin/manager) ----
+function startIncidentListener() {
+  if (!currentUser) return;
+  if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
+  const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const btn  = $('btn-incidents');
+  const badge = $('incident-open-count');
+  if (!isPriv) { if (btn) btn.style.display = 'none'; return; }
+  if (btn) btn.style.display = '';
+  try {
+    incidentUnsubscribe = db.collection('incidents')
+      .where('status', 'in', ['open', 'in_progress'])
+      .onSnapshot(snap => {
+        const count = snap.size;
+        if (badge) { badge.textContent = count; badge.classList.toggle('count-zero', count === 0); }
+      }, () => updateIncidentBadge());
+  } catch(e) { updateIncidentBadge(); }
+}
+
+async function updateIncidentBadge() {
+  try {
+    const snap = await db.collection('incidents').where('status', 'in', ['open', 'in_progress']).get();
+    const count = snap.size;
+    const badge = $('incident-open-count');
+    if (badge) { badge.textContent = count; badge.classList.toggle('count-zero', count === 0); }
+  } catch(e) { /* ignore */ }
+}
+
+// ---- Load incidents for a specific vehicle ----
+async function loadVehicleIncidents(vehicleId) {
+  const list = $('incidents-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const snap = await db.collection('incidents')
+      .where('vehicleId', '==', vehicleId)
+      .get();
+    const docs = snap.docs.sort((a, b) => {
+      const at = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+      const bt = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+      return bt - at; // newest first
+    });
+    currentVehicleIncidents = docs;
+    // Update vehicle header badge
+    const vBadge = $('incident-count-vehicle');
+    const vBtn   = $('btn-incidents-vehicle');
+    const openCount = docs.filter(d => d.data().status !== 'resolved').length;
+    if (vBadge) { vBadge.textContent = openCount; vBadge.classList.toggle('count-zero', openCount === 0); }
+    if (vBtn) vBtn.style.display = openCount > 0 ? '' : 'none';
+    renderIncidentsList(docs);
+  } catch(e) { console.error(e); list.innerHTML = '<p class="hint" style="color:#ef4444;">Error loading incidents.</p>'; }
+}
+
+function renderIncidentsList(docs) {
+  const list = $('incidents-list');
+  if (!list) return;
+  const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
+  if (!docs.length) {
+    list.innerHTML = '<p class="hint">No incidents reported for this vehicle.</p>';
+    return;
+  }
+  list.innerHTML = docs.map(doc => {
+    const d = doc.data();
+    const typeInfo  = INCIDENT_TYPES[d.type]  || INCIDENT_TYPES.other;
+    const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
+    const dateStr   = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+    const urgentBadge = d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : '';
+    const resolvedBlock = d.status === 'resolved' && d.resolution
+      ? `<div class="inc-resolution">
+          <span class="inc-res-label">✅ Resolution:</span>
+          <span>${escapeHtml(d.resolution)}</span>
+          ${d.resolvedByName ? `<span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}
+        </div>`
+      : '';
+    const canResolve = isPriv && d.status !== 'resolved';
+    const canEdit    = isPriv || d.reportedBy === currentUser.uid;
+    const canDelete  = currentUserRole === 'admin';
+    const actionBtns = `
+      <div class="inc-actions">
+        ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openResolveModal('${doc.id}','${escapeHtml((d.title||'')).replace(/'/g,"&#39;")}')">Resolve</button>` : ''}
+        ${canEdit    ? `<button class="btn btn-sm btn-outline" onclick="openIncidentModal('${doc.id}')">Edit</button>` : ''}
+        ${canDelete  ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
+      </div>`;
+    return `<div class="inc-card ${d.status === 'resolved' ? 'inc-resolved' : ''} ${d.urgent ? 'inc-urgent' : ''}">
+      <div class="inc-header">
+        <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
+        ${urgentBadge}
+        <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
+        <span class="inc-date">${dateStr}</span>
+      </div>
+      <div class="inc-title">${escapeHtml(d.title || '')}</div>
+      ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
+      <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || '—')}</div>
+      ${resolvedBlock}
+      ${actionBtns}
+    </div>`;
+  }).join('');
+}
+
+// ---- Open "Report / Edit" modal ----
+window.openIncidentModal = function(incidentId) {
+  const overlay = $('incident-overlay');
+  if (!overlay) return;
+  const vehicleRow = $('incident-vehicle-row');
+  const vehicleSel = $('incident-vehicle-select');
+
+  $('incident-edit-id').value = incidentId || '';
+  $('incident-modal-title').textContent = incidentId ? '✏️ Edit Incident' : '🚨 Report Incident';
+
+  if (incidentId) {
+    // Editing — load existing data
+    const doc = currentVehicleIncidents.find(d => d.id === incidentId);
+    if (!doc) return;
+    const d = doc.data();
+    $('incident-type').value       = d.type || 'other';
+    $('incident-title').value      = d.title || '';
+    $('incident-description').value = d.description || '';
+    $('incident-urgent').checked   = !!d.urgent;
+    if (vehicleRow) vehicleRow.style.display = 'none';
+  } else {
+    // New — show vehicle select if no vehicle currently selected
+    $('incident-type').value       = 'damage';
+    $('incident-title').value      = '';
+    $('incident-description').value = '';
+    $('incident-urgent').checked   = false;
+    if (selectedVehicle) {
+      if (vehicleRow) vehicleRow.style.display = 'none';
+    } else {
+      if (vehicleRow) vehicleRow.style.display = '';
+      if (vehicleSel) {
+        vehicleSel.innerHTML = vehiclesCache.map(v =>
+          `<option value="${v.id}">${escapeHtml(v.plate)} ${escapeHtml(v.make||'')} ${escapeHtml(v.model||'')}</option>`
+        ).join('');
+      }
+    }
+  }
+  overlay.style.display = 'flex';
+};
+
+window.closeIncidentModal = function() {
+  const overlay = $('incident-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+window.saveIncident = async function() {
+  const title = ($('incident-title').value || '').trim();
+  if (!title) { $('incident-title').focus(); toast('Please enter a title / summary.', 'error'); return; }
+
+  const editId  = $('incident-edit-id').value;
+  const type    = $('incident-type').value;
+  const desc    = ($('incident-description').value || '').trim();
+  const urgent  = $('incident-urgent').checked;
+
+  const vehicleId   = selectedVehicle ? selectedVehicle.id   : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
+  const vehiclePlate = selectedVehicle ? selectedVehicle.plate : (vehiclesCache.find(v => v.id === vehicleId) || {}).plate || '';
+
+  try {
+    if (editId) {
+      await db.collection('incidents').doc(editId).update({
+        type, title, description: desc, urgent,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      toast('Incident updated.', 'success');
+    } else {
+      await db.collection('incidents').add({
+        vehicleId,
+        vehiclePlate,
+        type,
+        title,
+        description: desc,
+        urgent,
+        status: 'open',
+        reportedBy: currentUser.uid,
+        reportedByName: currentUser.displayName || currentUser.email,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        resolution: '',
+        resolvedBy: '',
+        resolvedByName: '',
+        resolvedAt: null,
+      });
+      toast('Incident reported.', 'success');
+    }
+    closeIncidentModal();
+    if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
+  } catch(e) { console.error(e); toast('Failed to save incident.', 'error'); }
+};
+
+// ---- Resolve modal ----
+window.openResolveModal = function(incidentId, title) {
+  const overlay = $('incident-resolve-overlay');
+  if (!overlay) return;
+  $('resolve-incident-id').value = incidentId;
+  $('resolve-incident-title-display').textContent = title || '';
+  $('resolve-status').value = 'resolved';
+  $('resolve-notes').value = '';
+  overlay.style.display = 'flex';
+};
+
+window.closeResolveModal = function() {
+  const overlay = $('incident-resolve-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+window.saveIncidentResolution = async function() {
+  const notes = ($('resolve-notes').value || '').trim();
+  if (!notes) { $('resolve-notes').focus(); toast('Please enter resolution notes.', 'error'); return; }
+  const docId  = $('resolve-incident-id').value;
+  const status = $('resolve-status').value;
+  try {
+    await db.collection('incidents').doc(docId).update({
+      status,
+      resolution:     notes,
+      resolvedBy:     currentUser.uid,
+      resolvedByName: currentUser.displayName || currentUser.email,
+      resolvedAt:     firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt:      firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast(status === 'resolved' ? 'Incident resolved ✅' : 'Status updated.', 'success');
+    closeResolveModal();
+    if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
+  } catch(e) { console.error(e); toast('Failed to save resolution.', 'error'); }
+};
+
+// ---- Delete ----
+window.deleteIncident = async function(docId) {
+  if (!confirm('Delete this incident report? This cannot be undone.')) return;
+  try {
+    await db.collection('incidents').doc(docId).delete();
+    toast('Incident deleted.', 'success');
+    if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
+  } catch(e) { toast('Delete failed.', 'error'); }
+};
+
+// ---- All Open Incidents (admin/manager overlay view) ----
+window.openAllIncidentsView = async function() {
+  const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
+  if (!isPriv) return;
+  // Build a simple full-page overlay with all open incidents across vehicles
+  let overlay = $('all-incidents-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'all-incidents-overlay';
+    overlay.className = 'overlay';
+    overlay.style.cssText = 'display:flex;z-index:3000;';
+    overlay.innerHTML = `<div class="incident-all-panel card">
+      <div class="section-header" style="margin-bottom:12px;">
+        <h3>🚨 All Open Incidents</h3>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('all-incidents-overlay').style.display='none'">✕ Close</button>
+      </div>
+      <div id="all-incidents-body" class="incidents-list"></div>
+    </div>`;
+    document.body.appendChild(overlay);
+  } else {
+    overlay.style.display = 'flex';
+  }
+  const body = $('all-incidents-body');
+  body.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const snap = await db.collection('incidents')
+      .where('status', 'in', ['open', 'in_progress'])
+      .get();
+    const docs = snap.docs.sort((a, b) => {
+      // Urgent first, then newest
+      const au = a.data().urgent ? 1 : 0, bu = b.data().urgent ? 1 : 0;
+      if (au !== bu) return bu - au;
+      const at = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+      const bt = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+      return bt - at;
+    });
+    if (!docs.length) { body.innerHTML = '<p class="hint">No open incidents 🎉</p>'; return; }
+    body.innerHTML = docs.map(doc => {
+      const d = doc.data();
+      const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
+      const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
+      const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : '';
+      return `<div class="inc-card ${d.urgent ? 'inc-urgent' : ''}">
+        <div class="inc-header">
+          <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'—')}</span>
+          <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
+          ${d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : ''}
+          <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
+          <span class="inc-date">${dateStr}</span>
+        </div>
+        <div class="inc-title">${escapeHtml(d.title||'')}</div>
+        ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
+        <div class="inc-actions">
+          <button class="btn btn-sm inc-resolve-btn" onclick="openResolveModal('${doc.id}','${escapeHtml((d.title||'')).replace(/'/g,"&#39;")}');document.getElementById('all-incidents-overlay').style.display='none';">Resolve</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { body.innerHTML = '<p class="hint" style="color:#ef4444;">Error loading incidents.</p>'; }
+};
 
 // ================================================================
 // TIME CLOCK WIDGET (Owner Only)

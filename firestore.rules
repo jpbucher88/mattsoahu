@@ -88,6 +88,17 @@ service cloud.firestore {
     }
 
     // Learning items - any registered user can read all; own items writable; admins can write shared
+    // Incidents - all registered can report, managers/admins can update, admins can delete
+    match /incidents/{incidentId} {
+      allow read: if isRegistered();
+      allow create: if isRegistered();
+      allow update: if isAuth() && (
+        getUserRole() == 'admin' || getUserRole() == 'manager' ||
+        resource.data.reportedBy == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
     match /learningItems/{itemId} {
       allow read: if isRegistered();
       allow create: if isRegistered() && request.resource.data.uid == request.auth.uid;
