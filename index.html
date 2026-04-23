@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423h">
+  <link rel="stylesheet" href="style.css?v=20260423i">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1080,30 +1080,57 @@
         <button class="task-panel-close" onclick="closeTaskPanel()">&times;</button>
       </div>
       <div class="task-panel-body">
-        <!-- Add General Note -->
+        <!-- Create Task -->
         <div class="task-panel-section">
-          <h4>📝 Add General Note</h4>
-          <textarea id="general-note-text" class="note-textarea" placeholder="Add a general note..." maxlength="500" rows="2"></textarea>
-          <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="var v=this.checked?'':'none';document.getElementById('general-note-due-row').style.display=v;" > &#9873; Follow Up</label>
-            <div id="general-note-due-row" class="note-due-row" style="display:none;">
-              <label class="note-due-label">Due:</label>
-              <input type="date" id="general-note-due-date" class="note-due-input">
+          <h4>📝 Create Task</h4>
+          <input type="text" id="new-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200">
+          <textarea id="new-task-desc" class="note-textarea" placeholder="Description (optional)" maxlength="500" rows="2" style="margin-top:8px;"></textarea>
+          <div class="task-form-grid">
+            <div class="task-form-field">
+              <label class="task-form-label">⚡ Priority</label>
+              <select id="new-task-priority" class="task-form-select">
+                <option value="low">🟢 Low</option>
+                <option value="normal" selected>🔵 Normal</option>
+                <option value="high">🟠 High</option>
+                <option value="critical">🔴 Critical</option>
+              </select>
             </div>
-            <div class="note-due-row">
-              <label class="note-due-label">Assign:</label>
-              <select id="general-note-assignee" class="note-assignee-select" onchange="void 0">
+            <div class="task-form-field">
+              <label class="task-form-label">📅 Due Date</label>
+              <input type="date" id="new-task-due" class="task-form-select">
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">👤 Assign To</label>
+              <select id="new-task-assignee" class="task-form-select">
                 <option value="">— Team (everyone) —</option>
               </select>
             </div>
-            <label class="note-urgent-label"><input type="checkbox" id="general-note-urgent"> 🚨 Urgent</label>
-            <button id="btn-save-general-note" class="btn btn-sm btn-primary">Save Note</button>
+            <div class="task-form-field">
+              <label class="task-form-label">📎 Photo / File</label>
+              <input type="file" id="new-task-photo" accept="image/*" class="task-photo-input">
+            </div>
+          </div>
+          <div id="new-task-photo-wrap" style="display:none;margin:6px 0 2px;">
+            <img id="new-task-photo-preview" class="inc-thumb-preview" alt="preview" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
+          </div>
+          <div style="text-align:right;margin-top:10px;">
+            <button id="btn-save-task" class="btn btn-primary" style="padding:8px 22px;">💾 Save Task</button>
           </div>
         </div>
 
         <!-- Follow-Up Agenda with Status Tabs -->
         <div class="task-panel-section">
           <h4>📅 Follow-Up Agenda</h4>
+
+          <!-- Overdue banner — always visible when tasks are late -->
+          <div id="task-overdue-banner" class="task-overdue-banner" style="display:none;">
+            <div class="task-overdue-banner-hdr">
+              <span>⏰ Overdue &amp; Not Completed</span>
+              <span id="task-overdue-count" class="task-overdue-count-badge">0</span>
+            </div>
+            <div id="task-overdue-banner-list" class="followup-list"></div>
+          </div>
+
           <!-- Admin user filter (hidden for non-admins via JS) -->
           <div id="task-user-filter-row" class="task-user-filter-row" style="display:none;">
             <label class="task-user-filter-label">👁 View:</label>

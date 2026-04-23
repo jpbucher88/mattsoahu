@@ -4664,6 +4664,32 @@ function renderTaskAgenda(allItems) {
 
   const today = todayDateString();
 
+  // Always populate the overdue banner (all items, not filtered by tab)
+  const bannerEl = $('task-overdue-banner');
+  const bannerListEl = $('task-overdue-banner-list');
+  const bannerCountEl = $('task-overdue-count');
+  if (bannerEl) {
+    const allOverdue = allItems.filter(i => !i.done && i.dueDate && i.dueDate < today);
+    if (allOverdue.length > 0) {
+      bannerEl.style.display = '';
+      if (bannerCountEl) bannerCountEl.textContent = allOverdue.length;
+      if (bannerListEl) {
+        allOverdue.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || (a.dueDate || '').localeCompare(b.dueDate || ''));
+        bannerListEl.innerHTML = allOverdue.map(item => renderAgendaItem(item)).join('');
+        bannerListEl.querySelectorAll('.followup-item').forEach(el => {
+          el.addEventListener('click', e => {
+            if (e.target.closest('button')) return;
+            const wrap = el.closest('.followup-item-wrap');
+            const dd = wrap ? wrap.dataset.due : '';
+            if (dd) jumpToCalendarDay(dd);
+          });
+        });
+      }
+    } else {
+      bannerEl.style.display = 'none';
+    }
+  }
+
   // Filter by current tab
   let items = allItems;
   if (currentTaskTab === 'urgent') {
@@ -4739,6 +4765,15 @@ function renderTaskAgenda(allItems) {
     }
 
     const urgentTag = item.urgent ? ' 🚨' : (item.taskStatus === 'monitoring' ? ' 🟢' : '');
+    const priorityBadge = (item.priority && item.priority !== 'normal')
+      ? `<span class="task-priority-badge prio-${item.priority}">${
+          item.priority === 'critical' ? '🔴 Critical'
+          : item.priority === 'high' ? '🟠 High'
+          : '🟢 Low'}</span>`
+      : '';
+    const photoThumb = item.photoUrl
+      ? `<a href="${item.photoUrl}" target="_blank"><img src="${item.photoUrl}" class="task-item-thumb" alt="photo"></a>`
+      : '';
     const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
     const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
     const assigneeLabel = item.assignedToName ? ` · <span class="task-assignee-badge">🎯 ${escapeHtml(item.assignedToName)}</span>` : (item.assignedTo ? '' : ' · <span class="task-assignee-badge task-assignee-team">👥 Team</span>');
@@ -4770,8 +4805,10 @@ function renderTaskAgenda(allItems) {
         <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
         <div class="followup-item${extraClass}"${vidAttr}>
           <div class="followup-info">
-            <div class="followup-text">${escapeHtml(item.text)}${urgentTag}</div>
+            <div class="followup-text">${priorityBadge}${escapeHtml(item.text)}${urgentTag}</div>
+            ${item.description ? `<div class="followup-desc">${escapeHtml(item.description)}</div>` : ''}
             <div class="followup-meta">${metaLabel}${creatorLabel}${dueLabelStr}${assigneeLabel}${logCount}</div>
+            ${photoThumb}
             ${statusBtns ? `<div class="task-status-btns">${statusBtns}</div>` : ''}
           </div>
           <div class="task-item-actions">
@@ -6201,19 +6238,21 @@ async function initTaskPanelForRole() {
         });
       }
 
-      // Populate assignee dropdown in the note form
-      const assignSel = $('general-note-assignee');
-      if (assignSel && assignSel.options.length <= 1) {
-        snap.forEach(doc => {
-          if (doc.id === currentUser.uid) return;
-          const d = doc.data();
-          const opt = document.createElement('option');
-          opt.value = doc.id;
-          opt.dataset.name = d.displayName || d.email;
-          opt.textContent = d.displayName || d.email;
-          assignSel.appendChild(opt);
-        });
-      }
+      // Populate assignee dropdowns in the task form
+      const assignSelectors = ['new-task-assignee', 'general-note-assignee'];
+      assignSelectors.forEach(selId => {
+        const sel = $(selId);
+        if (sel && sel.options.length <= 1) {
+          snap.forEach(doc => {
+            const d = doc.data();
+            const opt = document.createElement('option');
+            opt.value = doc.id;
+            opt.dataset.name = d.displayName || d.email;
+            opt.textContent = d.displayName || d.email;
+            sel.appendChild(opt);
+          });
+        }
+      });
     } catch (e) { /* non-critical */ }
   }
 }
@@ -6631,47 +6670,88 @@ window.openRescheduleTask = function(docId, col, currentDue) {
   overlay.addEventListener('mousemove', () => { if (pressTimer) { clearTimeout(pressTimer); pressTimer = null; } });
 })();
 
-$('btn-save-general-note').addEventListener('click', async () => {
-  const text = $('general-note-text').value.trim();
-  if (!text) {
-    toast('Enter a note first.', 'warning');
-    return;
+// Photo preview for new task form
+(function() {
+  const photoInput = $('new-task-photo');
+  if (photoInput) {
+    photoInput.addEventListener('change', () => {
+      const file = photoInput.files[0];
+      const wrap = $('new-task-photo-wrap');
+      const prev = $('new-task-photo-preview');
+      if (file && wrap && prev) {
+        const reader = new FileReader();
+        reader.onload = e => { prev.src = e.target.result; wrap.style.display = ''; };
+        reader.readAsDataURL(file);
+      } else if (wrap) {
+        wrap.style.display = 'none';
+      }
+    });
   }
-  const isUrgent = $('general-note-urgent') ? $('general-note-urgent').checked : false;
-  // Urgent notes are always treated as follow-ups
-  const isFollowUp = $('general-note-followup').checked || isUrgent;
-  const dueDate = isFollowUp ? ($('general-note-due-date').value || '') : '';
-  // Assignee is always available (not gated on Follow Up)
-  const assignSel = $('general-note-assignee');
+})();
+
+$('btn-save-task') && $('btn-save-task').addEventListener('click', async () => {
+  const title = ($('new-task-title').value || '').trim();
+  if (!title) { $('new-task-title').focus(); toast('Please enter a task title.', 'warning'); return; }
+  const desc     = ($('new-task-desc').value || '').trim();
+  const priority = $('new-task-priority').value || 'normal';
+  const dueDate  = $('new-task-due').value || '';
+  const isUrgent = priority === 'critical';
+  const assignSel = $('new-task-assignee');
   const assignedTo = (assignSel && assignSel.value) ? assignSel.value : null;
-  const assignedToName = assignedTo ? (assignSel.options[assignSel.selectedIndex] ? assignSel.options[assignSel.selectedIndex].dataset.name || assignSel.options[assignSel.selectedIndex].textContent.trim() : null) : null;
+  const assignedToName = assignedTo
+    ? (assignSel.options[assignSel.selectedIndex] ? assignSel.options[assignSel.selectedIndex].dataset.name || assignSel.options[assignSel.selectedIndex].textContent.trim() : null)
+    : null;
+
+  const btn = $('btn-save-task');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+
+  let photoUrl = null;
+  const photoInput = $('new-task-photo');
+  if (photoInput && photoInput.files[0]) {
+    try {
+      const file = photoInput.files[0];
+      const tempId = 'task_' + Date.now();
+      const ext = file.name.split('.').pop() || 'jpg';
+      const ref = storage.ref(`taskPhotos/${tempId}.${ext}`);
+      await ref.put(file);
+      photoUrl = await ref.getDownloadURL();
+    } catch(e) { console.error(e); toast('Photo upload failed — saving without photo.', 'warning'); }
+  }
 
   try {
-    const noteData = {
-      text,
-      isFollowUp,
+    const taskData = {
+      text: title,
+      description: desc,
+      priority,
+      isFollowUp: true,
       done: false,
       urgent: isUrgent,
       taskStatus: isUrgent ? 'urgent' : 'scheduled',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
-      createdByName: currentUser.displayName || currentUser.email
+      createdByName: currentUser.displayName || currentUser.email,
     };
-    if (dueDate) noteData.dueDate = dueDate;
-    if (assignedTo) { noteData.assignedTo = assignedTo; noteData.assignedToName = assignedToName; }
-    await db.collection('generalNotes').add(noteData);
-    $('general-note-text').value = '';
-    $('general-note-followup').checked = false;
-    if ($('general-note-urgent')) $('general-note-urgent').checked = false;
-    $('general-note-due-date').value = '';
-    $('general-note-due-row').style.display = 'none';
+    if (dueDate) taskData.dueDate = dueDate;
+    if (assignedTo) { taskData.assignedTo = assignedTo; taskData.assignedToName = assignedToName; }
+    if (photoUrl) taskData.photoUrl = photoUrl;
+    await db.collection('generalNotes').add(taskData);
+    // Reset form
+    $('new-task-title').value = '';
+    $('new-task-desc').value = '';
+    $('new-task-priority').value = 'normal';
+    $('new-task-due').value = '';
     if (assignSel) assignSel.value = '';
-    toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
+    if (photoInput) photoInput.value = '';
+    const wrap = $('new-task-photo-wrap');
+    if (wrap) wrap.style.display = 'none';
+    toast('Task saved! ✅', 'success');
     loadGeneralNotes();
-    if (isFollowUp || isUrgent) loadDashboardFollowUps();
-  } catch (err) {
-    console.error('Save general note error:', err);
-    toast('Failed to save note.', 'error');
+    loadDashboardFollowUps();
+  } catch(err) {
+    console.error(err);
+    toast('Failed to save task.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save Task'; }
   }
 });
 
