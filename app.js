@@ -4510,7 +4510,16 @@ window.switchTaskTab = function(tab) {
   document.querySelectorAll('.task-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  renderTaskAgenda(cachedTaskItems);
+  const incPanel = $('incidents-tab-content');
+  const userFilterRow = $('task-user-filter-row');
+  if (tab === 'incidents') {
+    if (incPanel) incPanel.style.display = '';
+    ['followup-overdue','followup-today','followup-upcoming','followup-no-date','followup-empty','compliance-grouped-view'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
+    if (userFilterRow) userFilterRow.style.display = 'none';
+  } else {
+    if (incPanel) incPanel.style.display = 'none';
+    renderTaskAgenda(cachedTaskItems);
+  }
 };
 
 // Admin user-filter change handler
@@ -7205,9 +7214,9 @@ function startIncidentListener() {
   if (!currentUser) return;
   if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
   const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
-  const sub = $('incidents-sub-section');
-  if (!isPriv) { if (sub) sub.style.display = 'none'; return; }
-  if (sub) sub.style.display = '';
+  const tabBtn = $('incidents-tab-btn');
+  if (!isPriv) { if (tabBtn) tabBtn.style.display = 'none'; return; }
+  if (tabBtn) tabBtn.style.display = '';
   try {
     incidentUnsubscribe = db.collection('incidents')
       .where('status', 'in', ['open', 'in_progress'])
@@ -7216,12 +7225,12 @@ function startIncidentListener() {
 }
 
 async function loadAllOpenIncidentsDashboard() {
-  const sub  = $('incidents-sub-section');
   const list = $('incidents-dashboard-list');
   if (!list) return;
   const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
-  if (!isPriv) { if (sub) sub.style.display = 'none'; return; }
-  if (sub) sub.style.display = '';
+  const tabBtn = $('incidents-tab-btn');
+  if (!isPriv) { if (tabBtn) tabBtn.style.display = 'none'; return; }
+  if (tabBtn) tabBtn.style.display = '';
   try {
     const snap = await db.collection('incidents').get();
     const docs = snap.docs.sort((a, b) => {
@@ -7241,11 +7250,11 @@ async function loadAllOpenIncidentsDashboard() {
       renderIncidentsList(currentVehicleIncidents);
     }
     const openCount = docs.filter(d => d.data().status !== 'resolved').length;
-    [$('incidents-dashboard-badge'), $('incidents-dashboard-badge2')].forEach(b => {
-      if (!b) return;
-      b.textContent = openCount > 0 ? openCount + ' open' : '';
-      b.style.display = openCount > 0 ? '' : 'none';
-    });
+    const badge = $('incidents-tab-badge');
+    if (badge) {
+      badge.textContent = openCount > 0 ? openCount : '';
+      badge.style.display = openCount > 0 ? '' : 'none';
+    }
     if (!docs.length) {
       list.innerHTML = '<p class="hint">No incidents reported yet. Use + Report Incident to log one.</p>';
       return;

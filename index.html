@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423g">
+  <link rel="stylesheet" href="style.css?v=20260423h">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -64,10 +64,7 @@
         <span class="task-alert-icon">📬</span>
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
       </button>
-      <button id="btn-compliance" class="task-alert-btn" title="Fleet Compliance" onclick="openComplianceView()">
-        <span class="task-alert-icon">✅</span>
-        <span id="compliance-alert-count" class="task-alert-count count-zero">0</span>
-      </button>
+
       <button id="btn-learning" class="task-alert-btn" title="Learning Center" onclick="openLearningPage()">
         <span class="task-alert-icon">🎓</span>
       </button>
@@ -118,8 +115,7 @@
       <section id="task-calendar-section" class="card">
         <div class="task-calendar-header collapsible-header" onclick="toggleSection('task-calendar-body', 'task-calendar-toggle')">
           <div class="collapsible-title">
-            <h3>📅 Tasks &amp; Follow Up</h3>
-            <span id="incidents-dashboard-badge" class="badge inc-badge-inline" style="display:none;">0 incidents</span>
+            <h3>� Operations Hub</h3>
           </div>
           <div class="collapsible-header-right">
             <div class="task-calendar-nav" onclick="event.stopPropagation()">
@@ -140,15 +136,7 @@
             <div id="cal-detail-list" class="cal-detail-list"></div>
           </div>
 
-          <!-- Incidents sub-section (admin/manager only) -->
-          <div id="incidents-sub-section" class="incidents-sub-section" style="display:none;">
-            <div class="incidents-sub-header">
-              <span class="incidents-sub-title">🚨 Incident Reports</span>
-              <span id="incidents-dashboard-badge2" class="badge" style="background:#fee2e2;color:#dc2626;display:none;"></span>
-              <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
-            </div>
-            <div id="incidents-dashboard-list" class="incidents-list" style="margin-top:10px;"></div>
-          </div>
+
         </div>
       </section>
 
@@ -1088,7 +1076,7 @@
   <div id="task-panel-overlay" class="task-panel-overlay" style="display:none;" onclick="if(event.target===this)closeTaskPanel()">
     <div class="task-panel">
       <div class="task-panel-header">
-        <h3>📋 Tasks &amp; Follow-Ups</h3>
+        <h3>� Operations Hub</h3>
         <button class="task-panel-close" onclick="closeTaskPanel()">&times;</button>
       </div>
       <div class="task-panel-body">
@@ -1131,6 +1119,7 @@
             <button class="task-tab" data-tab="monitoring" onclick="switchTaskTab('monitoring')">🟢 Monitoring</button>
             <button class="task-tab" data-tab="compliance" onclick="switchTaskTab('compliance')">📋 Compliance</button>
             <button class="task-tab" data-tab="mine" onclick="switchTaskTab('mine')">👤 My Tasks</button>
+            <button class="task-tab" id="incidents-tab-btn" data-tab="incidents" onclick="switchTaskTab('incidents')" style="display:none;">🚨 Incidents <span id="incidents-tab-badge" class="task-tab-badge" style="display:none;"></span></button>
           </div>
           <!-- Active task lists (filtered by tab) -->
           <div id="task-tab-content">
@@ -1139,6 +1128,13 @@
             <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
             <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
             <div id="compliance-grouped-view" class="compliance-grouped-view" style="display:none;"></div>
+            <div id="incidents-tab-content" class="incidents-tab-panel" style="display:none;">
+              <div class="incidents-sub-header" style="margin-bottom:10px;">
+                <span class="incidents-sub-title">🚨 Incident Reports</span>
+                <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+              </div>
+              <div id="incidents-dashboard-list" class="incidents-list"></div>
+            </div>
             <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No tasks in this view. ✅</p></div>
           </div>
           <!-- Completed tasks bucket (collapsible) -->

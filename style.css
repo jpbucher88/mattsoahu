@@ -3460,6 +3460,18 @@ body {
 }
 .task-tab:hover { background: #e0e7ff; border-color: #818cf8; color: #3730a3; }
 .task-tab.active { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
+.task-tab-badge {
+  display: inline-block;
+  background: #ef4444;
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 999px;
+  margin-left: 3px;
+  vertical-align: middle;
+}
+.incidents-tab-panel { padding-top: 4px; }
 
 /* ============ TASK ITEM ACTIONS ROW ============ */
 .task-item-actions {
