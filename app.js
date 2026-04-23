@@ -7205,27 +7205,83 @@ function startIncidentListener() {
   if (!currentUser) return;
   if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
   const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
-  const btn  = $('btn-incidents');
-  const badge = $('incident-open-count');
-  if (!isPriv) { if (btn) btn.style.display = 'none'; return; }
-  if (btn) btn.style.display = '';
+  const section = $('incidents-dashboard-section');
+  if (!isPriv) { if (section) section.style.display = 'none'; return; }
+  if (section) section.style.display = '';
   try {
     incidentUnsubscribe = db.collection('incidents')
       .where('status', 'in', ['open', 'in_progress'])
       .onSnapshot(snap => {
         const count = snap.size;
-        if (badge) { badge.textContent = count; badge.classList.toggle('count-zero', count === 0); }
-      }, () => updateIncidentBadge());
-  } catch(e) { updateIncidentBadge(); }
+        const badge = $('incidents-dashboard-badge');
+        if (badge) { badge.textContent = count; badge.style.display = count > 0 ? '' : 'none'; }
+        loadAllOpenIncidentsDashboard();
+      }, () => loadAllOpenIncidentsDashboard());
+  } catch(e) { loadAllOpenIncidentsDashboard(); }
 }
 
-async function updateIncidentBadge() {
+async function loadAllOpenIncidentsDashboard() {
+  const section = $('incidents-dashboard-section');
+  const list = $('incidents-dashboard-list');
+  if (!list) return;
+  const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
+  if (!isPriv) { if (section) section.style.display = 'none'; return; }
+  if (section) section.style.display = '';
   try {
-    const snap = await db.collection('incidents').where('status', 'in', ['open', 'in_progress']).get();
-    const count = snap.size;
-    const badge = $('incident-open-count');
-    if (badge) { badge.textContent = count; badge.classList.toggle('count-zero', count === 0); }
-  } catch(e) { /* ignore */ }
+    const snap = await db.collection('incidents').get();
+    const docs = snap.docs.sort((a, b) => {
+      // Open/urgent first, then by date desc
+      const as = a.data().status, bs = b.data().status;
+      const aOpen = as !== 'resolved' ? 1 : 0, bOpen = bs !== 'resolved' ? 1 : 0;
+      if (aOpen !== bOpen) return bOpen - aOpen;
+      const au = a.data().urgent ? 1 : 0, bu = b.data().urgent ? 1 : 0;
+      if (au !== bu) return bu - au;
+      const at = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+      const bt = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+      return bt - at;
+    });
+    // Also keep currentVehicleIncidents in sync if we're on vehicle page
+    if (selectedVehicle) {
+      const vid = selectedVehicle.id || selectedVehicle;
+      currentVehicleIncidents = docs.filter(d => d.data().vehicleId === vid);
+      renderIncidentsList(currentVehicleIncidents);
+    }
+    const badge = $('incidents-dashboard-badge');
+    const openCount = docs.filter(d => d.data().status !== 'resolved').length;
+    if (badge) { badge.textContent = openCount; badge.style.display = openCount > 0 ? '' : 'none'; }
+    if (!docs.length) {
+      list.innerHTML = '<p class="hint">No incidents reported yet.</p>';
+      return;
+    }
+    list.innerHTML = docs.map(doc => {
+      const d = doc.data();
+      const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
+      const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
+      const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+      const resolvedBlock = d.status === 'resolved' && d.resolution
+        ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
+        : '';
+      const canResolve = d.status !== 'resolved';
+      return `<div class="inc-card ${d.status === 'resolved' ? 'inc-resolved' : ''} ${d.urgent ? 'inc-urgent' : ''}">
+        <div class="inc-header">
+          <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'—')}</span>
+          <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
+          ${d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : ''}
+          <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
+          <span class="inc-date">${dateStr}</span>
+        </div>
+        <div class="inc-title">${escapeHtml(d.title||'')}</div>
+        ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
+        <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
+        ${resolvedBlock}
+        <div class="inc-actions">
+          ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openResolveModal('${doc.id}','${escapeHtml((d.title||'')).replace(/'/g,"&#39;")}')">Resolve</button>` : ''}
+          <button class="btn btn-sm btn-outline" onclick="openIncidentEditFromDashboard('${doc.id}')">Edit</button>
+          ${currentUserRole === 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error(e); }
 }
 
 // ---- Load incidents for a specific vehicle ----
@@ -7310,33 +7366,43 @@ window.openIncidentModal = function(incidentId) {
   $('incident-modal-title').textContent = incidentId ? '✏️ Edit Incident' : '🚨 Report Incident';
 
   if (incidentId) {
-    // Editing — load existing data
-    const doc = currentVehicleIncidents.find(d => d.id === incidentId);
+    // Editing — pull from cached list (vehicle page or dashboard)
+    const allCached = [...currentVehicleIncidents];
+    const doc = allCached.find(d => d.id === incidentId);
     if (!doc) return;
     const d = doc.data();
-    $('incident-type').value       = d.type || 'other';
-    $('incident-title').value      = d.title || '';
+    $('incident-type').value        = d.type || 'other';
+    $('incident-title').value       = d.title || '';
     $('incident-description').value = d.description || '';
-    $('incident-urgent').checked   = !!d.urgent;
+    $('incident-urgent').checked    = !!d.urgent;
     if (vehicleRow) vehicleRow.style.display = 'none';
   } else {
-    // New — show vehicle select if no vehicle currently selected
-    $('incident-type').value       = 'damage';
-    $('incident-title').value      = '';
+    $('incident-type').value        = 'damage';
+    $('incident-title').value       = '';
     $('incident-description').value = '';
-    $('incident-urgent').checked   = false;
-    if (selectedVehicle) {
-      if (vehicleRow) vehicleRow.style.display = 'none';
-    } else {
-      if (vehicleRow) vehicleRow.style.display = '';
-      if (vehicleSel) {
-        vehicleSel.innerHTML = vehiclesCache.map(v =>
-          `<option value="${v.id}">${escapeHtml(v.plate)} ${escapeHtml(v.make||'')} ${escapeHtml(v.model||'')}</option>`
-        ).join('');
-      }
+    $('incident-urgent').checked    = false;
+    // Always show vehicle picker — pre-select current vehicle if on vehicle page
+    if (vehicleRow) vehicleRow.style.display = '';
+    if (vehicleSel) {
+      vehicleSel.innerHTML = vehiclesCache.map(v =>
+        `<option value="${v.id}">${escapeHtml(v.plate)} ${escapeHtml(v.make||'')} ${escapeHtml(v.model||'')}</option>`
+      ).join('');
+      if (selectedVehicle) vehicleSel.value = selectedVehicle.id || selectedVehicle;
     }
   }
   overlay.style.display = 'flex';
+};
+
+// Edit from dashboard (need to load from Firestore since currentVehicleIncidents may not have it)
+window.openIncidentEditFromDashboard = async function(incidentId) {
+  try {
+    const snap = await db.collection('incidents').doc(incidentId).get();
+    if (!snap.exists) return;
+    // Temporarily inject into currentVehicleIncidents so openIncidentModal can find it
+    const existing = currentVehicleIncidents.find(d => d.id === incidentId);
+    if (!existing) currentVehicleIncidents.push(snap);
+    openIncidentModal(incidentId);
+  } catch(e) { toast('Failed to load incident.', 'error'); }
 };
 
 window.closeIncidentModal = function() {
@@ -7385,6 +7451,7 @@ window.saveIncident = async function() {
     }
     closeIncidentModal();
     if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
+    loadAllOpenIncidentsDashboard();
   } catch(e) { console.error(e); toast('Failed to save incident.', 'error'); }
 };
 
@@ -7421,6 +7488,7 @@ window.saveIncidentResolution = async function() {
     toast(status === 'resolved' ? 'Incident resolved ✅' : 'Status updated.', 'success');
     closeResolveModal();
     if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
+    loadAllOpenIncidentsDashboard();
   } catch(e) { console.error(e); toast('Failed to save resolution.', 'error'); }
 };
 
@@ -7431,67 +7499,8 @@ window.deleteIncident = async function(docId) {
     await db.collection('incidents').doc(docId).delete();
     toast('Incident deleted.', 'success');
     if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
+    loadAllOpenIncidentsDashboard();
   } catch(e) { toast('Delete failed.', 'error'); }
-};
-
-// ---- All Open Incidents (admin/manager overlay view) ----
-window.openAllIncidentsView = async function() {
-  const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
-  if (!isPriv) return;
-  // Build a simple full-page overlay with all open incidents across vehicles
-  let overlay = $('all-incidents-overlay');
-  if (!overlay) {
-    overlay = document.createElement('div');
-    overlay.id = 'all-incidents-overlay';
-    overlay.className = 'overlay';
-    overlay.style.cssText = 'display:flex;z-index:3000;';
-    overlay.innerHTML = `<div class="incident-all-panel card">
-      <div class="section-header" style="margin-bottom:12px;">
-        <h3>🚨 All Open Incidents</h3>
-        <button class="btn btn-sm btn-outline" onclick="document.getElementById('all-incidents-overlay').style.display='none'">✕ Close</button>
-      </div>
-      <div id="all-incidents-body" class="incidents-list"></div>
-    </div>`;
-    document.body.appendChild(overlay);
-  } else {
-    overlay.style.display = 'flex';
-  }
-  const body = $('all-incidents-body');
-  body.innerHTML = '<p class="hint">Loading…</p>';
-  try {
-    const snap = await db.collection('incidents')
-      .where('status', 'in', ['open', 'in_progress'])
-      .get();
-    const docs = snap.docs.sort((a, b) => {
-      // Urgent first, then newest
-      const au = a.data().urgent ? 1 : 0, bu = b.data().urgent ? 1 : 0;
-      if (au !== bu) return bu - au;
-      const at = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
-      const bt = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
-      return bt - at;
-    });
-    if (!docs.length) { body.innerHTML = '<p class="hint">No open incidents 🎉</p>'; return; }
-    body.innerHTML = docs.map(doc => {
-      const d = doc.data();
-      const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
-      const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
-      const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric' }) : '';
-      return `<div class="inc-card ${d.urgent ? 'inc-urgent' : ''}">
-        <div class="inc-header">
-          <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'—')}</span>
-          <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
-          ${d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : ''}
-          <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
-          <span class="inc-date">${dateStr}</span>
-        </div>
-        <div class="inc-title">${escapeHtml(d.title||'')}</div>
-        ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
-        <div class="inc-actions">
-          <button class="btn btn-sm inc-resolve-btn" onclick="openResolveModal('${doc.id}','${escapeHtml((d.title||'')).replace(/'/g,"&#39;")}');document.getElementById('all-incidents-overlay').style.display='none';">Resolve</button>
-        </div>
-      </div>`;
-    }).join('');
-  } catch(e) { body.innerHTML = '<p class="hint" style="color:#ef4444;">Error loading incidents.</p>'; }
 };
 
 // ================================================================
