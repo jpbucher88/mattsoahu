@@ -620,7 +620,11 @@ function renderFleetDashboard() {
     } else if (v.tripStatus === 'repair-shop') {
       locDisplay = '🔧 Repair Shop';
       locCls = 'status-danger';
-    } else if (v.tripStatus === 'private-trip') {\n      const ptName = v.privateTripCustomerName ? ` \u2014 ${escapeHtml(v.privateTripCustomerName)}` : '';\n      locDisplay = `\ud83d\udd12 Private Trip${ptName}`;\n      locCls = 'status-warn';\n    } else if (v.tripStatus === 'scheduled') {
+    } else if (v.tripStatus === 'private-trip') {
+      const ptName = v.privateTripCustomerName ? ` — ${escapeHtml(v.privateTripCustomerName)}` : '';
+      locDisplay = `🔒 Private Trip${ptName}`;
+      locCls = 'status-warn';
+    } else if (v.tripStatus === 'scheduled') {
       const ss = v.tripScheduledStart ? (v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart)) : null;
       const ssStr = ss ? ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
       locDisplay = `⏰ Scheduled${ssStr ? ' · ' + ssStr : ''}`;
