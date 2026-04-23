@@ -690,6 +690,8 @@ function renderFleetDashboard() {
 
   // Render Locations widget
   renderLocationsWidget();
+  // Render fleet compliance widget
+  loadFleetComplianceWidget();
 }
 
 function renderLocationsWidget() {
@@ -4165,14 +4167,14 @@ function loadComplianceData(v) {
     const statusEl = $(statusId);
     if (input) input.value = val || '';
     if (statusEl) {
-      const { label, cls, nextDue } = complianceMonthStatus(val);
+      const { label, cls, nextDue, daysLeft } = complianceMonthStatus(val);
       statusEl.textContent = label;
       statusEl.className = 'compliance-status ' + cls;
       if (cls === 'compliance-warn' || cls === 'compliance-urgent') {
         warnings.push(label + ' — ' + id.replace('compliance-', ''));
       }
       if (cls === 'compliance-urgent' && (id === 'compliance-safety' || id === 'compliance-registration')) {
-        urgentCompliance.push({ complianceType: id.replace('compliance-', ''), label });
+        urgentCompliance.push({ complianceType: id.replace('compliance-', ''), label, daysLeft });
       }
       if (nextId) {
         const nextEl = $(nextId);
@@ -4214,15 +4216,15 @@ function loadComplianceData(v) {
   }
   // Auto-create urgent follow-up notes for compliance items at ≤15 days / expired
   if (urgentCompliance.length > 0 && v.id) {
-    urgentCompliance.forEach(({ complianceType, label }) => {
-      ensureComplianceFollowUp(v.id, v.plate, complianceType, label);
+    urgentCompliance.forEach(({ complianceType, label, daysLeft }) => {
+      ensureComplianceFollowUp(v.id, v.plate, complianceType, label, daysLeft);
     });
   }
 }
 
 // Auto-create an urgent follow-up note when a compliance item is ≤15 days or expired.
 // Checks for an existing open note first to avoid duplicates.
-async function ensureComplianceFollowUp(vehicleId, plate, complianceType, statusLabel) {
+async function ensureComplianceFollowUp(vehicleId, plate, complianceType, statusLabel, daysLeft) {
   try {
     const existing = await db.collection('vehicleNotes')
       .where('vehicleId', '==', vehicleId)
@@ -4231,15 +4233,16 @@ async function ensureComplianceFollowUp(vehicleId, plate, complianceType, status
       .where('done', '==', false)
       .limit(1)
       .get();
-    if (!existing.empty) return; // already has an open urgent note
+    if (!existing.empty) return; // already has an open compliance note
+    const isOverdue = typeof daysLeft === 'number' && daysLeft < 0;
     const typeName = complianceType === 'safety' ? 'Safety Inspection' : 'Registration';
     await db.collection('vehicleNotes').add({
       vehicleId,
-      text: `🚨 ${typeName} — ${statusLabel} for ${plate || vehicleId}. Renew immediately.`,
+      text: `${typeName} — ${statusLabel} for ${plate || vehicleId}.`,
       isFollowUp: true,
       done: false,
-      urgent: true,
-      taskStatus: 'urgent',
+      urgent: isOverdue,
+      taskStatus: isOverdue ? 'urgent' : 'scheduled',
       sourceType: 'compliance',
       complianceType,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -4675,6 +4678,70 @@ function renderTaskAgenda(allItems) {
     el.innerHTML = html;
   }
 
+  // Compliance tab: use grouped-by-vehicle card view
+  const compGroupEl = $('compliance-grouped-view');
+  if (currentTaskTab === 'compliance') {
+    [overdueEl, todayEl, upcomingEl, noDateEl].forEach(el => { if (el) el.style.display = 'none'; });
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (compGroupEl) {
+      compGroupEl.style.display = '';
+      if (items.length === 0) {
+        compGroupEl.innerHTML = '<div class="agenda-empty"><p class="hint">No compliance tasks. ✅</p></div>';
+      } else {
+        const todayMonth = today.substring(0, 7);
+        const groupMap = new Map();
+        for (const item of items) {
+          const month = item.dueDate ? item.dueDate.substring(0, 7) : 'nodate';
+          const key = `${item.vehicleId || 'general'}__${month}`;
+          if (!groupMap.has(key)) groupMap.set(key, { vehicleId: item.vehicleId, month, items: [] });
+          groupMap.get(key).items.push(item);
+        }
+        const groups = [...groupMap.values()].sort((a, b) => {
+          const aOver = a.month !== 'nodate' && a.month < todayMonth;
+          const bOver = b.month !== 'nodate' && b.month < todayMonth;
+          if (aOver !== bOver) return aOver ? -1 : 1;
+          return (a.month === 'nodate' ? 'zzzz' : a.month).localeCompare(b.month === 'nodate' ? 'zzzz' : b.month);
+        });
+        let html = '';
+        for (const group of groups) {
+          const v = group.vehicleId ? vehiclesCache.find(x => x.id === group.vehicleId) : null;
+          const plate = v ? v.plate : 'General';
+          const isOver = group.month !== 'nodate' && group.month < todayMonth;
+          const monthStr = group.month !== 'nodate'
+            ? new Date(group.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            : 'No Due Date';
+          const typeTags = group.items.map(i => {
+            if (i.complianceType === 'safety') return '<span class="ctag ctag-safety">🔧 Safety</span>';
+            if (i.complianceType === 'registration') return '<span class="ctag ctag-reg">📝 Registration</span>';
+            return '<span class="ctag">📄 Insurance</span>';
+          }).join('');
+          html += `<div class="compliance-group-card${isOver ? ' compliance-group-overdue' : ''}">
+            <div class="compliance-group-header">
+              <span class="compliance-group-plate">🚗 ${escapeHtml(plate)}</span>
+              <span class="compliance-group-month">${monthStr}</span>
+              ${isOver ? '<span class="compliance-group-badge overdue-badge">OVERDUE</span>' : ''}
+              <span class="compliance-group-types">${typeTags}</span>
+            </div>
+            <div class="compliance-group-items">`;
+          for (const item of group.items) html += renderAgendaItem(item);
+          html += '</div></div>';
+        }
+        compGroupEl.innerHTML = html;
+        compGroupEl.querySelectorAll('.followup-item').forEach(el => {
+          el.addEventListener('click', e => {
+            if (e.target.closest('button')) return;
+            const wrap = el.closest('.followup-item-wrap');
+            const dd = wrap ? wrap.dataset.due : '';
+            if (dd) jumpToCalendarDay(dd);
+            else if (el.dataset.vid) { closeTaskPanel(); openVehiclePage(el.dataset.vid); }
+          });
+        });
+      }
+    }
+    return;
+  }
+  if (compGroupEl) compGroupEl.style.display = 'none';
+
   renderGroup(overdueEl, '\u26a0\ufe0f Overdue', 'agenda-overdue', overdue, true);
   renderGroup(todayEl, '\ud83d\udfe2 Today', 'agenda-today', todayItems, false);
   renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
@@ -4990,7 +5057,10 @@ function renderUrgentBanner(items) {
   if (!banner || !list) return;
 
   const today = todayDateString();
-  const urgentItems = items.filter(i => i.urgent);
+  // Exclude non-overdue compliance items — they have a dedicated widget/tab
+  const urgentItems = items.filter(i =>
+    i.urgent && !(i.sourceType === 'compliance' && i.dueDate && i.dueDate >= today)
+  );
 
   if (urgentItems.length === 0) {
     banner.style.display = 'none';
@@ -5373,6 +5443,81 @@ function closeTaskPanel() {
 }
 window.openTaskPanel = openTaskPanel;
 window.closeTaskPanel = closeTaskPanel;
+
+// Open the task panel directly on the compliance tab
+window.openComplianceView = function() {
+  openTaskPanel();
+  // Switch tab after panel opens
+  setTimeout(() => switchTaskTab('compliance'), 50);
+};
+
+// ============ FLEET COMPLIANCE WIDGET (dashboard) ============
+function loadFleetComplianceWidget() {
+  const section = $('compliance-widget');
+  const list = $('compliance-widget-list');
+  const badge = $('compliance-widget-badge');
+  const navBadge = $('compliance-alert-count');
+  if (!section || !list) return;
+
+  // Collect vehicles with compliance issues (≤30 days or expired)
+  const issues = [];
+  vehiclesCache.forEach(v => {
+    const safetyS = complianceMonthStatus(v.complianceSafety);
+    const regS = complianceMonthStatus(v.complianceRegistration);
+    const vehicleIssues = [];
+    if (safetyS.cls === 'compliance-urgent' || safetyS.cls === 'compliance-warn') {
+      vehicleIssues.push({ type: 'Safety', label: safetyS.label, daysLeft: safetyS.daysLeft, cls: safetyS.cls });
+    }
+    if (regS.cls === 'compliance-urgent' || regS.cls === 'compliance-warn') {
+      vehicleIssues.push({ type: 'Registration', label: regS.label, daysLeft: regS.daysLeft, cls: regS.cls });
+    }
+    if (vehicleIssues.length > 0) issues.push({ v, vehicleIssues });
+  });
+
+  // Update nav badge
+  const overdueCount = issues.reduce((n, g) => n + g.vehicleIssues.filter(i => i.daysLeft < 0).length, 0);
+  if (navBadge) {
+    navBadge.textContent = issues.length;
+    navBadge.classList.toggle('count-zero', issues.length === 0);
+    navBadge.classList.toggle('has-urgent', overdueCount > 0);
+  }
+
+  if (issues.length === 0) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  if (badge) { badge.textContent = issues.length; }
+
+  // Sort: overdue-first, then by worst daysLeft
+  issues.sort((a, b) => {
+    const aWorst = Math.min(...a.vehicleIssues.map(i => i.daysLeft ?? 999));
+    const bWorst = Math.min(...b.vehicleIssues.map(i => i.daysLeft ?? 999));
+    return aWorst - bWorst;
+  });
+
+  let html = '<div class="cwg">';
+  for (const { v, vehicleIssues } of issues) {
+    const hasOverdue = vehicleIssues.some(i => i.daysLeft < 0);
+    html += `<div class="cwg-row${hasOverdue ? ' cwg-row-overdue' : ''}" onclick="openVehicleCompliancePage('${v.id}')" title="${escapeHtml(v.plate)}">`;
+    html += `<span class="cwg-plate">🚗 ${escapeHtml(v.plate)}</span>`;
+    html += '<span class="cwg-tags">';
+    for (const issue of vehicleIssues) {
+      const tagCls = issue.daysLeft < 0 ? 'cwg-tag cwg-tag-overdue'
+        : issue.daysLeft <= 15 ? 'cwg-tag cwg-tag-urgent'
+        : 'cwg-tag cwg-tag-warn';
+      html += `<span class="${tagCls}">${issue.type}: ${issue.label}</span>`;
+    }
+    html += '</span></div>';
+  }
+  html += '</div>';
+  list.innerHTML = html;
+}
+
+window.openVehicleCompliancePage = function(vehicleId) {
+  openVehiclePage(vehicleId);
+  setTimeout(() => {
+    const el = $('compliance-section');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 500);
+};
 
 // Set up role-specific UI in the task panel (admin filter, assignee dropdown)
 let _taskPanelUsersLoaded = false;

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260422b">
+  <link rel="stylesheet" href="style.css?v=20260422c">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -64,6 +64,10 @@
         <span class="task-alert-icon">📬</span>
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
       </button>
+      <button id="btn-compliance" class="task-alert-btn" title="Fleet Compliance" onclick="openComplianceView()">
+        <span class="task-alert-icon">📋</span>
+        <span id="compliance-alert-count" class="task-alert-count count-zero">0</span>
+      </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
       </button>
@@ -86,6 +90,23 @@
         </div>
         <div id="urgent-banner-body" class="collapsible-body">
           <div id="urgent-banner-list" class="urgent-banner-list"></div>
+        </div>
+      </section>
+
+      <!-- Fleet Compliance Widget -->
+      <section id="compliance-widget" class="card compliance-widget-section" style="display:none;">
+        <div class="collapsible-header" onclick="toggleSection('compliance-widget-body', 'compliance-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>📋 Fleet Compliance</h3>
+            <span id="compliance-widget-badge" class="badge compliance-fleet-badge">0</span>
+          </div>
+          <div class="collapsible-header-right">
+            <button class="btn btn-sm btn-outline compliance-view-tasks-btn" onclick="event.stopPropagation(); openComplianceView()">View Tasks →</button>
+            <button class="collapse-btn" id="compliance-widget-toggle">&#8722;</button>
+          </div>
+        </div>
+        <div id="compliance-widget-body" class="collapsible-body">
+          <div id="compliance-widget-list"></div>
         </div>
       </section>
 
@@ -816,6 +837,7 @@
             <div id="followup-today" class="agenda-group" style="display:none;"></div>
             <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
             <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
+            <div id="compliance-grouped-view" class="compliance-grouped-view" style="display:none;"></div>
             <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No tasks in this view. ✅</p></div>
           </div>
           <!-- Completed tasks bucket (collapsible) -->
