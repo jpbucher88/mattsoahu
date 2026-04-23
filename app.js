@@ -694,8 +694,8 @@ function renderFleetDashboard() {
 
   // Render Locations widget
   renderLocationsWidget();
-  // Render fleet compliance widget
-  loadFleetComplianceWidget();
+  // Compliance widget removed from dashboard — accessible via top-bar ✅ button
+  // loadFleetComplianceWidget();
 }
 
 function renderLocationsWidget() {
@@ -5614,7 +5614,7 @@ function loadFleetComplianceWidget() {
     if (vehicleIssues.length > 0) issues.push({ v, vehicleIssues });
   });
 
-  // Update nav badge
+  // Update nav badge (always, even though widget is hidden)
   const overdueCount = issues.reduce((n, g) => n + g.vehicleIssues.filter(i => i.daysLeft < 0).length, 0);
   if (navBadge) {
     navBadge.textContent = issues.length;
@@ -5622,8 +5622,11 @@ function loadFleetComplianceWidget() {
     navBadge.classList.toggle('has-urgent', overdueCount > 0);
   }
 
-  if (issues.length === 0) { section.style.display = 'none'; return; }
-  section.style.display = '';
+  if (issues.length === 0) {
+    // Widget is hidden — only keep nav badge updated
+    return;
+  }
+  // Widget is hidden from dashboard; still populate in case it's ever shown
   if (badge) { badge.textContent = issues.length; }
 
   // Sort: overdue-first, then by worst daysLeft
@@ -5799,6 +5802,28 @@ window.openLearningPage = function() {
   if (disp && currentUser) disp.textContent = currentUser.displayName || currentUser.email;
   const shareBtn = $('btn-add-shared-resource');
   if (shareBtn) shareBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
+  // Populate admin user filter dropdown
+  const filterSel = $('learning-user-filter');
+  if (filterSel) {
+    if (currentUserRole === 'admin') {
+      filterSel.style.display = '';
+      if (filterSel.options.length === 0) {
+        filterSel.innerHTML = '<option value="">👤 All users</option>';
+        // Populate from users list
+        db.collection('users').orderBy('displayName').get().then(snap => {
+          snap.forEach(d => {
+            const u = d.data();
+            const opt = document.createElement('option');
+            opt.value = d.id;
+            opt.textContent = u.displayName || u.email || d.id;
+            filterSel.appendChild(opt);
+          });
+        }).catch(() => {});
+      }
+    } else {
+      filterSel.style.display = 'none';
+    }
+  }
   // Use the showPage mechanism but add the page if it's not registered
   Object.values(pages).forEach(p => p.classList.remove('active'));
   const pg = $('page-learning');
@@ -5819,11 +5844,28 @@ async function loadLearningItems() {
   myList.innerHTML = '<p class="hint">Loading\u2026</p>';
   sharedList.innerHTML = '<p class="hint">Loading\u2026</p>';
 
+  // Admin can filter by user; default is current user
+  const filterSel = $('learning-user-filter');
+  const filterUid = (filterSel && filterSel.value) ? filterSel.value : currentUser.uid;
+  const isViewingOwn = filterUid === currentUser.uid;
+  const canEditPersonal = isViewingOwn || currentUserRole === 'admin';
+
+  // Update diploma subtitle to reflect viewed user
+  const disp = $('learning-diploma-name');
+  if (disp) {
+    if (!isViewingOwn && filterSel) {
+      const selOpt = filterSel.options[filterSel.selectedIndex];
+      disp.textContent = (selOpt ? selOpt.textContent : filterUid) + "'s Items";
+    } else {
+      disp.textContent = currentUser.displayName || currentUser.email;
+    }
+  }
+
   try {
+    // Query by uid only (no compound index needed), filter scope client-side
     const [mySnap, sharedSnap] = await Promise.all([
       db.collection('learningItems')
-        .where('uid', '==', currentUser.uid)
-        .where('scope', '==', 'personal')
+        .where('uid', '==', filterUid)
         .orderBy('createdAt', 'desc')
         .limit(100)
         .get(),
@@ -5833,7 +5875,12 @@ async function loadLearningItems() {
         .limit(50)
         .get(),
     ]);
-    renderLearningList(myList, mySnap, true);
+    // Filter to personal items only (exclude shared from personal list)
+    const personalDocs = { docs: mySnap.docs.filter(d => d.data().scope !== 'shared'), empty: false };
+    personalDocs.empty = personalDocs.docs.length === 0;
+    // Wrap as iterable with forEach
+    const toSnap = (arr) => ({ empty: arr.length === 0, forEach: (fn) => arr.forEach(fn) });
+    renderLearningList(myList, toSnap(personalDocs.docs), canEditPersonal);
     renderLearningList(sharedList, sharedSnap, currentUserRole === 'admin');
   } catch(e) {
     console.error('Load learning items error', e);

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423a">
+  <link rel="stylesheet" href="style.css?v=20260423b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -65,7 +65,7 @@
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
       </button>
       <button id="btn-compliance" class="task-alert-btn" title="Fleet Compliance" onclick="openComplianceView()">
-        <span class="task-alert-icon">📋</span>
+        <span class="task-alert-icon">✅</span>
         <span id="compliance-alert-count" class="task-alert-count count-zero">0</span>
       </button>
       <button id="btn-learning" class="task-alert-btn" title="Learning Center" onclick="openLearningPage()">
@@ -96,8 +96,9 @@
         </div>
       </section>
 
-      <!-- Fleet Compliance Widget -->
-      <section id="compliance-widget" class="card compliance-widget-section" style="display:none;">
+      <!-- Fleet Compliance Widget (hidden — access via top bar ✅ button) -->
+      <section id="compliance-widget" class="card compliance-widget-section" style="display:none !important;
+        pointer-events:none;">
         <div class="collapsible-header" onclick="toggleSection('compliance-widget-body', 'compliance-widget-toggle')">
           <div class="collapsible-title">
             <h3>📋 Fleet Compliance</h3>
@@ -647,7 +648,10 @@
       <section class="card">
         <div class="section-header">
           <h3>📚 My Learning Items</h3>
-          <button class="btn btn-sm btn-primary" onclick="openAddLearningItem()">+ Add Item</button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="learning-user-filter" class="form-select" style="display:none;min-width:140px;font-size:0.82rem;" onchange="loadLearningItems()"></select>
+            <button class="btn btn-sm btn-primary" onclick="openAddLearningItem()">+ Add Item</button>
+          </div>
         </div>
         <div id="learning-items-list" class="learning-items-list"></div>
       </section>
