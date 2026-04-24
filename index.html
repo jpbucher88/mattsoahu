@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423n">
+  <link rel="stylesheet" href="style.css?v=20260423o">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1235,6 +1235,17 @@
             <div class="mb-field">
               <label class="mb-field-label">Message:</label>
               <textarea id="mb-message-body" class="mb-textarea" placeholder="Type your message..." maxlength="1000" rows="5"></textarea>
+            </div>
+            <div class="mb-field">
+              <label class="mb-field-label">📎 Photos:</label>
+              <div class="mb-attach-row">
+                <label class="btn btn-sm btn-outline mb-attach-btn">
+                  📁 Attach Photos
+                  <input type="file" id="mb-attach-input" accept="image/*" multiple style="display:none;">
+                </label>
+                <span id="mb-attach-count" class="mb-attach-count"></span>
+              </div>
+              <div id="mb-attach-previews" class="mb-attach-previews"></div>
             </div>
             <button class="btn btn-primary" onclick="sendMailMessage()">✉️ Send Message</button>
           </div>

@@ -6051,6 +6051,7 @@ window.runProductivityReport = async function() {
             <th>Utilization</th>
             <th>Last Booking</th>
             <th>Idle Streak</th>
+            <th></th>
           </tr></thead>
           <tbody>
             ${rows.map(r => {
@@ -6065,6 +6066,7 @@ window.runProductivityReport = async function() {
                 <td>${utilBar}</td>
                 <td>${fmtDate(r.lastBookingDate)}</td>
                 <td>${idleBadge}</td>
+                <td><button class="btn btn-sm btn-outline prod-trips-btn" onclick="openTripLogs('${r.v.id}','${escapeHtml(r.plate)}')">📋 Trips</button></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -6075,6 +6077,142 @@ window.runProductivityReport = async function() {
     console.error('Productivity report error:', e);
     resultsEl.innerHTML = '<p class="hint" style="padding:16px;color:#ef4444;">Failed to load report. Check console for details.</p>';
   }
+};
+
+// ----------------------------------------------------------------
+// Trip Log Viewer — shows all logged trips for a vehicle, allows
+// edit (change dates) or delete (cancel / shorten).
+// ----------------------------------------------------------------
+window.openTripLogs = async function(vehicleId, plate) {
+  const existing = document.querySelector('.triplog-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'triplog-overlay';
+  overlay.innerHTML = `
+    <div class="triplog-modal">
+      <div class="triplog-header">
+        <h4>📋 Trip Logs — ${escapeHtml(plate)}</h4>
+        <button class="prod-close-btn" onclick="this.closest('.triplog-overlay').remove()">✕</button>
+      </div>
+      <div id="triplog-body" class="triplog-body"><p class="hint" style="padding:16px;text-align:center;">Loading…</p></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  await _refreshTripLogBody(vehicleId, plate);
+};
+
+async function _refreshTripLogBody(vehicleId, plate) {
+  const body = document.getElementById('triplog-body');
+  if (!body) return;
+  try {
+    const snap = await db.collection('tripLogs')
+      .where('vehicleId', '==', vehicleId)
+      .get();
+    const logs = [];
+    snap.forEach(doc => logs.push({ id: doc.id, ...doc.data() }));
+    logs.sort((a, b) => (b.startDate || '').localeCompare(a.startDate || ''));
+
+    if (!logs.length) {
+      body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No trips logged yet for this vehicle.</p>';
+      return;
+    }
+
+    const fmtD = ds => {
+      if (!ds) return '—';
+      const [y,m,d] = ds.split('-');
+      return new Date(+y, +m-1, +d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    };
+
+    body.innerHTML = `
+      <table class="prod-table triplog-table">
+        <thead><tr><th>Start</th><th>End</th><th>Type</th><th>Logged By</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${logs.map(log => {
+            const cancelled = log.cancelled;
+            const typeLabel = log.tripType === 'private-trip' ? '🔒 Private' : '📅 Scheduled';
+            return `<tr class="${cancelled ? 'triplog-cancelled' : ''}">
+              <td>${fmtD(log.startDate)}</td>
+              <td>${fmtD(log.endDate)}</td>
+              <td>${typeLabel}</td>
+              <td>${escapeHtml(log.loggedByName || '—')}</td>
+              <td>${cancelled ? '<span class="prod-idle-alert">Cancelled</span>' : '<span class="prod-idle-ok">Active</span>'}</td>
+              <td class="triplog-actions">
+                ${!cancelled ? `<button class="btn btn-sm btn-outline" onclick="editTripLog('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}')">✏️ Edit</button>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="deleteTripLog('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}')">🗑️</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  } catch(e) {
+    console.error('triplog load error:', e);
+    body.innerHTML = '<p class="hint" style="padding:16px;color:#ef4444;">Failed to load trips.</p>';
+  }
+}
+
+window.editTripLog = async function(logId, vehicleId, plate) {
+  const snap = await db.collection('tripLogs').doc(logId).get();
+  if (!snap.exists) { toast('Trip not found.', 'error'); return; }
+  const log = snap.data();
+
+  const existing = document.querySelector('.triplog-edit-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'triplog-edit-overlay';
+  overlay.innerHTML = `
+    <div class="triplog-edit-modal">
+      <h4>✏️ Edit Trip — ${escapeHtml(plate)}</h4>
+      <div class="triplog-edit-field">
+        <label>Start Date</label>
+        <input type="date" id="tledit-start" class="vehicle-location-custom" value="${log.startDate || ''}">
+      </div>
+      <div class="triplog-edit-field">
+        <label>End Date</label>
+        <input type="date" id="tledit-end" class="vehicle-location-custom" value="${log.endDate || ''}">
+      </div>
+      <div class="triplog-edit-field">
+        <label>Note <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
+        <input type="text" id="tledit-note" class="vehicle-location-custom" placeholder="e.g. Shortened – early return" maxlength="200" value="${escapeHtml(log.note || '')}">
+      </div>
+      <div class="triplog-edit-actions">
+        <button class="btn btn-primary" id="tledit-save">Save Changes</button>
+        <button class="btn btn-outline" onclick="this.closest('.triplog-edit-overlay').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  overlay.querySelector('#tledit-save').addEventListener('click', async () => {
+    const newStart = overlay.querySelector('#tledit-start').value;
+    const newEnd = overlay.querySelector('#tledit-end').value;
+    const note = overlay.querySelector('#tledit-note').value.trim();
+    if (!newStart || !newEnd) { toast('Start and end date are required.', 'warning'); return; }
+    if (newEnd < newStart) { toast('End date cannot be before start date.', 'warning'); return; }
+    try {
+      await db.collection('tripLogs').doc(logId).update({
+        startDate: newStart, endDate: newEnd,
+        note: note || firebase.firestore.FieldValue.delete(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUser.uid, updatedByName: currentUser.displayName || currentUser.email,
+      });
+      toast('Trip updated.', 'success');
+      overlay.remove();
+      await _refreshTripLogBody(vehicleId, plate);
+    } catch(e) { toast('Failed to update trip.', 'error'); }
+  });
+};
+
+window.deleteTripLog = async function(logId, vehicleId, plate) {
+  const ok = await confirm('Delete Trip Log', 'Remove this trip from the log? This will affect utilization stats.');
+  if (!ok) return;
+  try {
+    await db.collection('tripLogs').doc(logId).delete();
+    toast('Trip log deleted.', 'success');
+    await _refreshTripLogBody(vehicleId, plate);
+  } catch(e) { toast('Failed to delete trip.', 'error'); }
 };
 
 // ================================================================
@@ -7256,6 +7394,25 @@ window.openMailbox = function() {
   loadMailboxInbox();
   loadMailboxSent();
   loadMailboxUsers();
+  // Wire up attach photo preview (idempotent)
+  const attachInput = $('mb-attach-input');
+  if (attachInput && !attachInput._wired) {
+    attachInput._wired = true;
+    attachInput.addEventListener('change', () => {
+      const files = Array.from(attachInput.files);
+      const previews = $('mb-attach-previews');
+      const countEl = $('mb-attach-count');
+      if (previews) {
+        previews.innerHTML = files.map((f, i) =>
+          `<div class="mb-attach-thumb-wrap" id="mb-thumb-${i}">
+            <img src="${URL.createObjectURL(f)}" class="mb-attach-thumb" alt="photo">
+            <button class="mb-attach-remove" onclick="removeMbAttach(${i})">✕</button>
+          </div>`
+        ).join('');
+      }
+      if (countEl) countEl.textContent = files.length ? files.length + ' photo' + (files.length > 1 ? 's' : '') + ' attached' : '';
+    });
+  }
 };
 
 window.closeMailbox = function() {
@@ -7384,6 +7541,17 @@ async function loadMailboxSent() {
   }
 }
 
+window.removeMbAttach = function(idx) {
+  // Re-build the file list minus the removed index using a DataTransfer
+  const attachInput = $('mb-attach-input');
+  if (!attachInput) return;
+  const dt = new DataTransfer();
+  Array.from(attachInput.files).forEach((f, i) => { if (i !== idx) dt.items.add(f); });
+  attachInput.files = dt.files;
+  // Trigger change event to re-render previews
+  attachInput.dispatchEvent(new Event('change'));
+};
+
 window.openMessage = async function(msgId) {
   // Mark as read
   try {
@@ -7406,6 +7574,9 @@ window.openMessage = async function(msgId) {
 
     const overlay = document.createElement('div');
     overlay.className = 'msg-detail-overlay';
+    const photosHtml = (m.photoUrls && m.photoUrls.length)
+      ? `<div class="msg-detail-photos">${m.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="msg-detail-photo-thumb" alt="attachment"></a>`).join('')}</div>`
+      : '';
     overlay.innerHTML = `
       <div class="msg-detail-modal">
         <div class="msg-detail-header">
@@ -7413,6 +7584,7 @@ window.openMessage = async function(msgId) {
           <div class="msg-detail-time">${timeStr}</div>
         </div>
         <div class="msg-detail-body">${escapeHtml(m.body || '').replace(/\n/g, '<br>')}</div>
+        ${photosHtml}
         <div class="msg-detail-actions">
           <button class="btn btn-sm btn-outline" id="btn-msg-reply">↩ Reply</button>
           <button class="btn btn-sm btn-outline" id="btn-msg-create-task">📋 Create Task</button>
@@ -7567,8 +7739,25 @@ window.sendMailMessage = async function() {
   if (!toUid) { toast('Select a recipient.', 'warning'); return; }
   if (!msgBody) { toast('Write a message first.', 'warning'); return; }
   const fromName = ($('user-display') || {}).textContent || currentUser.email;
+
+  // Upload any staged photos
+  const photoUrls = [];
+  const attachInput = $('mb-attach-input');
+  const files = attachInput && attachInput.files ? Array.from(attachInput.files) : [];
+  if (files.length) {
+    const st = getStorage();
+    for (const file of files) {
+      try {
+        const compressed = await compressImage(file);
+        const ref = st.ref('messages/' + currentUser.uid + '/' + Date.now() + '_' + Math.random().toString(36).slice(2,6) + '.jpg');
+        await ref.put(compressed, { contentType: 'image/jpeg' });
+        photoUrls.push(await ref.getDownloadURL());
+      } catch(e) { console.warn('Mail photo upload error:', e); }
+    }
+  }
+
   try {
-    await db.collection('messages').add({
+    const msgData = {
       from: currentUser.uid,
       fromName,
       to: toUid,
@@ -7576,9 +7765,16 @@ window.sendMailMessage = async function() {
       body: msgBody,
       sentAt: firebase.firestore.FieldValue.serverTimestamp(),
       read: false
-    });
+    };
+    if (photoUrls.length) msgData.photoUrls = photoUrls;
+    await db.collection('messages').add(msgData);
     body.value = '';
     sel.value = '';
+    if (attachInput) attachInput.value = '';
+    const previews = $('mb-attach-previews');
+    if (previews) previews.innerHTML = '';
+    const countEl = $('mb-attach-count');
+    if (countEl) countEl.textContent = '';
     toast('Message sent! ✉️', 'success');
     loadMailboxSent();
     switchMailTab('sent');
