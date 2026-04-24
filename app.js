@@ -67,6 +67,33 @@ window.togglePassword = function(inputId, btn) {
 // --------------- DOM REFS ---------------
 const $ = (id) => document.getElementById(id);
 
+// ---- Datetime split-input helpers ----
+// Combine a date input (YYYY-MM-DD) + text time input (HH:MM) into a datetime-local string
+function getDTValue(dateId, timeId) {
+  const d = $(dateId) ? $(dateId).value : '';
+  if (!d) return '';
+  const t = ($(timeId) ? $(timeId).value.trim() : '') || '00:00';
+  return d + 'T' + t;
+}
+// Set a date + text-time split pair from a Date object or Firestore Timestamp
+function setDTValue(dateId, timeId, dateObjOrTimestamp) {
+  const dEl = $(dateId), tEl = $(timeId);
+  if (!dEl || !tEl) return;
+  if (!dateObjOrTimestamp) { dEl.value = ''; tEl.value = ''; return; }
+  const d = dateObjOrTimestamp.toDate ? dateObjOrTimestamp.toDate() : (dateObjOrTimestamp instanceof Date ? dateObjOrTimestamp : new Date(dateObjOrTimestamp));
+  dEl.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  tEl.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
+// Auto-format HH:MM as user types into a .dt-time-input
+document.addEventListener('input', function(e) {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('dt-time-input')) return;
+  let v = el.value.replace(/\D/g, '');
+  if (v.length > 4) v = v.slice(0, 4);
+  if (v.length >= 3) v = v.slice(0, 2) + ':' + v.slice(2);
+  if (el.value !== v) el.value = v;
+});
+
 const pages = {
   login: $('page-login'),
   dashboard: $('page-dashboard'),
@@ -262,6 +289,8 @@ auth.onAuthStateChanged(async (user) => {
       initTimeClock();
       if (currentUserRole === 'admin' || currentUserRole === 'manager') {
         loadExpenseWidget();
+        const prodBtn = $('productivity-open-btn');
+        if (prodBtn) prodBtn.style.display = '';
       }
     } catch (err) {
       console.error('Auth state error:', err);
@@ -1346,12 +1375,14 @@ async function openVehiclePage(vid) {
       $('private-trip-get').value = selectedVehicle.privateTripGET ?? '4.712';
       $('private-trip-daily-tax').value = selectedVehicle.privateTripDailyTax || '';
       if (selectedVehicle.tripScheduledStart) {
-        const ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
-        $('private-trip-start').value = ss.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
+        setDTValue('private-trip-start-date', 'private-trip-start-time', selectedVehicle.tripScheduledStart);
+      } else {
+        setDTValue('private-trip-start-date', 'private-trip-start-time', null);
       }
       if (selectedVehicle.tripExpectedEnd) {
-        const ee = selectedVehicle.tripExpectedEnd.toDate ? selectedVehicle.tripExpectedEnd.toDate() : new Date(selectedVehicle.tripExpectedEnd);
-        $('private-trip-end').value = ee.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
+        setDTValue('private-trip-end-date', 'private-trip-end-time', selectedVehicle.tripExpectedEnd);
+      } else {
+        setDTValue('private-trip-end-date', 'private-trip-end-time', null);
       }
       if (selectedVehicle.tripReturnDate) {
         const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
@@ -1363,19 +1394,9 @@ async function openVehiclePage(vid) {
         ? `<a href="${escapeHtml(selectedVehicle.privateTripContractUrl)}" target="_blank" class="compliance-doc-anchor">📄 View Contract</a>` : '';
     }
     // Populate scheduled start
-    if (selectedVehicle.tripScheduledStart) {
-      const ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
-      $('vehicle-trip-scheduled-start').value = ss.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
-    } else {
-      $('vehicle-trip-scheduled-start').value = '';
-    }
+    setDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time', selectedVehicle.tripScheduledStart || null);
     // Populate expected end
-    if (selectedVehicle.tripExpectedEnd) {
-      const ee = selectedVehicle.tripExpectedEnd.toDate ? selectedVehicle.tripExpectedEnd.toDate() : new Date(selectedVehicle.tripExpectedEnd);
-      $('vehicle-trip-expected-end').value = ee.toLocaleString('sv-SE').slice(0, 16).replace(' ', 'T');
-    } else {
-      $('vehicle-trip-expected-end').value = '';
-    }
+    setDTValue('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time', selectedVehicle.tripExpectedEnd || null);
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
       tripReturnInput.value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
@@ -2698,9 +2719,9 @@ $('btn-save-location').addEventListener('click', async () => {
   // Compute the display location for backward compat
   if (tripStatus === 'scheduled') {
     updateData.location = homeLocation;
-    const schedVal = $('vehicle-trip-scheduled-start').value;
+    const schedVal = getDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time');
     updateData.tripScheduledStart = schedVal ? firebase.firestore.Timestamp.fromDate(new Date(schedVal)) : firebase.firestore.FieldValue.delete();
-    const endVal = $('vehicle-trip-expected-end').value;
+    const endVal = getDTValue('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time');
     updateData.tripExpectedEnd = endVal ? firebase.firestore.Timestamp.fromDate(new Date(endVal)) : firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
@@ -2713,8 +2734,8 @@ $('btn-save-location').addEventListener('click', async () => {
     });
   } else if (tripStatus === 'private-trip') {
     updateData.location = 'Private Trip';
-    const ptStart = $('private-trip-start').value;
-    const ptEnd = $('private-trip-end').value;
+    const ptStart = getDTValue('private-trip-start-date', 'private-trip-start-time');
+    const ptEnd = getDTValue('private-trip-end-date', 'private-trip-end-time');
     const ptReturn = $('private-trip-return').value;
     updateData.tripScheduledStart = ptStart ? firebase.firestore.Timestamp.fromDate(new Date(ptStart)) : firebase.firestore.FieldValue.delete();
     updateData.tripExpectedEnd = ptEnd ? firebase.firestore.Timestamp.fromDate(new Date(ptEnd)) : firebase.firestore.FieldValue.delete();
@@ -2813,6 +2834,33 @@ $('btn-save-location').addEventListener('click', async () => {
     if (cached) Object.assign(cached, selectedVehicle);
     toast('Location saved!', 'success');
     renderFleetDashboard();
+    // Log trip to tripLogs for productivity tracking
+    if (tripStatus === 'scheduled' || tripStatus === 'private-trip') {
+      const logStart = tripStatus === 'scheduled'
+        ? getDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time')
+        : getDTValue('private-trip-start-date', 'private-trip-start-time');
+      const logEnd = tripStatus === 'scheduled'
+        ? getDTValue('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time')
+        : getDTValue('private-trip-end-date', 'private-trip-end-time');
+      if (logStart && logEnd) {
+        const startDate = logStart.slice(0, 10);
+        const endDate = logEnd.slice(0, 10);
+        const logKey = selectedVehicle.id + '_' + startDate + '_' + endDate;
+        try {
+          await db.collection('tripLogs').doc(logKey).set({
+            vehicleId: selectedVehicle.id,
+            vehiclePlate: selectedVehicle.plate || '',
+            vehicleMakeModel: ((selectedVehicle.make || '') + ' ' + (selectedVehicle.model || '')).trim(),
+            startDate,
+            endDate,
+            tripType: tripStatus,
+            loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            loggedBy: currentUser.uid,
+            loggedByName: currentUser.displayName || currentUser.email,
+          }, { merge: true });
+        } catch(e) { console.warn('tripLog write error', e); }
+      }
+    }
   } catch (err) {
     console.error('Save location error:', err);
     toast('Failed to save location.', 'error');
@@ -5851,6 +5899,178 @@ async function refreshStaleComplianceNotes() {
     }
   }
 }
+
+// ================================================================
+// FLEET PRODUCTIVITY REPORT
+// ================================================================
+window.openProductivityReport = function() {
+  const modal = $('productivity-modal');
+  if (!modal) return;
+  // Default range: last 30 days
+  const today = new Date();
+  const start = new Date(today); start.setDate(today.getDate() - 29);
+  const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  $('prod-range-start').value = fmt(start);
+  $('prod-range-end').value = fmt(today);
+  modal.style.display = '';
+  runProductivityReport();
+};
+
+window.closeProductivityReport = function() {
+  const modal = $('productivity-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.runProductivityReport = async function() {
+  const resultsEl = $('prod-results');
+  const alertEl = $('prod-alert-banner');
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  alertEl.style.display = 'none';
+
+  const rangeStart = $('prod-range-start').value;
+  const rangeEnd = $('prod-range-end').value;
+  if (!rangeStart || !rangeEnd) { resultsEl.innerHTML = '<p class="hint" style="padding:16px;">Please select a date range.</p>'; return; }
+
+  // Build set of all calendar dates in range
+  function datesInRange(s, e) {
+    const days = [];
+    const cur = new Date(s + 'T00:00:00');
+    const end = new Date(e + 'T00:00:00');
+    while (cur <= end) {
+      days.push(cur.getFullYear() + '-' + String(cur.getMonth()+1).padStart(2,'0') + '-' + String(cur.getDate()).padStart(2,'0'));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return days;
+  }
+
+  const rangeDays = datesInRange(rangeStart, rangeEnd);
+  const totalDays = rangeDays.length;
+  const rangeSet = new Set(rangeDays);
+
+  try {
+    // Query all tripLogs whose startDate or endDate falls in range
+    const snap = await db.collection('tripLogs')
+      .where('startDate', '<=', rangeEnd)
+      .get();
+
+    // Group logs by vehicleId
+    const logsByVehicle = {};
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (d.endDate < rangeStart) return; // log ends before our range
+      if (!logsByVehicle[d.vehicleId]) {
+        logsByVehicle[d.vehicleId] = {
+          plate: d.vehiclePlate,
+          makeModel: d.vehicleMakeModel,
+          logs: [],
+        };
+      }
+      logsByVehicle[d.vehicleId].logs.push(d);
+    });
+
+    // Per vehicle: build booked day set, compute idle streak
+    const today = new Date();
+    const todayStr = today.getFullYear() + '-' + String(today.getMonth()+1).padStart(2,'0') + '-' + String(today.getDate()).padStart(2,'0');
+
+    const rows = vehiclesCache.map(v => {
+      const entry = logsByVehicle[v.id] || { plate: v.plate, makeModel: ((v.make||'')+' '+(v.model||'')).trim(), logs: [] };
+      const bookedSet = new Set();
+      let lastBookingDate = '';
+      entry.logs.forEach(log => {
+        const days = datesInRange(
+          log.startDate < rangeStart ? rangeStart : log.startDate,
+          log.endDate > rangeEnd ? rangeEnd : log.endDate
+        );
+        days.forEach(d => bookedSet.add(d));
+        if (log.endDate > lastBookingDate) lastBookingDate = log.endDate;
+      });
+
+      const bookedDays = bookedSet.size;
+      const utilPct = totalDays > 0 ? Math.round(bookedDays / totalDays * 100) : 0;
+
+      // Current idle streak: how many consecutive days ending today (inclusive) have no booking
+      let idleStreak = 0;
+      const check = new Date(today);
+      while (true) {
+        const ds = check.getFullYear() + '-' + String(check.getMonth()+1).padStart(2,'0') + '-' + String(check.getDate()).padStart(2,'0');
+        if (bookedSet.has(ds)) break;
+        // Also count current live trip status as "booked today"
+        if (ds === todayStr && (v.tripStatus === 'on-trip' || v.tripStatus === 'scheduled' || v.tripStatus === 'private-trip')) break;
+        idleStreak++;
+        check.setDate(check.getDate() - 1);
+        if (idleStreak > 365) break; // safety cap
+      }
+
+      return { v, plate: v.plate, makeModel: entry.makeModel, bookedDays, utilPct, lastBookingDate, idleStreak };
+    });
+
+    // Sort: idle streak > 2 first (descending), then by plate
+    rows.sort((a, b) => {
+      const aAlert = a.idleStreak > 2 ? 1 : 0;
+      const bAlert = b.idleStreak > 2 ? 1 : 0;
+      if (aAlert !== bAlert) return bAlert - aAlert;
+      return b.idleStreak - a.idleStreak;
+    });
+
+    const alertVehicles = rows.filter(r => r.idleStreak > 2);
+    if (alertVehicles.length) {
+      alertEl.textContent = '⚠️ ' + alertVehicles.length + ' vehicle' + (alertVehicles.length > 1 ? 's' : '') + ' idle for 3+ consecutive days: ' + alertVehicles.map(r => r.plate).join(', ');
+      alertEl.style.display = '';
+    } else {
+      alertEl.style.display = 'none';
+    }
+
+    if (!rows.length) {
+      resultsEl.innerHTML = '<p class="hint" style="padding:16px;">No vehicles found.</p>';
+      return;
+    }
+
+    const fmtDate = ds => {
+      if (!ds) return '—';
+      const [y,m,d] = ds.split('-');
+      return new Date(+y, +m-1, +d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+    };
+
+    resultsEl.innerHTML = `
+      <div class="prod-summary-row">
+        <span class="prod-summary-label">Period:</span>
+        <strong>${fmtDate(rangeStart)} — ${fmtDate(rangeEnd)}</strong>
+        <span class="prod-summary-label" style="margin-left:12px;">${totalDays} calendar days</span>
+      </div>
+      <div class="prod-table-wrap">
+        <table class="prod-table">
+          <thead><tr>
+            <th>Vehicle</th>
+            <th>Days Booked</th>
+            <th>Utilization</th>
+            <th>Last Booking</th>
+            <th>Idle Streak</th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(r => {
+              const alertRow = r.idleStreak > 2;
+              const idleBadge = r.idleStreak > 2
+                ? `<span class="prod-idle-alert">${r.idleStreak}d idle 🚨</span>`
+                : (r.idleStreak > 0 ? `<span class="prod-idle-ok">${r.idleStreak}d</span>` : '<span class="prod-idle-ok">Active ✅</span>');
+              const utilBar = `<div class="prod-util-wrap"><div class="prod-util-bar" style="width:${r.utilPct}%"></div><span class="prod-util-pct">${r.utilPct}%</span></div>`;
+              return `<tr class="${alertRow ? 'prod-row-alert' : ''}">
+                <td><strong>${escapeHtml(r.plate)}</strong><br><span class="prod-make-model">${escapeHtml(r.makeModel)}</span></td>
+                <td>${r.bookedDays} / ${totalDays}</td>
+                <td>${utilBar}</td>
+                <td>${fmtDate(r.lastBookingDate)}</td>
+                <td>${idleBadge}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch(e) {
+    console.error('Productivity report error:', e);
+    resultsEl.innerHTML = '<p class="hint" style="padding:16px;color:#ef4444;">Failed to load report. Check console for details.</p>';
+  }
+};
 
 // ================================================================
 // VEHICLE INFO TAB (key photo, videos, customer notes)

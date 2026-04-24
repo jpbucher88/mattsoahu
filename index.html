@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423m">
+  <link rel="stylesheet" href="style.css?v=20260423n">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -145,6 +145,7 @@
           <div class="collapsible-title">
             <h3>Fleet Overview</h3>
           </div>
+          <button class="btn btn-sm btn-outline productivity-btn" id="productivity-open-btn" onclick="event.stopPropagation();openProductivityReport()" style="display:none;">📊 Productivity</button>
           <button class="collapse-btn" id="fleet-overview-toggle">&#8722;</button>
         </div>
         <div id="fleet-overview-body" class="collapsible-body">
@@ -287,12 +288,18 @@
             </select>
           </div>
           <div id="trip-scheduled-row" class="loc-field" style="display:none;">
-            <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-            <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom">
+            <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-scheduled-start-date" class="vehicle-location-custom dt-date-input">
+              <input type="text" id="vehicle-trip-scheduled-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+            </div>
           </div>
           <div id="trip-expected-end-row" class="loc-field" style="display:none;">
-            <label for="vehicle-trip-expected-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-            <input type="datetime-local" id="vehicle-trip-expected-end" class="vehicle-location-custom">
+            <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-expected-end-date" class="vehicle-location-custom dt-date-input">
+              <input type="text" id="vehicle-trip-expected-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+            </div>
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
@@ -326,12 +333,18 @@
           <!-- Private Trip fields (shown when private-trip selected) -->
           <div id="private-trip-row" class="loc-parts-row" style="display:none;">
             <div class="loc-field">
-              <label for="private-trip-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-              <input type="datetime-local" id="private-trip-start" class="vehicle-location-custom">
+              <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+              <div class="dt-split-wrap">
+                <input type="date" id="private-trip-start-date" class="vehicle-location-custom dt-date-input">
+                <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+              </div>
             </div>
             <div class="loc-field">
-              <label for="private-trip-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-              <input type="datetime-local" id="private-trip-end" class="vehicle-location-custom">
+              <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+              <div class="dt-split-wrap">
+                <input type="date" id="private-trip-end-date" class="vehicle-location-custom dt-date-input">
+                <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+              </div>
             </div>
             <div class="loc-field">
               <label for="private-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
@@ -859,6 +872,27 @@
       <div style="display:flex;gap:8px;margin-top:12px;">
         <button class="btn btn-primary" onclick="saveLearningItem()">Save</button>
         <button class="btn btn-outline" onclick="closeLearningItemModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PRODUCTIVITY REPORT MODAL ==================== -->
+  <div id="productivity-modal" class="prod-modal-overlay" style="display:none;" onclick="if(event.target===this)closeProductivityReport()">
+    <div class="prod-modal">
+      <div class="prod-modal-header">
+        <h4>📊 Fleet Productivity Report</h4>
+        <div class="prod-header-controls">
+          <label class="prod-range-label">From</label>
+          <input type="date" id="prod-range-start" class="prod-date-input">
+          <label class="prod-range-label">To</label>
+          <input type="date" id="prod-range-end" class="prod-date-input">
+          <button class="btn btn-sm btn-primary" onclick="runProductivityReport()">Run</button>
+          <button class="prod-close-btn" onclick="closeProductivityReport()">✕</button>
+        </div>
+      </div>
+      <div id="prod-alert-banner" class="prod-alert-banner" style="display:none;"></div>
+      <div id="prod-results" class="prod-results">
+        <p class="hint" style="padding:24px;text-align:center;">Select a date range and click Run to generate the report.</p>
       </div>
     </div>
   </div>
