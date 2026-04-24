@@ -4914,3 +4914,94 @@ body {
 .msg-detail-photos { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 0 4px; border-top: 1px solid #f3f4f6; margin-top: 10px; }
 .msg-detail-photo-thumb { width: 80px; height: 80px; object-fit: cover; border-radius: 8px; border: 1px solid #e5e7eb; transition: opacity 0.15s; }
 .msg-detail-photo-thumb:hover { opacity: 0.85; }
+
+/* ================================================================
+   NOTE INVOICE / PHOTO ATTACHMENTS
+   ================================================================ */
+.ne-invoice-section {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #e5e7eb;
+}
+.ne-invoice-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 4px;
+}
+.ne-invoice-thumb-wrap {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid #d1d5db;
+  background: #f3f4f6;
+  flex-shrink: 0;
+}
+.ne-invoice-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+  display: block;
+}
+.ne-invoice-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  background: rgba(0,0,0,0.65);
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.ne-invoice-remove:hover { background: #ef4444; }
+.ne-invoice-upload-label {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 6px 14px;
+  background: #f0f9ff;
+  border: 1.5px dashed #60a5fa;
+  border-radius: 8px;
+  color: #2563eb;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.ne-invoice-upload-label:hover { background: #dbeafe; }
+.ne-invoice-hint {
+  margin-top: 5px;
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Invoice thumbnails on note cards */
+.note-invoice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+.note-invoice-thumb {
+  width: 52px;
+  height: 52px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1.5px solid #d1d5db;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s;
+}
+.note-invoice-thumb:hover {
+  transform: scale(1.08);
+  border-color: #60a5fa;
+}

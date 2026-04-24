@@ -4333,6 +4333,7 @@ async function loadVehicleNotes(vehicleId) {
           <div class="note-content">
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
+            ${d.invoiceUrls && d.invoiceUrls.length > 0 ? `<div class="note-invoice-row">${d.invoiceUrls.map(url => `<img src="${escapeHtml(url)}" class="note-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View invoice/photo">`).join('')}</div>` : ''}
             <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
           </div>
           <div class="note-actions">
@@ -5292,6 +5293,20 @@ window.openNoteEditModal = async function(docId, collection) {
           <button class="btn btn-sm btn-outline" id="btn-ne-log-add">Add</button>
         </div>
       </div>
+      <div class="ne-invoice-section">
+        <div class="note-edit-section-label" style="margin-bottom:6px;">📎 Invoice / Photo Attachments</div>
+        <div id="ne-invoice-existing" class="ne-invoice-thumbs">${(d.invoiceUrls || []).map((url, idx) => `
+          <div class="ne-invoice-thumb-wrap" data-url="${escapeHtml(url)}">
+            <img src="${escapeHtml(url)}" class="ne-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View full size">
+            <button class="ne-invoice-remove" data-idx="${idx}" title="Remove">✕</button>
+          </div>`).join('')}</div>
+        <div id="ne-invoice-new-thumbs" class="ne-invoice-thumbs" style="margin-top:4px;"></div>
+        <label class="ne-invoice-upload-label">
+          📎 Attach Photo / Invoice
+          <input type="file" id="ne-invoice-input" accept="image/*" multiple style="display:none;">
+        </label>
+        <div id="ne-invoice-hint" class="ne-invoice-hint">${(d.invoiceUrls && d.invoiceUrls.length) ? d.invoiceUrls.length + ' attachment(s) saved' : 'No attachments yet'}</div>
+      </div>
       <div class="note-edit-actions">
         <button class="btn btn-primary" id="btn-ne-save">Save Changes</button>
         <button class="btn btn-outline" id="btn-ne-cancel">Cancel</button>
@@ -5319,6 +5334,56 @@ window.openNoteEditModal = async function(docId, collection) {
   });
 
   overlay.querySelector('#btn-ne-cancel').onclick = () => overlay.remove();
+
+  // --- Invoice / Photo attachment logic ---
+  let removedInvoiceUrls = [];
+  let newInvoiceFiles = [];
+
+  overlay.querySelectorAll('.ne-invoice-remove').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wrap = btn.closest('.ne-invoice-thumb-wrap');
+      const url = wrap.dataset.url;
+      removedInvoiceUrls.push(url);
+      wrap.remove();
+      _updateInvoiceHint();
+    });
+  });
+
+  overlay.querySelector('#ne-invoice-input').addEventListener('change', function() {
+    const files = Array.from(this.files);
+    newInvoiceFiles.push(...files);
+    const newThumbsEl = overlay.querySelector('#ne-invoice-new-thumbs');
+    files.forEach((f, i) => {
+      const wrap = document.createElement('div');
+      wrap.className = 'ne-invoice-thumb-wrap';
+      wrap.dataset.newIdx = newInvoiceFiles.length - files.length + i;
+      const img = document.createElement('img');
+      img.src = URL.createObjectURL(f);
+      img.className = 'ne-invoice-thumb';
+      img.title = f.name;
+      const removeBtn = document.createElement('button');
+      removeBtn.className = 'ne-invoice-remove';
+      removeBtn.textContent = '✕';
+      removeBtn.addEventListener('click', () => {
+        const idx = parseInt(wrap.dataset.newIdx, 10);
+        newInvoiceFiles[idx] = null;
+        wrap.remove();
+        _updateInvoiceHint();
+      });
+      wrap.appendChild(img);
+      wrap.appendChild(removeBtn);
+      newThumbsEl.appendChild(wrap);
+    });
+    this.value = '';
+    _updateInvoiceHint();
+  });
+
+  function _updateInvoiceHint() {
+    const existingCount = overlay.querySelectorAll('#ne-invoice-existing .ne-invoice-thumb-wrap').length;
+    const newCount = newInvoiceFiles.filter(f => f !== null).length;
+    const total = existingCount + newCount;
+    overlay.querySelector('#ne-invoice-hint').textContent = total > 0 ? total + ' attachment(s)' : 'No attachments yet';
+  }
 
   // Log entry
   overlay.querySelector('#btn-ne-log-add').onclick = async () => {
@@ -5348,6 +5413,9 @@ window.openNoteEditModal = async function(docId, collection) {
   });
 
   overlay.querySelector('#btn-ne-save').onclick = async () => {
+    const saveBtn = overlay.querySelector('#btn-ne-save');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
     const isFollowUp = followupEl.checked;
     const urgent = isFollowUp && selectedStatus === 'urgent';
     const taskStatus = isFollowUp ? selectedStatus : null;
@@ -5359,7 +5427,33 @@ window.openNoteEditModal = async function(docId, collection) {
     else { updates.dueDate = firebase.firestore.FieldValue.delete(); }
     if (dueTime) { updates.dueTime = dueTime; }
     else { updates.dueTime = firebase.firestore.FieldValue.delete(); }
+
+    // --- Handle invoice photo uploads ---
     try {
+      const st = getStorage();
+      // Collect surviving existing URLs (those not removed)
+      const survivingUrls = Array.from(overlay.querySelectorAll('#ne-invoice-existing .ne-invoice-thumb-wrap'))
+        .map(w => w.dataset.url).filter(Boolean);
+      // Upload new files
+      const uploadedUrls = [];
+      if (st) {
+        const storagePath = (collection === 'vehicleNotes' && d.vehicleId)
+          ? (() => { const v = vehiclesCache.find(x => x.id === d.vehicleId); return 'vehicles/' + (v ? sanitizePlate(v.plate) : d.vehicleId) + '/invoices/'; })()
+          : 'noteAttachments/' + docId + '/';
+        for (const file of newInvoiceFiles.filter(f => f !== null)) {
+          try {
+            const compressed = await compressImage(file);
+            const fname = 'inv_' + Date.now() + '_' + Math.random().toString(36).slice(2,6) + '.jpg';
+            const ref = st.ref(storagePath + fname);
+            await ref.put(compressed, { contentType: 'image/jpeg' });
+            uploadedUrls.push(await ref.getDownloadURL());
+          } catch(e) { console.error('Invoice upload error:', e); }
+        }
+      }
+      const finalUrls = [...survivingUrls, ...uploadedUrls];
+      if (finalUrls.length > 0) updates.invoiceUrls = finalUrls;
+      else updates.invoiceUrls = firebase.firestore.FieldValue.delete();
+
       await db.collection(collection).doc(docId).update(updates);
       toast('Note updated!', 'success');
       overlay.remove();
@@ -5368,6 +5462,8 @@ window.openNoteEditModal = async function(docId, collection) {
       loadDashboardFollowUps();
     } catch (err) {
       console.error('Note edit error:', err);
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save Changes';
       toast('Failed to update note.', 'error');
     }
   };
@@ -7324,6 +7420,7 @@ async function loadGeneralNotes() {
           <div class="note-content">
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
+            ${d.invoiceUrls && d.invoiceUrls.length > 0 ? `<div class="note-invoice-row">${d.invoiceUrls.map(url => `<img src="${escapeHtml(url)}" class="note-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View invoice/photo">`).join('')}</div>` : ''}
             <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
           </div>
           <div class="note-actions">
