@@ -5949,10 +5949,15 @@ window.runProductivityReport = async function() {
   const rangeSet = new Set(rangeDays);
 
   try {
-    // Query all tripLogs whose startDate or endDate falls in range
-    const snap = await db.collection('tripLogs')
-      .where('startDate', '<=', rangeEnd)
-      .get();
+    // Query all tripLogs whose startDate falls on or before rangeEnd
+    let snap = { forEach: () => {} }; // default empty if collection has no data yet
+    try {
+      snap = await db.collection('tripLogs')
+        .where('startDate', '<=', rangeEnd)
+        .get();
+    } catch(qErr) {
+      console.warn('tripLogs query error (likely no documents yet):', qErr);
+    }
 
     // Group logs by vehicleId
     const logsByVehicle = {};

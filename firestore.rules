@@ -106,5 +106,12 @@ service cloud.firestore {
         resource.data.uid == request.auth.uid || isAdmin()
       );
     }
+
+    // Trip logs for productivity reporting - managers/admins can read/write
+    match /tripLogs/{logId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create, update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow delete: if isAdmin();
+    }
   }
 }
