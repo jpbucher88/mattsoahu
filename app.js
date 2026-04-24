@@ -1244,6 +1244,29 @@ function showDamageCheckModal(vid, plate) {
         };
         if (photoUrls.length > 0) noteData.photos = photoUrls;
         await db.collection('vehicleNotes').add(noteData);
+
+        // Auto-create an incident report so a claim can be filed
+        const vehicleObj2 = vehiclesCache.find(v => v.id === vid);
+        await db.collection('incidents').add({
+          vehicleId: vid,
+          vehiclePlate: vehicleObj2 ? (vehicleObj2.plate || '') : '',
+          type: 'damage',
+          title: 'File Claim: ' + item.label + (notes ? ' — ' + notes : ''),
+          description: notes || ('Inspection fail logged for: ' + item.label),
+          urgent: true,
+          status: 'open',
+          resolution: '',
+          resolvedBy: '', resolvedByName: '',
+          resolvedAt: null,
+          followUpDate: '',
+          photoUrls: photoUrls,
+          reportedBy: currentUser.uid,
+          reportedByName: currentUser.displayName || currentUser.email,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          sourceType: 'inspection',
+          inspectionKey: item.key,
+        });
       }
 
       await db.collection('vehicles').doc(vid).update({
@@ -1255,8 +1278,10 @@ function showDamageCheckModal(vid, plate) {
       if (cached) cached.needsDamageCheck = false;
 
       if (failItems.length > 0) {
-        toast('Inspection submitted - ' + failItems.length + ' issue(s) logged as urgent', 'warning');
+        const damageCount = failItems.filter(i => !i.yesno).length;
+        toast('Inspection submitted - ' + failItems.length + ' issue(s) logged as urgent' + (damageCount > 0 ? ', incident report(s) created' : ''), 'warning');
         loadDashboardFollowUps();
+        loadAllOpenIncidentsDashboard();
       } else {
         toast('Inspection complete - All Clear', 'success');
       }
