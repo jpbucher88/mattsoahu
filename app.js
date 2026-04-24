@@ -8330,10 +8330,12 @@ window.saveIncident = async function() {
     if (statusEl) statusEl.textContent = `Uploading ${incidentStagedFiles.length} photo(s)…`;
     try {
       const incId = editId || ('temp_' + Date.now());
+      const st = getStorage();
+      if (!st) throw new Error('Storage not available');
       newPhotoUrls = await Promise.all(incidentStagedFiles.map(async (file, i) => {
         const ext  = file.name.split('.').pop() || 'jpg';
         const path = `incidents/${vehicleId || 'general'}/${incId}_${Date.now()}_${i}.${ext}`;
-        const ref  = storage.ref(path);
+        const ref  = st.ref(path);
         await ref.put(file);
         return await ref.getDownloadURL();
       }));
@@ -8395,29 +8397,33 @@ window.saveIncident = async function() {
       toast('Incident reported.', 'success');
     }
 
-    // If a follow-up date was set, create/update a generalNotes calendar task
-    if (followUpDate) {
-      const taskText = `🚨 Incident Follow-Up: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
-      await db.collection('generalNotes').add({
-        text: taskText,
-        isFollowUp: true,
-        done: false,
-        urgent: urgent,
-        dueDate: followUpDate,
-        sourceType: 'incident',
-        incidentDocId: docId,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdBy: currentUser.uid,
-        createdByName: currentUser.displayName || currentUser.email,
-      });
-      loadGeneralNotes();
-      loadDashboardFollowUps();
-    }
-
     incidentStagedFiles = [];
     closeIncidentModal();
     if (selectedVehicle) loadVehicleIncidents(selectedVehicle.id || selectedVehicle);
     loadAllOpenIncidentsDashboard();
+
+    // If a follow-up date was set, attempt to create a calendar task (admin/manager only)
+    if (followUpDate) {
+      try {
+        const taskText = `🚨 Incident Follow-Up: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
+        await db.collection('generalNotes').add({
+          text: taskText,
+          isFollowUp: true,
+          done: false,
+          urgent: urgent,
+          dueDate: followUpDate,
+          sourceType: 'incident',
+          incidentDocId: docId,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+        });
+        loadGeneralNotes();
+        loadDashboardFollowUps();
+      } catch(calErr) {
+        console.warn('Could not create follow-up calendar task (requires manager/admin):', calErr);
+      }
+    }
   } catch(e) { console.error(e); toast('Failed to save incident.', 'error'); }
 };
 
