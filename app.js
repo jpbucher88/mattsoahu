@@ -2797,12 +2797,20 @@ $('btn-save-location').addEventListener('click', async () => {
   }
 
   // If vehicle was on-trip, private-trip, or repair-shop and now returning home, flag for cleaning
-  const wasOnTrip = ['on-trip', 'repair-shop', 'private-trip'].includes(selectedVehicle.tripStatus);
+  const wasAtRepair = selectedVehicle.tripStatus === 'repair-shop';
+  const wasOnTrip = ['on-trip', 'private-trip'].includes(selectedVehicle.tripStatus);
   const nowHome = tripStatus === 'home';
-  if (wasOnTrip && nowHome) {
+  const nowReturnFromRepair = wasAtRepair && tripStatus !== 'repair-shop';
+  if ((wasOnTrip && nowHome) || nowReturnFromRepair) {
     updateData.needsCleaning = true;
     updateData.needsDamageCheck = true;
-    updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.serverTimestamp();
+    if (wasOnTrip && nowHome) {
+      // Normal return: 2h grace before photo check fires
+      updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.serverTimestamp();
+    } else {
+      // Repair shop return: no grace — photos are definitely stale, flag immediately
+      updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.delete();
+    }
   }
 
   try {
@@ -2823,9 +2831,10 @@ $('btn-save-location').addEventListener('click', async () => {
       delete selectedVehicle.repairOrderNumber;
       delete selectedVehicle.repairPartsEta;
     }
-    if (wasOnTrip && nowHome) {
+    if ((wasOnTrip && nowHome) || nowReturnFromRepair) {
       selectedVehicle.needsCleaning = true;
       selectedVehicle.needsDamageCheck = true;
+      if (nowReturnFromRepair) delete selectedVehicle.cleaningFlaggedAt;
     }
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, selectedVehicle);
@@ -7964,6 +7973,9 @@ const INCIDENT_TYPES = {
   accident:  { label: '💥 Accident / Collision', color: '#ef4444' },
   key_lost:  { label: '🔑 Key Lost',             color: '#8b5cf6' },
   theft:     { label: '🚔 Theft / Break-in',     color: '#dc2626' },
+  smoking:   { label: '🚬 Smoking Violation',    color: '#dc2626' },
+  cleaning:  { label: '🧹 Cleaning Violation',   color: '#f97316' },
+  citation:  { label: '🎫 Citation / Ticket',    color: '#7c3aed' },
   complaint: { label: '📢 Customer Complaint',   color: '#0ea5e9' },
   other:     { label: '📝 Other',                color: '#6b7280' },
 };
@@ -8035,6 +8047,14 @@ async function loadAllOpenIncidentsDashboard() {
       const followUpHTML = d.followUpDate
         ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>`
         : '';
+      const citationHTML2 = d.type === 'citation' ? `<div class="inc-citation-summary">
+        ${d.citationNumber ? `<span class="inc-cite-tag">🎫 #${escapeHtml(d.citationNumber)}</span>` : ''}
+        ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'🅿️ Parking',red_light:'🚦 Red Light',speeding:'💨 Speeding',toll:'🛣️ Toll',other:'📝 Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
+        ${d.citationAmount != null ? `<span class="inc-cite-tag">💵 $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
+        ${d.citationDueDate ? `<span class="inc-cite-tag">⏰ Due ${d.citationDueDate}</span>` : ''}
+        ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
+        ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
+      </div>` : '';
       const resolvedBlock = d.status === 'resolved' && d.resolution
         ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
         : '';
@@ -8049,6 +8069,7 @@ async function loadAllOpenIncidentsDashboard() {
         </div>
         <div class="inc-title">${escapeHtml(d.title||'')}</div>
         ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
+        ${citationHTML2}
         <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
         ${followUpHTML}${photosHTML}${resolvedBlock}
         <div class="inc-actions">
@@ -8104,6 +8125,14 @@ function renderIncidentsList(docs) {
       ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="photo"></a>`).join('')}</div>`
       : '';
     const followUpHTML = d.followUpDate ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>` : '';
+    const citationHTML = d.type === 'citation' ? `<div class="inc-citation-summary">
+      ${d.citationNumber ? `<span class="inc-cite-tag">🎫 #${escapeHtml(d.citationNumber)}</span>` : ''}
+      ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'🅿️ Parking',red_light:'🚦 Red Light',speeding:'💨 Speeding',toll:'🛣️ Toll',other:'📝 Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
+      ${d.citationAmount != null ? `<span class="inc-cite-tag">💵 $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
+      ${d.citationDueDate ? `<span class="inc-cite-tag">⏰ Due ${d.citationDueDate}</span>` : ''}
+      ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
+      ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
+    </div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
       ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
       : '';
@@ -8124,6 +8153,7 @@ function renderIncidentsList(docs) {
       </div>
       <div class="inc-title">${escapeHtml(d.title || '')}</div>
       ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
+      ${citationHTML}
       <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || '—')}</div>
       ${followUpHTML}${photosHTML}${resolvedBlock}
       ${actionBtns}
@@ -8168,6 +8198,14 @@ window.openIncidentModal = function(incidentId, focusResolve) {
     }
     const vehicleRow = $('incident-vehicle-row');
     if (vehicleRow) vehicleRow.style.display = 'none';
+    // Populate citation fields if applicable
+    if ($('citation-number')) $('citation-number').value = d.citationNumber || '';
+    if ($('citation-violation-type')) $('citation-violation-type').value = d.citationViolation || 'parking';
+    if ($('citation-amount')) $('citation-amount').value = d.citationAmount != null ? d.citationAmount : '';
+    if ($('citation-due-date')) $('citation-due-date').value = d.citationDueDate || '';
+    if ($('citation-customer')) $('citation-customer').value = d.citationCustomer || '';
+    if ($('citation-reimb-status')) $('citation-reimb-status').value = d.citationReimbStatus || 'pending';
+    toggleCitationFields();
   } else {
     $('incident-type').value          = 'damage';
     $('incident-title').value         = '';
@@ -8178,6 +8216,14 @@ window.openIncidentModal = function(incidentId, focusResolve) {
     if (resRow) resRow.style.display  = 'none';
     const inlineRes = $('incident-resolution-inline');
     if (inlineRes) inlineRes.value    = '';
+    // Clear citation fields
+    if ($('citation-number')) $('citation-number').value = '';
+    if ($('citation-amount')) $('citation-amount').value = '';
+    if ($('citation-due-date')) $('citation-due-date').value = '';
+    if ($('citation-customer')) $('citation-customer').value = '';
+    if ($('citation-violation-type')) $('citation-violation-type').value = 'parking';
+    if ($('citation-reimb-status')) $('citation-reimb-status').value = 'pending';
+    toggleCitationFields();
     const vehicleRow = $('incident-vehicle-row');
     const vehicleSel = $('incident-vehicle-select');
     if (vehicleRow) vehicleRow.style.display = '';
@@ -8243,6 +8289,12 @@ window.closeIncidentModal = function() {
   if (overlay) overlay.style.display = 'none';
 };
 
+window.toggleCitationFields = function() {
+  const type = $('incident-type') ? $('incident-type').value : '';
+  const panel = $('citation-fields');
+  if (panel) panel.style.display = type === 'citation' ? '' : 'none';
+};
+
 window.saveIncident = async function() {
   const title = ($('incident-title').value || '').trim();
   if (!title) { $('incident-title').focus(); toast('Please enter a title / summary.', 'error'); return; }
@@ -8254,6 +8306,17 @@ window.saveIncident = async function() {
   const status     = $('incident-status-select') ? $('incident-status-select').value : 'open';
   const resolution = ($('incident-resolution-inline') ? $('incident-resolution-inline').value : '').trim();
   const followUpDate = ($('incident-followup-date') ? $('incident-followup-date').value : '').trim();
+
+  // Citation-specific fields
+  const isCitation = type === 'citation';
+  const citationData = isCitation ? {
+    citationNumber:     ($('citation-number')       ? $('citation-number').value.trim()       : ''),
+    citationViolation:  ($('citation-violation-type')? $('citation-violation-type').value      : 'parking'),
+    citationAmount:     ($('citation-amount')        ? parseFloat($('citation-amount').value) || null : null),
+    citationDueDate:    ($('citation-due-date')      ? $('citation-due-date').value            : ''),
+    citationCustomer:   ($('citation-customer')      ? $('citation-customer').value.trim()     : ''),
+    citationReimbStatus:($('citation-reimb-status')  ? $('citation-reimb-status').value        : 'pending'),
+  } : null;
 
   const vehicleId    = selectedVehicle ? (selectedVehicle.id || selectedVehicle) : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
   const vehiclePlate = selectedVehicle ? selectedVehicle.plate : (vehiclesCache.find(v => v.id === vehicleId) || {}).plate || '';
@@ -8292,6 +8355,12 @@ window.saveIncident = async function() {
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         photoUrls: [...existingUrls, ...newPhotoUrls],
       };
+      if (citationData) Object.assign(updateData, citationData);
+      else {
+        // clear citation fields if type changed away from citation
+        ['citationNumber','citationViolation','citationAmount','citationDueDate','citationCustomer','citationReimbStatus']
+          .forEach(k => { updateData[k] = firebase.firestore.FieldValue.delete(); });
+      }
       if (followUpDate) updateData.followUpDate = followUpDate;
       if (resolution) {
         updateData.resolution     = resolution;
@@ -8316,6 +8385,7 @@ window.saveIncident = async function() {
         resolvedAt: (resolution && status === 'resolved') ? firebase.firestore.FieldValue.serverTimestamp() : null,
         followUpDate: followUpDate || '',
         photoUrls: newPhotoUrls,
+        ...(citationData || {}),
         reportedBy: currentUser.uid,
         reportedByName: currentUser.displayName || currentUser.email,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),

@@ -5005,3 +5005,51 @@ body {
   transform: scale(1.08);
   border-color: #60a5fa;
 }
+
+/* ================================================================
+   CITATION / TICKET FIELDS IN INCIDENT MODAL
+   ================================================================ */
+.citation-fields-panel {
+  background: #faf5ff;
+  border: 1.5px solid #c4b5fd;
+  border-radius: 10px;
+  padding: 14px 16px 10px;
+  margin-bottom: 14px;
+}
+.citation-fields-header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #7c3aed;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+
+/* Citation summary tags on incident cards */
+.inc-citation-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 4px;
+}
+.inc-cite-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f5f3ff;
+  border: 1px solid #c4b5fd;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  color: #5b21b6;
+  font-weight: 500;
+}
+.inc-cite-reimb {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.inc-cite-reimb-pending          { background: #fef9c3; color: #92400e; border: 1px solid #fde047; }
+.inc-cite-reimb-paid_by_company  { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
+.inc-cite-reimb-reimbursed       { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.inc-cite-reimb-escalated        { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.inc-cite-reimb-written_off      { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }

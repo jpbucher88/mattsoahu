@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423p">
+  <link rel="stylesheet" href="style.css?v=20260423q">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -905,11 +905,14 @@
       <div class="form-row">
         <div class="form-group" style="flex:1;">
           <label>Type</label>
-          <select id="incident-type" class="form-select">
+          <select id="incident-type" class="form-select" onchange="toggleCitationFields()">
             <option value="damage">🛠️ Vehicle Damage</option>
             <option value="accident">💥 Accident / Collision</option>
             <option value="key_lost">🔑 Key Lost</option>
             <option value="theft">🚔 Theft / Break-in</option>
+            <option value="smoking">🚬 Smoking Violation</option>
+            <option value="cleaning">🧹 Cleaning Violation</option>
+            <option value="citation">🎫 Citation / Ticket</option>
             <option value="complaint">📢 Customer Complaint</option>
             <option value="other">📝 Other</option>
           </select>
@@ -928,6 +931,54 @@
         <label>Details</label>
         <textarea id="incident-description" class="note-textarea" rows="3" placeholder="Describe what happened, when, and any other relevant info..." maxlength="1000"></textarea>
       </div>
+
+      <!-- Citation-specific fields (shown only when type = citation) -->
+      <div id="citation-fields" class="citation-fields-panel" style="display:none;">
+        <div class="citation-fields-header">🎫 Citation Details</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Ticket / Citation #</label>
+            <input type="text" id="citation-number" class="form-select" placeholder="e.g. HNL-20260423">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Violation Type</label>
+            <select id="citation-violation-type" class="form-select">
+              <option value="parking">🅿️ Parking</option>
+              <option value="red_light">🚦 Red Light</option>
+              <option value="speeding">💨 Speeding</option>
+              <option value="toll">🛣️ Toll Violation</option>
+              <option value="other">📝 Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Amount Due ($)</label>
+            <input type="number" id="citation-amount" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Payment Due Date</label>
+            <input type="date" id="citation-due-date" class="form-select">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Customer / Renter Name</label>
+            <input type="text" id="citation-customer" class="form-select" placeholder="Name of renter responsible">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Reimbursement Status</label>
+            <select id="citation-reimb-status" class="form-select">
+              <option value="pending">⏳ Pending — Not Yet Paid</option>
+              <option value="paid_by_company">💳 Paid by Company</option>
+              <option value="reimbursed">✅ Reimbursed by Customer</option>
+              <option value="escalated">⚠️ Escalated / Disputed</option>
+              <option value="written_off">🗑️ Written Off</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div class="form-group" id="incident-vehicle-row">
         <label>Vehicle</label>
         <select id="incident-vehicle-select" class="form-select"></select>
