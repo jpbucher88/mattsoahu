@@ -1116,6 +1116,14 @@ function showDamageCheckModal(vid, plate) {
       const itemEl = overlay.querySelector('#dmg-item-' + key);
       itemEl.classList.remove('dmg-state-pass');
       itemEl.classList.add('dmg-state-fail');
+      // For yesno items ("No" = bug-free): hide urgency panel and reset
+      const bugUrgencyEl = overlay.querySelector('#dmg-bug-urgency-' + key);
+      if (bugUrgencyEl) {
+        bugUrgencyEl.style.display = 'none';
+        bugUrgency[key] = null;
+        overlay.querySelectorAll(`.dmg-bug-now-btn[data-check="${key}"], .dmg-bug-later-btn[data-check="${key}"]`).forEach(b => b.classList.remove('dmg-bug-active'));
+      }
+      // For regular fail items: show notes panel
       const failEl = overlay.querySelector('#dmg-fail-' + key);
       if (failEl) {
         failEl.style.display = '';
@@ -5781,7 +5789,7 @@ async function autoCleanupResolvedComplianceNotes() {
 // ================================================================
 window.switchVInfoTab = function(tab) {
   document.querySelectorAll('.vinfo-tab').forEach(b => b.classList.toggle('active', b.dataset.vtab === tab));
-  ['keys','videos','notes'].forEach(t => {
+  ['keys','cheatsheet','videos','notes'].forEach(t => {
     const el = $('vinfo-tab-' + t);
     if (el) el.style.display = t === tab ? '' : 'none';
   });
@@ -5805,6 +5813,28 @@ function loadVehicleInfoSection(v) {
   // Customer notes
   const notesEl = $('vinfo-customer-notes');
   if (notesEl) notesEl.value = v.vehicleInfoNotes || '';
+  // Cheat sheet
+  const cs = v.vehicleCheatSheet || {};
+  const isDual = !!(cs.tireFront || cs.tireRear);
+  const dualBox = $('cheat-tire-dual');
+  if (dualBox) dualBox.checked = isDual;
+  toggleDualTire(isDual);
+  const setV = (id, val) => { const el = $(id); if (el) el.value = val || ''; };
+  setV('cheat-tire-all', cs.tireAll);
+  setV('cheat-tire-front', cs.tireFront);
+  setV('cheat-tire-rear', cs.tireRear);
+  setV('cheat-wiper-driver', cs.wiperDriver);
+  setV('cheat-wiper-pass', cs.wiperPass);
+  setV('cheat-wiper-rear', cs.wiperRear);
+  setV('cheat-oil', cs.oil);
+  setV('cheat-battery', cs.battery);
+  setV('cheat-coolant', cs.coolant);
+  // Gas buttons
+  const gasHidden = $('cheat-gas');
+  if (gasHidden) gasHidden.value = cs.gas || '';
+  document.querySelectorAll('.cheat-gas-btn').forEach(btn => {
+    btn.classList.toggle('cheat-gas-active', btn.dataset.gas === cs.gas);
+  });
 }
 
 function renderVInfoVideos(videos) {
@@ -5866,9 +5896,27 @@ $('btn-save-vehicle-info').addEventListener('click', async () => {
   if (!selectedVehicle) return;
   try {
     const notesVal = $('vinfo-customer-notes').value.trim();
+    // Cheat sheet
+    const isDual = $('cheat-tire-dual') && $('cheat-tire-dual').checked;
+    const getV = (id) => { const el = $(id); return el ? el.value.trim() : ''; };
+    const cheatSheet = {
+      tireAll:     isDual ? '' : getV('cheat-tire-all'),
+      tireFront:   isDual ? getV('cheat-tire-front') : '',
+      tireRear:    isDual ? getV('cheat-tire-rear') : '',
+      wiperDriver: getV('cheat-wiper-driver'),
+      wiperPass:   getV('cheat-wiper-pass'),
+      wiperRear:   getV('cheat-wiper-rear'),
+      oil:         getV('cheat-oil'),
+      gas:         $('cheat-gas') ? $('cheat-gas').value : '',
+      battery:     getV('cheat-battery'),
+      coolant:     getV('cheat-coolant'),
+    };
+    // Remove empty keys to keep Firestore clean
+    Object.keys(cheatSheet).forEach(k => { if (!cheatSheet[k]) delete cheatSheet[k]; });
     const data = {
       vehicleInfoNotes: notesVal || null,
       vehicleInfoVideos: selectedVehicle.vehicleInfoVideos || [],
+      vehicleCheatSheet: cheatSheet,
     };
     await db.collection('vehicles').doc(selectedVehicle.id).update(data);
     Object.assign(selectedVehicle, data);

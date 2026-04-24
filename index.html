@@ -622,6 +622,7 @@
         </div>
         <div class="vehicle-info-tabs">
           <button class="vinfo-tab active" data-vtab="keys" onclick="switchVInfoTab('keys')">Key &amp; Access</button>
+          <button class="vinfo-tab" data-vtab="cheatsheet" onclick="switchVInfoTab('cheatsheet')">📋 Cheat Sheet</button>
           <button class="vinfo-tab" data-vtab="videos" onclick="switchVInfoTab('videos')">Videos</button>
           <button class="vinfo-tab" data-vtab="notes" onclick="switchVInfoTab('notes')">Customer Notes</button>
         </div>
@@ -636,6 +637,95 @@
           <input type="file" id="vinfo-key-upload" accept="image/*" hidden>
           <div id="vinfo-key-uploading" style="display:none;font-size:0.85rem;color:#6b7280;">Uploading…</div>
         </div>
+        <!-- Cheat Sheet tab -->
+        <div id="vinfo-tab-cheatsheet" class="vinfo-panel" style="display:none;">
+          <div class="cheat-grid">
+
+            <!-- Tires -->
+            <div class="cheat-group">
+              <div class="cheat-group-header">
+                <span class="cheat-icon">🛞</span>
+                <span class="cheat-group-label">Tire Size</span>
+                <label class="cheat-dual-toggle">
+                  <input type="checkbox" id="cheat-tire-dual" onchange="toggleDualTire(this.checked)">
+                  <span>Different front/rear</span>
+                </label>
+              </div>
+              <div class="cheat-fields" id="cheat-tire-single-row">
+                <input type="text" id="cheat-tire-all" class="cheat-input" placeholder="e.g. 225/55R17">
+              </div>
+              <div class="cheat-fields cheat-tire-dual-row" id="cheat-tire-dual-row" style="display:none;">
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Front</label>
+                  <input type="text" id="cheat-tire-front" class="cheat-input" placeholder="e.g. 225/45R18">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Rear</label>
+                  <input type="text" id="cheat-tire-rear" class="cheat-input" placeholder="e.g. 255/40R18">
+                </div>
+              </div>
+            </div>
+
+            <!-- Wipers -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🌧️</span><span class="cheat-group-label">Wiper Blades</span></div>
+              <div class="cheat-fields">
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Driver</label>
+                  <input type="text" id="cheat-wiper-driver" class="cheat-input" placeholder="e.g. 26&quot;">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Passenger</label>
+                  <input type="text" id="cheat-wiper-pass" class="cheat-input" placeholder="e.g. 18&quot;">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Rear (if any)</label>
+                  <input type="text" id="cheat-wiper-rear" class="cheat-input" placeholder="e.g. 14&quot;">
+                </div>
+              </div>
+            </div>
+
+            <!-- Oil -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🛢️</span><span class="cheat-group-label">Oil Type</span></div>
+              <div class="cheat-fields">
+                <input type="text" id="cheat-oil" class="cheat-input" placeholder="e.g. 0W-20 Full Synthetic">
+              </div>
+            </div>
+
+            <!-- Gas -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">⛽</span><span class="cheat-group-label">Gas Type</span></div>
+              <div class="cheat-fields">
+                <div class="cheat-gas-btns" id="cheat-gas-btns">
+                  <button class="cheat-gas-btn" data-gas="Regular (87)">Regular (87)</button>
+                  <button class="cheat-gas-btn" data-gas="Mid-Grade (89)">Mid-Grade (89)</button>
+                  <button class="cheat-gas-btn" data-gas="Premium (91+)">Premium (91+)</button>
+                  <button class="cheat-gas-btn" data-gas="Diesel">Diesel</button>
+                </div>
+                <input type="hidden" id="cheat-gas">
+              </div>
+            </div>
+
+            <!-- Battery -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🔋</span><span class="cheat-group-label">Battery Type</span></div>
+              <div class="cheat-fields">
+                <input type="text" id="cheat-battery" class="cheat-input" placeholder="e.g. Group 35 / 550 CCA">
+              </div>
+            </div>
+
+            <!-- Coolant -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🌡️</span><span class="cheat-group-label">Coolant Type</span></div>
+              <div class="cheat-fields">
+                <input type="text" id="cheat-coolant" class="cheat-input" placeholder="e.g. OAT / Green / Pink">
+              </div>
+            </div>
+
+          </div>
+        </div>
+
         <!-- Videos tab -->
         <div id="vinfo-tab-videos" class="vinfo-panel" style="display:none;">
           <p class="hint">Paste YouTube links to help customers understand the vehicle (how to start, features, etc.).</p>
