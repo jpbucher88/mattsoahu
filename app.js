@@ -1091,8 +1091,12 @@ function showDamageCheckModal(vid, plate) {
       const itemEl = overlay.querySelector('#dmg-item-' + key);
       itemEl.classList.remove('dmg-state-pass');
       itemEl.classList.add('dmg-state-fail');
-      overlay.querySelector('#dmg-fail-' + key).style.display = '';
-      overlay.querySelector('#dmg-notes-' + key).focus();
+      const failEl = overlay.querySelector('#dmg-fail-' + key);
+      if (failEl) {
+        failEl.style.display = '';
+        const notesEl = overlay.querySelector('#dmg-notes-' + key);
+        if (notesEl) notesEl.focus();
+      }
       refreshConfirmBtn();
     });
   });
@@ -5504,13 +5508,14 @@ window.showCalendarDetail = function(dateStr) {
     html += '</div></div>';
   }
 
-  // Hour slots
+  // Hour slots — only render hours that have tasks
   for (let h = HOUR_START; h <= HOUR_END; h++) {
     const pad = String(h).padStart(2, '0');
     const nextPad = String(h + 1).padStart(2, '0');
     const label = h < 12 ? `${h}:00<br>AM` : h === 12 ? '12:00<br>PM' : `${h - 12}:00<br>PM`;
     const slotTasks = timedTasks.filter(t => t.dueTime >= `${pad}:00` && t.dueTime < `${nextPad}:00`);
-    html += `<div class="hour-block${slotTasks.length ? ' hour-has-tasks' : ''}"><div class="hour-label">${label}</div><div class="hour-tasks">`;
+    if (!slotTasks.length) continue;
+    html += `<div class="hour-block hour-has-tasks"><div class="hour-label">${label}</div><div class="hour-tasks">`;
     for (const item of slotTasks) html += renderCalItem(item);
     html += '</div></div>';
   }
