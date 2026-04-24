@@ -493,6 +493,10 @@ async function loadVehicles() {
 
   // Render fleet dashboard
   renderFleetDashboard();
+  // Clean up stale compliance tasks for vehicles that are now compliant (>30 days)
+  // and refresh text on any remaining compliance tasks so "Due in Xd" is current
+  autoCleanupResolvedComplianceNotes();
+  refreshStaleComplianceNotes();
   loadDashboardFollowUps();
   loadGeneralNotes();
 }
@@ -5784,6 +5788,45 @@ async function autoCleanupResolvedComplianceNotes() {
   }
 }
 
+// Refresh the "Due in Xd" text + urgency on any still-open compliance notes so they stay current.
+async function refreshStaleComplianceNotes() {
+  for (const v of vehiclesCache) {
+    const checks = [
+      { type: 'safety', typeName: 'Safety Inspection', status: complianceMonthStatus(v.complianceSafety) },
+      { type: 'registration', typeName: 'Registration', status: complianceMonthStatus(v.complianceRegistration) },
+    ];
+    for (const { type, typeName, status } of checks) {
+      // Only refresh for notes that should still exist (warn or urgent)
+      if (status.cls !== 'compliance-warn' && status.cls !== 'compliance-urgent') continue;
+      try {
+        const snap = await db.collection('vehicleNotes')
+          .where('vehicleId', '==', v.id)
+          .where('sourceType', '==', 'compliance')
+          .where('complianceType', '==', type)
+          .where('done', '==', false)
+          .limit(10)
+          .get();
+        if (snap.empty) continue;
+        const newText = `${typeName} — ${status.label} for ${v.plate || v.id}.`;
+        const isOverdue = typeof status.daysLeft === 'number' && status.daysLeft < 0;
+        const isUrgent = status.cls === 'compliance-urgent';
+        const batch = db.batch();
+        snap.forEach(doc => {
+          const d = doc.data();
+          if (d.text !== newText || d.urgent !== isUrgent) {
+            batch.update(doc.ref, {
+              text: newText,
+              urgent: isUrgent,
+              taskStatus: isOverdue ? 'urgent' : (isUrgent ? 'urgent' : 'scheduled'),
+            });
+          }
+        });
+        await batch.commit();
+      } catch (e) { /* non-critical */ }
+    }
+  }
+}
+
 // ================================================================
 // VEHICLE INFO TAB (key photo, videos, customer notes)
 // ================================================================
@@ -5818,7 +5861,6 @@ function loadVehicleInfoSection(v) {
   const isDual = !!(cs.tireFront || cs.tireRear);
   const dualBox = $('cheat-tire-dual');
   if (dualBox) dualBox.checked = isDual;
-  toggleDualTire(isDual);
   const setV = (id, val) => { const el = $(id); if (el) el.value = val || ''; };
   setV('cheat-tire-all', cs.tireAll);
   setV('cheat-tire-front', cs.tireFront);
@@ -5835,7 +5877,30 @@ function loadVehicleInfoSection(v) {
   document.querySelectorAll('.cheat-gas-btn').forEach(btn => {
     btn.classList.toggle('cheat-gas-active', btn.dataset.gas === cs.gas);
   });
+  // Apply dual-tire visibility
+  window.toggleDualTire(isDual);
 }
+
+// Toggle single vs dual tire rows in cheat sheet
+window.toggleDualTire = function(isDual) {
+  const single = document.getElementById('cheat-tire-single-row');
+  const dual = document.getElementById('cheat-tire-dual-row');
+  if (single) single.style.display = isDual ? 'none' : '';
+  if (dual) dual.style.display = isDual ? '' : 'none';
+};
+
+// Wire up gas-type buttons once (document-level delegation; safe even if DOM rebuilt)
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.cheat-gas-btn');
+  if (!btn) return;
+  e.preventDefault();
+  const gas = btn.dataset.gas;
+  const hidden = document.getElementById('cheat-gas');
+  if (hidden) hidden.value = gas;
+  document.querySelectorAll('.cheat-gas-btn').forEach(b => {
+    b.classList.toggle('cheat-gas-active', b === btn);
+  });
+});
 
 function renderVInfoVideos(videos) {
   const list = $('vinfo-videos-list');
