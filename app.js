@@ -260,6 +260,9 @@ auth.onAuthStateChanged(async (user) => {
       startMailListener();
       startIncidentListener();
       initTimeClock();
+      if (currentUserRole === 'admin' || currentUserRole === 'manager') {
+        loadExpenseWidget();
+      }
     } catch (err) {
       console.error('Auth state error:', err);
       toast('Error loading profile', 'error');
@@ -995,6 +998,8 @@ function showDamageCheckModal(vid, plate) {
   const itemState = {};
   INSPECTION_ITEMS.forEach(i => { itemState[i.key] = 'none'; });
   const failFiles = {}; // key -> File[]
+  const bugUrgency = {}; // yesno key -> 'urgent' | 'monitoring' | null
+  INSPECTION_ITEMS.forEach(i => { if (i.yesno) bugUrgency[i.key] = null; });
 
   const overlay = document.createElement('div');
   overlay.className = 'damage-check-overlay';
@@ -1009,6 +1014,13 @@ function showDamageCheckModal(vid, plate) {
           <div class="dmg-pf-btns">
             <button class="dmg-pass-btn" data-check="${item.key}" style="background:#fef9c3;border-color:#ca8a04;color:#92400e;">Yes 🐞</button>
             <button class="dmg-fail-btn" data-check="${item.key}" style="background:#f0fdf4;border-color:#16a34a;color:#15803d;">No ✅</button>
+          </div>
+        </div>
+        <div class="dmg-bug-urgency" id="dmg-bug-urgency-${item.key}" style="display:none;">
+          <p class="dmg-bug-urgency-label">🐞 How should this be handled?</p>
+          <div class="dmg-bug-urgency-btns">
+            <button class="dmg-bug-now-btn" data-check="${item.key}">🚨 Address Now</button>
+            <button class="dmg-bug-later-btn" data-check="${item.key}">👁️ Follow Up</button>
           </div>
         </div>
       </div>`;
@@ -1059,17 +1071,22 @@ function showDamageCheckModal(vid, plate) {
   const confirmBtn = overlay.querySelector('.dmg-confirm-btn');
 
   function refreshConfirmBtn() {
-    const allDecided = INSPECTION_ITEMS.every(i => itemState[i.key] !== 'none');
+    const allDecided = INSPECTION_ITEMS.every(i => {
+      if (itemState[i.key] === 'none') return false;
+      if (i.yesno && itemState[i.key] === 'pass') return bugUrgency[i.key] !== null;
+      return true;
+    });
     const failsHaveNotes = INSPECTION_ITEMS
       .filter(i => !i.yesno && itemState[i.key] === 'fail')
       .every(i => (overlay.querySelector('#dmg-notes-' + i.key) || {value:' '}).value.trim().length > 0);
     confirmBtn.disabled = !(allDecided && failsHaveNotes);
     const failCount = INSPECTION_ITEMS.filter(i => !i.yesno && itemState[i.key] === 'fail').length;
-    const bugsYes = itemState['bugs'] === 'pass';
-    const extras = bugsYes ? ' +🐞 bugs' : '';
+    const bugsYes = INSPECTION_ITEMS.filter(i => i.yesno).some(i => itemState[i.key] === 'pass');
+    const bugsNow = bugsYes && INSPECTION_ITEMS.filter(i => i.yesno).some(i => bugUrgency[i.key] === 'urgent');
+    const extras = bugsNow ? ' +🚨 bugs' : (bugsYes && bugUrgency[INSPECTION_ITEMS.find(i=>i.yesno)?.key] === 'monitoring' ? ' +👁️ bugs' : '');
     confirmBtn.textContent = failCount > 0
       ? `Submit (${failCount} issue${failCount > 1 ? 's' : ''}${extras})`
-      : (bugsYes ? 'Submit — Bugs Noted' : 'Submit — All Clear');
+      : (bugsYes ? `Submit — Bugs Noted${extras}` : 'Submit — All Clear');
   }
 
   overlay.querySelectorAll('.dmg-pass-btn').forEach(btn => {
@@ -1079,7 +1096,15 @@ function showDamageCheckModal(vid, plate) {
       const itemEl = overlay.querySelector('#dmg-item-' + key);
       itemEl.classList.remove('dmg-state-fail');
       itemEl.classList.add('dmg-state-pass');
-      overlay.querySelector('#dmg-fail-' + key).style.display = 'none';
+      const failEl = overlay.querySelector('#dmg-fail-' + key);
+      if (failEl) failEl.style.display = 'none';
+      const bugUrgencyEl = overlay.querySelector('#dmg-bug-urgency-' + key);
+      if (bugUrgencyEl) {
+        bugUrgencyEl.style.display = '';
+        bugUrgency[key] = null; // reset choice
+        // Reset active state on both urgency buttons
+        overlay.querySelectorAll(`.dmg-bug-now-btn[data-check="${key}"], .dmg-bug-later-btn[data-check="${key}"]`).forEach(b => b.classList.remove('dmg-bug-active'));
+      }
       refreshConfirmBtn();
     });
   });
@@ -1122,6 +1147,28 @@ function showDamageCheckModal(vid, plate) {
     });
   });
 
+  overlay.querySelectorAll('.dmg-bug-now-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.check;
+      bugUrgency[key] = 'urgent';
+      btn.classList.add('dmg-bug-active');
+      const laterBtn = overlay.querySelector(`.dmg-bug-later-btn[data-check="${key}"]`);
+      if (laterBtn) laterBtn.classList.remove('dmg-bug-active');
+      refreshConfirmBtn();
+    });
+  });
+
+  overlay.querySelectorAll('.dmg-bug-later-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.check;
+      bugUrgency[key] = 'monitoring';
+      btn.classList.add('dmg-bug-active');
+      const nowBtn = overlay.querySelector(`.dmg-bug-now-btn[data-check="${key}"]`);
+      if (nowBtn) nowBtn.classList.remove('dmg-bug-active');
+      refreshConfirmBtn();
+    });
+  });
+
   overlay.querySelector('.dmg-cancel-btn').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
@@ -1140,10 +1187,13 @@ function showDamageCheckModal(vid, plate) {
       for (const item of failItems) {
         // Bugs-spotted: create a scheduled task (not urgent) and skip photo/notes
         if (item.yesno) {
+          const isNow = bugUrgency[item.key] === 'urgent';
           await db.collection('vehicleNotes').add({
             vehicleId: vid,
             text: 'Bugs spotted during inspection — treatment needed.',
-            isFollowUp: true, done: false, urgent: false, taskStatus: 'scheduled',
+            isFollowUp: true, done: false,
+            urgent: isNow,
+            taskStatus: isNow ? 'urgent' : 'monitoring',
             sourceType: 'inspection', inspectionKey: item.key,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             createdBy: currentUser.uid,
@@ -1566,6 +1616,9 @@ function bgUploadTick(success) {
 async function handlePhotoFiles(e) {
   const files = Array.from(e.target.files);
   if (!files.length || !selectedVehicle) return;
+  // Capture vehicle reference immediately — user may navigate away before uploads finish
+  const capturedVehicle = selectedVehicle;
+  const capturedDate = selectedDate;
 
   if (!getStorage()) {
     toast('Photo uploads not available — Firebase Storage is not enabled yet. Contact your admin.', 'error');
@@ -1599,7 +1652,7 @@ async function handlePhotoFiles(e) {
     const { item, statusIcon } = thumbMap.get(file);
     try {
       const compressed = await compressImage(file);
-      await uploadPhoto(compressed);
+      await uploadPhoto(compressed, capturedVehicle);
       statusIcon.className = 'status-icon status-done';
       statusIcon.textContent = '✓';
       bgUploadTick(true);
@@ -1613,19 +1666,20 @@ async function handlePhotoFiles(e) {
 
   // Refresh photos for the current date when all uploads finish
   Promise.all(uploadPromises).then(async () => {
-    if (selectedVehicle) {
-      await loadPhotosForDate(selectedVehicle.id, selectedDate);
+    if (capturedVehicle && selectedVehicle && capturedVehicle.id === selectedVehicle.id) {
+      await loadPhotosForDate(capturedVehicle.id, capturedDate);
     }
   });
 }
 
 // Core upload function — used by both file picker and camera
-async function uploadPhoto(blobOrFile) {
+async function uploadPhoto(blobOrFile, vehicleOverride) {
   const st = getStorage();
   if (!st) {
     throw new Error('Firebase Storage is not enabled yet. Contact your admin to enable billing.');
   }
-  const plate = sanitizePlate(selectedVehicle.plate);
+  const v = vehicleOverride || selectedVehicle;
+  const plate = sanitizePlate(v.plate);
   const date = todayDateString();
   const timestamp = Date.now();
   const fileName = `${timestamp}_${Math.random().toString(36).substring(2, 8)}.jpg`;
@@ -1636,8 +1690,8 @@ async function uploadPhoto(blobOrFile) {
   const downloadURL = await ref.getDownloadURL();
 
   await db.collection('photos').add({
-    vehicleId: selectedVehicle.id,
-    plate: selectedVehicle.plate,
+    vehicleId: v.id,
+    plate: v.plate,
     storagePath: storagePath,
     url: downloadURL,
     date: date,
@@ -1812,9 +1866,10 @@ $('camera-shutter').addEventListener('click', () => {
 });
 
 async function queueCameraUpload(blob) {
+  const capturedVehicle = selectedVehicle; // capture immediately before async compression
   // Compress first
   const compressed = await compressBlob(blob, 1920, 0.82);
-  cameraUploadQueue.push(compressed);
+  cameraUploadQueue.push({ blob: compressed, vehicle: capturedVehicle });
   cameraTotalQueued++;
   updateCameraUploadBar();
   processCameraQueue();
@@ -1844,9 +1899,9 @@ async function processCameraQueue() {
   cameraUploading = true;
 
   while (cameraUploadQueue.length > 0) {
-    const blob = cameraUploadQueue.shift();
+    const { blob, vehicle } = cameraUploadQueue.shift();
     try {
-      const url = await uploadPhoto(blob);
+      const url = await uploadPhoto(blob, vehicle);
       cameraUploadedUrls.push(url);
       cameraUploadedCount++;
       updateCameraUploadBar();
@@ -5470,67 +5525,39 @@ window.showCalendarDetail = function(dateStr) {
 
   let html = '';
 
-  // Add Task form at top
-  if (canAdd) {
-    html += `
-      <div class="cal-add-task-form">
-        <h5>➕ Add Task for this date</h5>
-        <textarea id="cal-add-task-text" class="note-textarea" placeholder="Enter task description..." maxlength="500" rows="2"></textarea>
-        <div class="cal-add-task-controls">
-          <input type="time" id="cal-add-task-time" class="cal-time-input" title="Set time (optional)">
-          <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> 🚨 Urgent</label>
-          <button class="btn btn-sm btn-primary" onclick="calendarAddTask('${dateStr}')">Save Task</button>
-        </div>
-      </div>`;
-  }
-
-  // Partition tasks: timed vs all-day
+  // Sort: timed tasks first (by time), then all-day (by urgency desc)
   const timedTasks = tasks.filter(t => t.dueTime).sort((a, b) => a.dueTime.localeCompare(b.dueTime));
   const untimedTasks = tasks.filter(t => !t.dueTime).sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
 
-  // Hourly blocks 6 AM – 9 PM
-  const HOUR_START = 6, HOUR_END = 21;
-  const earlyTasks = timedTasks.filter(t => t.dueTime < '06:00');
-  const lateTasks  = timedTasks.filter(t => t.dueTime >= '22:00');
-
-  html += '<div class="hour-day-view">';
-
-  // All-day section
-  html += `<div class="hour-block hour-allday${untimedTasks.length ? ' hour-has-tasks' : ''}">`;
-  html += '<div class="hour-label">All Day</div><div class="hour-tasks">';
-  for (const item of untimedTasks) html += renderCalItem(item);
-  html += '</div></div>';
-
-  // Early tasks
-  if (earlyTasks.length) {
-    html += '<div class="hour-block hour-has-tasks"><div class="hour-label">Before<br>6 AM</div><div class="hour-tasks">';
-    for (const item of earlyTasks) html += renderCalItem(item);
-    html += '</div></div>';
-  }
-
-  // Hour slots — only render hours that have tasks
-  for (let h = HOUR_START; h <= HOUR_END; h++) {
-    const pad = String(h).padStart(2, '0');
-    const nextPad = String(h + 1).padStart(2, '0');
-    const label = h < 12 ? `${h}:00<br>AM` : h === 12 ? '12:00<br>PM' : `${h - 12}:00<br>PM`;
-    const slotTasks = timedTasks.filter(t => t.dueTime >= `${pad}:00` && t.dueTime < `${nextPad}:00`);
-    if (!slotTasks.length) continue;
-    html += `<div class="hour-block hour-has-tasks"><div class="hour-label">${label}</div><div class="hour-tasks">`;
-    for (const item of slotTasks) html += renderCalItem(item);
-    html += '</div></div>';
-  }
-
-  // Late tasks
-  if (lateTasks.length) {
-    html += '<div class="hour-block hour-has-tasks"><div class="hour-label">After<br>9 PM</div><div class="hour-tasks">';
-    for (const item of lateTasks) html += renderCalItem(item);
-    html += '</div></div>';
-  }
-
-  html += '</div>';
-
-  if (tasks.length === 0 && !canAdd) {
+  if (tasks.length > 0) {
+    html += '<div class="cal-flat-list">';
+    // Timed tasks first
+    for (const item of timedTasks) html += renderCalItem(item);
+    // Divider if both types exist
+    if (timedTasks.length > 0 && untimedTasks.length > 0) {
+      html += '<div class="cal-list-divider">All Day</div>';
+    }
+    // All-day tasks
+    for (const item of untimedTasks) html += renderCalItem(item);
+    html += '</div>';
+  } else if (!canAdd) {
     html += '<p class="hint">No tasks for this date.</p>';
+  }
+
+  // Add Task form at bottom, collapsed by default
+  if (canAdd) {
+    html += `
+      <div class="cal-add-task-toggle" id="cal-add-toggle-wrap">
+        <button class="btn btn-sm btn-outline cal-add-toggle-btn" onclick="document.getElementById('cal-add-toggle-wrap').querySelector('.cal-add-toggle-btn').style.display='none'; document.getElementById('cal-add-form-inner').style.display='';">➕ Add Task</button>
+        <div id="cal-add-form-inner" style="display:none;" class="cal-add-task-form">
+          <textarea id="cal-add-task-text" class="note-textarea" placeholder="Task description..." maxlength="500" rows="2"></textarea>
+          <div class="cal-add-task-controls">
+            <input type="time" id="cal-add-task-time" class="cal-time-input" title="Set time (optional)">
+            <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> 🚨 Urgent</label>
+            <button class="btn btn-sm btn-primary" onclick="calendarAddTask('${dateStr}')">Save</button>
+          </div>
+        </div>
+      </div>`;
   }
 
   detailList.innerHTML = html;
@@ -8349,6 +8376,123 @@ function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
   update();
   elapsedInterval = setInterval(update, 1000);
 }
+
+// ================================================================
+// EXPENSE TRACKER
+// ================================================================
+const EXPENSE_CATEGORIES = ['Venmo Payment', 'Vendor Payment', 'Fuel', 'Supplies', 'Maintenance', 'Other'];
+
+async function loadExpenseWidget() {
+  const section = $('expense-widget');
+  if (!section) return;
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  section.style.display = '';
+
+  // Set default date input to today
+  const dateInput = $('exp-date');
+  if (dateInput && !dateInput.value) dateInput.value = todayDateString();
+
+  const list = $('expense-list');
+  const totalEl = $('expense-month-total');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading...</p>';
+
+  const [y, m] = todayDateString().split('-').map(Number);
+  const monthStart = `${y}-${String(m).padStart(2,'0')}-01`;
+  const monthEnd = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y, m, 0).getDate()).padStart(2,'0')}`;
+
+  try {
+    const snap = await db.collection('expenses')
+      .where('date', '>=', monthStart)
+      .where('date', '<=', monthEnd)
+      .orderBy('date', 'desc')
+      .get();
+
+    const expenses = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const monthTotal = expenses.reduce((s, e) => s + (parseFloat(e.amount) || 0), 0);
+
+    if (totalEl) totalEl.textContent = `$${monthTotal.toFixed(2)}`;
+
+    if (expenses.length === 0) {
+      list.innerHTML = '<p class="hint">No expenses this month.</p>';
+      return;
+    }
+
+    list.innerHTML = expenses.map(e => {
+      const catCls = 'exp-cat-' + (e.category || 'other').toLowerCase().replace(/\s+/g, '-');
+      const canDelete = currentUserRole === 'admin' || e.submittedBy === currentUser.uid;
+      return `
+        <div class="exp-row">
+          <div class="exp-row-left">
+            <span class="exp-cat-badge ${catCls}">${escapeHtml(e.category || 'Other')}</span>
+            <div class="exp-row-info">
+              <span class="exp-desc">${escapeHtml(e.description || '')}</span>
+              <span class="exp-meta">${e.date} · ${escapeHtml(e.submittedByName || '')}</span>
+            </div>
+          </div>
+          <div class="exp-row-right">
+            <span class="exp-amount">$${parseFloat(e.amount || 0).toFixed(2)}</span>
+            ${canDelete ? `<button class="btn btn-sm btn-danger exp-del-btn" onclick="deleteExpense('${e.id}')">✕</button>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('loadExpenseWidget error:', err);
+    list.innerHTML = '<p class="hint">Failed to load expenses.</p>';
+  }
+}
+
+window.saveExpense = async function() {
+  const date = $('exp-date').value || todayDateString();
+  const amount = parseFloat($('exp-amount').value);
+  const category = $('exp-category').value;
+  const description = $('exp-desc-input').value.trim();
+
+  if (!amount || amount <= 0) { toast('Enter a valid amount.', 'warning'); return; }
+  if (!description) { toast('Enter a description.', 'warning'); return; }
+
+  const btn = $('exp-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+  try {
+    await db.collection('expenses').add({
+      date,
+      amount,
+      category,
+      description,
+      submittedBy: currentUser.uid,
+      submittedByName: currentUser.displayName || currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    $('exp-amount').value = '';
+    $('exp-desc-input').value = '';
+    $('exp-date').value = todayDateString();
+    toast('Expense saved!', 'success');
+    loadExpenseWidget();
+  } catch (err) {
+    console.error('saveExpense error:', err);
+    toast('Failed to save expense.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+};
+
+window.deleteExpense = async function(docId) {
+  if (currentUserRole !== 'admin') {
+    // managers can only delete their own — server-side check on load
+    if (!confirm('Delete this expense?')) return;
+  }
+  try {
+    await db.collection('expenses').doc(docId).delete();
+    toast('Expense deleted.', 'success');
+    loadExpenseWidget();
+  } catch (err) {
+    console.error('deleteExpense error:', err);
+    toast('Failed to delete.', 'error');
+  }
+};
+
 
 
 

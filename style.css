@@ -4624,4 +4624,207 @@ body {
   margin: 4px 0 2px;
 }
 
+/* ============ BUG URGENCY CHOICE (inspection) ============ */
+.dmg-bug-urgency {
+  padding: 10px 12px;
+  background: #fffbeb;
+  border: 1px solid #fbbf24;
+  border-radius: 8px;
+  margin-top: 8px;
+}
+.dmg-bug-urgency-label {
+  margin: 0 0 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #92400e;
+}
+.dmg-bug-urgency-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.dmg-bug-now-btn,
+.dmg-bug-later-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: 2px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  transition: all 0.15s;
+  flex: 1;
+  min-width: 120px;
+}
+.dmg-bug-now-btn:hover { border-color: #dc2626; background: #fef2f2; color: #dc2626; }
+.dmg-bug-later-btn:hover { border-color: #2563eb; background: #eff6ff; color: #2563eb; }
+.dmg-bug-now-btn.dmg-bug-active { background: #fef2f2; border-color: #dc2626; color: #dc2626; }
+.dmg-bug-later-btn.dmg-bug-active { background: #eff6ff; border-color: #2563eb; color: #2563eb; }
+
+/* ============ CALENDAR FLAT LIST ============ */
+.cal-flat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.cal-list-divider {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 4px 0 2px;
+  border-top: 1px solid #e5e7eb;
+  margin-top: 4px;
+}
+.cal-add-task-toggle {
+  margin-top: 8px;
+}
+.cal-add-toggle-btn {
+  width: 100%;
+  text-align: center;
+}
+.cal-add-task-form {
+  background: #f0f9ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+
+/* ============ EXPENSE WIDGET ============ */
+.exp-month-total-badge {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #16a34a;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 6px;
+  padding: 2px 10px;
+}
+.exp-month-label {
+  font-size: 0.78rem;
+  color: #6b7280;
+}
+.exp-form {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.exp-form-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.exp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 120px;
+}
+.exp-field-amount { max-width: 120px; }
+.exp-field-desc { flex: 3; }
+.exp-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.exp-input {
+  font-size: 0.88rem;
+  height: 36px;
+  padding: 0 10px;
+}
+.exp-save-btn {
+  height: 36px;
+  padding: 0 18px;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+.exp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.exp-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 12px;
+  gap: 10px;
+}
+.exp-row-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.exp-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.exp-cat-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.exp-cat-venmo-payment  { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.exp-cat-vendor-payment { background: #faf5ff; color: #7e22ce; border: 1px solid #e9d5ff; }
+.exp-cat-fuel           { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+.exp-cat-supplies       { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.exp-cat-maintenance    { background: #fefce8; color: #a16207; border: 1px solid #fef08a; }
+.exp-cat-other          { background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; }
+.exp-row-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.exp-desc {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.exp-meta {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+.exp-amount {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #16a34a;
+  white-space: nowrap;
+}
+.exp-del-btn {
+  font-size: 0.72rem !important;
+  padding: 2px 7px !important;
+}
+@media (max-width: 600px) {
+  .exp-field-amount { max-width: 90px; }
+  .exp-cat-badge { font-size: 0.65rem; }
+  .exp-desc { font-size: 0.82rem; }
+}
+
+
 
