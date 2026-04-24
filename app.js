@@ -1109,10 +1109,7 @@ function showDamageCheckModal(vid, plate) {
       if (i.yesno && itemState[i.key] === 'pass') return bugUrgency[i.key] !== null;
       return true;
     });
-    const failsHaveNotes = INSPECTION_ITEMS
-      .filter(i => !i.yesno && itemState[i.key] === 'fail')
-      .every(i => (overlay.querySelector('#dmg-notes-' + i.key) || {value:' '}).value.trim().length > 0);
-    confirmBtn.disabled = !(allDecided && failsHaveNotes);
+    confirmBtn.disabled = !allDecided;
     const failCount = INSPECTION_ITEMS.filter(i => !i.yesno && itemState[i.key] === 'fail').length;
     const bugsYes = INSPECTION_ITEMS.filter(i => i.yesno).some(i => itemState[i.key] === 'pass');
     const bugsNow = bugsYes && INSPECTION_ITEMS.filter(i => i.yesno).some(i => bugUrgency[i.key] === 'urgent');
