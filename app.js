@@ -4008,6 +4008,11 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-custom-row').style.display = 'none';
   $('m-custom-type').value = '';
   $('m-type').value = '';
+  // Clear invoice
+  $('m-invoice-input').value = '';
+  $('m-invoice-filename').textContent = 'No file chosen';
+  $('m-invoice-preview-wrap').style.display = 'none';
+  $('m-invoice-preview').src = '';
   // Scroll into view so form is visible even when recommended services section is shown above it
   setTimeout(() => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 });
@@ -4046,6 +4051,30 @@ $('btn-cancel-maintenance').addEventListener('click', () => {
   $('m-next-due-display').textContent = '—';
   $('m-next-due-mileage-display').textContent = '—';
   $('m-custom-row').style.display = 'none';
+  // Clear invoice preview
+  $('m-invoice-input').value = '';
+  $('m-invoice-filename').textContent = 'No file chosen';
+  $('m-invoice-preview-wrap').style.display = 'none';
+  $('m-invoice-preview').src = '';
+});
+
+// Invoice preview wiring
+$('m-invoice-input').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  $('m-invoice-filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    $('m-invoice-preview').src = e.target.result;
+    $('m-invoice-preview-wrap').style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+});
+$('m-invoice-clear').addEventListener('click', () => {
+  $('m-invoice-input').value = '';
+  $('m-invoice-filename').textContent = 'No file chosen';
+  $('m-invoice-preview-wrap').style.display = 'none';
+  $('m-invoice-preview').src = '';
 });
 
 // Save maintenance record
@@ -4099,6 +4128,25 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     if (nextDueDate) record.nextDueDate = nextDueDate;
     if (intervalMiles) record.intervalMiles = intervalMiles;
     if (nextDueMileage) record.nextDueMileage = nextDueMileage;
+
+    // Upload invoice if one was selected (compressed: 1600px wide, 0.78 quality ≈ readable but small)
+    const invoiceFile = $('m-invoice-input').files[0];
+    if (invoiceFile) {
+      try {
+        const st = getStorage();
+        if (st) {
+          const compressed = await compressImage(invoiceFile, 1600, 0.78);
+          const safePlate = sanitizePlate(selectedVehicle.plate || selectedVehicle.id);
+          const fname = 'inv_' + date + '_' + Date.now() + '.jpg';
+          const ref = st.ref('vehicles/' + safePlate + '/maintenance/' + fname);
+          await ref.put(compressed, { contentType: 'image/jpeg' });
+          record.invoiceUrl = await ref.getDownloadURL();
+        }
+      } catch(invErr) {
+        console.error('Invoice upload error:', invErr);
+        toast('Invoice upload failed — saving record without it.', 'warning');
+      }
+    }
 
     const maintenanceRef = await db.collection('maintenance').add(record);
 
@@ -4176,6 +4224,10 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     $('m-next-due-display').textContent = '—';
     $('m-next-due-mileage-display').textContent = '—';
     $('m-custom-row').style.display = 'none';
+    $('m-invoice-input').value = '';
+    $('m-invoice-filename').textContent = 'No file chosen';
+    $('m-invoice-preview-wrap').style.display = 'none';
+    $('m-invoice-preview').src = '';
     loadMaintenanceHistory(selectedVehicle.id);
     updateRecommendedServices(selectedVehicle.id);
   } catch (err) {
@@ -4218,11 +4270,15 @@ async function loadMaintenanceHistory(vehicleId) {
       }
       const nextDueStr = d.nextDueDate ? ` · Next: ${d.nextDueDate}` : '';
       const nextDueMiStr = d.nextDueMileage ? ` · Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
+      const invoiceHTML = d.invoiceUrl
+        ? `<div class="m-invoice-thumb-row"><a href="${escapeHtml(d.invoiceUrl)}" target="_blank" title="View invoice"><img src="${escapeHtml(d.invoiceUrl)}" class="m-invoice-thumb" alt="Invoice"></a></div>`
+        : '';
       html += `
         <div class="data-list-item">
           <div class="item-info">
             <div class="item-title">${escapeHtml(d.serviceType)}${intervalBadge}</div>
             <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
+            ${invoiceHTML}
           </div>
           ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
         </div>

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260423q">
+  <link rel="stylesheet" href="style.css?v=20260425a">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -619,6 +619,20 @@
             <div class="form-row">
               <button type="submit" class="btn btn-primary">Save Record</button>
               <button type="button" id="btn-cancel-maintenance" class="btn btn-outline">Cancel</button>
+            </div>
+            <div class="form-row m-invoice-row">
+              <div class="form-group" style="flex:1;">
+                <label>📎 Invoice / Receipt <span style="color:#9ca3af;font-size:0.78rem;">(optional — compressed for storage)</span></label>
+                <div class="m-invoice-input-wrap">
+                  <label class="m-invoice-upload-label" for="m-invoice-input">📎 Attach Invoice</label>
+                  <input type="file" id="m-invoice-input" accept="image/*" style="display:none;">
+                  <span id="m-invoice-filename" class="m-invoice-filename">No file chosen</span>
+                </div>
+                <div id="m-invoice-preview-wrap" class="m-invoice-preview-wrap" style="display:none;">
+                  <img id="m-invoice-preview" class="m-invoice-preview-img" src="" alt="Invoice preview">
+                  <button type="button" id="m-invoice-clear" class="m-invoice-clear-btn" title="Remove">✕ Remove</button>
+                </div>
+              </div>
             </div>
           </form>
         </div>
