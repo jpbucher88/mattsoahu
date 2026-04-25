@@ -1,4 +1,4 @@
-﻿// ================================================================
+// ================================================================
 // Aloha Fleet Management System - Main Application
 // ================================================================
 
@@ -73,7 +73,7 @@ function getDTValue(dateId, timeId) {
   const d = $(dateId) ? $(dateId).value : '';
   if (!d) return '';
   let t = ($(timeId) ? $(timeId).value.trim() : '') || '';
-  // If there is a paired AM/PM select, convert 12h â†’ 24h
+  // If there is a paired AM/PM select, convert 12h → 24h
   const ampmEl = $(timeId + '-ampm');
   if (ampmEl && t && t.includes(':')) {
     let [hh, mm] = t.split(':').map(s => parseInt(s, 10) || 0);
@@ -257,7 +257,7 @@ function renderTaskLogEntries(log) {
   return [...log].reverse().map(entry => `
     <div class="task-log-entry">
       <div class="task-log-entry-text">${escapeHtml(entry.text || '')}</div>
-      <div class="task-log-entry-meta">${escapeHtml(entry.by || 'Unknown')} Â· ${escapeHtml(entry.at || '')}</div>
+      <div class="task-log-entry-meta">${escapeHtml(entry.by || 'Unknown')} · ${escapeHtml(entry.at || '')}</div>
     </div>`).join('');
 }
 
@@ -274,12 +274,12 @@ function sanitizePlate(plate) {
 // 2560px wide at 92% quality = ~500KB-1.2MB per photo (high detail for damage docs)
 function compressImage(file, maxWidth = 2560, quality = 0.92) {
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('Image processing timed out â€” the file format may not be supported by this browser.')), 15000);
+    const timeout = setTimeout(() => reject(new Error('Image processing timed out — the file format may not be supported by this browser.')), 15000);
     const reader = new FileReader();
     reader.onerror = () => { clearTimeout(timeout); reject(new Error('Could not read the image file.')); };
     reader.onload = (e) => {
       const img = new Image();
-      img.onerror = () => { clearTimeout(timeout); reject(new Error('Could not decode image â€” the format may not be supported. Try taking a screenshot or converting to JPEG first.')); };
+      img.onerror = () => { clearTimeout(timeout); reject(new Error('Could not decode image — the format may not be supported. Try taking a screenshot or converting to JPEG first.')); };
       img.onload = () => {
         clearTimeout(timeout);
         const canvas = document.createElement('canvas');
@@ -636,7 +636,7 @@ async function autoStartScheduledTrips() {
       if (v.tripExpectedEnd) { v.tripReturnDate = v.tripExpectedEnd; }
       delete v.tripScheduledStart;
       delete v.tripExpectedEnd;
-      toast(`ðŸš— ${v.plate} trip started automatically!`, 'info');
+      toast(`🚗 ${v.plate} trip started automatically!`, 'info');
     }).catch(e => console.error('Auto-start trip error:', e))
   ));
   if (toFlip.length) renderFleetDashboard();
@@ -657,8 +657,8 @@ function populateVehicleSelect(selectEl) {
     const opt = document.createElement('option');
     opt.value = v.id;
     const stale = v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
-    const prefix = stale ? 'âš ï¸ ' : '';
-    opt.textContent = `${prefix}${v.plate} â€” ${v.make} ${v.model}`;
+    const prefix = stale ? '⚠️ ' : '';
+    opt.textContent = `${prefix}${v.plate} — ${v.make} ${v.model}`;
     if (stale) opt.style.color = '#b91c1c';
     selectEl.appendChild(opt);
   });
@@ -691,46 +691,46 @@ function renderFleetDashboard() {
     let photoStatus, photoCls;
     if (suppressPhoto) {
       if (v.photoExcluded) {
-        photoStatus = 'ðŸš« Excluded';
+        photoStatus = '🚫 Excluded';
         photoCls = 'status-muted';
       } else if (v.tripStatus === 'private-trip') {
-        photoStatus = 'ðŸ“· Private trip';
+        photoStatus = '📷 Private trip';
         photoCls = 'status-muted';
       } else if (isOnTrip) {
-        photoStatus = 'ðŸ“· On trip';
+        photoStatus = '📷 On trip';
         photoCls = 'status-muted';
       } else if (isAtRepair) {
-        photoStatus = 'ðŸ“· At shop';
+        photoStatus = '📷 At shop';
         photoCls = 'status-muted';
       } else {
-        photoStatus = 'ðŸ“· Awaiting cleaning';
+        photoStatus = '📷 Awaiting cleaning';
         photoCls = 'status-muted';
       }
     } else if (v.lastPhotoAge === Infinity || v.lastPhotoAge == null) {
-      photoStatus = 'ðŸ“· No photos';
+      photoStatus = '📷 No photos';
       photoCls = 'status-danger';
     } else if (v.lastPhotoAge > MS_24H) {
       const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
       const days = Math.floor(hrs / 24);
-      photoStatus = `ðŸ“· ${days}d ${hrs % 24}h ago`;
+      photoStatus = `📷 ${days}d ${hrs % 24}h ago`;
       photoCls = 'status-warn';
     } else {
       const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60));
       const mins = Math.floor((v.lastPhotoAge / (1000 * 60)) % 60);
-      photoStatus = hrs > 0 ? `ðŸ“· ${hrs}h ${mins}m ago` : `ðŸ“· ${mins}m ago`;
+      photoStatus = hrs > 0 ? `📷 ${hrs}h ${mins}m ago` : `📷 ${mins}m ago`;
       photoCls = 'status-ok';
     }
 
     // Maintenance status
     let maintStatus, maintCls;
     if (!v.mileage) {
-      maintStatus = 'ðŸ”§ No mileage set';
+      maintStatus = '🔧 No mileage set';
       maintCls = 'status-muted';
     } else if (v.overdueCount > 0) {
-      maintStatus = `ðŸ”§ ${v.overdueCount} overdue`;
+      maintStatus = `🔧 ${v.overdueCount} overdue`;
       maintCls = 'status-danger';
     } else {
-      maintStatus = 'ðŸ”§ Up to date';
+      maintStatus = '🔧 Up to date';
       maintCls = 'status-ok';
     }
 
@@ -741,24 +741,24 @@ function renderFleetDashboard() {
       let returnInfo = '';
       if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        returnInfo = ' Â· Return ' + rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
+        returnInfo = ' · Return ' + rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
       }
-      locDisplay = `ðŸš— On Trip${returnInfo}`;
+      locDisplay = `🚗 On Trip${returnInfo}`;
       locCls = 'status-warn';
     } else if (v.tripStatus === 'repair-shop') {
-      locDisplay = 'ðŸ”§ Repair Shop';
+      locDisplay = '🔧 Repair Shop';
       locCls = 'status-danger';
     } else if (v.tripStatus === 'private-trip') {
-      const ptName = v.privateTripCustomerName ? ` â€” ${escapeHtml(v.privateTripCustomerName)}` : '';
-      locDisplay = `ðŸ”’ Private Trip${ptName}`;
+      const ptName = v.privateTripCustomerName ? ` — ${escapeHtml(v.privateTripCustomerName)}` : '';
+      locDisplay = `🔒 Private Trip${ptName}`;
       locCls = 'status-warn';
     } else if (v.tripStatus === 'scheduled') {
       const ss = v.tripScheduledStart ? (v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart)) : null;
       const ssStr = ss ? ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
-      locDisplay = `â° Scheduled${ssStr ? ' Â· ' + ssStr : ''}`;
+      locDisplay = `⏰ Scheduled${ssStr ? ' · ' + ssStr : ''}`;
       locCls = 'status-muted';
     } else if (v.homeLocation) {
-      locDisplay = `ðŸ  ${escapeHtml(v.homeLocation)}`;
+      locDisplay = `🏠 ${escapeHtml(v.homeLocation)}`;
       locCls = 'status-ok';
     } else {
       locDisplay = 'No location set';
@@ -769,9 +769,9 @@ function renderFleetDashboard() {
     const compExpired = compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return new Date(Date.UTC(y,m,0,23,59,59)) < Date.now(); });
     const compDue = !compExpired && compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return (new Date(Date.UTC(y,m,0,23,59,59)) - Date.now()) / 86400000 <= 30; });
     const compBadge = compExpired ? '<span class="compliance-badge">EXPIRED</span>' : compDue ? '<span class="compliance-badge" style="background:#d97706;">DUE</span>' : '';
-    const cleaningFlag = v.needsCleaning ? '<span class="fleet-cleaning-flag">ðŸ§¹</span>' : '';
+    const cleaningFlag = v.needsCleaning ? '<span class="fleet-cleaning-flag">🧹</span>' : '';
     html += `<div class="fleet-card${needsPhotos ? ' fleet-card-alert' : ''}" data-vid="${v.id}">
-      ${needsPhotos ? '<span class="fleet-card-badge">âš ï¸</span>' : ''}
+      ${needsPhotos ? '<span class="fleet-card-badge">⚠️</span>' : ''}
       ${compBadge}
       ${cleaningFlag}
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
@@ -786,11 +786,11 @@ function renderFleetDashboard() {
   // Populate jump dropdown
   const jumpSelect = $('fleet-jump-select');
   if (jumpSelect) {
-    jumpSelect.innerHTML = '<option value="">â€” Select vehicle â€”</option>';
+    jumpSelect.innerHTML = '<option value="">— Select vehicle —</option>';
     vehiclesCache.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = `${v.plate} â€” ${v.make} ${v.model}`;
+      opt.textContent = `${v.plate} — ${v.make} ${v.model}`;
       jumpSelect.appendChild(opt);
     });
     jumpSelect.onchange = function() {
@@ -822,7 +822,7 @@ function renderFleetDashboard() {
 
   // Render Locations widget
   renderLocationsWidget();
-  // Compliance widget removed from dashboard â€” accessible via top-bar âœ… button
+  // Compliance widget removed from dashboard — accessible via top-bar ✅ button
   // loadFleetComplianceWidget();
 }
 
@@ -842,7 +842,6 @@ function renderLocationsWidget() {
   function isAtHome(v) {
     return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop' && !v.photoExcluded;
   }
-  // Check if vehicle needs photos (stale >24h, not suppressed by trip/repair/grace/excluded)
   function needsPhotosCheck(v) {
     if (v.photoExcluded) return false;
     const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
@@ -856,7 +855,6 @@ function renderLocationsWidget() {
     return v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
   }
 
-  // Sort helpers
   const sortByReturn = (arr) => arr.sort((a, b) => {
     const aT = a.tripReturnDate ? (a.tripReturnDate.toDate ? a.tripReturnDate.toDate().getTime() : new Date(a.tripReturnDate).getTime()) : Infinity;
     const bT = b.tripReturnDate ? (b.tripReturnDate.toDate ? b.tripReturnDate.toDate().getTime() : new Date(b.tripReturnDate).getTime()) : Infinity;
@@ -865,14 +863,13 @@ function renderLocationsWidget() {
   sortByReturn(onTrip);
   sortByReturn(atRepair);
 
-  // Get all home locations, preserving known order
   const knownLocations = ['HNL', '1585 Kapiolani'];
   const otherLocations = [...new Set(vehiclesCache.filter(v => isAtHome(v) && v.homeLocation && !knownLocations.includes(v.homeLocation)).map(v => v.homeLocation))];
   const allLocations = [...knownLocations, ...otherLocations];
 
   let html = '';
 
-  // â”€â”€ Combined per-location sections â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Per-location combined sections ──────────────────────────────
   for (const loc of allLocations) {
     const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && v.homeLocation === loc);
     const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && v.homeLocation === loc);
@@ -884,13 +881,13 @@ function renderLocationsWidget() {
 
     html += `<div class="location-group location-group-combined">
       <div class="location-group-header">
-        <span class="location-group-name">ðŸ  ${escapeHtml(loc)}</span>
+        <span class="location-group-name">🏠 ${escapeHtml(loc)}</span>
         <span class="location-group-count">${total}</span>
       </div>`;
 
-    // â€” Needs Cleaning sub-section â€”
+    // Needs Cleaning sub-section
     if (cleaning.length > 0) {
-      html += `<div class="loc-sub-header loc-sub-cleaning">ðŸ§¹ Needs Cleaning <span class="loc-sub-count">${cleaning.length}</span></div>
+      html += `<div class="loc-sub-header loc-sub-cleaning">🧹 Needs Cleaning <span class="loc-sub-count">${cleaning.length}</span></div>
         <div class="location-group-vehicles cleaning-list">`;
       for (const v of cleaning) {
         const needsDamage = v.needsDamageCheck;
@@ -903,7 +900,7 @@ function renderLocationsWidget() {
           photoTag = `<span class="photo-age-tag">${ageText}</span>`;
         }
         const parkingBtn = (isKapiolani && v.needsParking)
-          ? `<button class="btn btn-sm btn-parking parking-done-btn" data-vid="${v.id}">ðŸ…¿ï¸ Paid</button>` : '';
+          ? `<button class="btn btn-sm btn-parking parking-done-btn" data-vid="${v.id}">🅿️ Paid</button>` : '';
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
             <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
@@ -911,9 +908,9 @@ function renderLocationsWidget() {
             ${photoTag}
           </div>
           <div class="cleaning-actions">
-            ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">ðŸ” Inspect</button>` : '<span class="damage-ok-badge">âœ… Inspected</span>'}
-            <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>âœ“ Cleaned</button>
-            ${alsoNeedsPhotos ? `<button class="btn btn-sm btn-outline photo-done-btn" data-vid="${v.id}">ðŸ“·</button>` : ''}
+            ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
+            <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>✓ Cleaned</button>
+            ${alsoNeedsPhotos ? `<button class="btn btn-sm btn-outline photo-done-btn" data-vid="${v.id}">📷</button>` : ''}
             ${parkingBtn}
           </div>
         </div>`;
@@ -921,9 +918,9 @@ function renderLocationsWidget() {
       html += '</div>';
     }
 
-    // â€” Needs Photos sub-section â€”
+    // Needs Photos sub-section
     if (photosOnly.length > 0) {
-      html += `<div class="loc-sub-header loc-sub-photos">ðŸ“· Needs Photos <span class="loc-sub-count">${photosOnly.length}</span></div>
+      html += `<div class="loc-sub-header loc-sub-photos">📷 Needs Photos <span class="loc-sub-count">${photosOnly.length}</span></div>
         <div class="location-group-vehicles cleaning-list">`;
       for (const v of photosOnly) {
         let ageText = '';
@@ -935,18 +932,18 @@ function renderLocationsWidget() {
             <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
             <span class="photo-age-tag">${ageText}</span>
           </div>
-          <button class="btn btn-sm btn-primary photo-done-btn" data-vid="${v.id}">ðŸ“· Done</button>
+          <button class="btn btn-sm btn-primary photo-done-btn" data-vid="${v.id}">📷 Done</button>
         </div>`;
       }
       html += '</div>';
     }
 
-    // â€” At Home / Ready chips â€”
+    // Ready chips sub-section
     if (atHomeClean.length > 0) {
-      html += `<div class="loc-sub-header loc-sub-home">âœ… Ready <span class="loc-sub-count">${atHomeClean.length}</span></div>
+      html += `<div class="loc-sub-header loc-sub-home">✅ Ready <span class="loc-sub-count">${atHomeClean.length}</span></div>
         <div class="location-group-vehicles">`;
       for (const v of atHomeClean) {
-        const parkBadge = (isKapiolani && v.needsParking) ? '<span class="parking-badge">ðŸ…¿ï¸</span>' : '';
+        const parkBadge = (isKapiolani && v.needsParking) ? '<span class="parking-badge">🅿️</span>' : '';
         html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>${parkBadge}</div>`;
       }
       html += '</div>';
@@ -955,25 +952,25 @@ function renderLocationsWidget() {
     html += '</div>'; // end location-group-combined
   }
 
-  // No location
+  // No location set
   const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation && !v.photoExcluded);
   if (noLocation.length > 0) {
     const needsCleaningNoLoc = noLocation.filter(v => v.needsCleaning);
     const cleanNoLoc = noLocation.filter(v => !v.needsCleaning && !needsPhotosCheck(v));
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#6b7280;">
-        <span class="location-group-name">â“ No Location Set</span>
+        <span class="location-group-name">❓ No Location Set</span>
         <span class="location-group-count">${noLocation.length}</span>
       </div>`;
     if (needsCleaningNoLoc.length > 0) {
-      html += `<div class="loc-sub-header loc-sub-cleaning">ðŸ§¹ Needs Cleaning <span class="loc-sub-count">${needsCleaningNoLoc.length}</span></div><div class="location-group-vehicles cleaning-list">`;
+      html += `<div class="loc-sub-header loc-sub-cleaning">🧹 Needs Cleaning <span class="loc-sub-count">${needsCleaningNoLoc.length}</span></div><div class="location-group-vehicles cleaning-list">`;
       for (const v of needsCleaningNoLoc) {
         const needsDamage = v.needsDamageCheck;
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info"><span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span><span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span></div>
           <div class="cleaning-actions">
-            ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">ðŸ” Inspect</button>` : '<span class="damage-ok-badge">âœ… Inspected</span>'}
-            <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled' : ''}>âœ“ Cleaned</button>
+            ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
+            <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled' : ''}>✓ Cleaned</button>
           </div>
         </div>`;
       }
@@ -988,10 +985,11 @@ function renderLocationsWidget() {
   }
 
   // On the Road
+  // On the Road
   if (onTrip.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#2563eb;">
-        <span class="location-group-name">ðŸš— On the Road</span>
+        <span class="location-group-name">🚗 On the Road</span>
         <span class="location-group-count">${onTrip.length}</span>
       </div>
       <div class="location-group-vehicles trip-list">`;
@@ -1002,9 +1000,9 @@ function renderLocationsWidget() {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
         const now = new Date();
         const isOverdue = rd < now;
-        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">â†© ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
         if (isOverdue) {
-          returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">ðŸ  Returned</button>`;
+          returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
         }
       }
       html += `<div class="trip-item">
@@ -1021,7 +1019,7 @@ function renderLocationsWidget() {
   if (atRepair.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#dc2626;">
-        <span class="location-group-name">ðŸ”§ Repair Shop</span>
+        <span class="location-group-name">🔧 Repair Shop</span>
         <span class="location-group-count">${atRepair.length}</span>
       </div>
       <div class="location-group-vehicles trip-list">`;
@@ -1031,12 +1029,12 @@ function renderLocationsWidget() {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
         const now = new Date();
         const isOverdue = rd < now;
-        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">â†© ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
       }
       let partsInfo = '';
-      if (v.repairShopName) partsInfo += `<span class="repair-parts-tag">ðŸ¥ ${escapeHtml(v.repairShopName)}</span>`;
-      if (v.repairOrderNumber) partsInfo += `<span class="repair-parts-tag">ðŸ“¦ ${escapeHtml(v.repairOrderNumber)}</span>`;
-      if (v.repairPartsEta) partsInfo += `<span class="repair-parts-tag">ðŸ“… Parts ETA: ${v.repairPartsEta}</span>`;
+      if (v.repairShopName) partsInfo += `<span class="repair-parts-tag">🏥 ${escapeHtml(v.repairShopName)}</span>`;
+      if (v.repairOrderNumber) partsInfo += `<span class="repair-parts-tag">📦 ${escapeHtml(v.repairOrderNumber)}</span>`;
+      if (v.repairPartsEta) partsInfo += `<span class="repair-parts-tag">📅 Parts ETA: ${v.repairPartsEta}</span>`;
       html += `<div class="trip-item">
         <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
@@ -1091,7 +1089,7 @@ function renderLocationsWidget() {
           cached.needsCleaning = false;
           cached.needsDamageCheck = false;
         }
-        toast('Marked as cleaned! âœ“', 'success');
+        toast('Marked as cleaned! ✓', 'success');
         renderLocationsWidget();
       } catch (err) {
         console.error('Mark cleaned error:', err);
@@ -1117,7 +1115,7 @@ function renderLocationsWidget() {
         await db.collection('vehicles').doc(vid).update({ needsParking: false });
         const cached = vehiclesCache.find(v => v.id === vid);
         if (cached) cached.needsParking = false;
-        toast('Parking marked as paid! ðŸ…¿ï¸âœ“', 'success');
+        toast('Parking marked as paid! 🅿️✓', 'success');
         renderLocationsWidget();
       } catch (err) {
         console.error('Mark parking error:', err);
@@ -1126,7 +1124,7 @@ function renderLocationsWidget() {
     });
   });
 }
-// Damage check modal ï¿½ Pass / Fail per item
+// Damage check modal � Pass / Fail per item
 function showDamageCheckModal(vid, plate) {
   const existing = document.querySelector('.damage-check-overlay');
   if (existing) existing.remove();
@@ -1149,15 +1147,15 @@ function showDamageCheckModal(vid, plate) {
         <div class="dmg-item-header">
           <span class="dmg-item-label">${escapeHtml(item.label)}</span>
           <div class="dmg-pf-btns">
-            <button class="dmg-pass-btn" data-check="${item.key}" style="background:#fef9c3;border-color:#ca8a04;color:#92400e;">Yes ðŸž</button>
-            <button class="dmg-fail-btn" data-check="${item.key}" style="background:#f0fdf4;border-color:#16a34a;color:#15803d;">No âœ…</button>
+            <button class="dmg-pass-btn" data-check="${item.key}" style="background:#fef9c3;border-color:#ca8a04;color:#92400e;">Yes 🐞</button>
+            <button class="dmg-fail-btn" data-check="${item.key}" style="background:#f0fdf4;border-color:#16a34a;color:#15803d;">No ✅</button>
           </div>
         </div>
         <div class="dmg-bug-urgency" id="dmg-bug-urgency-${item.key}" style="display:none;">
-          <p class="dmg-bug-urgency-label">ðŸž How should this be handled?</p>
+          <p class="dmg-bug-urgency-label">🐞 How should this be handled?</p>
           <div class="dmg-bug-urgency-btns">
-            <button class="dmg-bug-now-btn" data-check="${item.key}">ðŸš¨ Address Now</button>
-            <button class="dmg-bug-later-btn" data-check="${item.key}">ðŸ‘ï¸ Follow Up</button>
+            <button class="dmg-bug-now-btn" data-check="${item.key}">🚨 Address Now</button>
+            <button class="dmg-bug-later-btn" data-check="${item.key}">👁️ Follow Up</button>
           </div>
         </div>
       </div>`;
@@ -1175,11 +1173,11 @@ function showDamageCheckModal(vid, plate) {
           <textarea class="dmg-fail-notes" id="dmg-notes-${item.key}" placeholder="Describe the issue..." rows="2"></textarea>
           <div class="dmg-fail-upload-row">
             <label class="dmg-fail-upload-label">
-              ðŸ“ Upload / Photos
+              📁 Upload / Photos
               <input type="file" class="dmg-fail-photos" id="dmg-photos-${item.key}" accept="image/*" multiple style="display:none;" data-check="${item.key}">
             </label>
             <label class="dmg-fail-upload-label dmg-fail-camera-label">
-              ðŸ“· Camera
+              📷 Camera
               <input type="file" class="dmg-fail-photos" id="dmg-camera-${item.key}" accept="image/*" capture="environment" style="display:none;" data-check="${item.key}">
             </label>
           </div>
@@ -1217,10 +1215,10 @@ function showDamageCheckModal(vid, plate) {
     const failCount = INSPECTION_ITEMS.filter(i => !i.yesno && itemState[i.key] === 'fail').length;
     const bugsYes = INSPECTION_ITEMS.filter(i => i.yesno).some(i => itemState[i.key] === 'pass');
     const bugsNow = bugsYes && INSPECTION_ITEMS.filter(i => i.yesno).some(i => bugUrgency[i.key] === 'urgent');
-    const extras = bugsNow ? ' +ðŸš¨ bugs' : (bugsYes && bugUrgency[INSPECTION_ITEMS.find(i=>i.yesno)?.key] === 'monitoring' ? ' +ðŸ‘ï¸ bugs' : '');
+    const extras = bugsNow ? ' +🚨 bugs' : (bugsYes && bugUrgency[INSPECTION_ITEMS.find(i=>i.yesno)?.key] === 'monitoring' ? ' +👁️ bugs' : '');
     confirmBtn.textContent = failCount > 0
       ? `Submit (${failCount} issue${failCount > 1 ? 's' : ''}${extras})`
-      : (bugsYes ? `Submit â€” Bugs Noted${extras}` : 'Submit â€” All Clear');
+      : (bugsYes ? `Submit — Bugs Noted${extras}` : 'Submit — All Clear');
   }
 
   overlay.querySelectorAll('.dmg-pass-btn').forEach(btn => {
@@ -1332,7 +1330,7 @@ function showDamageCheckModal(vid, plate) {
           const isNow = bugUrgency[item.key] === 'urgent';
           await db.collection('vehicleNotes').add({
             vehicleId: vid,
-            text: 'Bugs spotted during inspection â€” treatment needed.',
+            text: 'Bugs spotted during inspection — treatment needed.',
             isFollowUp: true, done: false,
             urgent: isNow,
             taskStatus: isNow ? 'urgent' : 'monitoring',
@@ -1381,7 +1379,7 @@ function showDamageCheckModal(vid, plate) {
           vehicleId: vid,
           vehiclePlate: vehicleObj2 ? (vehicleObj2.plate || '') : '',
           type: 'damage',
-          title: 'File Claim: ' + item.label + (notes ? ' â€” ' + notes : ''),
+          title: 'File Claim: ' + item.label + (notes ? ' — ' + notes : ''),
           description: notes || ('Inspection fail logged for: ' + item.label),
           urgent: true,
           status: 'open',
@@ -1492,7 +1490,7 @@ async function openVehiclePage(vid) {
       // Show contract if already uploaded
       const preview = $('private-contract-preview');
       if (preview) preview.innerHTML = selectedVehicle.privateTripContractUrl
-        ? `<a href="${escapeHtml(selectedVehicle.privateTripContractUrl)}" target="_blank" class="compliance-doc-anchor">ðŸ“„ View Contract</a>` : '';
+        ? `<a href="${escapeHtml(selectedVehicle.privateTripContractUrl)}" target="_blank" class="compliance-doc-anchor">📄 View Contract</a>` : '';
     }
     // Populate scheduled start
     setDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time', selectedVehicle.tripScheduledStart || null);
@@ -1539,20 +1537,20 @@ async function openVehiclePage(vid) {
   // Show last photo timestamp
   const lastPhotoEl = $('last-photo-time');
   if (selectedVehicle.lastPhotoDate) {
-    lastPhotoEl.textContent = 'ðŸ“· Last photo: ' + selectedVehicle.lastPhotoDate.toLocaleString('en-US', {
+    lastPhotoEl.textContent = '📷 Last photo: ' + selectedVehicle.lastPhotoDate.toLocaleString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true,
       timeZone: APP_TIMEZONE
     });
     lastPhotoEl.style.display = 'block';
   } else if (selectedVehicle.lastPhotoAge === Infinity) {
-    lastPhotoEl.textContent = 'ðŸ“· No photos taken yet';
+    lastPhotoEl.textContent = '📷 No photos taken yet';
     lastPhotoEl.style.display = 'block';
   } else {
     lastPhotoEl.style.display = 'none';
   }
 
-  // Show stale photo alert â€” suppress for on-trip, needs-cleaning, and 2hr grace after return
+  // Show stale photo alert — suppress for on-trip, needs-cleaning, and 2hr grace after return
   const MS_24H = 24 * 60 * 60 * 1000;
   const MS_2H = 2 * 60 * 60 * 1000;
   const staleAlert = $('stale-alert');
@@ -1638,7 +1636,7 @@ async function openVehiclePage(vid) {
 }
 
 // ================================================================
-// MILEAGE PROMPT â€” required before photo upload
+// MILEAGE PROMPT — required before photo upload
 // ================================================================
 
 let mileageConfirmed = false;
@@ -1701,7 +1699,7 @@ function confirmMileage() {
         });
         if (anyUrgent) {
           await urgentBatch.commit();
-          toast('âš ï¸ Service coming up within 500 miles!', 'warning');
+          toast('⚠️ Service coming up within 500 miles!', 'warning');
           loadDashboardFollowUps();
         }
       } catch (e) { /* ignore */ }
@@ -1733,7 +1731,7 @@ $('btn-mileage-edit').addEventListener('click', () => {
 });
 
 // ================================================================
-// PHOTO UPLOAD â€” background parallel uploads
+// PHOTO UPLOAD — background parallel uploads
 // ================================================================
 
 $('file-input').addEventListener('change', handlePhotoFiles);
@@ -1750,7 +1748,7 @@ function bgUploadShow(total) {
   if (toast) {
     toast.style.display = '';
     toast.classList.remove('bg-upload-minimized');
-    $('bg-upload-title').textContent = `â¬†ï¸ Uploading ${total} photo${total > 1 ? 's' : ''}â€¦`;
+    $('bg-upload-title').textContent = `⬆️ Uploading ${total} photo${total > 1 ? 's' : ''}…`;
     $('bg-upload-text').textContent = `0 / ${total}`;
     $('bg-upload-fill').style.width = '0%';
   }
@@ -1765,7 +1763,7 @@ function bgUploadTick(success) {
   if (textEl) textEl.textContent = `${bgUploadDone} / ${bgUploadTotal}`;
   if (bgUploadDone >= bgUploadTotal) {
     bgUploadActive = false;
-    $('bg-upload-title').textContent = `âœ… Upload complete`;
+    $('bg-upload-title').textContent = `✅ Upload complete`;
     setTimeout(() => {
       const t = $('bg-upload-toast');
       if (t) t.style.display = 'none';
@@ -1776,12 +1774,12 @@ function bgUploadTick(success) {
 async function handlePhotoFiles(e) {
   const files = Array.from(e.target.files);
   if (!files.length || !selectedVehicle) return;
-  // Capture vehicle reference immediately â€” user may navigate away before uploads finish
+  // Capture vehicle reference immediately — user may navigate away before uploads finish
   const capturedVehicle = selectedVehicle;
   const capturedDate = selectedDate;
 
   if (!getStorage()) {
-    toast('Photo uploads not available â€” Firebase Storage is not enabled yet. Contact your admin.', 'error');
+    toast('Photo uploads not available — Firebase Storage is not enabled yet. Contact your admin.', 'error');
     e.target.value = '';
     return;
   }
@@ -1801,7 +1799,7 @@ async function handlePhotoFiles(e) {
     item.appendChild(thumb);
     const statusIcon = document.createElement('div');
     statusIcon.className = 'status-icon status-uploading';
-    statusIcon.textContent = 'â³';
+    statusIcon.textContent = '⏳';
     item.appendChild(statusIcon);
     queue.prepend(item);
     thumbMap.set(file, { item, statusIcon });
@@ -1814,12 +1812,12 @@ async function handlePhotoFiles(e) {
       const compressed = await compressImage(file);
       await uploadPhoto(compressed, capturedVehicle);
       statusIcon.className = 'status-icon status-done';
-      statusIcon.textContent = 'âœ“';
+      statusIcon.textContent = '✓';
       bgUploadTick(true);
     } catch (err) {
       console.error('Upload error:', err);
       statusIcon.className = 'status-icon status-error';
-      statusIcon.textContent = 'âœ—';
+      statusIcon.textContent = '✗';
       bgUploadTick(false);
     }
   });
@@ -1832,7 +1830,7 @@ async function handlePhotoFiles(e) {
   });
 }
 
-// Core upload function â€” used by both file picker and camera
+// Core upload function — used by both file picker and camera
 async function uploadPhoto(blobOrFile, vehicleOverride) {
   const st = getStorage();
   if (!st) {
@@ -1973,7 +1971,7 @@ async function startCameraStream() {
       if (Object.keys(constraintUpdates).length) {
         await track.applyConstraints({ advanced: [constraintUpdates] });
       }
-    } catch (e) { /* zoom/torch not supported â€” ok */ }
+    } catch (e) { /* zoom/torch not supported — ok */ }
   }
   updateFlashButton();
 
@@ -2003,13 +2001,13 @@ async function startCameraStream() {
     await video.play();
   } catch (playErr) {
     console.warn('video.play() rejected, attempting again:', playErr);
-    // Some iOS versions reject the first play â€” short delay and retry
+    // Some iOS versions reject the first play — short delay and retry
     await new Promise(r => setTimeout(r, 300));
     await video.play();
   }
 }
 
-// Shutter button â€” captures frame and queues upload
+// Shutter button — captures frame and queues upload
 $('camera-shutter').addEventListener('click', () => {
   const video = $('camera-video');
   const canvas = $('camera-canvas');
@@ -2063,7 +2061,7 @@ function updateCameraUploadBar() {
   if (pending > 0) {
     $('camera-upload-text').textContent = `Uploading... ${cameraUploadedCount}/${cameraTotalQueued}`;
   } else {
-    $('camera-upload-text').textContent = `All ${cameraTotalQueued} uploaded âœ“`;
+    $('camera-upload-text').textContent = `All ${cameraTotalQueued} uploaded ✓`;
   }
   const pct = cameraTotalQueued > 0 ? (cameraUploadedCount / cameraTotalQueued) * 100 : 0;
   $('camera-upload-fill').style.width = pct + '%';
@@ -2098,7 +2096,7 @@ async function processCameraQueue() {
 function updateFlashButton() {
   const btn = $('camera-flash');
   if (!btn) return;
-  btn.textContent = cameraFlashOn ? 'âš¡ On' : 'âš¡ Off';
+  btn.textContent = cameraFlashOn ? '⚡ On' : '⚡ Off';
   btn.classList.toggle('camera-flash-active', cameraFlashOn);
 
   // Hide flash button if torch not available
@@ -2212,7 +2210,7 @@ $('btn-date-display').addEventListener('click', () => {
 });
 
 // ================================================================
-// MINI CALENDAR â€” shows month grid with dots on days that have photos
+// MINI CALENDAR — shows month grid with dots on days that have photos
 // ================================================================
 
 async function loadPhotoDates(vehicleId, refDate) {
@@ -2313,7 +2311,7 @@ async function loadPhotosForDate(vehicleId, dateStr) {
   $('vehicle-photo-count').textContent = `${snapshot.size} photos`;
 
   if (snapshot.empty) {
-    container.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ“·</div><p>No photos for this date</p></div>';
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos for this date</p></div>';
     return;
   }
 
@@ -2321,16 +2319,16 @@ async function loadPhotosForDate(vehicleId, dateStr) {
     const data = doc.data();
     const item = document.createElement('div');
     item.className = 'photo-grid-item' + (data.protected ? ' photo-kept' : '');
-    item.dataset.lightboxInfo = `${data.plate} â€” ${data.date}`;
-    const keepBadge = data.protected ? '<div class="keep-badge">ðŸ”’</div>' : '';
-    const adminDelete = currentUserRole === 'admin' ? `<button class="photo-delete-btn" data-doc-id="${doc.id}" data-storage-path="${escapeHtml(data.storagePath || '')}" title="Delete photo">âœ•</button>` : '';
+    item.dataset.lightboxInfo = `${data.plate} — ${data.date}`;
+    const keepBadge = data.protected ? '<div class="keep-badge">🔒</div>' : '';
+    const adminDelete = currentUserRole === 'admin' ? `<button class="photo-delete-btn" data-doc-id="${doc.id}" data-storage-path="${escapeHtml(data.storagePath || '')}" title="Delete photo">✕</button>` : '';
     item.innerHTML = `
       ${keepBadge}
       ${adminDelete}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
       <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
     `;
-    item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} â€” ${data.date}`));
+    item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
     const delBtn = item.querySelector('.photo-delete-btn');
     if (delBtn) {
       delBtn.addEventListener('click', async (e) => {
@@ -2413,7 +2411,7 @@ $('btn-download-all').addEventListener('click', async () => {
     }
 
     if (files.length === 0) {
-      toast('Download failed â€” opening photos in new tabs instead. Right-click or long-press to save each.', 'warning');
+      toast('Download failed — opening photos in new tabs instead. Right-click or long-press to save each.', 'warning');
       for (const photo of photos) { window.open(photo.url, '_blank'); }
       hideLoading();
       return;
@@ -2428,7 +2426,7 @@ $('btn-download-all').addEventListener('click', async () => {
 
       const shareFiles = files.map(f => new File([new Uint8Array(f.buf)], f.name, { type: 'image/jpeg' }));
 
-      // Try native share first â€” lets user "Save to Photos" all at once
+      // Try native share first — lets user "Save to Photos" all at once
       if (navigator.canShare && navigator.canShare({ files: shareFiles })) {
         try {
           await navigator.share({ files: shareFiles });
@@ -2436,7 +2434,7 @@ $('btn-download-all').addEventListener('click', async () => {
           return;
         } catch (err) {
           if (err.name === 'AbortError') return; // user cancelled, done
-          // Share failed â€” fall through to gallery
+          // Share failed — fall through to gallery
         }
       }
 
@@ -2454,11 +2452,11 @@ $('btn-download-all').addEventListener('click', async () => {
           <div style="display:flex;justify-content:space-between;align-items:center;">
             <span style="color:#fff;font-size:17px;font-weight:600;">${files.length} Photos</span>
             <div style="display:flex;gap:8px;">
-              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">ðŸ“¥ Save All to Photos</button>
+              <button id="save-gallery-share" style="background:#007AFF;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">📥 Save All to Photos</button>
               <button id="save-gallery-done" style="background:#333;color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:15px;font-weight:600;">Done</button>
             </div>
           </div>
-          <div style="color:#aaa;font-size:13px;margin-top:6px;">Tap "Save All to Photos" or hold any image â†’ Save</div>
+          <div style="color:#aaa;font-size:13px;margin-top:6px;">Tap "Save All to Photos" or hold any image → Save</div>
         </div>
         <div id="save-gallery-grid" style="display:grid;grid-template-columns:repeat(2,1fr);gap:4px;padding:4px;"></div>
       `;
@@ -2545,7 +2543,7 @@ function openLightbox(url, info) {
   lightboxPhotos = [];
   document.querySelectorAll('#recent-photos .photo-grid-item img, #admin-photos .photo-grid-item img').forEach(img => {
     const item = img.closest('.photo-grid-item');
-    // Get the info from the click handler â€” store it as data attribute
+    // Get the info from the click handler — store it as data attribute
     lightboxPhotos.push({
       url: img.src,
       info: item.dataset.lightboxInfo || ''
@@ -2616,7 +2614,7 @@ function reencodeAsJpeg(arrayBuf) {
   });
 }
 
-// Save a single photo â€” share sheet on mobile, direct download on desktop
+// Save a single photo — share sheet on mobile, direct download on desktop
 async function saveOnePhoto(url, name) {
   try {
     const resp = await fetch(url, { mode: 'cors' });
@@ -2646,7 +2644,7 @@ async function saveOnePhoto(url, name) {
     if (err.name === 'AbortError') return;
     console.error('Save photo error:', err);
     // Fallback: open in new tab so user can long-press / right-click to save
-    toast('Direct download failed â€” opening photo in new tab. Right-click or long-press to save.', 'warning');
+    toast('Direct download failed — opening photo in new tab. Right-click or long-press to save.', 'warning');
     window.open(url, '_blank');
   }
 }
@@ -2669,7 +2667,7 @@ document.addEventListener('keydown', (e) => {
   else if (e.key === 'Escape') { $('lightbox').style.display = 'none'; $('lightbox-img').src = ''; }
 });
 
-// Touch swipe â€” smooth iOS handling with visual slide
+// Touch swipe — smooth iOS handling with visual slide
 (function() {
   let startX = 0, startY = 0, moveX = 0, tracking = false;
   const lb = $('lightbox');
@@ -2927,15 +2925,12 @@ $('btn-save-location').addEventListener('click', async () => {
   if (((wasOnTrip && nowHome) || nowReturnFromRepair) && !selectedVehicle.photoExcluded) {
     updateData.needsCleaning = true;
     updateData.needsDamageCheck = true;
-    // Kapiolani vehicles need parking paid on return
-    if (homeLocation === '1585 Kapiolani') {
-      updateData.needsParking = true;
-    }
+    if (homeLocation === '1585 Kapiolani') updateData.needsParking = true;
     if (wasOnTrip && nowHome) {
       // Normal return: 2h grace before photo check fires
       updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.serverTimestamp();
     } else {
-      // Repair shop return: no grace â€” photos are definitely stale, flag immediately
+      // Repair shop return: no grace — photos are definitely stale, flag immediately
       updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.delete();
     }
   }
@@ -2961,6 +2956,7 @@ $('btn-save-location').addEventListener('click', async () => {
     if ((wasOnTrip && nowHome) || nowReturnFromRepair) {
       selectedVehicle.needsCleaning = true;
       selectedVehicle.needsDamageCheck = true;
+      if (homeLocation === '1585 Kapiolani') selectedVehicle.needsParking = true;
       if (nowReturnFromRepair) delete selectedVehicle.cleaningFlaggedAt;
     }
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
@@ -3010,15 +3006,15 @@ window.vehicleReturned = async function(vehicleId) {
   const ok = await confirm('Vehicle Returned', `Mark ${plate} as returned to ${v.homeLocation || 'home'}? This will prompt for cleaning and photos.`);
   if (!ok) return;
   try {
-    const parkUpdate = {
+    const updateData = {
       tripStatus: 'home',
       tripReturnDate: firebase.firestore.FieldValue.delete(),
       needsCleaning: true,
       needsDamageCheck: true,
       cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
-    if (v.homeLocation === '1585 Kapiolani') parkUpdate.needsParking = true;
-    await db.collection('vehicles').doc(vehicleId).update(parkUpdate);
+    if (v.homeLocation === '1585 Kapiolani') updateData.needsParking = true;
+    await db.collection('vehicles').doc(vehicleId).update(updateData);
     // Update local cache
     Object.assign(v, {
       tripStatus: 'home',
@@ -3028,7 +3024,7 @@ window.vehicleReturned = async function(vehicleId) {
     });
     if (v.homeLocation === '1585 Kapiolani') v.needsParking = true;
     delete v.tripReturnDate;
-    toast(`${plate} marked as returned â€” please complete cleaning & photos.`, 'success');
+    toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
     renderFleetDashboard();
     renderLocationsWidget();
   } catch (err) {
@@ -3037,7 +3033,7 @@ window.vehicleReturned = async function(vehicleId) {
   }
 };
 
-// Locations button â€” scroll to Locations widget
+// Locations button — scroll to Locations widget
 $('btn-locations').addEventListener('click', () => {
   const widget = $('locations-widget');
   if (widget) {
@@ -3125,13 +3121,13 @@ function loadAdminVehicles() {
   $('vehicle-count').textContent = vehiclesCache.length;
 
   if (!vehiclesCache.length) {
-    list.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸš—</div><p>No vehicles added yet</p></div>';
+    list.innerHTML = '<div class="empty-state"><div class="empty-icon">🚗</div><p>No vehicles added yet</p></div>';
     return;
   }
 
   list.innerHTML = vehiclesCache.map(v => {
-    const hasPhoto = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="v-list-thumb" alt="">` : '<div class="v-list-thumb-empty">ðŸ“·</div>';
-    const excludedBadge = v.photoExcluded ? '<span style="font-size:0.75rem;background:#fed7aa;color:#9a3412;padding:1px 6px;border-radius:4px;margin-left:6px;">ðŸš« Excluded</span>' : '';
+    const hasPhoto = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="v-list-thumb" alt="">` : '<div class="v-list-thumb-empty">📷</div>';
+    const excludedBadge = v.photoExcluded ? '<span style="font-size:0.75rem;background:#fed7aa;color:#9a3412;padding:1px 6px;border-radius:4px;margin-left:6px;">🚫 Excluded</span>' : '';
     return `
     <div class="data-list-item">
       <div class="v-list-thumb-wrap">${hasPhoto}</div>
@@ -3156,7 +3152,7 @@ function loadAdminVehicles() {
       excludedEl.innerHTML = excluded.map(v => `
         <div class="data-list-item">
           <div class="item-info">
-            <div class="item-title">${escapeHtml(v.plate)} <span style="font-size:0.8rem;color:#9a3412;">ðŸš« Excluded</span></div>
+            <div class="item-title">${escapeHtml(v.plate)} <span style="font-size:0.8rem;color:#9a3412;">🚫 Excluded</span></div>
             <div class="item-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.year ? ` (${v.year})` : ''}</div>
           </div>
           <div class="item-actions">
@@ -3377,7 +3373,7 @@ async function loadAdminPhotos() {
     $('btn-unkeep-selected').style.display = snapshot.size > 0 ? '' : 'none';
 
     if (snapshot.empty) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ“·</div><p>No photos found</p></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">📷</div><p>No photos found</p></div>';
       hideLoading();
       return;
     }
@@ -3389,8 +3385,8 @@ async function loadAdminPhotos() {
       item.dataset.id = doc.id;
       item.dataset.storagePath = data.storagePath || '';
       item.dataset.protected = data.protected ? '1' : '0';
-      item.dataset.lightboxInfo = `${data.plate || ''} â€” ${data.date}`;
-      const keepBadge = data.protected ? '<div class="keep-badge">ðŸ”’ Kept</div>' : '';
+      item.dataset.lightboxInfo = `${data.plate || ''} — ${data.date}`;
+      const keepBadge = data.protected ? '<div class="keep-badge">🔒 Kept</div>' : '';
       item.innerHTML = `
         ${keepBadge}
         <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
@@ -3672,7 +3668,7 @@ async function loadAdminUsers() {
     $('user-count').textContent = snapshot.size;
 
     if (snapshot.empty) {
-      list.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ‘¤</div><p>No users found</p></div>';
+      list.innerHTML = '<div class="empty-state"><div class="empty-icon">👤</div><p>No users found</p></div>';
       return;
     }
 
@@ -3688,15 +3684,15 @@ async function loadAdminUsers() {
       item.innerHTML = `
         <div class="item-info">
           <div class="item-title">${escapeHtml(data.displayName || 'Unknown')} ${isSelf ? '(You)' : ''}</div>
-          <div class="item-subtitle">${escapeHtml(data.email)} Â· <span class="badge ${roleBadgeClass}">${data.role}</span></div>
+          <div class="item-subtitle">${escapeHtml(data.email)} · <span class="badge ${roleBadgeClass}">${data.role}</span></div>
         </div>
         <div class="item-actions">
           ${!isSelf ? `
             <button class="btn btn-sm btn-outline" onclick="toggleUserRole('${doc.id}', '${data.role}')">
               Make ${nextRole.charAt(0).toUpperCase() + nextRole.slice(1)}
             </button>
-            <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">ðŸ• TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
-            <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">ðŸ‘ View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
+            <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
+            <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">👁 View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
         </div>
@@ -3777,20 +3773,20 @@ window.deleteUser = async function (uid, name) {
 
 // Manufacturer-standard recommended service intervals (miles)
 const MAINTENANCE_SCHEDULE = [
-  { service: 'Oil Change',          interval: 5000,   icon: 'ðŸ›¢ï¸' },
-  { service: 'Tire Rotation',       interval: 7500,   icon: 'ðŸ”„' },
-  { service: 'Air Filter',          interval: 15000,  icon: 'ðŸ’¨' },
-  { service: 'Cabin Filter',        interval: 15000,  icon: 'ðŸŒ¬ï¸' },
-  { service: 'Brake Inspection',    interval: 20000,  icon: 'ðŸ”' },
-  { service: 'Transmission Fluid',  interval: 30000,  icon: 'âš™ï¸' },
-  { service: 'Coolant Flush',       interval: 30000,  icon: 'â„ï¸' },
-  { service: 'Spark Plugs',         interval: 30000,  icon: 'âš¡' },
-  { service: 'Wiper Blades',        interval: 15000,  icon: 'ðŸŒ§ï¸' },
-  { service: 'Belts/Hoses',         interval: 60000,  icon: 'ðŸ”§' },
-  { service: 'Battery',             interval: 50000,  icon: 'ðŸ”‹' },
-  { service: 'Tires (New)',         interval: 40000,  icon: 'ðŸ›ž' },
-  { service: 'Alignment',           interval: 25000,  icon: 'ðŸ“' },
-  { service: 'Brake Pads/Rotors',   interval: 40000,  icon: 'ðŸ›‘' },
+  { service: 'Oil Change',          interval: 5000,   icon: '🛢️' },
+  { service: 'Tire Rotation',       interval: 7500,   icon: '🔄' },
+  { service: 'Air Filter',          interval: 15000,  icon: '💨' },
+  { service: 'Cabin Filter',        interval: 15000,  icon: '🌬️' },
+  { service: 'Brake Inspection',    interval: 20000,  icon: '🔍' },
+  { service: 'Transmission Fluid',  interval: 30000,  icon: '⚙️' },
+  { service: 'Coolant Flush',       interval: 30000,  icon: '❄️' },
+  { service: 'Spark Plugs',         interval: 30000,  icon: '⚡' },
+  { service: 'Wiper Blades',        interval: 15000,  icon: '🌧️' },
+  { service: 'Belts/Hoses',         interval: 60000,  icon: '🔧' },
+  { service: 'Battery',             interval: 50000,  icon: '🔋' },
+  { service: 'Tires (New)',         interval: 40000,  icon: '🛞' },
+  { service: 'Alignment',           interval: 25000,  icon: '📐' },
+  { service: 'Brake Pads/Rotors',   interval: 40000,  icon: '🛑' },
 ];
 
 // Get schedule for a vehicle, merging custom overrides with defaults
@@ -3916,7 +3912,7 @@ async function updateRecommendedServices(vehicleId) {
 
   if (timeDue.length === 0 && timeUpcoming.length === 0 && due.length === 0 && upcoming.length === 0 && miIntervalDue.length === 0 && miIntervalWarn.length === 0) {
     container.style.display = mileage ? 'block' : 'none';
-    if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">âœ… All services up to date!</p>';
+    if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
     return;
   }
 
@@ -3925,45 +3921,45 @@ async function updateRecommendedServices(vehicleId) {
 
   // Time-based items first
   if (timeDue.length > 0 || timeUpcoming.length > 0) {
-    html += '<div class="rec-section-title">â± Time-Based</div>';
+    html += '<div class="rec-section-title">⏱ Time-Based</div>';
     timeDue.sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
     timeDue.forEach(s => {
-      html += `<div class="rec-item rec-time rec-time-overdue">ðŸ—“ï¸ <strong>${escapeHtml(s.service)}</strong> â€” <span class="text-danger">Overdue</span> Â· Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
+      html += `<div class="rec-item rec-time rec-time-overdue">🗓️ <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue</span> · Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
     });
     timeUpcoming.sort((a, b) => a.daysUntil - b.daysUntil);
     timeUpcoming.forEach(s => {
-      html += `<div class="rec-item rec-time rec-time-upcoming">ðŸ—“ï¸ <strong>${escapeHtml(s.service)}</strong> â€” Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span></div>`;
+      html += `<div class="rec-item rec-time rec-time-upcoming">🗓️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span></div>`;
     });
   }
 
   // Custom mileage-interval items
   if (miIntervalDue.length > 0 || miIntervalWarn.length > 0) {
-    html += '<div class="rec-section-title">ðŸ›£ Custom Mileage Intervals</div>';
+    html += '<div class="rec-section-title">🛣 Custom Mileage Intervals</div>';
     miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
     miIntervalDue.forEach(s => {
       const over = Math.abs(s.milesLeft).toLocaleString();
-      html += `<div class="rec-item rec-overdue">ðŸ”§ <strong>${escapeHtml(s.service)}</strong> â€” <span class="text-danger">Overdue by ${over} mi</span> Â· Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+      html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> · Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
     });
     miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
     miIntervalWarn.forEach(s => {
-      html += `<div class="rec-item rec-upcoming">âš ï¸ <strong>${escapeHtml(s.service)}</strong> â€” Due in ${s.milesLeft.toLocaleString()} mi Â· at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+      html += `<div class="rec-item rec-upcoming">⚠️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.milesLeft.toLocaleString()} mi · at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
     });
   }
 
   // Standard mileage-based items
   if (due.length > 0 || upcoming.length > 0) {
-    if (timeDue.length > 0 || timeUpcoming.length > 0 || miIntervalDue.length > 0 || miIntervalWarn.length > 0) html += '<div class="rec-section-title">ðŸ“‹ Standard Schedule</div>';
+    if (timeDue.length > 0 || timeUpcoming.length > 0 || miIntervalDue.length > 0 || miIntervalWarn.length > 0) html += '<div class="rec-section-title">📋 Standard Schedule</div>';
     due.sort((a, b) => a.milesUntil - b.milesUntil);
     upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
     due.forEach(s => {
       const overMiles = Math.abs(s.milesUntil).toLocaleString();
-      html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> â€” <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+      html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
     });
     upcoming.forEach(s => {
       const untilMiles = s.milesUntil.toLocaleString();
       const warnClass = s.milesUntil <= 500 ? 'rec-overdue' : 'rec-upcoming';
-      const warnIcon = s.milesUntil <= 500 ? 'âš ï¸' : s.icon;
-      html += `<div class="rec-item ${warnClass}">${warnIcon} <strong>${escapeHtml(s.service)}</strong> â€” Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
+      const warnIcon = s.milesUntil <= 500 ? '⚠️' : s.icon;
+      html += `<div class="rec-item ${warnClass}">${warnIcon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
     });
   }
 
@@ -4006,7 +4002,7 @@ $('btn-save-mileage').addEventListener('click', async () => {
       });
       if (anyUrgent) {
         await urgentBatch.commit();
-        toast('âš ï¸ Service coming up within 500 miles!', 'warning');
+        toast('⚠️ Service coming up within 500 miles!', 'warning');
         loadDashboardFollowUps();
       }
     } catch (e) { /* ignore */ }
@@ -4062,7 +4058,7 @@ function addCustomScheduleRow(name = '', interval = '') {
       <input type="number" class="custom-service-interval" placeholder="mi interval" value="${escapeHtml(String(interval))}" min="100" max="999999" inputmode="numeric">
       <span class="schedule-unit">mi</span>
     </div>
-    <button type="button" class="btn btn-sm btn-danger btn-remove-custom-row" title="Remove">âœ•</button>
+    <button type="button" class="btn btn-sm btn-danger btn-remove-custom-row" title="Remove">✕</button>
   `;
   row.querySelector('.btn-remove-custom-row').addEventListener('click', () => row.remove());
   container.appendChild(row);
@@ -4156,8 +4152,8 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
   $('m-interval').value = '';
   $('m-mile-interval').value = '';
-  $('m-next-due-display').textContent = 'â€”';
-  $('m-next-due-mileage-display').textContent = 'â€”';
+  $('m-next-due-display').textContent = '—';
+  $('m-next-due-mileage-display').textContent = '—';
   $('m-custom-row').style.display = 'none';
   $('m-custom-type').value = '';
   $('m-type').value = '';
@@ -4176,7 +4172,7 @@ function updateNextDueDisplay() {
   const months = parseInt($('m-interval').value);
   const dateDisplay = $('m-next-due-display');
   if (!dateVal || !months) {
-    dateDisplay.textContent = 'â€”';
+    dateDisplay.textContent = '—';
   } else {
     const [y, mo, d] = dateVal.split('-').map(Number);
     const next = new Date(y, mo - 1 + months, d);
@@ -4187,7 +4183,7 @@ function updateNextDueDisplay() {
   const mileInt = parseInt($('m-mile-interval').value);
   const mileDisplay = $('m-next-due-mileage-display');
   if (!mileInt || !serviceMileage) {
-    mileDisplay.textContent = mileInt && !serviceMileage ? 'Enter mileage at service' : 'â€”';
+    mileDisplay.textContent = mileInt && !serviceMileage ? 'Enter mileage at service' : '—';
   } else {
     const nextMi = serviceMileage + mileInt;
     mileDisplay.textContent = nextMi.toLocaleString() + ' mi (warn at ' + (nextMi - 500).toLocaleString() + ' mi)';
@@ -4201,8 +4197,8 @@ $('m-mile-interval').addEventListener('input', updateNextDueDisplay);
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
-  $('m-next-due-display').textContent = 'â€”';
-  $('m-next-due-mileage-display').textContent = 'â€”';
+  $('m-next-due-display').textContent = '—';
+  $('m-next-due-mileage-display').textContent = '—';
   $('m-custom-row').style.display = 'none';
   // Clear invoice preview
   $('m-invoice-input').value = '';
@@ -4282,7 +4278,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     if (intervalMiles) record.intervalMiles = intervalMiles;
     if (nextDueMileage) record.nextDueMileage = nextDueMileage;
 
-    // Upload invoice if one was selected (compressed: 1600px wide, 0.78 quality â‰ˆ readable but small)
+    // Upload invoice if one was selected (compressed: 1600px wide, 0.78 quality ≈ readable but small)
     const invoiceFile = $('m-invoice-input').files[0];
     if (invoiceFile) {
       try {
@@ -4297,7 +4293,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         }
       } catch(invErr) {
         console.error('Invoice upload error:', invErr);
-        toast('Invoice upload failed â€” saving record without it.', 'warning');
+        toast('Invoice upload failed — saving record without it.', 'warning');
       }
     }
 
@@ -4319,7 +4315,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         const noteRef = db.collection('vehicleNotes').doc();
         batch.set(noteRef, {
           vehicleId: selectedVehicle.id,
-          text: `ðŸ”§ ${serviceType} due (every ${intervalLabel})`,
+          text: `🔧 ${serviceType} due (every ${intervalLabel})`,
           isFollowUp: true,
           done: false,
           urgent: false,
@@ -4339,7 +4335,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         const mileNoteRef = db.collection('vehicleNotes').doc();
         batch.set(mileNoteRef, {
           vehicleId: selectedVehicle.id,
-          text: `ðŸ›¢ï¸ ${serviceType} due at ${nextDueMileage.toLocaleString()} mi (every ${intervalMiles.toLocaleString()} mi)`,
+          text: `🛢️ ${serviceType} due at ${nextDueMileage.toLocaleString()} mi (every ${intervalMiles.toLocaleString()} mi)`,
           isFollowUp: true,
           done: false,
           urgent: false,
@@ -4374,8 +4370,8 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     toast('Maintenance record saved!', 'success');
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
-    $('m-next-due-display').textContent = 'â€”';
-    $('m-next-due-mileage-display').textContent = 'â€”';
+    $('m-next-due-display').textContent = '—';
+    $('m-next-due-mileage-display').textContent = '—';
     $('m-custom-row').style.display = 'none';
     $('m-invoice-input').value = '';
     $('m-invoice-filename').textContent = 'No file chosen';
@@ -4401,7 +4397,7 @@ async function loadMaintenanceHistory(vehicleId) {
       .get();
 
     if (snap.empty) {
-      container.innerHTML = '<div class="empty-state"><div class="empty-icon">ðŸ”§</div><p>No maintenance records yet</p></div>';
+      container.innerHTML = '<div class="empty-state"><div class="empty-icon">🔧</div><p>No maintenance records yet</p></div>';
       return;
     }
 
@@ -4411,18 +4407,18 @@ async function loadMaintenanceHistory(vehicleId) {
       const costStr = d.cost != null ? `$${d.cost.toFixed(2)}` : '';
       const mileStr = d.mileage ? `${d.mileage.toLocaleString()} mi` : '';
       const locStr = d.location ? d.location : '';
-      const meta = [mileStr, costStr, locStr].filter(Boolean).join(' Â· ');
+      const meta = [mileStr, costStr, locStr].filter(Boolean).join(' · ');
       const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
       let intervalBadge = '';
       if (d.intervalMonths) {
         const lbl = d.intervalMonths === 1 ? '1 Mo' : d.intervalMonths === 12 ? '1 Yr' : d.intervalMonths === 24 ? '2 Yr' : `${d.intervalMonths} Mo`;
-        intervalBadge += `<span class="interval-badge">ðŸ” Every ${lbl}</span>`;
+        intervalBadge += `<span class="interval-badge">🔁 Every ${lbl}</span>`;
       }
       if (d.intervalMiles) {
-        intervalBadge += `<span class="interval-badge" style="background:#d1fae5;color:#065f46;">ðŸ›£ Every ${d.intervalMiles.toLocaleString()} mi</span>`;
+        intervalBadge += `<span class="interval-badge" style="background:#d1fae5;color:#065f46;">🛣 Every ${d.intervalMiles.toLocaleString()} mi</span>`;
       }
-      const nextDueStr = d.nextDueDate ? ` Â· Next: ${d.nextDueDate}` : '';
-      const nextDueMiStr = d.nextDueMileage ? ` Â· Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
+      const nextDueStr = d.nextDueDate ? ` · Next: ${d.nextDueDate}` : '';
+      const nextDueMiStr = d.nextDueMileage ? ` · Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
       const invoiceHTML = d.invoiceUrl
         ? `<div class="m-invoice-thumb-row"><a href="${escapeHtml(d.invoiceUrl)}" target="_blank" title="View invoice"><img src="${escapeHtml(d.invoiceUrl)}" class="m-invoice-thumb" alt="Invoice"></a></div>`
         : '';
@@ -4430,7 +4426,7 @@ async function loadMaintenanceHistory(vehicleId) {
         <div class="data-list-item">
           <div class="item-info">
             <div class="item-title">${escapeHtml(d.serviceType)}${intervalBadge}</div>
-            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' Â· ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' â€” ' + escapeHtml(d.notes) : ''}</div>
+            <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
             ${invoiceHTML}
           </div>
       ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-outline" onclick="openEditMaintenance('${doc.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
@@ -4590,7 +4586,7 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
         updateData.invoiceUrl = await ref.getDownloadURL();
       } catch(invErr) {
         console.error('Invoice upload error:', invErr);
-        toast('Invoice upload failed â€” saved without it.', 'warning');
+        toast('Invoice upload failed — saved without it.', 'warning');
       }
     } else if (existingRemoved) {
       updateData.invoiceUrl = firebase.firestore.FieldValue.delete();
@@ -4681,14 +4677,14 @@ async function loadVehicleNotes(vehicleId) {
       if (d.isFollowUp) {
         if (d.done) {
           const completer = d.completedByName ? ` by ${escapeHtml(d.completedByName)}` : '';
-          const completedDate = d.completedAt ? ' Â· ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
-          followUpBadge = `<span class="note-badge note-badge-done">âœ… Done${completer}${completedDate}</span>`;
+          const completedDate = d.completedAt ? ' · ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+          followUpBadge = `<span class="note-badge note-badge-done">✅ Done${completer}${completedDate}</span>`;
         } else {
-          const dueLabel = d.dueDate ? ` Â· Due ${d.dueDate}` : '';
-          followUpBadge = `<span class="note-badge note-badge-followup">âš‘ Follow Up${dueLabel}</span>`;
+          const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
+          followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
         }
       }
-      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">ðŸš¨ Urgent</span>' : '';
+      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
       const canDelete = (currentUserRole === 'admin');
@@ -4698,12 +4694,12 @@ async function loadVehicleNotes(vehicleId) {
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
             ${d.invoiceUrls && d.invoiceUrls.length > 0 ? `<div class="note-invoice-row">${d.invoiceUrls.map(url => `<img src="${escapeHtml(url)}" class="note-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View invoice/photo">`).join('')}</div>` : ''}
-            <div class="note-meta">ðŸ‘¤ ${escapeHtml(d.createdByName || 'Unknown')} Â· ${dateStr}</div>
+            <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
           </div>
           <div class="note-actions">
-            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">âœ“ Done</button>` : ''}
-            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markNoteUndone('${doc.id}')">â†© Undo</button>` : ''}
-            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'vehicleNotes')">âœï¸ Edit</button>` : ''}
+            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">✓ Done</button>` : ''}
+            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markNoteUndone('${doc.id}')">↩ Undo</button>` : ''}
+            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'vehicleNotes')">✏️ Edit</button>` : ''}
             ${canDelete ? `<button class="btn btn-sm btn-danger" onclick="deleteNote('${doc.id}')">Delete</button>` : ''}
           </div>
         </div>`;
@@ -4749,7 +4745,7 @@ window.deleteNote = async function(docId) {
 // ================================================================
 
 function complianceMonthStatus(yyyyMM) {
-  if (!yyyyMM) return { label: 'â€”', cls: '', nextDue: '', daysLeft: null };
+  if (!yyyyMM) return { label: '—', cls: '', nextDue: '', daysLeft: null };
   const [y, m] = yyyyMM.split('-').map(Number);
   // Last day of that month
   const expDate = new Date(Date.UTC(y, m, 0, 23, 59, 59));
@@ -4759,8 +4755,8 @@ function complianceMonthStatus(yyyyMM) {
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const nextDue = `${MONTHS[m - 1]} ${y + 1}`;
   if (daysLeft < 0) return { label: `Expired ${Math.abs(daysLeft)}d ago`, cls: 'compliance-urgent', nextDue, daysLeft };
-  if (daysLeft <= 15) return { label: `Due in ${daysLeft}d ðŸš¨`, cls: 'compliance-urgent', nextDue, daysLeft };
-  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d âš ï¸`, cls: 'compliance-warn', nextDue, daysLeft };
+  if (daysLeft <= 15) return { label: `Due in ${daysLeft}d 🚨`, cls: 'compliance-urgent', nextDue, daysLeft };
+  if (daysLeft <= 30) return { label: `Due in ${daysLeft}d ⚠️`, cls: 'compliance-warn', nextDue, daysLeft };
   return { label: `Good thru ${yyyyMM}`, cls: 'compliance-ok', nextDue, daysLeft };
 }
 
@@ -4770,7 +4766,7 @@ function loadComplianceData(v) {
   const canEditCompliance = (currentUserRole === 'admin');
   // Show/hide Save button and lock inputs for non-admins
   const saveBtn = $('btn-save-compliance');
-  if (saveBtn) saveBtn.style.display = 'none'; // always hidden â€” auto-save used instead
+  if (saveBtn) saveBtn.style.display = 'none'; // always hidden — auto-save used instead
   const complianceInputs = ['compliance-safety','compliance-registration','compliance-insurance','compliance-vin'];
   complianceInputs.forEach(id => {
     const el = $(id);
@@ -4799,7 +4795,7 @@ function loadComplianceData(v) {
       statusEl.textContent = label;
       statusEl.className = 'compliance-status ' + cls;
       if (cls === 'compliance-warn' || cls === 'compliance-urgent') {
-        warnings.push(label + ' â€” ' + id.replace('compliance-', ''));
+        warnings.push(label + ' — ' + id.replace('compliance-', ''));
       }
       if (cls === 'compliance-urgent' && (id === 'compliance-safety' || id === 'compliance-registration')) {
         urgentCompliance.push({ complianceType: id.replace('compliance-', ''), label, daysLeft });
@@ -4825,7 +4821,7 @@ function loadComplianceData(v) {
   if (docLink) {
     if (v.complianceInsuranceDoc) {
       const name = v.complianceInsuranceDocName || 'Policy Document';
-      docLink.innerHTML = `<a href="${escapeHtml(v.complianceInsuranceDoc)}" target="_blank" class="compliance-doc-anchor">ðŸ“Ž ${escapeHtml(name)}</a>`;
+      docLink.innerHTML = `<a href="${escapeHtml(v.complianceInsuranceDoc)}" target="_blank" class="compliance-doc-anchor">📎 ${escapeHtml(name)}</a>`;
     } else {
       docLink.innerHTML = '<span style="font-size:0.73rem;color:#9ca3af;">No document uploaded</span>';
     }
@@ -4838,11 +4834,11 @@ function loadComplianceData(v) {
       banner.className = 'compliance-reminder-banner';
       section.querySelector('.section-header').insertAdjacentElement('afterend', banner);
     }
-    banner.textContent = 'âš ï¸ Action needed: ' + warnings.join(' Â· ');
+    banner.textContent = '⚠️ Action needed: ' + warnings.join(' · ');
   } else if (banner) {
     banner.remove();
   }
-  // Auto-create urgent follow-up notes for compliance items at â‰¤15 days / expired
+  // Auto-create urgent follow-up notes for compliance items at ≤15 days / expired
   if (urgentCompliance.length > 0 && v.id) {
     urgentCompliance.forEach(({ complianceType, label, daysLeft }) => {
       ensureComplianceFollowUp(v.id, v.plate, complianceType, label, daysLeft);
@@ -4850,7 +4846,7 @@ function loadComplianceData(v) {
   }
 }
 
-// Auto-create an urgent follow-up note when a compliance item is â‰¤15 days or expired.
+// Auto-create an urgent follow-up note when a compliance item is ≤15 days or expired.
 // Checks for an existing open note first to avoid duplicates.
 async function ensureComplianceFollowUp(vehicleId, plate, complianceType, statusLabel, daysLeft) {
   try {
@@ -4866,7 +4862,7 @@ async function ensureComplianceFollowUp(vehicleId, plate, complianceType, status
     const typeName = complianceType === 'safety' ? 'Safety Inspection' : 'Registration';
     await db.collection('vehicleNotes').add({
       vehicleId,
-      text: `${typeName} â€” ${statusLabel} for ${plate || vehicleId}.`,
+      text: `${typeName} — ${statusLabel} for ${plate || vehicleId}.`,
       isFollowUp: true,
       done: false,
       urgent: isOverdue,
@@ -4884,7 +4880,7 @@ async function ensureComplianceFollowUp(vehicleId, plate, complianceType, status
 }
 
 $('btn-save-compliance').addEventListener('click', async () => {
-  // Legacy handler â€” kept so the DOM doesn't throw; actual saving is auto via change listeners
+  // Legacy handler — kept so the DOM doesn't throw; actual saving is auto via change listeners
 });
 
 // Auto-save compliance data whenever an admin changes a field
@@ -4974,7 +4970,7 @@ $('compliance-insurance-upload').addEventListener('change', async function(e) {
   const fileName = `insurance_${Date.now()}.${safeExt}`;
   const storagePath = `vehicles/${plate}/documents/${fileName}`;
   try {
-    showLoading('Uploading documentâ€¦');
+    showLoading('Uploading document…');
     const ref = st.ref(storagePath);
     await ref.put(file, { contentType: file.type });
     const url = await ref.getDownloadURL();
@@ -4984,7 +4980,7 @@ $('compliance-insurance-upload').addEventListener('change', async function(e) {
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, docData);
     loadComplianceData(selectedVehicle);
-    toast('Insurance document uploaded! âœ…', 'success');
+    toast('Insurance document uploaded! ✅', 'success');
   } catch (err) {
     console.error('Insurance doc upload error:', err);
     toast('Failed to upload document.', 'error');
@@ -5009,7 +5005,7 @@ let timeclockData = null;
 let weeklyTimeclockData = {};
 let currentWeekOffset = 0;
 const OWNER_EMAIL = 'mattaiscale@gmail.com';
-let currentTaskUserFilter = 'all'; // 'all' | uid â€” admin-only filter
+let currentTaskUserFilter = 'all'; // 'all' | uid — admin-only filter
 
 window.switchTaskTab = function(tab) {
   currentTaskTab = tab;
@@ -5040,7 +5036,7 @@ window.toggleCompletedBucket = function() {
   if (!list) return;
   const open = list.style.display !== 'none';
   list.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.textContent = open ? 'â–¶' : 'â–¼';
+  if (arrow) arrow.textContent = open ? '▶' : '▼';
 };
 
 // Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
@@ -5270,45 +5266,45 @@ function renderTaskAgenda(allItems) {
       metaLabel = '\ud83d\udcdd General';
     }
 
-    const urgentTag = item.urgent ? ' ðŸš¨' : (item.taskStatus === 'monitoring' ? ' ðŸŸ¢' : '');
+    const urgentTag = item.urgent ? ' 🚨' : (item.taskStatus === 'monitoring' ? ' 🟢' : '');
     const priorityBadge = (item.priority && item.priority !== 'normal')
       ? `<span class="task-priority-badge prio-${item.priority}">${
-          item.priority === 'critical' ? 'ðŸ”´ Critical'
-          : item.priority === 'high' ? 'ðŸŸ  High'
-          : 'ðŸŸ¢ Low'}</span>`
+          item.priority === 'critical' ? '🔴 Critical'
+          : item.priority === 'high' ? '🟠 High'
+          : '🟢 Low'}</span>`
       : '';
     const photoThumb = item.photoUrl
       ? `<a href="${item.photoUrl}" target="_blank"><img src="${item.photoUrl}" class="task-item-thumb" alt="photo"></a>`
       : '';
-    const creatorLabel = item.createdByName ? ' Â· ðŸ‘¤ ' + escapeHtml(item.createdByName) : '';
-    const dueLabelStr = item.dueDate ? ` Â· ðŸ“… ${item.dueDate}` : '';
-    const assigneeLabel = item.assignedToName ? ` Â· <span class="task-assignee-badge">ðŸŽ¯ ${escapeHtml(item.assignedToName)}</span>` : (item.assignedTo ? '' : ' Â· <span class="task-assignee-badge task-assignee-team">ðŸ‘¥ Team</span>');
+    const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
+    const dueLabelStr = item.dueDate ? ` · 📅 ${item.dueDate}` : '';
+    const assigneeLabel = item.assignedToName ? ` · <span class="task-assignee-badge">🎯 ${escapeHtml(item.assignedToName)}</span>` : (item.assignedTo ? '' : ' · <span class="task-assignee-badge task-assignee-team">👥 Team</span>');
 
     // Status move buttons
     let statusBtns = '';
     const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
     if (canManage) {
       if (taskStatus !== 'urgent') {
-        statusBtns += `<button class="task-status-move-btn urgent-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','urgent')" title="Move to Urgent">ðŸš¨</button>`;
+        statusBtns += `<button class="task-status-move-btn urgent-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','urgent')" title="Move to Urgent">🚨</button>`;
       }
       if (taskStatus !== 'scheduled') {
-        statusBtns += `<button class="task-status-move-btn scheduled-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','scheduled')" title="Move to Scheduled">ðŸ”µ</button>`;
+        statusBtns += `<button class="task-status-move-btn scheduled-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','scheduled')" title="Move to Scheduled">🔵</button>`;
       }
       if (taskStatus !== 'monitoring') {
-        statusBtns += `<button class="task-status-move-btn monitoring-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','monitoring')" title="Move to Monitoring">ðŸŸ¢</button>`;
+        statusBtns += `<button class="task-status-move-btn monitoring-btn" onclick="event.stopPropagation(); moveTaskStatus('${item.id}','${item.collection}','monitoring')" title="Move to Monitoring">🟢</button>`;
       }
     }
 
-    const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">â‹¯</button>`;
-    const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">âœ“ Done</button>`;
+    const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
+    const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
     const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
-    const deleteBtn = canDelete ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">ðŸ—‘</button>` : '';
+    const deleteBtn = canDelete ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>` : '';
     const logCount = item.taskLog && item.taskLog.length > 0
-      ? ` Â· <span class="task-log-badge" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="View log">ðŸ“‹ ${item.taskLog.length} note${item.taskLog.length > 1 ? 's' : ''}</span>`
+      ? ` · <span class="task-log-badge" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="View log">📋 ${item.taskLog.length} note${item.taskLog.length > 1 ? 's' : ''}</span>`
       : '';
     return `
       <div class="followup-item-wrap" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}" data-vid-key="${item.vehicleId || ''}">
-        <div class="swipe-action-bg"><span>ðŸ“…</span>Reschedule</div>
+        <div class="swipe-action-bg"><span>📅</span>Reschedule</div>
         <div class="followup-item${extraClass}"${vidAttr}>
           <div class="followup-info">
             <div class="followup-text">${priorityBadge}${escapeHtml(item.text)}${urgentTag}</div>
@@ -5366,7 +5362,7 @@ function renderTaskAgenda(allItems) {
     if (compGroupEl) {
       compGroupEl.style.display = '';
       if (items.length === 0) {
-        compGroupEl.innerHTML = '<div class="agenda-empty"><p class="hint">No compliance tasks. âœ…</p></div>';
+        compGroupEl.innerHTML = '<div class="agenda-empty"><p class="hint">No compliance tasks. ✅</p></div>';
       } else {
         const todayMonth = today.substring(0, 7);
         const groupMap = new Map();
@@ -5391,13 +5387,13 @@ function renderTaskAgenda(allItems) {
             ? new Date(group.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
             : 'No Due Date';
           const typeTags = group.items.map(i => {
-            if (i.complianceType === 'safety') return '<span class="ctag ctag-safety">ðŸ”§ Safety</span>';
-            if (i.complianceType === 'registration') return '<span class="ctag ctag-reg">ðŸ“ Registration</span>';
-            return '<span class="ctag">ðŸ“„ Insurance</span>';
+            if (i.complianceType === 'safety') return '<span class="ctag ctag-safety">🔧 Safety</span>';
+            if (i.complianceType === 'registration') return '<span class="ctag ctag-reg">📝 Registration</span>';
+            return '<span class="ctag">📄 Insurance</span>';
           }).join('');
           html += `<div class="compliance-group-card${isOver ? ' compliance-group-overdue' : ''}">
             <div class="compliance-group-header">
-              <span class="compliance-group-plate">ðŸš— ${escapeHtml(plate)}</span>
+              <span class="compliance-group-plate">🚗 ${escapeHtml(plate)}</span>
               <span class="compliance-group-month">${monthStr}</span>
               ${isOver ? '<span class="compliance-group-badge overdue-badge">OVERDUE</span>' : ''}
               <span class="compliance-group-types">${typeTags}</span>
@@ -5427,7 +5423,7 @@ function renderTaskAgenda(allItems) {
   renderGroup(upcomingEl, '\ud83d\udcc5 Upcoming', 'agenda-upcoming', upcoming, true);
   renderGroup(noDateEl, '\ud83d\udccc No Date', 'agenda-nodate', noDate, false);
 
-  // Click task row â†’ jump to calendar day (if has dueDate) or go to vehicle
+  // Click task row → jump to calendar day (if has dueDate) or go to vehicle
   document.querySelectorAll('#task-panel-overlay .followup-item').forEach(item => {
     item.addEventListener('click', (e) => {
       if (e.target.closest('button')) return;
@@ -5457,9 +5453,9 @@ function renderCompletedBucket(completedItems) {
   completedItems.forEach(item => {
     const isVehicle = item.type === 'vehicle';
     const v = isVehicle ? vehiclesCache.find(x => x.id === item.vehicleId) : null;
-    const metaLabel = isVehicle ? 'ðŸš— ' + escapeHtml(v ? v.plate : 'Unknown') : 'ðŸ“ General';
-    const completedBy = item.completedByName ? ' Â· âœ“ ' + escapeHtml(item.completedByName) : '';
-    const completedAt = item.completedAt ? ' Â· ' + new Date(item.completedAt.toDate()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE }) : '';
+    const metaLabel = isVehicle ? '🚗 ' + escapeHtml(v ? v.plate : 'Unknown') : '📝 General';
+    const completedBy = item.completedByName ? ' · ✓ ' + escapeHtml(item.completedByName) : '';
+    const completedAt = item.completedAt ? ' · ' + new Date(item.completedAt.toDate()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE }) : '';
     const reopenFn = isVehicle ? `agendaMarkUndone('${item.id}','vehicleNotes')` : `agendaMarkUndone('${item.id}','generalNotes')`;
     html += `
       <div class="completed-task-item">
@@ -5467,7 +5463,7 @@ function renderCompletedBucket(completedItems) {
           <div class="completed-task-text">${escapeHtml(item.text)}</div>
           <div class="completed-task-meta">${metaLabel}${completedBy}${completedAt}</div>
         </div>
-        ${canManage ? `<button class="btn btn-sm btn-undo" onclick="${reopenFn}" title="Reopen">â†© Reopen</button>` : ''}
+        ${canManage ? `<button class="btn btn-sm btn-undo" onclick="${reopenFn}" title="Reopen">↩ Reopen</button>` : ''}
       </div>`;
   });
   listEl.innerHTML = html;
@@ -5489,7 +5485,7 @@ window.moveTaskStatus = async function(docId, col, newStatus) {
       updates.isFollowUp = true;
     }
     await db.collection(col).doc(docId).update(updates);
-    const label = newStatus === 'urgent' ? 'ðŸš¨ Urgent' : newStatus === 'monitoring' ? 'ðŸŸ¢ Monitoring' : 'ðŸ”µ Scheduled';
+    const label = newStatus === 'urgent' ? '🚨 Urgent' : newStatus === 'monitoring' ? '🟢 Monitoring' : '🔵 Scheduled';
     toast(`Moved to ${label}`, 'success');
     loadDashboardFollowUps();
     if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
@@ -5521,7 +5517,7 @@ async function agendaMarkDoneVehicle(docId) {
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Task completed! âœ“', 'success');
+    toast('Task completed! ✓', 'success');
     loadDashboardFollowUps();
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
@@ -5542,7 +5538,7 @@ async function agendaMarkDoneGeneral(docId) {
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Task completed! âœ“', 'success');
+    toast('Task completed! ✓', 'success');
     loadDashboardFollowUps();
     loadGeneralNotes();
   } catch (err) {
@@ -5625,19 +5621,19 @@ window.openNoteEditModal = async function(docId, collection) {
   overlay.className = 'note-edit-overlay';
   overlay.innerHTML = `
     <div class="note-edit-modal">
-      <h4>âœï¸ Edit Note</h4>
+      <h4>✏️ Edit Note</h4>
       <div class="form-group">
         <label class="note-followup-label">
-          <input type="checkbox" id="ne-followup" ${d.isFollowUp ? 'checked' : ''}> âš‘ Follow Up Task
+          <input type="checkbox" id="ne-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
         </label>
       </div>
       <div id="ne-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
         <div class="form-group">
           <label class="note-edit-section-label">Status</label>
           <div class="ne-status-btns">
-            <button type="button" class="ne-status-btn ${(d.taskStatus === 'urgent' || d.urgent) ? 'ne-status-active-urgent' : ''}" data-status="urgent">ðŸš¨ Urgent</button>
-            <button type="button" class="ne-status-btn ${(d.taskStatus === 'scheduled' && !d.urgent) ? 'ne-status-active-scheduled' : ''}" data-status="scheduled">ðŸ”µ Scheduled</button>
-            <button type="button" class="ne-status-btn ${d.taskStatus === 'monitoring' ? 'ne-status-active-monitoring' : ''}" data-status="monitoring">ðŸŸ¢ Monitoring</button>
+            <button type="button" class="ne-status-btn ${(d.taskStatus === 'urgent' || d.urgent) ? 'ne-status-active-urgent' : ''}" data-status="urgent">🚨 Urgent</button>
+            <button type="button" class="ne-status-btn ${(d.taskStatus === 'scheduled' && !d.urgent) ? 'ne-status-active-scheduled' : ''}" data-status="scheduled">🔵 Scheduled</button>
+            <button type="button" class="ne-status-btn ${d.taskStatus === 'monitoring' ? 'ne-status-active-monitoring' : ''}" data-status="monitoring">🟢 Monitoring</button>
           </div>
         </div>
         <div class="form-group">
@@ -5650,23 +5646,23 @@ window.openNoteEditModal = async function(docId, collection) {
         </div>
       </div>
       <div class="task-log-section">
-        <div class="note-edit-section-label" style="margin-bottom:6px;">ðŸ“‹ Activity Log</div>
+        <div class="note-edit-section-label" style="margin-bottom:6px;">📋 Activity Log</div>
         <div id="ne-log-entries" class="task-log-entries">${renderTaskLogEntries(d.taskLog || [])}</div>
         <div class="task-log-input-row">
-          <textarea id="ne-log-input" class="task-log-textarea" placeholder="Add a note or updateâ€¦" rows="2"></textarea>
+          <textarea id="ne-log-input" class="task-log-textarea" placeholder="Add a note or update…" rows="2"></textarea>
           <button class="btn btn-sm btn-outline" id="btn-ne-log-add">Add</button>
         </div>
       </div>
       <div class="ne-invoice-section">
-        <div class="note-edit-section-label" style="margin-bottom:6px;">ðŸ“Ž Invoice / Photo Attachments</div>
+        <div class="note-edit-section-label" style="margin-bottom:6px;">📎 Invoice / Photo Attachments</div>
         <div id="ne-invoice-existing" class="ne-invoice-thumbs">${(d.invoiceUrls || []).map((url, idx) => `
           <div class="ne-invoice-thumb-wrap" data-url="${escapeHtml(url)}">
             <img src="${escapeHtml(url)}" class="ne-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View full size">
-            <button class="ne-invoice-remove" data-idx="${idx}" title="Remove">âœ•</button>
+            <button class="ne-invoice-remove" data-idx="${idx}" title="Remove">✕</button>
           </div>`).join('')}</div>
         <div id="ne-invoice-new-thumbs" class="ne-invoice-thumbs" style="margin-top:4px;"></div>
         <label class="ne-invoice-upload-label">
-          ðŸ“Ž Attach Photo / Invoice
+          📎 Attach Photo / Invoice
           <input type="file" id="ne-invoice-input" accept="image/*" multiple style="display:none;">
         </label>
         <div id="ne-invoice-hint" class="ne-invoice-hint">${(d.invoiceUrls && d.invoiceUrls.length) ? d.invoiceUrls.length + ' attachment(s) saved' : 'No attachments yet'}</div>
@@ -5727,7 +5723,7 @@ window.openNoteEditModal = async function(docId, collection) {
       img.title = f.name;
       const removeBtn = document.createElement('button');
       removeBtn.className = 'ne-invoice-remove';
-      removeBtn.textContent = 'âœ•';
+      removeBtn.textContent = '✕';
       removeBtn.addEventListener('click', () => {
         const idx = parseInt(wrap.dataset.newIdx, 10);
         newInvoiceFiles[idx] = null;
@@ -5779,7 +5775,7 @@ window.openNoteEditModal = async function(docId, collection) {
   overlay.querySelector('#btn-ne-save').onclick = async () => {
     const saveBtn = overlay.querySelector('#btn-ne-save');
     saveBtn.disabled = true;
-    saveBtn.textContent = 'Savingâ€¦';
+    saveBtn.textContent = 'Saving…';
     const isFollowUp = followupEl.checked;
     const urgent = isFollowUp && selectedStatus === 'urgent';
     const taskStatus = isFollowUp ? selectedStatus : null;
@@ -5847,7 +5843,7 @@ function renderUrgentBanner(items) {
   if (!banner || !list) return;
 
   const today = todayDateString();
-  // Compliance items belong to the Fleet Compliance widget only â€” never show here
+  // Compliance items belong to the Fleet Compliance widget only — never show here
   const urgentItems = items.filter(i => i.urgent && i.sourceType !== 'compliance');
 
   if (urgentItems.length === 0) {
@@ -5894,16 +5890,16 @@ function renderUrgentBanner(items) {
     const isOverdue = item.dueDate && item.dueDate < today;
     let reassignBtn = '';
     if (currentUserRole === 'admin' && isOverdue) {
-      reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">ðŸ“… Reassign</button>`;
+      reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅 Reassign</button>`;
     }
 
     const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
     const editBtn = canManage
-      ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit">âœï¸ Edit</button>`
+      ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit">✏️ Edit</button>`
       : '';
-    const doneBtn = `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">âœ“ Done</button>`;
+    const doneBtn = `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
     const deleteBtn = canManage
-      ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">ðŸ—‘</button>`
+      ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>`
       : '';
 
     html += `
@@ -6039,20 +6035,20 @@ window.showCalendarDetail = function(dateStr) {
     const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
     const isOverdue = item.dueDate < today;
     const v = isVehicle ? vehiclesCache.find(x => x.id === item.vehicleId) : null;
-    const metaLabel = isVehicle ? 'ðŸš— ' + escapeHtml(v ? v.plate : 'Unknown') : 'ðŸ“ General';
-    const creatorLabel = item.createdByName ? ' Â· ðŸ‘¤ ' + escapeHtml(item.createdByName) : '';
-    const urgentTag = item.urgent ? '<span class="cal-urgent-tag">ðŸš¨</span> ' : '';
+    const metaLabel = isVehicle ? '🚗 ' + escapeHtml(v ? v.plate : 'Unknown') : '📝 General';
+    const creatorLabel = item.createdByName ? ' · 👤 ' + escapeHtml(item.createdByName) : '';
+    const urgentTag = item.urgent ? '<span class="cal-urgent-tag">🚨</span> ' : '';
     const timeLabel = item.dueTime ? `<span class="cal-item-time">${item.dueTime}</span> ` : '';
     let actionBtns = '';
     if (isAdmin && isOverdue) {
-      actionBtns += `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">ðŸ“…</button>`;
+      actionBtns += `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅</button>`;
     }
     if (canAdd) {
-      actionBtns += `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openNoteEditModal('${item.id}', '${item.collection}')" title="Edit">âœï¸</button>`;
+      actionBtns += `<button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); openNoteEditModal('${item.id}', '${item.collection}')" title="Edit">✏️</button>`;
     }
     if (isAdmin) {
       const delFn = isVehicle ? 'deleteNote' : 'deleteGeneralNote';
-      actionBtns += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); ${delFn}('${item.id}')" title="Delete">âœ•</button>`;
+      actionBtns += `<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); ${delFn}('${item.id}')" title="Delete">✕</button>`;
     }
     return `
       <div class="cal-detail-item${item.urgent ? ' cal-detail-urgent' : ''}${isOverdue ? ' cal-detail-overdue' : ''}">
@@ -6090,12 +6086,12 @@ window.showCalendarDetail = function(dateStr) {
   if (canAdd) {
     html += `
       <div class="cal-add-task-toggle" id="cal-add-toggle-wrap">
-        <button class="btn btn-sm btn-outline cal-add-toggle-btn" onclick="document.getElementById('cal-add-toggle-wrap').querySelector('.cal-add-toggle-btn').style.display='none'; document.getElementById('cal-add-form-inner').style.display='';">âž• Add Task</button>
+        <button class="btn btn-sm btn-outline cal-add-toggle-btn" onclick="document.getElementById('cal-add-toggle-wrap').querySelector('.cal-add-toggle-btn').style.display='none'; document.getElementById('cal-add-form-inner').style.display='';">➕ Add Task</button>
         <div id="cal-add-form-inner" style="display:none;" class="cal-add-task-form">
           <textarea id="cal-add-task-text" class="note-textarea" placeholder="Task description..." maxlength="500" rows="2"></textarea>
           <div class="cal-add-task-controls">
             <input type="time" id="cal-add-task-time" class="cal-time-input" title="Set time (optional)">
-            <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> ðŸš¨ Urgent</label>
+            <label class="note-followup-label"><input type="checkbox" id="cal-add-task-urgent"> 🚨 Urgent</label>
             <button class="btn btn-sm btn-primary" onclick="calendarAddTask('${dateStr}')">Save</button>
           </div>
         </div>
@@ -6147,7 +6143,7 @@ window.openReassignTask = function(docId, collection, currentDueDate) {
   overlay.className = 'reassign-modal-overlay';
   overlay.innerHTML = `
     <div class="reassign-modal">
-      <h4>ðŸ“… Reassign Task</h4>
+      <h4>📅 Reassign Task</h4>
       <p>Current due date: <strong>${currentDueDate}</strong></p>
       <div class="form-group">
         <label>New Due Date</label>
@@ -6228,7 +6224,7 @@ function loadFleetComplianceWidget() {
   // Auto-cleanup: delete open compliance notes for vehicles that are now compliant
   autoCleanupResolvedComplianceNotes();
 
-  // Collect vehicles with compliance issues (â‰¤30 days or expired)
+  // Collect vehicles with compliance issues (≤30 days or expired)
   const issues = [];
   vehiclesCache.forEach(v => {
     const safetyS = complianceMonthStatus(v.complianceSafety);
@@ -6252,7 +6248,7 @@ function loadFleetComplianceWidget() {
   }
 
   if (issues.length === 0) {
-    // Widget is hidden â€” only keep nav badge updated
+    // Widget is hidden — only keep nav badge updated
     return;
   }
   // Widget is hidden from dashboard; still populate in case it's ever shown
@@ -6269,7 +6265,7 @@ function loadFleetComplianceWidget() {
   for (const { v, vehicleIssues } of issues) {
     const hasOverdue = vehicleIssues.some(i => i.daysLeft < 0);
     html += `<div class="cwg-row${hasOverdue ? ' cwg-row-overdue' : ''}" onclick="openVehicleCompliancePage('${v.id}')" title="${escapeHtml(v.plate)}">`;
-    html += `<span class="cwg-plate">ðŸš— ${escapeHtml(v.plate)}</span>`;
+    html += `<span class="cwg-plate">🚗 ${escapeHtml(v.plate)}</span>`;
     html += '<span class="cwg-tags">';
     for (const issue of vehicleIssues) {
       const tagCls = issue.daysLeft < 0 ? 'cwg-tag cwg-tag-overdue'
@@ -6299,7 +6295,7 @@ async function autoCleanupResolvedComplianceNotes() {
       { type: 'registration', status: complianceMonthStatus(v.complianceRegistration) },
     ];
     for (const { type, status } of checks) {
-      // Only clean up if truly compliant (not just warn â€” give benefit of doubt to warn range)
+      // Only clean up if truly compliant (not just warn — give benefit of doubt to warn range)
       if (status.cls !== 'compliance-ok') continue;
       try {
         const snap = await db.collection('vehicleNotes')
@@ -6337,7 +6333,7 @@ async function refreshStaleComplianceNotes() {
           .limit(10)
           .get();
         if (snap.empty) continue;
-        const newText = `${typeName} â€” ${status.label} for ${v.plate || v.id}.`;
+        const newText = `${typeName} — ${status.label} for ${v.plate || v.id}.`;
         const isOverdue = typeof status.daysLeft === 'number' && status.daysLeft < 0;
         const isUrgent = status.cls === 'compliance-urgent';
         const batch = db.batch();
@@ -6382,7 +6378,7 @@ window.runProductivityReport = async function() {
   const resultsEl = $('prod-results');
   const alertEl = $('prod-alert-banner');
   if (!resultsEl) return;
-  resultsEl.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loadingâ€¦</p>';
+  resultsEl.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
   alertEl.style.display = 'none';
 
   const rangeStart = $('prod-range-start').value;
@@ -6477,7 +6473,7 @@ window.runProductivityReport = async function() {
 
     const alertVehicles = rows.filter(r => r.idleStreak > 2);
     if (alertVehicles.length) {
-      alertEl.textContent = 'âš ï¸ ' + alertVehicles.length + ' vehicle' + (alertVehicles.length > 1 ? 's' : '') + ' idle for 3+ consecutive days: ' + alertVehicles.map(r => r.plate).join(', ');
+      alertEl.textContent = '⚠️ ' + alertVehicles.length + ' vehicle' + (alertVehicles.length > 1 ? 's' : '') + ' idle for 3+ consecutive days: ' + alertVehicles.map(r => r.plate).join(', ');
       alertEl.style.display = '';
     } else {
       alertEl.style.display = 'none';
@@ -6489,7 +6485,7 @@ window.runProductivityReport = async function() {
     }
 
     const fmtDate = ds => {
-      if (!ds) return 'â€”';
+      if (!ds) return '—';
       const [y,m,d] = ds.split('-');
       return new Date(+y, +m-1, +d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
     };
@@ -6497,7 +6493,7 @@ window.runProductivityReport = async function() {
     resultsEl.innerHTML = `
       <div class="prod-summary-row">
         <span class="prod-summary-label">Period:</span>
-        <strong>${fmtDate(rangeStart)} â€” ${fmtDate(rangeEnd)}</strong>
+        <strong>${fmtDate(rangeStart)} — ${fmtDate(rangeEnd)}</strong>
         <span class="prod-summary-label" style="margin-left:12px;">${totalDays} calendar days</span>
       </div>
       <div class="prod-table-wrap">
@@ -6514,8 +6510,8 @@ window.runProductivityReport = async function() {
             ${rows.map(r => {
               const alertRow = r.idleStreak > 2;
               const idleBadge = r.idleStreak > 2
-                ? `<span class="prod-idle-alert">${r.idleStreak}d idle ðŸš¨</span>`
-                : (r.idleStreak > 0 ? `<span class="prod-idle-ok">${r.idleStreak}d</span>` : '<span class="prod-idle-ok">Active âœ…</span>');
+                ? `<span class="prod-idle-alert">${r.idleStreak}d idle 🚨</span>`
+                : (r.idleStreak > 0 ? `<span class="prod-idle-ok">${r.idleStreak}d</span>` : '<span class="prod-idle-ok">Active ✅</span>');
               const utilBar = `<div class="prod-util-wrap"><div class="prod-util-bar" style="width:${r.utilPct}%"></div><span class="prod-util-pct">${r.utilPct}%</span></div>`;
               return `<tr class="${alertRow ? 'prod-row-alert' : ''}">
                 <td><strong>${escapeHtml(r.plate)}</strong><br><span class="prod-make-model">${escapeHtml(r.makeModel)}</span></td>
@@ -6523,7 +6519,7 @@ window.runProductivityReport = async function() {
                 <td>${utilBar}</td>
                 <td>${fmtDate(r.lastBookingDate)}</td>
                 <td>${idleBadge}</td>
-                <td><button class="btn btn-sm btn-outline prod-trips-btn" onclick="openTripLogs('${r.v.id}','${escapeHtml(r.plate)}')">ðŸ“‹ Trips</button></td>
+                <td><button class="btn btn-sm btn-outline prod-trips-btn" onclick="openTripLogs('${r.v.id}','${escapeHtml(r.plate)}')">📋 Trips</button></td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -6537,7 +6533,7 @@ window.runProductivityReport = async function() {
 };
 
 // ----------------------------------------------------------------
-// Trip Log Viewer â€” shows all logged trips for a vehicle, allows
+// Trip Log Viewer — shows all logged trips for a vehicle, allows
 // edit (change dates) or delete (cancel / shorten).
 // ----------------------------------------------------------------
 window.openTripLogs = async function(vehicleId, plate) {
@@ -6549,10 +6545,10 @@ window.openTripLogs = async function(vehicleId, plate) {
   overlay.innerHTML = `
     <div class="triplog-modal">
       <div class="triplog-header">
-        <h4>ðŸ“‹ Trip Logs â€” ${escapeHtml(plate)}</h4>
-        <button class="prod-close-btn" onclick="this.closest('.triplog-overlay').remove()">âœ•</button>
+        <h4>📋 Trip Logs — ${escapeHtml(plate)}</h4>
+        <button class="prod-close-btn" onclick="this.closest('.triplog-overlay').remove()">✕</button>
       </div>
-      <div id="triplog-body" class="triplog-body"><p class="hint" style="padding:16px;text-align:center;">Loadingâ€¦</p></div>
+      <div id="triplog-body" class="triplog-body"><p class="hint" style="padding:16px;text-align:center;">Loading…</p></div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -6577,7 +6573,7 @@ async function _refreshTripLogBody(vehicleId, plate) {
     }
 
     const fmtD = ds => {
-      if (!ds) return 'â€”';
+      if (!ds) return '—';
       const [y,m,d] = ds.split('-');
       return new Date(+y, +m-1, +d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
     };
@@ -6588,16 +6584,16 @@ async function _refreshTripLogBody(vehicleId, plate) {
         <tbody>
           ${logs.map(log => {
             const cancelled = log.cancelled;
-            const typeLabel = log.tripType === 'private-trip' ? 'ðŸ”’ Private' : 'ðŸ“… Scheduled';
+            const typeLabel = log.tripType === 'private-trip' ? '🔒 Private' : '📅 Scheduled';
             return `<tr class="${cancelled ? 'triplog-cancelled' : ''}">
               <td>${fmtD(log.startDate)}</td>
               <td>${fmtD(log.endDate)}</td>
               <td>${typeLabel}</td>
-              <td>${escapeHtml(log.loggedByName || 'â€”')}</td>
+              <td>${escapeHtml(log.loggedByName || '—')}</td>
               <td>${cancelled ? '<span class="prod-idle-alert">Cancelled</span>' : '<span class="prod-idle-ok">Active</span>'}</td>
               <td class="triplog-actions">
-                ${!cancelled ? `<button class="btn btn-sm btn-outline" onclick="editTripLog('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}')">âœï¸ Edit</button>` : ''}
-                <button class="btn btn-sm btn-danger" onclick="deleteTripLog('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}')">ðŸ—‘ï¸</button>
+                ${!cancelled ? `<button class="btn btn-sm btn-outline" onclick="editTripLog('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}')">✏️ Edit</button>` : ''}
+                <button class="btn btn-sm btn-danger" onclick="deleteTripLog('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}')">🗑️</button>
               </td>
             </tr>`;
           }).join('')}
@@ -6621,7 +6617,7 @@ window.editTripLog = async function(logId, vehicleId, plate) {
   overlay.className = 'triplog-edit-overlay';
   overlay.innerHTML = `
     <div class="triplog-edit-modal">
-      <h4>âœï¸ Edit Trip â€” ${escapeHtml(plate)}</h4>
+      <h4>✏️ Edit Trip — ${escapeHtml(plate)}</h4>
       <div class="triplog-edit-field">
         <label>Start Date</label>
         <input type="date" id="tledit-start" class="vehicle-location-custom" value="${log.startDate || ''}">
@@ -6632,7 +6628,7 @@ window.editTripLog = async function(logId, vehicleId, plate) {
       </div>
       <div class="triplog-edit-field">
         <label>Note <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
-        <input type="text" id="tledit-note" class="vehicle-location-custom" placeholder="e.g. Shortened â€“ early return" maxlength="200" value="${escapeHtml(log.note || '')}">
+        <input type="text" id="tledit-note" class="vehicle-location-custom" placeholder="e.g. Shortened – early return" maxlength="200" value="${escapeHtml(log.note || '')}">
       </div>
       <div class="triplog-edit-actions">
         <button class="btn btn-primary" id="tledit-save">Save Changes</button>
@@ -6853,7 +6849,7 @@ window.openLearningPage = function() {
     if (currentUserRole === 'admin') {
       filterSel.style.display = '';
       if (filterSel.options.length === 0) {
-        filterSel.innerHTML = '<option value="">ðŸ‘¤ All users</option>';
+        filterSel.innerHTML = '<option value="">👤 All users</option>';
         // Populate from users list
         db.collection('users').orderBy('displayName').get().then(snap => {
           snap.forEach(d => {
@@ -6907,7 +6903,7 @@ async function loadLearningItems() {
   }
 
   try {
-    // Query by uid only â€” no orderBy to avoid composite index requirement; sort client-side
+    // Query by uid only — no orderBy to avoid composite index requirement; sort client-side
     const queries = [
       db.collection('learningItems').where('uid', '==', filterUid).limit(100).get(),
       db.collection('learningItems').where('scope', '==', 'shared').limit(50).get(),
@@ -6963,7 +6959,7 @@ function renderLearningList(container, snap, canEdit) {
         ? `<div class="li-embed"><iframe width="100%" height="200" src="https://www.youtube.com/embed/${vid}" frameborder="0" allowfullscreen loading="lazy"></iframe></div>`
         : `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">${escapeHtml(d.content)}</a>`;
     } else if (d.type === 'link') {
-      contentHtml = `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">ðŸ”— ${escapeHtml(d.title || d.content)}</a>`;
+      contentHtml = `<a href="${escapeHtml(d.content)}" target="_blank" class="compliance-doc-anchor">🔗 ${escapeHtml(d.title || d.content)}</a>`;
     } else {
       contentHtml = `<p class="li-text">${escapeHtml(d.content || '').replace(/\n/g, '<br>')}</p>`;
     }
@@ -6971,10 +6967,10 @@ function renderLearningList(container, snap, canEdit) {
     const completions = d.completions || [];
     const myCompletion = completions.find(c => c.uid === currentUser.uid);
     const completionBadge = myCompletion
-      ? `<span class="li-completed-badge">âœ… ${myCompletion.date}</span>`
+      ? `<span class="li-completed-badge">✅ ${myCompletion.date}</span>`
       : '';
     const allCompletions = completions.length > 0
-      ? `<div class="li-completions">${completions.map(c => `<span class="li-comp-chip">âœ… ${escapeHtml(c.name || c.uid)} Â· ${c.date}</span>`).join('')}</div>`
+      ? `<div class="li-completions">${completions.map(c => `<span class="li-comp-chip">✅ ${escapeHtml(c.name || c.uid)} · ${c.date}</span>`).join('')}</div>`
       : '';
     const editBtns = canEdit
       ? `<button class="btn btn-sm btn-outline" onclick="editLearningItem('${doc.id}','${escapeHtml(JSON.stringify(d)).replace(/'/g, "&#39;")}')">Edit</button>
@@ -6984,8 +6980,8 @@ function renderLearningList(container, snap, canEdit) {
       <div class="li-header">
         <span class="li-title">${escapeHtml(d.title || 'Untitled')}</span>${completionBadge}
         <div class="li-actions">
-          <button class="btn btn-sm li-schedule-btn" onclick="scheduleTrainingTask('${doc.id}','${escapeHtml((d.title||'Training')).replace(/'/g,"&#39;")}')">ðŸ“… Schedule</button>
-          <button class="btn btn-sm ${myCompletion ? 'li-complete-done' : 'li-complete-btn'}" onclick="logLearningCompletion('${doc.id}')">${myCompletion ? 'âœ… Done' : 'ðŸŽ“ Log Done'}</button>
+          <button class="btn btn-sm li-schedule-btn" onclick="scheduleTrainingTask('${doc.id}','${escapeHtml((d.title||'Training')).replace(/'/g,"&#39;")}')">📅 Schedule</button>
+          <button class="btn btn-sm ${myCompletion ? 'li-complete-done' : 'li-complete-btn'}" onclick="logLearningCompletion('${doc.id}')">${myCompletion ? '✅ Done' : '🎓 Log Done'}</button>
           ${editBtns}
         </div>
       </div>
@@ -7044,7 +7040,7 @@ window.scheduleTrainingTask = async function(docId, title) {
   _scheduleTrainingDocId = docId;
   _scheduleTrainingTitle = title;
   const sel = $('lt-assignee');
-  sel.innerHTML = `<option value="">ðŸ‘¥ Whole Team</option><option value="${currentUser.uid}">${escapeHtml(currentUser.displayName || currentUser.email)}</option>`;
+  sel.innerHTML = `<option value="">👥 Whole Team</option><option value="${currentUser.uid}">${escapeHtml(currentUser.displayName || currentUser.email)}</option>`;
   try {
     const snap = await db.collection('users').get();
     snap.forEach(d => {
@@ -7072,7 +7068,7 @@ window.saveTrainingTask = async function() {
   const assigneeUid = sel.value;
   const assigneeName = sel.selectedOptions[0] ? sel.selectedOptions[0].textContent.trim() : '';
   const notes = $('lt-notes').value.trim();
-  const taskText = 'ðŸŽ“ Training: ' + _scheduleTrainingTitle + (notes ? ' â€” ' + notes : '');
+  const taskText = '🎓 Training: ' + _scheduleTrainingTitle + (notes ? ' — ' + notes : '');
   const taskData = {
     text: taskText,
     isFollowUp: true,
@@ -7090,7 +7086,7 @@ window.saveTrainingTask = async function() {
   try {
     await db.collection('generalNotes').add(taskData);
     closeLearningTaskModal();
-    toast('Training task scheduled âœ…', 'success');
+    toast('Training task scheduled ✅', 'success');
   } catch(e) { console.error(e); toast('Failed to schedule.', 'error'); }
 };
 
@@ -7101,7 +7097,7 @@ window.logLearningCompletion = async function(docId) {
     await db.collection('learningItems').doc(docId).update({
       completions: firebase.firestore.FieldValue.arrayUnion(entry),
     });
-    toast('Completion logged âœ…', 'success');
+    toast('Completion logged ✅', 'success');
     loadLearningItems();
   } catch(e) { console.error(e); toast('Failed to log.', 'error'); }
 };
@@ -7113,7 +7109,7 @@ function renderWishlist(docs) {
   const list = $('want-to-learn-list');
   if (!list) return;
   if (!docs.length) {
-    list.innerHTML = '<p class="hint wl-empty">No goals yet â€” add something you want to learn!</p>';
+    list.innerHTML = '<p class="hint wl-empty">No goals yet — add something you want to learn!</p>';
     return;
   }
   list.innerHTML = docs.map(doc => {
@@ -7121,8 +7117,8 @@ function renderWishlist(docs) {
     return `<div class="wl-item" id="wl-${doc.id}">
       <span class="wl-text">${escapeHtml(d.title || d.content || '')}</span>
       <div class="wl-actions">
-        <button class="btn btn-sm wl-start-btn" onclick="startWishlistItem('${doc.id}','${escapeHtml((d.title||d.content||'')).replace(/'/g,"&#39;")}')" title="Move to My Learning Items">ðŸ“š Start</button>
-        <button class="btn btn-sm wl-remove-btn" onclick="removeWishlistItem('${doc.id}')" title="Remove goal">âœ•</button>
+        <button class="btn btn-sm wl-start-btn" onclick="startWishlistItem('${doc.id}','${escapeHtml((d.title||d.content||'')).replace(/'/g,"&#39;")}')" title="Move to My Learning Items">📚 Start</button>
+        <button class="btn btn-sm wl-remove-btn" onclick="removeWishlistItem('${doc.id}')" title="Remove goal">✕</button>
       </div>
     </div>`;
   }).join('');
@@ -7156,10 +7152,10 @@ window.removeWishlistItem = async function(docId) {
 };
 
 window.startWishlistItem = async function(docId, title) {
-  // Convert wishlist item â†’ personal learning item (opens the add modal pre-filled)
+  // Convert wishlist item → personal learning item (opens the add modal pre-filled)
   try {
     await db.collection('learningItems').doc(docId).update({ scope: 'personal' });
-    toast('Moved to My Learning Items âœ…', 'success');
+    toast('Moved to My Learning Items ✅', 'success');
     loadLearningItems();
   } catch(e) { toast('Failed.', 'error'); }
 };
@@ -7263,7 +7259,7 @@ window.jumpToCalendarDay = function(dateStr) {
   setTimeout(() => window.showCalendarDetail(dateStr), 200);
 };
 
-// ---- Task context menu (â‹¯ button on each agenda item) ----
+// ---- Task context menu (⋯ button on each agenda item) ----
 window.openTaskContextMenu = function(docId, col, triggerBtn) {
   // Remove any existing menus
   document.querySelectorAll('.task-ctx-menu').forEach(m => m.remove());
@@ -7271,17 +7267,17 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
   const menu = document.createElement('div');
   menu.className = 'task-ctx-menu';
   menu.innerHTML = `
-    <button class="task-ctx-item" id="ctx-edit">âœï¸ Edit Task</button>
-    <button class="task-ctx-item" id="ctx-date">ðŸ“… Change Date</button>
+    <button class="task-ctx-item" id="ctx-edit">✏️ Edit Task</button>
+    <button class="task-ctx-item" id="ctx-date">📅 Change Date</button>
     <div class="task-ctx-divider"></div>
     <div class="task-ctx-label">Move to:</div>
-    <button class="task-ctx-item ctx-move-urgent" id="ctx-move-urgent">ðŸš¨ Urgent</button>
-    <button class="task-ctx-item ctx-move-scheduled" id="ctx-move-scheduled">ðŸ”µ Scheduled</button>
-    <button class="task-ctx-item ctx-move-monitoring" id="ctx-move-monitoring">ðŸŸ¢ Monitoring</button>
-    <button class="task-ctx-item ctx-move-done" id="ctx-move-done">âœ… Mark Complete</button>
+    <button class="task-ctx-item ctx-move-urgent" id="ctx-move-urgent">🚨 Urgent</button>
+    <button class="task-ctx-item ctx-move-scheduled" id="ctx-move-scheduled">🔵 Scheduled</button>
+    <button class="task-ctx-item ctx-move-monitoring" id="ctx-move-monitoring">🟢 Monitoring</button>
+    <button class="task-ctx-item ctx-move-done" id="ctx-move-done">✅ Mark Complete</button>
     <div class="task-ctx-divider"></div>
-    <button class="task-ctx-item" id="ctx-vehicle">ðŸš— Loadingâ€¦</button>
-    <button class="task-ctx-item task-ctx-danger" id="ctx-delete">ðŸ—‘ï¸ Delete Task</button>
+    <button class="task-ctx-item" id="ctx-vehicle">🚗 Loading…</button>
+    <button class="task-ctx-item task-ctx-danger" id="ctx-delete">🗑️ Delete Task</button>
   `;
   document.body.appendChild(menu);
 
@@ -7310,13 +7306,13 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
     if (!vBtn) return;
     if (d && d.vehicleId) {
       const v = vehiclesCache.find(x => x.id === d.vehicleId);
-      vBtn.textContent = 'ðŸš— Go to Vehicle' + (v ? ' (' + v.plate + ')' : '');
+      vBtn.textContent = '🚗 Go to Vehicle' + (v ? ' (' + v.plate + ')' : '');
     } else {
-      vBtn.textContent = 'ðŸ”— Link Vehicle';
+      vBtn.textContent = '🔗 Link Vehicle';
     }
   }).catch(() => {
     const vBtn = menu.querySelector('#ctx-vehicle');
-    if (vBtn) vBtn.textContent = 'ðŸ”— Link Vehicle';
+    if (vBtn) vBtn.textContent = '🔗 Link Vehicle';
   });
 
   menu.querySelector('#ctx-edit').onclick = async () => {
@@ -7378,17 +7374,17 @@ window.openLinkVehicleModal = function(docId, col) {
 
   const sorted = [...vehiclesCache].sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
   const opts = sorted.map(v =>
-    `<option value="${v.id}">${escapeHtml(v.plate)} â€” ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</option>`
+    `<option value="${v.id}">${escapeHtml(v.plate)} — ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</option>`
   ).join('');
 
   const overlay = document.createElement('div');
   overlay.className = 'link-vehicle-overlay';
   overlay.innerHTML = `
     <div class="link-vehicle-modal">
-      <h4>ðŸ”— Link Vehicle</h4>
+      <h4>🔗 Link Vehicle</h4>
       <p style="font-size:0.85rem;color:#6b7280;margin:0 0 14px;">Choose a vehicle to associate with this task.</p>
       <select id="link-vehicle-select" class="form-select" style="width:100%;">
-        <option value="">â€” Select vehicle â€”</option>
+        <option value="">— Select vehicle —</option>
         ${opts}
       </select>
       <div style="display:flex;gap:8px;margin-top:14px;">
@@ -7406,7 +7402,7 @@ window.openLinkVehicleModal = function(docId, col) {
     const v = vehiclesCache.find(x => x.id === vehicleId);
     try {
       await db.collection(col).doc(docId).update({ vehicleId, vehiclePlate: v ? v.plate : '' });
-      toast('Vehicle linked! ðŸš—', 'success');
+      toast('Vehicle linked! 🚗', 'success');
       overlay.remove();
       loadDashboardFollowUps();
     } catch (err) {
@@ -7424,20 +7420,20 @@ window.openFullEditTaskModal = function(docId, col, d) {
   overlay.className = 'task-full-edit-overlay';
   overlay.innerHTML = `
     <div class="task-full-edit-modal">
-      <h4>âœï¸ Edit Task</h4>
+      <h4>✏️ Edit Task</h4>
       <div class="form-group">
         <label>Task Text</label>
         <textarea id="tfe-text" class="note-textarea" rows="3" maxlength="500">${escapeHtml(d.text || '')}</textarea>
       </div>
       <div class="form-group">
         <label class="note-followup-label">
-          <input type="checkbox" id="tfe-followup" ${d.isFollowUp ? 'checked' : ''}> âš‘ Follow Up Task
+          <input type="checkbox" id="tfe-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
         </label>
       </div>
       <div id="tfe-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
         <div class="form-group">
           <label class="note-followup-label">
-            <input type="checkbox" id="tfe-urgent" ${d.urgent ? 'checked' : ''}> ðŸš¨ Urgent
+            <input type="checkbox" id="tfe-urgent" ${d.urgent ? 'checked' : ''}> 🚨 Urgent
           </label>
         </div>
         <div class="form-group">
@@ -7451,15 +7447,15 @@ window.openFullEditTaskModal = function(docId, col, d) {
         <div class="form-group">
           <label>Assign To <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
           <select id="tfe-assignee" class="form-select">
-            <option value="">â€” Team (unassigned) â€”</option>
+            <option value="">— Team (unassigned) —</option>
           </select>
         </div>
       </div>
       <div class="task-log-section">
-        <div class="note-edit-section-label" style="margin-bottom:6px;">ðŸ“‹ Activity Log</div>
+        <div class="note-edit-section-label" style="margin-bottom:6px;">📋 Activity Log</div>
         <div id="tfe-log-entries" class="task-log-entries">${renderTaskLogEntries(d.taskLog || [])}</div>
         <div class="task-log-input-row">
-          <textarea id="tfe-log-input" class="task-log-textarea" placeholder="Add a note or updateâ€¦" rows="2"></textarea>
+          <textarea id="tfe-log-input" class="task-log-textarea" placeholder="Add a note or update…" rows="2"></textarea>
           <button class="btn btn-sm btn-outline" id="btn-tfe-log-add">Add</button>
         </div>
       </div>
@@ -7552,7 +7548,7 @@ window.openFullEditTaskModal = function(docId, col, d) {
   };
 };
 
-// ---- Reschedule task (swipe / hold) â€” works for all roles ----
+// ---- Reschedule task (swipe / hold) — works for all roles ----
 window.openRescheduleTask = function(docId, col, currentDue) {
   if (!docId || !col) return;
   const existing = document.querySelector('.reassign-modal-overlay');
@@ -7561,7 +7557,7 @@ window.openRescheduleTask = function(docId, col, currentDue) {
   overlay.className = 'reassign-modal-overlay';
   overlay.innerHTML = `
     <div class="reassign-modal">
-      <h4>ðŸ“… Reschedule Task</h4>
+      <h4>📅 Reschedule Task</h4>
       ${currentDue ? `<p>Current due date: <strong>${currentDue}</strong></p>` : '<p>Set a due date for this task</p>'}
       <div class="form-group">
         <label>New Due Date</label>
@@ -7693,7 +7689,7 @@ $('btn-save-task') && $('btn-save-task').addEventListener('click', async () => {
     : null;
 
   const btn = $('btn-save-task');
-  if (btn) { btn.disabled = true; btn.textContent = 'Savingâ€¦'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
 
   let photoUrl = null;
   const photoInput = $('new-task-photo');
@@ -7705,7 +7701,7 @@ $('btn-save-task') && $('btn-save-task').addEventListener('click', async () => {
       const ref = storage.ref(`taskPhotos/${tempId}.${ext}`);
       await ref.put(file);
       photoUrl = await ref.getDownloadURL();
-    } catch(e) { console.error(e); toast('Photo upload failed â€” saving without photo.', 'warning'); }
+    } catch(e) { console.error(e); toast('Photo upload failed — saving without photo.', 'warning'); }
   }
 
   try {
@@ -7734,14 +7730,14 @@ $('btn-save-task') && $('btn-save-task').addEventListener('click', async () => {
     if (photoInput) photoInput.value = '';
     const wrap = $('new-task-photo-wrap');
     if (wrap) wrap.style.display = 'none';
-    toast('Task saved! âœ…', 'success');
+    toast('Task saved! ✅', 'success');
     loadGeneralNotes();
     loadDashboardFollowUps();
   } catch(err) {
     console.error(err);
     toast('Failed to save task.', 'error');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = 'ðŸ’¾ Save Task'; }
+    if (btn) { btn.disabled = false; btn.textContent = '💾 Save Task'; }
   }
 });
 
@@ -7770,14 +7766,14 @@ async function loadGeneralNotes() {
       if (d.isFollowUp) {
         if (d.done) {
           const completer = d.completedByName ? ` by ${escapeHtml(d.completedByName)}` : '';
-          const completedDate = d.completedAt ? ' Â· ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
-          followUpBadge = `<span class="note-badge note-badge-done">âœ… Done${completer}${completedDate}</span>`;
+          const completedDate = d.completedAt ? ' · ' + new Date(d.completedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+          followUpBadge = `<span class="note-badge note-badge-done">✅ Done${completer}${completedDate}</span>`;
         } else {
-          const dueLabel = d.dueDate ? ` Â· Due ${d.dueDate}` : '';
-          followUpBadge = `<span class="note-badge note-badge-followup">âš‘ Follow Up${dueLabel}</span>`;
+          const dueLabel = d.dueDate ? ` · Due ${d.dueDate}` : '';
+          followUpBadge = `<span class="note-badge note-badge-followup">⚑ Follow Up${dueLabel}</span>`;
         }
       }
-      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">ðŸš¨ Urgent</span>' : '';
+      const urgentBadge = d.urgent && !d.done ? '<span class="note-badge note-badge-urgent">🚨 Urgent</span>' : '';
       const doneClass = d.done ? ' note-done' : '';
       html += `
         <div class="note-item${doneClass}">
@@ -7785,12 +7781,12 @@ async function loadGeneralNotes() {
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
             ${d.invoiceUrls && d.invoiceUrls.length > 0 ? `<div class="note-invoice-row">${d.invoiceUrls.map(url => `<img src="${escapeHtml(url)}" class="note-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View invoice/photo">`).join('')}</div>` : ''}
-            <div class="note-meta">ðŸ‘¤ ${escapeHtml(d.createdByName || 'Unknown')} Â· ${dateStr}</div>
+            <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
           </div>
           <div class="note-actions">
-            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markGeneralNoteDone('${doc.id}')">âœ“ Done</button>` : ''}
-            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markGeneralNoteUndone('${doc.id}')">â†© Undo</button>` : ''}
-            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'generalNotes')">âœï¸ Edit</button>` : ''}
+            ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markGeneralNoteDone('${doc.id}')">✓ Done</button>` : ''}
+            ${d.done && canManage ? `<button class="btn btn-sm btn-undo" onclick="markGeneralNoteUndone('${doc.id}')">↩ Undo</button>` : ''}
+            ${canManage ? `<button class="btn btn-sm btn-outline" onclick="openNoteEditModal('${doc.id}', 'generalNotes')">✏️ Edit</button>` : ''}
             ${canDelete ? `<button class="btn btn-sm btn-danger" onclick="deleteGeneralNote('${doc.id}')">Delete</button>` : ''}
           </div>
         </div>`;
@@ -7864,7 +7860,7 @@ window.openMailbox = function() {
         previews.innerHTML = files.map((f, i) =>
           `<div class="mb-attach-thumb-wrap" id="mb-thumb-${i}">
             <img src="${URL.createObjectURL(f)}" class="mb-attach-thumb" alt="photo">
-            <button class="mb-attach-remove" onclick="removeMbAttach(${i})">âœ•</button>
+            <button class="mb-attach-remove" onclick="removeMbAttach(${i})">✕</button>
           </div>`
         ).join('');
       }
@@ -7894,7 +7890,7 @@ async function loadMailboxUsers() {
   if (!sel) return;
   try {
     const snap = await db.collection('users').orderBy('displayName').get();
-    sel.innerHTML = '<option value="">â€” Select recipient â€”</option>';
+    sel.innerHTML = '<option value="">— Select recipient —</option>';
     snap.forEach(doc => {
       if (doc.id === currentUser.uid) return;
       const d = doc.data();
@@ -7944,7 +7940,7 @@ function renderMailboxInbox(snap) {
     const unread = !m.read;
     const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
     const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-    const preview = m.body ? m.body.substring(0, 90) + (m.body.length > 90 ? 'â€¦' : '') : '';
+    const preview = m.body ? m.body.substring(0, 90) + (m.body.length > 90 ? '…' : '') : '';
     return `
       <div class="mb-message-item ${unread ? 'mb-unread' : ''}" id="mb-msg-${m.id}">
         <div class="mb-msg-header" onclick="openMessage('${m.id}')">
@@ -7953,8 +7949,8 @@ function renderMailboxInbox(snap) {
         </div>
         <div class="mb-msg-preview" onclick="openMessage('${m.id}')">${escapeHtml(preview)}</div>
         <div class="mb-msg-actions">
-          <button class="btn btn-sm btn-outline" onclick="replyToMessage('${m.from}', '${escapeHtml((m.fromName||'').replace(/'/g,''))}')">â†© Reply</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteMessage('${m.id}')">ðŸ—‘ï¸</button>
+          <button class="btn btn-sm btn-outline" onclick="replyToMessage('${m.from}', '${escapeHtml((m.fromName||'').replace(/'/g,''))}')">↩ Reply</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteMessage('${m.id}')">🗑️</button>
         </div>
       </div>`;
   }).join('');
@@ -7984,7 +7980,7 @@ async function loadMailboxSent() {
     list.innerHTML = msgs.map(m => {
       const ts = m.sentAt ? (m.sentAt.toMillis ? m.sentAt.toMillis() : null) : null;
       const timeStr = ts ? new Date(ts).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-      const preview = m.body ? m.body.substring(0, 100) + (m.body.length > 100 ? 'â€¦' : '') : '';
+      const preview = m.body ? m.body.substring(0, 100) + (m.body.length > 100 ? '…' : '') : '';
       return `
         <div class="mb-message-item mb-sent-item">
           <div class="mb-msg-header">
@@ -8044,9 +8040,9 @@ window.openMessage = async function(msgId) {
         <div class="msg-detail-body">${escapeHtml(m.body || '').replace(/\n/g, '<br>')}</div>
         ${photosHtml}
         <div class="msg-detail-actions">
-          <button class="btn btn-sm btn-outline" id="btn-msg-reply">â†© Reply</button>
-          <button class="btn btn-sm btn-outline" id="btn-msg-create-task">ðŸ“‹ Create Task</button>
-          <button class="btn btn-sm btn-danger" id="btn-msg-delete">ðŸ—‘ï¸ Delete</button>
+          <button class="btn btn-sm btn-outline" id="btn-msg-reply">↩ Reply</button>
+          <button class="btn btn-sm btn-outline" id="btn-msg-create-task">📋 Create Task</button>
+          <button class="btn btn-sm btn-danger" id="btn-msg-delete">🗑️ Delete</button>
           <button class="btn btn-sm btn-outline" id="btn-msg-close">Close</button>
         </div>
       </div>`;
@@ -8101,7 +8097,7 @@ window.openCreateTaskFromMessage = async function(fromName, msgBody) {
   const prefill = (fromName ? `[From: ${fromName}] ` : '') + msgBody.substring(0, 300);
   overlay.innerHTML = `
     <div class="msg-task-modal">
-      <h4>ðŸ“‹ Create Task from Message</h4>
+      <h4>📋 Create Task from Message</h4>
       <div class="form-group">
         <label>Task Description</label>
         <textarea id="mct-text" class="note-textarea" rows="3" maxlength="500">${escapeHtml(prefill)}</textarea>
@@ -8111,12 +8107,12 @@ window.openCreateTaskFromMessage = async function(fromName, msgBody) {
         <input type="date" id="mct-due" class="form-select">
       </div>
       <div class="form-group">
-        <label class="note-followup-label"><input type="checkbox" id="mct-urgent"> ðŸš¨ Urgent</label>
+        <label class="note-followup-label"><input type="checkbox" id="mct-urgent"> 🚨 Urgent</label>
       </div>
       <div class="form-group">
         <label>Assign To <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
         <select id="mct-assignee" class="form-select">
-          <option value="">â€” Team (unassigned) â€”</option>
+          <option value="">— Team (unassigned) —</option>
         </select>
       </div>
       <div class="reassign-modal-actions">
@@ -8165,7 +8161,7 @@ window.openCreateTaskFromMessage = async function(fromName, msgBody) {
     if (assignedTo) { data.assignedTo = assignedTo; data.assignedToName = assignedToName; }
     try {
       await db.collection('generalNotes').add(data);
-      toast('Task created from message! ðŸ“‹', 'success');
+      toast('Task created from message! 📋', 'success');
       overlay.remove();
     } catch (e) {
       console.error('Create task from message error:', e);
@@ -8233,7 +8229,7 @@ window.sendMailMessage = async function() {
     if (previews) previews.innerHTML = '';
     const countEl = $('mb-attach-count');
     if (countEl) countEl.textContent = '';
-    toast('Message sent! âœ‰ï¸', 'success');
+    toast('Message sent! ✉️', 'success');
     loadMailboxSent();
     switchMailTab('sent');
   } catch (e) {
@@ -8295,26 +8291,26 @@ function updateMailboxIcon(count) {
     if (!btn._mailAnimRunning) {
       btn._mailAnimRunning = true;
       let open = true;
-      iconEl.textContent = 'ðŸ“¬';
+      iconEl.textContent = '📬';
       iconEl.classList.add('mail-bounce');
       btn._mailAnimIv = setInterval(() => {
         const currentCount = parseInt(($('mail-unread-count') || {}).textContent) || 0;
         if (currentCount === 0) {
           clearInterval(btn._mailAnimIv);
           btn._mailAnimRunning = false;
-          iconEl.textContent = 'ðŸ“ª';
+          iconEl.textContent = '📪';
           iconEl.classList.remove('mail-bounce');
           return;
         }
         open = !open;
-        iconEl.textContent = open ? 'ðŸ“¬' : 'ðŸ“ª';
+        iconEl.textContent = open ? '📬' : '📪';
         iconEl.classList.toggle('mail-bounce', open);
       }, 1200);
     }
   } else {
     if (btn._mailAnimIv) clearInterval(btn._mailAnimIv);
     btn._mailAnimRunning = false;
-    iconEl.textContent = 'ðŸ“ª';
+    iconEl.textContent = '📪';
     iconEl.classList.remove('mail-bounce');
   }
 }
@@ -8324,21 +8320,21 @@ function updateMailboxIcon(count) {
 // ================================================================
 
 const INCIDENT_TYPES = {
-  damage:    { label: 'ðŸ› ï¸ Vehicle Damage',      color: '#f59e0b' },
-  accident:  { label: 'ðŸ’¥ Accident / Collision', color: '#ef4444' },
-  key_lost:  { label: 'ðŸ”‘ Key Lost',             color: '#8b5cf6' },
-  theft:     { label: 'ðŸš” Theft / Break-in',     color: '#dc2626' },
-  smoking:   { label: 'ðŸš¬ Smoking Violation',    color: '#dc2626' },
-  cleaning:  { label: 'ðŸ§¹ Cleaning Violation',   color: '#f97316' },
-  citation:  { label: 'ðŸŽ« Citation / Ticket',    color: '#7c3aed' },
-  complaint: { label: 'ðŸ“¢ Customer Complaint',   color: '#0ea5e9' },
-  other:     { label: 'ðŸ“ Other',                color: '#6b7280' },
+  damage:    { label: '🛠️ Vehicle Damage',      color: '#f59e0b' },
+  accident:  { label: '💥 Accident / Collision', color: '#ef4444' },
+  key_lost:  { label: '🔑 Key Lost',             color: '#8b5cf6' },
+  theft:     { label: '🚔 Theft / Break-in',     color: '#dc2626' },
+  smoking:   { label: '🚬 Smoking Violation',    color: '#dc2626' },
+  cleaning:  { label: '🧹 Cleaning Violation',   color: '#f97316' },
+  citation:  { label: '🎫 Citation / Ticket',    color: '#7c3aed' },
+  complaint: { label: '📢 Customer Complaint',   color: '#0ea5e9' },
+  other:     { label: '📝 Other',                color: '#6b7280' },
 };
 
 const INCIDENT_STATUS = {
-  open:        { label: 'ðŸ”´ Open',        cls: 'inc-status-open' },
-  in_progress: { label: 'ðŸ”„ In Progress', cls: 'inc-status-inprogress' },
-  resolved:    { label: 'âœ… Resolved',    cls: 'inc-status-resolved' },
+  open:        { label: '🔴 Open',        cls: 'inc-status-open' },
+  in_progress: { label: '🔄 In Progress', cls: 'inc-status-inprogress' },
+  resolved:    { label: '✅ Resolved',    cls: 'inc-status-resolved' },
 };
 
 // ---- Real-time badge listener (open incidents for admin/manager) ----
@@ -8400,32 +8396,32 @@ async function loadAllOpenIncidentsDashboard() {
         ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="incident photo"></a>`).join('')}</div>`
         : '';
       const followUpHTML = d.followUpDate
-        ? `<div class="inc-followup">ðŸ“… Follow-up: <strong>${d.followUpDate}</strong></div>`
+        ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>`
         : '';
       const citationHTML2 = d.type === 'citation' ? `<div class="inc-citation-summary">
-        ${d.citationNumber ? `<span class="inc-cite-tag">ðŸŽ« #${escapeHtml(d.citationNumber)}</span>` : ''}
-        ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'ðŸ…¿ï¸ Parking',red_light:'ðŸš¦ Red Light',speeding:'ðŸ’¨ Speeding',toll:'ðŸ›£ï¸ Toll',other:'ðŸ“ Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
-        ${d.citationAmount != null ? `<span class="inc-cite-tag">ðŸ’µ $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
-        ${d.citationDueDate ? `<span class="inc-cite-tag">â° Due ${d.citationDueDate}</span>` : ''}
-        ${d.citationCustomer ? `<span class="inc-cite-tag">ðŸ‘¤ ${escapeHtml(d.citationCustomer)}</span>` : ''}
-        ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'â³ Pending',paid_by_company:'ðŸ’³ Paid by Co.',reimbursed:'âœ… Reimbursed',escalated:'âš ï¸ Escalated',written_off:'ðŸ—‘ï¸ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
+        ${d.citationNumber ? `<span class="inc-cite-tag">🎫 #${escapeHtml(d.citationNumber)}</span>` : ''}
+        ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'🅿️ Parking',red_light:'🚦 Red Light',speeding:'💨 Speeding',toll:'🛣️ Toll',other:'📝 Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
+        ${d.citationAmount != null ? `<span class="inc-cite-tag">💵 $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
+        ${d.citationDueDate ? `<span class="inc-cite-tag">⏰ Due ${d.citationDueDate}</span>` : ''}
+        ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
+        ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
       </div>` : '';
       const resolvedBlock = d.status === 'resolved' && d.resolution
-        ? `<div class="inc-resolution"><span class="inc-res-label">âœ… Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">â€” ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
+        ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
         : '';
       const canResolve = d.status !== 'resolved';
       return `<div class="inc-card ${d.status === 'resolved' ? 'inc-resolved' : ''} ${d.urgent ? 'inc-urgent' : ''}">
         <div class="inc-header">
-          <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'â€”')}</span>
+          <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'—')}</span>
           <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
-          ${d.urgent ? '<span class="inc-urgent-badge">ðŸš¨ URGENT</span>' : ''}
+          ${d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : ''}
           <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
           <span class="inc-date">${dateStr}</span>
         </div>
         <div class="inc-title">${escapeHtml(d.title||'')}</div>
         ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
         ${citationHTML2}
-        <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'â€”')}</div>
+        <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
         ${followUpHTML}${photosHTML}${resolvedBlock}
         <div class="inc-actions">
           ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openIncidentEditFromDashboard('${doc.id}',true)">Update Status</button>` : ''}
@@ -8441,7 +8437,7 @@ async function loadAllOpenIncidentsDashboard() {
 async function loadVehicleIncidents(vehicleId) {
   const list = $('incidents-list');
   if (!list) return;
-  list.innerHTML = '<p class="hint">Loadingâ€¦</p>';
+  list.innerHTML = '<p class="hint">Loading…</p>';
   try {
     const snap = await db.collection('incidents')
       .where('vehicleId', '==', vehicleId)
@@ -8475,21 +8471,21 @@ function renderIncidentsList(docs) {
     const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
     const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
     const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
-    const urgentBadge = d.urgent ? '<span class="inc-urgent-badge">ðŸš¨ URGENT</span>' : '';
+    const urgentBadge = d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : '';
     const photosHTML = (d.photoUrls && d.photoUrls.length)
       ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="photo"></a>`).join('')}</div>`
       : '';
-    const followUpHTML = d.followUpDate ? `<div class="inc-followup">ðŸ“… Follow-up: <strong>${d.followUpDate}</strong></div>` : '';
+    const followUpHTML = d.followUpDate ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>` : '';
     const citationHTML = d.type === 'citation' ? `<div class="inc-citation-summary">
-      ${d.citationNumber ? `<span class="inc-cite-tag">ðŸŽ« #${escapeHtml(d.citationNumber)}</span>` : ''}
-      ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'ðŸ…¿ï¸ Parking',red_light:'ðŸš¦ Red Light',speeding:'ðŸ’¨ Speeding',toll:'ðŸ›£ï¸ Toll',other:'ðŸ“ Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
-      ${d.citationAmount != null ? `<span class="inc-cite-tag">ðŸ’µ $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
-      ${d.citationDueDate ? `<span class="inc-cite-tag">â° Due ${d.citationDueDate}</span>` : ''}
-      ${d.citationCustomer ? `<span class="inc-cite-tag">ðŸ‘¤ ${escapeHtml(d.citationCustomer)}</span>` : ''}
-      ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'â³ Pending',paid_by_company:'ðŸ’³ Paid by Co.',reimbursed:'âœ… Reimbursed',escalated:'âš ï¸ Escalated',written_off:'ðŸ—‘ï¸ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
+      ${d.citationNumber ? `<span class="inc-cite-tag">🎫 #${escapeHtml(d.citationNumber)}</span>` : ''}
+      ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'🅿️ Parking',red_light:'🚦 Red Light',speeding:'💨 Speeding',toll:'🛣️ Toll',other:'📝 Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
+      ${d.citationAmount != null ? `<span class="inc-cite-tag">💵 $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
+      ${d.citationDueDate ? `<span class="inc-cite-tag">⏰ Due ${d.citationDueDate}</span>` : ''}
+      ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
+      ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
     </div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
-      ? `<div class="inc-resolution"><span class="inc-res-label">âœ… Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">â€” ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
+      ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
       : '';
     const canResolve = isPriv && d.status !== 'resolved';
     const canEdit    = isPriv || d.reportedBy === currentUser.uid;
@@ -8509,7 +8505,7 @@ function renderIncidentsList(docs) {
       <div class="inc-title">${escapeHtml(d.title || '')}</div>
       ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
       ${citationHTML}
-      <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || 'â€”')}</div>
+      <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || '—')}</div>
       ${followUpHTML}${photosHTML}${resolvedBlock}
       ${actionBtns}
     </div>`;
@@ -8530,7 +8526,7 @@ window.openIncidentModal = function(incidentId, focusResolve) {
   const resRow    = $('incident-resolution-row');
 
   $('incident-edit-id').value = incidentId || '';
-  $('incident-modal-title').textContent = incidentId ? 'âœï¸ Edit Incident' : 'ðŸš¨ Report Incident';
+  $('incident-modal-title').textContent = incidentId ? '✏️ Edit Incident' : '🚨 Report Incident';
 
   if (incidentId) {
     const doc = currentVehicleIncidents.find(d => d.id === incidentId);
@@ -8682,7 +8678,7 @@ window.saveIncident = async function() {
   // Upload any staged photos
   let newPhotoUrls = [];
   if (incidentStagedFiles.length) {
-    if (statusEl) statusEl.textContent = `Uploading ${incidentStagedFiles.length} photo(s)â€¦`;
+    if (statusEl) statusEl.textContent = `Uploading ${incidentStagedFiles.length} photo(s)…`;
     try {
       const incId = editId || ('temp_' + Date.now());
       const st = getStorage();
@@ -8760,7 +8756,7 @@ window.saveIncident = async function() {
     // If a follow-up date was set, attempt to create a calendar task (admin/manager only)
     if (followUpDate) {
       try {
-        const taskText = `ðŸš¨ Incident Follow-Up: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
+        const taskText = `🚨 Incident Follow-Up: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
         await db.collection('generalNotes').add({
           text: taskText,
           isFollowUp: true,
@@ -8893,12 +8889,12 @@ function renderTimeClock() {
   const dates = getWeekDates(currentWeekOffset);
   const isCurrentWeek = currentWeekOffset === 0;
 
-  // â”€â”€ Week header label â”€â”€
+  // ── Week header label ──
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const fmtD = (str) => { const [, mo, d] = str.split('-'); return `${MONTHS[+mo - 1]} ${+d}`; };
-  const weekLabel = `${fmtD(dates[0])} â€“ ${fmtD(dates[6])}, ${dates[6].slice(0, 4)}`;
+  const weekLabel = `${fmtD(dates[0])} – ${fmtD(dates[6])}, ${dates[6].slice(0, 4)}`;
 
-  // â”€â”€ Weekly grid â”€â”€
+  // ── Weekly grid ──
   const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let weekRows = '';
   let totalWeekMs = 0, totalGoal = 0, totalAchieved = 0;
@@ -8917,21 +8913,21 @@ function renderTimeClock() {
     const dayLabel = `${DAYS[i]} ${+mo}/${+dy}`;
     const hasActive = isToday && dd?.activeSession;
     const hoursStr = netMs > 0
-      ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">â±</span>' : '')
-      : (hasActive ? '<span class="tc-live-dot">â± In Progress</span>' : 'â€”');
-    const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : 'â€”';
+      ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">⏱</span>' : '')
+      : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
+    const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
     const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
     weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${hasSessions && !isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
-      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}${hasSessions && !isToday ? ' <span class="tc-expand-hint">â€º</span>' : ''}</span>
+      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}${hasSessions && !isToday ? ' <span class="tc-expand-hint">›</span>' : ''}</span>
       <span class="tc-day-hours">${hoursStr}</span>
       <span class="tc-day-rev">${revStr}</span>
     </div>`;
   }
   const totalRevStr = totalGoal > 0
     ? `$${Number(totalAchieved).toLocaleString()} / $${Number(totalGoal).toLocaleString()}`
-    : 'â€”';
+    : '—';
 
-  // â”€â”€ Today section (only on current week) â”€â”€
+  // ── Today section (only on current week) ──
   let todaySectionHTML = '';
   if (isCurrentWeek) {
     const todayData = weeklyTimeclockData[today] || null;
@@ -8947,21 +8943,21 @@ function renderTimeClock() {
         const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
         const sTz = s.timezone || TC_TIMEZONE;
         const inStr = fmtTcTime(inT, sTz);
-        const outStr = outT ? fmtTcTime(outT, sTz) : 'â€”';
+        const outStr = outT ? fmtTcTime(outT, sTz) : '—';
         const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
           const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
           const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
           return sum + (be - bs);
         }, 0);
         const sessMs = outT ? Math.max(0, (outT - inT) - brkMs) : 0;
-        const schedNote = s.scheduledStart ? ` Â· sched ${s.scheduledStart}` : '';
+        const schedNote = s.scheduledStart ? ` · sched ${s.scheduledStart}` : '';
         sessionsHTML += `<div class="tc-session-row">
           <span class="tc-session-num">Session ${idx + 1}${schedNote}</span>
-          <span class="tc-session-time">${inStr} â€“ ${outStr}</span>
+          <span class="tc-session-time">${inStr} – ${outStr}</span>
           <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
           <span class="tc-session-actions">
-            <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${today}',${idx})">âœï¸</button>
-            <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${today}',${idx})">ðŸ—‘ï¸</button>
+            <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${today}',${idx})">✏️</button>
+            <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${today}',${idx})">🗑️</button>
           </span>
         </div>`;
       });
@@ -8990,9 +8986,9 @@ function renderTimeClock() {
         const [sh, sm] = activeSession.scheduledStart.split(':').map(Number);
         const inHST = new Date(clockInTime.toLocaleString('en-US', { timeZone: aTz }));
         const diffMin = Math.round(((inHST.getHours() * 60 + inHST.getMinutes()) - (sh * 60 + sm)));
-        schedNote = diffMin === 0 ? ' Â· âœ… On time'
-          : diffMin > 0 ? ` Â· <span class="tc-late">âš ï¸ ${diffMin}m late</span>`
-          : ` Â· <span class="tc-early">ðŸŒŸ ${Math.abs(diffMin)}m early</span>`;
+        schedNote = diffMin === 0 ? ' · ✅ On time'
+          : diffMin > 0 ? ` · <span class="tc-late">⚠️ ${diffMin}m late</span>`
+          : ` · <span class="tc-early">🌟 ${Math.abs(diffMin)}m early</span>`;
       }
 
       const currentBreakStart = onBreak && activeSession.currentBreakStart
@@ -9003,7 +8999,7 @@ function renderTimeClock() {
         <div class="tc-status ${onBreak ? 'tc-status-break' : 'tc-status-in'}">
           <div class="tc-status-dot ${onBreak ? 'tc-dot-yellow' : 'tc-dot-green'}"></div>
           <div>
-            <div class="tc-status-label">${onBreak ? 'â˜• On Break' : `ðŸŸ¢ Session ${pastSessions.length + 1} Active`}</div>
+            <div class="tc-status-label">${onBreak ? '☕ On Break' : `🟢 Session ${pastSessions.length + 1} Active`}</div>
             <div class="tc-clock-time">Since ${clockInStr}${schedNote}</div>
             <div class="tc-clock-time">${breakLabel}</div>
           </div>
@@ -9014,21 +9010,21 @@ function renderTimeClock() {
         </div>
         <div class="tc-action-row">
           ${isOwnClock ? (onBreak
-            ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">â–¶ï¸ End Break</button>`
-            : `<button class="btn tc-break-btn" onclick="startBreak()">â˜• Start Break</button>`)
+            ? `<button class="btn tc-break-btn tc-end-break-btn" onclick="endBreak()">▶️ End Break</button>`
+            : `<button class="btn tc-break-btn" onclick="startBreak()">☕ Start Break</button>`)
             : ''}
-          ${isOwnClock ? `<button class="btn btn-danger tc-btn-half" onclick="clockOut()">â¹ï¸ Punch Out</button>` : ''}
+          ${isOwnClock ? `<button class="btn btn-danger tc-btn-half" onclick="clockOut()">⏹️ Punch Out</button>` : ''}
         </div>`;
       startElapsedTimer(clockInTime, activeSession.breaks || [], currentBreakStart);
     } else if (isOwnClock) {
       activeHTML = `
         <div class="tc-fields">
           <div class="tc-field-row">
-            <label class="tc-label">ðŸ• Scheduled Start</label>
+            <label class="tc-label">🕐 Scheduled Start</label>
             <input type="time" id="tc-scheduled-input" class="tc-input-time">
           </div>
         </div>
-        <button class="btn btn-primary tc-btn" onclick="clockIn()">â±ï¸ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
+        <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
     }
 
     // Revenue section (read-only for view-all)
@@ -9038,15 +9034,15 @@ function renderTimeClock() {
       <div class="tc-revenue-section">
         <div class="tc-rev-row">
           <div class="tc-field-row">
-            <label class="tc-label">ðŸŽ¯ Daily Goal</label>
+            <label class="tc-label">🎯 Daily Goal</label>
             <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${goal}"></div>
           </div>
           <div class="tc-field-row">
-            <label class="tc-label">ðŸ’° End of Day Revenue</label>
+            <label class="tc-label">💰 End of Day Revenue</label>
             <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0" value="${achieved}"></div>
           </div>
         </div>
-        <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">ðŸ’¾ Save Revenue</button>
+        <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">💾 Save Revenue</button>
       </div>` : (goal || achieved ? `
       <div class="tc-revenue-section" style="opacity:0.7;">
         <div style="font-size:0.78rem;color:#6b7280;">Revenue: $${Number(achieved||0).toLocaleString()} / $${Number(goal||0).toLocaleString()}</div>
@@ -9054,7 +9050,7 @@ function renderTimeClock() {
 
     todaySectionHTML = `
       <div class="tc-today-section">
-        <div class="tc-today-title">ðŸ“… Today â€” ${today}</div>
+        <div class="tc-today-title">📅 Today — ${today}</div>
         ${sessionsHTML}
         ${activeHTML}
         ${revenueHTML}
@@ -9063,7 +9059,7 @@ function renderTimeClock() {
 
   const selectorHTML = (currentUserCanViewAllTimeclocks && tcEmployees.length > 0) ? `
     <div class="tc-user-selector-row">
-      <label class="tc-label" style="font-size:0.78rem;white-space:nowrap;">ðŸ‘¥ Viewing:</label>
+      <label class="tc-label" style="font-size:0.78rem;white-space:nowrap;">👥 Viewing:</label>
       <select class="tc-user-select" onchange="tcSwitchUser(this.value)">
         <option value="${currentUser.uid}"${isOwnClock ? ' selected' : ''}>My Timeclock</option>
         ${tcEmployees.filter(e => e.uid !== currentUser.uid).map(e =>
@@ -9073,22 +9069,22 @@ function renderTimeClock() {
     </div>` : '';
 
   const viewingBanner = !isOwnClock ? `
-    <div class="tc-viewing-banner">ðŸ‘ï¸ Viewing: ${escapeHtml(tcEmployees.find(e => e.uid === tcViewingUid)?.name || 'Employee')}</div>` : '';
+    <div class="tc-viewing-banner">👁️ Viewing: ${escapeHtml(tcEmployees.find(e => e.uid === tcViewingUid)?.name || 'Employee')}</div>` : '';
 
   content.innerHTML = `
     ${selectorHTML}
     ${viewingBanner}
     <div class="tc-week-nav">
-      <button class="tc-nav-btn" onclick="tcPrevWeek()">â€¹ Prev</button>
+      <button class="tc-nav-btn" onclick="tcPrevWeek()">‹ Prev</button>
       <span class="tc-week-label">${weekLabel}</span>
-      <button class="tc-nav-btn" onclick="tcNextWeek()"${isCurrentWeek ? ' disabled style="opacity:.4;cursor:default;"' : ''}>Next â€º</button>
+      <button class="tc-nav-btn" onclick="tcNextWeek()"${isCurrentWeek ? ' disabled style="opacity:.4;cursor:default;"' : ''}>Next ›</button>
     </div>
     <div class="tc-week-grid">
       <div class="tc-week-header"><span>Day</span><span>Hours</span><span>Revenue</span></div>
       ${weekRows}
       <div class="tc-week-total">
         <span>Week Total</span>
-        <span>${totalWeekMs > 0 ? fmtMs(totalWeekMs) : 'â€”'}</span>
+        <span>${totalWeekMs > 0 ? fmtMs(totalWeekMs) : '—'}</span>
         <span>${totalRevStr}</span>
       </div>
     </div>
@@ -9127,7 +9123,7 @@ window.clockIn = async function() {
         revenueAchieved: null
       });
     }
-    toast('Punched in! â±ï¸', 'success');
+    toast('Punched in! ⏱️', 'success');
     await loadWeekData(0);
   } catch (e) {
     console.error('Clock in error:', e);
@@ -9144,7 +9140,7 @@ window.startBreak = async function() {
       'activeSession.onBreak': true,
       'activeSession.currentBreakStart': firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Break started â˜•', 'info');
+    toast('Break started ☕', 'info');
     await loadWeekData(0);
   } catch (e) {
     console.error('Start break error:', e);
@@ -9169,7 +9165,7 @@ window.endBreak = async function() {
       'activeSession.currentBreakStart': null,
       'activeSession.breaks': breaks
     });
-    toast('Break ended â–¶ï¸', 'success');
+    toast('Break ended ▶️', 'success');
     await loadWeekData(0);
   } catch (e) {
     console.error('End break error:', e);
@@ -9201,7 +9197,7 @@ window.clockOut = async function() {
   try {
     await db.collection('timeclock').doc(docId).update({ sessions, activeSession: null });
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
-    toast('Punched out! âœ…', 'success');
+    toast('Punched out! ✅', 'success');
     await loadWeekData(0);
   } catch (e) {
     console.error('Clock out error:', e);
@@ -9227,7 +9223,7 @@ window.tcSaveRevenue = async function() {
         sessions: [], activeSession: null, revenueGoal: goal, revenueAchieved: achieved
       });
     }
-    toast('Revenue saved! ðŸ’°', 'success');
+    toast('Revenue saved! 💰', 'success');
     await loadWeekData(currentWeekOffset);
   } catch (e) {
     console.error('Save revenue error:', e);
@@ -9243,7 +9239,7 @@ window.tcSwitchUser = async function(uid) {
   await loadWeekData(0);
 };
 
-// â”€â”€ Expand past day into modal â”€â”€
+// ── Expand past day into modal ──
 window.tcExpandDay = function(date) {
   const dd = weeklyTimeclockData[date];
   if (!dd) return;
@@ -9258,7 +9254,7 @@ window.tcExpandDay = function(date) {
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
     const sTz = s.timezone || TC_TIMEZONE;
     const inStr = fmtTcTime(inT, sTz);
-    const outStr = outT ? fmtTcTime(outT, sTz) : 'â€”';
+    const outStr = outT ? fmtTcTime(outT, sTz) : '—';
     const brkMs = (s.breaks || []).filter(b => b.end).reduce((sum, b) => {
       const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
       const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
@@ -9267,12 +9263,12 @@ window.tcExpandDay = function(date) {
     const sessMs = outT ? Math.max(0, (outT - inT) - brkMs) : 0;
     return `<div class="tc-session-row">
       <span class="tc-session-num">Session ${idx + 1}</span>
-      <span class="tc-session-time">${inStr} â€“ ${outStr}</span>
+      <span class="tc-session-time">${inStr} – ${outStr}</span>
       <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
       <span class="tc-session-actions">
         ${isOwnClockExpand ? `
-        <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">âœï¸</button>
-        <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">ðŸ—‘ï¸</button>
+        <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">✏️</button>
+        <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">🗑️</button>
         ` : ''}
       </span>
     </div>`;
@@ -9289,7 +9285,7 @@ window.tcExpandDay = function(date) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:480px;">
       <div class="modal-header">
-        <h3>ðŸ“… ${dateLabel} Sessions</h3>
+        <h3>📅 ${dateLabel} Sessions</h3>
         <button class="modal-close" onclick="$('tc-day-overlay').style.display='none'">&times;</button>
       </div>
       <div class="modal-body">
@@ -9297,15 +9293,15 @@ window.tcExpandDay = function(date) {
         <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:flex;flex-direction:column;gap:10px;">
           <div class="tc-rev-row">
             <div class="tc-field-row">
-              <label class="tc-label">ðŸŽ¯ Daily Goal</label>
+              <label class="tc-label">🎯 Daily Goal</label>
               <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-goal-input" class="tc-input" min="0" step="100" value="${goalVal}"></div>
             </div>
             <div class="tc-field-row">
-              <label class="tc-label">ðŸ’° Revenue Achieved</label>
+              <label class="tc-label">💰 Revenue Achieved</label>
               <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-achieved-input" class="tc-input" min="0" step="100" value="${achVal}"></div>
             </div>
           </div>
-          <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenueForDate('${date}')">ðŸ’¾ Save Revenue</button>
+          <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenueForDate('${date}')">💾 Save Revenue</button>
         </div>
       </div>
     </div>`;
@@ -9321,7 +9317,7 @@ window.tcSaveRevenueForDate = async function(date) {
   const achieved = achStr !== '' && achStr != null ? parseFloat(achStr) : null;
   try {
     await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
-    toast('Revenue saved! ðŸ’°', 'success');
+    toast('Revenue saved! 💰', 'success');
     $('tc-day-overlay').style.display = 'none';
     await loadWeekData(currentWeekOffset);
   } catch (e) {
@@ -9374,26 +9370,26 @@ window.tcEditSession = function(date, idx) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:380px;">
       <div class="modal-header">
-        <h3>âœï¸ Edit Session â€” ${dateLabel}</h3>
+        <h3>✏️ Edit Session — ${dateLabel}</h3>
         <button class="modal-close" onclick="$('tc-edit-overlay').style.display='none'">&times;</button>
       </div>
       <div class="modal-body">
         <div class="tc-fields">
           <div class="tc-field-row">
-            <label class="tc-label">ðŸ• Scheduled Start</label>
+            <label class="tc-label">🕐 Scheduled Start</label>
             <input type="time" id="tce-sched" class="tc-input-time" value="${s.scheduledStart || ''}">
           </div>
           <div class="tc-field-row">
-            <label class="tc-label">â±ï¸ Punch In</label>
+            <label class="tc-label">⏱️ Punch In</label>
             <input type="time" id="tce-in" class="tc-input-time" value="${toHHMM(inT)}" required>
           </div>
           <div class="tc-field-row">
-            <label class="tc-label">â¹ï¸ Punch Out</label>
+            <label class="tc-label">⏹️ Punch Out</label>
             <input type="time" id="tce-out" class="tc-input-time" value="${outT ? toHHMM(outT) : ''}">
           </div>
         </div>
         <div style="margin-top:16px;display:flex;gap:8px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveEditSession('${date}',${idx})">ðŸ’¾ Save Changes</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveEditSession('${date}',${idx})">💾 Save Changes</button>
           <button class="btn btn-outline" style="flex:1;" onclick="$('tc-edit-overlay').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -9410,7 +9406,7 @@ window.tcSaveEditSession = async function(date, idx) {
   // Convert HH:MM in user's local timezone to Firestore Timestamp
   function toTimestamp(dateStr, timeStr) {
     if (!timeStr) return null;
-    // new Date('YYYY-MM-DDTHH:MM:00') parses as local browser time â†’ correct for any TZ
+    // new Date('YYYY-MM-DDTHH:MM:00') parses as local browser time → correct for any TZ
     return firebase.firestore.Timestamp.fromMillis(new Date(dateStr + 'T' + timeStr + ':00').getTime());
   }
   const clockIn = toTimestamp(date, inVal);
@@ -9425,7 +9421,7 @@ window.tcSaveEditSession = async function(date, idx) {
     const sessions = snap.data().sessions || [];
     sessions[idx] = { ...sessions[idx], clockIn, clockOut, scheduledStart: schedVal };
     await db.collection('timeclock').doc(docId).update({ sessions });
-    toast('Session updated! âœ…', 'success');
+    toast('Session updated! ✅', 'success');
     $('tc-edit-overlay').style.display = 'none';
     await loadWeekData(currentWeekOffset);
     const dayOverlay = $('tc-day-overlay');
@@ -9511,12 +9507,12 @@ async function loadExpenseWidget() {
             <span class="exp-cat-badge ${catCls}">${escapeHtml(e.category || 'Other')}</span>
             <div class="exp-row-info">
               <span class="exp-desc">${escapeHtml(e.description || '')}</span>
-              <span class="exp-meta">${e.date} Â· ${escapeHtml(e.submittedByName || '')}</span>
+              <span class="exp-meta">${e.date} · ${escapeHtml(e.submittedByName || '')}</span>
             </div>
           </div>
           <div class="exp-row-right">
             <span class="exp-amount">$${parseFloat(e.amount || 0).toFixed(2)}</span>
-            ${canDelete ? `<button class="btn btn-sm btn-danger exp-del-btn" onclick="deleteExpense('${e.id}')">âœ•</button>` : ''}
+            ${canDelete ? `<button class="btn btn-sm btn-danger exp-del-btn" onclick="deleteExpense('${e.id}')">✕</button>` : ''}
           </div>
         </div>`;
     }).join('');
@@ -9564,7 +9560,7 @@ window.saveExpense = async function() {
 
 window.deleteExpense = async function(docId) {
   if (currentUserRole !== 'admin') {
-    // managers can only delete their own â€” server-side check on load
+    // managers can only delete their own — server-side check on load
     if (!confirm('Delete this expense?')) return;
   }
   try {
