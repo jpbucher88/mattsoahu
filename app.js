@@ -72,17 +72,42 @@ const $ = (id) => document.getElementById(id);
 function getDTValue(dateId, timeId) {
   const d = $(dateId) ? $(dateId).value : '';
   if (!d) return '';
-  const t = ($(timeId) ? $(timeId).value.trim() : '') || '00:00';
+  let t = ($(timeId) ? $(timeId).value.trim() : '') || '';
+  // If there is a paired AM/PM select, convert 12h → 24h
+  const ampmEl = $(timeId + '-ampm');
+  if (ampmEl && t && t.includes(':')) {
+    let [hh, mm] = t.split(':').map(s => parseInt(s, 10) || 0);
+    const ampm = ampmEl.value;
+    if (ampm === 'PM' && hh !== 12) hh += 12;
+    if (ampm === 'AM' && hh === 12) hh = 0;
+    t = String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+  } else if (!t) {
+    t = '00:00';
+  }
   return d + 'T' + t;
 }
 // Set a date + text-time split pair from a Date object or Firestore Timestamp
 function setDTValue(dateId, timeId, dateObjOrTimestamp) {
   const dEl = $(dateId), tEl = $(timeId);
   if (!dEl || !tEl) return;
-  if (!dateObjOrTimestamp) { dEl.value = ''; tEl.value = ''; return; }
+  const ampmEl = $(timeId + '-ampm');
+  if (!dateObjOrTimestamp) {
+    dEl.value = ''; tEl.value = '';
+    if (ampmEl) ampmEl.value = 'AM';
+    return;
+  }
   const d = dateObjOrTimestamp.toDate ? dateObjOrTimestamp.toDate() : (dateObjOrTimestamp instanceof Date ? dateObjOrTimestamp : new Date(dateObjOrTimestamp));
   dEl.value = d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
-  tEl.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  if (ampmEl) {
+    // 12h format with AM/PM
+    const h24 = d.getHours(), m = d.getMinutes();
+    const ampm = h24 >= 12 ? 'PM' : 'AM';
+    const h12 = h24 === 0 ? 12 : h24 > 12 ? h24 - 12 : h24;
+    tEl.value = String(h12).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    ampmEl.value = ampm;
+  } else {
+    tEl.value = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  }
 }
 // Auto-format HH:MM as user types into a .dt-time-input
 document.addEventListener('input', function(e) {
@@ -593,7 +618,7 @@ function renderFleetDashboard() {
   let html = '';
   vehiclesCache.forEach(v => {
     // Determine if photo staleness should be suppressed
-    const isOnTrip = v.tripStatus === 'on-trip';
+    const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
     const isAtRepair = v.tripStatus === 'repair-shop';
     const stillCleaning = v.needsCleaning;
     let withinGrace = false;
@@ -601,12 +626,18 @@ function renderFleetDashboard() {
       const flagTime = v.cleaningFlaggedAt.toDate ? v.cleaningFlaggedAt.toDate().getTime() : new Date(v.cleaningFlaggedAt).getTime();
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
-    const suppressPhoto = isOnTrip || isAtRepair || stillCleaning || withinGrace;
+    const suppressPhoto = isOnTrip || isAtRepair || stillCleaning || withinGrace || !!v.photoExcluded;
 
     // Photo status
     let photoStatus, photoCls;
     if (suppressPhoto) {
-      if (isOnTrip) {
+      if (v.photoExcluded) {
+        photoStatus = '🚫 Excluded';
+        photoCls = 'status-muted';
+      } else if (v.tripStatus === 'private-trip') {
+        photoStatus = '📷 Private trip';
+        photoCls = 'status-muted';
+      } else if (isOnTrip) {
         photoStatus = '📷 On trip';
         photoCls = 'status-muted';
       } else if (isAtRepair) {
@@ -746,11 +777,11 @@ function renderLocationsWidget() {
 
   const MS_24H = 24 * 60 * 60 * 1000;
   const MS_2H = 2 * 60 * 60 * 1000;
-  const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip');
+  const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
   const atRepair = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
-  // "at home" excludes vehicles needing cleaning OR needing photos-only
+  // "at home" excludes vehicles on any kind of trip, repair, or needing cleaning
   function isAtHome(v) {
-    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'repair-shop' && !v.needsCleaning;
+    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop' && !v.needsCleaning && !v.photoExcluded;
   }
   const atHome1585 = vehiclesCache.filter(v => isAtHome(v) && v.homeLocation === '1585 Kapiolani' && !needsPhotosCheck(v));
   const atHomeHNL = vehiclesCache.filter(v => isAtHome(v) && v.homeLocation === 'HNL' && !needsPhotosCheck(v));
@@ -759,9 +790,10 @@ function renderLocationsWidget() {
   const cleaning1585 = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation === '1585 Kapiolani');
   const cleaningOther = vehiclesCache.filter(v => v.needsCleaning && v.homeLocation !== 'HNL' && v.homeLocation !== '1585 Kapiolani');
 
-  // Check if vehicle needs photos (stale >24h, not suppressed by trip/repair/grace)
+  // Check if vehicle needs photos (stale >24h, not suppressed by trip/repair/grace/excluded)
   function needsPhotosCheck(v) {
-    const isOnTrip = v.tripStatus === 'on-trip';
+    if (v.photoExcluded) return false;
+    const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
     const isAtRepair = v.tripStatus === 'repair-shop';
     let withinGrace = false;
     if (v.cleaningFlaggedAt) {
@@ -1455,13 +1487,14 @@ async function openVehiclePage(vid) {
   const isOnTrip = selectedVehicle.tripStatus === 'on-trip' || selectedVehicle.tripStatus === 'private-trip';
   const isAtRepairShop = selectedVehicle.tripStatus === 'repair-shop';
   const stillNeedsCleaning = selectedVehicle.needsCleaning;
+  const isExcluded = !!selectedVehicle.photoExcluded;
   // Grace: 2 hours after cleaning was flagged (vehicle returned)
   let withinGrace = false;
   if (selectedVehicle.cleaningFlaggedAt) {
     const flagTime = selectedVehicle.cleaningFlaggedAt.toDate ? selectedVehicle.cleaningFlaggedAt.toDate().getTime() : new Date(selectedVehicle.cleaningFlaggedAt).getTime();
     withinGrace = (Date.now() - flagTime) < MS_2H;
   }
-  const suppressStale = isOnTrip || isAtRepairShop || stillNeedsCleaning || withinGrace;
+  const suppressStale = isOnTrip || isAtRepairShop || stillNeedsCleaning || withinGrace || isExcluded;
 
   if (!suppressStale && selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H) {
     if (selectedVehicle.lastPhotoAge === Infinity) {
@@ -1829,7 +1862,8 @@ async function startCameraStream() {
   // Fall back step by step if the device doesn't support it
   let stream = null;
   const attempts = [
-    { video: { facingMode: { exact: cameraFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 }, zoom: 1.0 }, audio: false },
+    // Note: zoom is NOT included in getUserMedia constraints (non-standard, causes failures)
+    // It is applied via applyConstraints AFTER the stream starts
     { video: { facingMode: { exact: cameraFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
     { video: { facingMode: { exact: cameraFacingMode } }, audio: false },
     { video: { facingMode: cameraFacingMode }, audio: false },
@@ -1877,6 +1911,22 @@ async function startCameraStream() {
   video.setAttribute('playsinline', 'true');
   video.setAttribute('muted', 'true');
   video.muted = true;
+
+  // Re-apply min zoom whenever the stream resizes (e.g. iOS auto-lens switch)
+  // Using a named handler so we can remove it on next startCameraStream call
+  if (video._zoomResizeHandler) video.removeEventListener('resize', video._zoomResizeHandler);
+  video._zoomResizeHandler = async () => {
+    if (!cameraStream) return;
+    const [t] = cameraStream.getVideoTracks();
+    if (t && t.getCapabilities) {
+      try {
+        const caps = t.getCapabilities();
+        if (caps.zoom) await t.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] });
+      } catch(e) {}
+    }
+  };
+  video.addEventListener('resize', video._zoomResizeHandler);
+
   try {
     await video.play();
   } catch (playErr) {
@@ -2797,11 +2847,12 @@ $('btn-save-location').addEventListener('click', async () => {
   }
 
   // If vehicle was on-trip, private-trip, or repair-shop and now returning home, flag for cleaning
+  // (but NEVER set cleaning/damage flags on excluded vehicles)
   const wasAtRepair = selectedVehicle.tripStatus === 'repair-shop';
   const wasOnTrip = ['on-trip', 'private-trip'].includes(selectedVehicle.tripStatus);
   const nowHome = tripStatus === 'home';
   const nowReturnFromRepair = wasAtRepair && tripStatus !== 'repair-shop';
-  if ((wasOnTrip && nowHome) || nowReturnFromRepair) {
+  if (((wasOnTrip && nowHome) || nowReturnFromRepair) && !selectedVehicle.photoExcluded) {
     updateData.needsCleaning = true;
     updateData.needsDamageCheck = true;
     if (wasOnTrip && nowHome) {
@@ -3001,11 +3052,12 @@ function loadAdminVehicles() {
 
   list.innerHTML = vehiclesCache.map(v => {
     const hasPhoto = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="v-list-thumb" alt="">` : '<div class="v-list-thumb-empty">📷</div>';
+    const excludedBadge = v.photoExcluded ? '<span style="font-size:0.75rem;background:#fed7aa;color:#9a3412;padding:1px 6px;border-radius:4px;margin-left:6px;">🚫 Excluded</span>' : '';
     return `
     <div class="data-list-item">
       <div class="v-list-thumb-wrap">${hasPhoto}</div>
       <div class="item-info">
-        <div class="item-title">${escapeHtml(v.plate)}</div>
+        <div class="item-title">${escapeHtml(v.plate)}${excludedBadge}</div>
         <div class="item-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.year ? ` (${v.year})` : ''}${v.color ? ` - ${escapeHtml(v.color)}` : ''}</div>
       </div>
       <div class="item-actions">
@@ -3014,6 +3066,26 @@ function loadAdminVehicles() {
       </div>
     </div>`;
   }).join('');
+
+  // Render excluded vehicles list
+  const excludedEl = $('excluded-vehicles-list');
+  if (excludedEl) {
+    const excluded = vehiclesCache.filter(v => v.photoExcluded);
+    if (!excluded.length) {
+      excludedEl.innerHTML = '<p class="hint">No excluded vehicles.</p>';
+    } else {
+      excludedEl.innerHTML = excluded.map(v => `
+        <div class="data-list-item">
+          <div class="item-info">
+            <div class="item-title">${escapeHtml(v.plate)} <span style="font-size:0.8rem;color:#9a3412;">🚫 Excluded</span></div>
+            <div class="item-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.year ? ` (${v.year})` : ''}</div>
+          </div>
+          <div class="item-actions">
+            <button class="btn btn-sm btn-outline" onclick="openEditVehicle('${v.id}')">Edit</button>
+          </div>
+        </div>`).join('');
+    }
+  }
 }
 
 window.deleteVehicle = async function (vehicleId, plate) {
@@ -3077,6 +3149,7 @@ window.openEditVehicle = function (vehicleId) {
   $('ev-color').value = v.color || '';
   $('ev-photo').value = '';
   $('ev-photo-preview').style.display = 'none';
+  $('ev-photo-excluded').checked = !!v.photoExcluded;
 
   // Show current default photo if exists
   if (v.defaultImageUrl) {
@@ -3152,6 +3225,7 @@ $('edit-vehicle-form').addEventListener('submit', async (e) => {
   const year = $('ev-year').value ? parseInt($('ev-year').value) : null;
   const color = $('ev-color').value.trim() || null;
   const photoFile = $('ev-photo').files[0] || null;
+  const photoExcluded = $('ev-photo-excluded').checked;
 
   if (!plate || !make || !model) {
     toast('Please fill in plate, make, and model.', 'warning');
@@ -3168,7 +3242,7 @@ $('edit-vehicle-form').addEventListener('submit', async (e) => {
   showLoading('Saving changes...');
   try {
     await db.collection('vehicles').doc(vehicleId).update({
-      plate, make, model, year, color
+      plate, make, model, year, color, photoExcluded
     });
 
     if (photoFile) {

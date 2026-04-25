@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425a">
+  <link rel="stylesheet" href="style.css?v=20260425b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -291,14 +291,16 @@
             <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
             <div class="dt-split-wrap">
               <input type="date" id="vehicle-trip-scheduled-start-date" class="vehicle-location-custom dt-date-input">
-              <input type="text" id="vehicle-trip-scheduled-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+              <input type="text" id="vehicle-trip-scheduled-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+              <select id="vehicle-trip-scheduled-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
             </div>
           </div>
           <div id="trip-expected-end-row" class="loc-field" style="display:none;">
             <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
             <div class="dt-split-wrap">
               <input type="date" id="vehicle-trip-expected-end-date" class="vehicle-location-custom dt-date-input">
-              <input type="text" id="vehicle-trip-expected-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+              <input type="text" id="vehicle-trip-expected-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+              <select id="vehicle-trip-expected-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
             </div>
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
@@ -336,14 +338,16 @@
               <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
               <div class="dt-split-wrap">
                 <input type="date" id="private-trip-start-date" class="vehicle-location-custom dt-date-input">
-                <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+                <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+                <select id="private-trip-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
               </div>
             </div>
             <div class="loc-field">
               <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
               <div class="dt-split-wrap">
                 <input type="date" id="private-trip-end-date" class="vehicle-location-custom dt-date-input">
-                <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="HH:MM" maxlength="5" autocomplete="off">
+                <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+                <select id="private-trip-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
               </div>
             </div>
             <div class="loc-field">
@@ -1113,6 +1117,11 @@
           <h3>All Vehicles <span id="vehicle-count" class="badge">0</span></h3>
           <div id="vehicles-list" class="data-list"></div>
         </div>
+        <div class="card">
+          <h3>🚫 Excluded Vehicles <span class="hint" style="font-size:0.8rem;">(no photo / cleaning prompts)</span></h3>
+          <p class="hint">Vehicles below are excluded from all photo staleness alerts and cleaning/damage check flags. Toggle via the Edit button above.</p>
+          <div id="excluded-vehicles-list" class="data-list"><p class="hint">No excluded vehicles.</p></div>
+        </div>
       </div>
 
       <!-- ====== Edit Vehicle Modal ====== -->
@@ -1158,6 +1167,12 @@
             </div>
             <div id="ev-photo-preview" style="display:none; margin-bottom:10px;">
               <img id="ev-photo-preview-img" style="max-width:200px; border-radius:8px;">
+            </div>
+            <div class="form-group" style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:8px;padding:10px 14px;">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;">
+                <input type="checkbox" id="ev-photo-excluded" style="width:18px;height:18px;cursor:pointer;">
+                <span><strong>🚫 Exclude from photo &amp; cleaning prompts</strong><br><span style="font-size:0.8rem;color:#9a3412;">Vehicle won't appear in photo alerts, cleaning flags, or damage checks.</span></span>
+              </label>
             </div>
             <div class="edit-vehicle-actions">
               <button type="submit" class="btn btn-primary">Save Changes</button>
