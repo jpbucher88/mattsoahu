@@ -165,6 +165,59 @@ function toast(message, type = 'info') {
   }, 3000);
 }
 
+// ================================================================
+// DAN EASTER EGG
+// ================================================================
+function showDanEasterEgg() {
+  const overlay = $('dan-overlay');
+  const bg = $('dan-bg');
+  const wordsContainer = $('dan-words');
+  if (!overlay) return;
+
+  // Scatter 100 "bitch" words across the screen
+  wordsContainer.innerHTML = '';
+  for (let i = 0; i < 100; i++) {
+    const span = document.createElement('span');
+    span.textContent = 'bitch';
+    span.style.cssText = `
+      position:absolute;
+      left:${Math.random() * 95}%;
+      top:${Math.random() * 95}%;
+      font-size:${10 + Math.random() * 14}px;
+      font-weight:700;
+      color:rgba(255,255,255,${0.4 + Math.random() * 0.6});
+      transform:rotate(${-45 + Math.random() * 90}deg);
+      pointer-events:none;
+      animation:danFlicker ${0.3 + Math.random() * 0.5}s infinite alternate;
+      animation-delay:${Math.random() * 0.5}s;
+    `;
+    wordsContainer.appendChild(span);
+  }
+
+  overlay.style.display = 'block';
+
+  // Flash the background
+  let flashCount = 0;
+  const flashInterval = setInterval(() => {
+    flashCount++;
+    bg.style.background = flashCount % 2 === 0 ? '#ff0040' : '#1a0010';
+    if (flashCount >= 12) clearInterval(flashInterval);
+  }, 220);
+
+  // Dismiss after 3 seconds
+  setTimeout(() => {
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.5s';
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.transition = '';
+      bg.style.background = '#ff0040';
+      clearInterval(flashInterval);
+    }, 500);
+  }, 3000);
+}
+
 function confirm(title, message) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -303,6 +356,12 @@ auth.onAuthStateChanged(async (user) => {
 
       $('user-display').textContent = userData.displayName || user.email;
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
+
+      // Easter egg: welcome Dan
+      const uName = (userData.displayName || '').toLowerCase();
+      if (uName.includes('dan')) {
+        setTimeout(() => showDanEasterEgg(), 200);
+      }
 
       // Run auto-cleanup on any login (not just admin)
       cleanupOldPhotos();
@@ -4354,7 +4413,7 @@ async function loadMaintenanceHistory(vehicleId) {
             <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
             ${invoiceHTML}
           </div>
-          ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
+      ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-outline" onclick="openEditMaintenance('${doc.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
         </div>
       `;
     });
@@ -4388,6 +4447,152 @@ window.deleteMaintenanceRecord = async function(docId) {
     toast('Failed to delete record.', 'error');
   }
 };
+
+// ================================================================
+// EDIT MAINTENANCE RECORD MODAL
+// ================================================================
+
+let _editMaintDocId = null;
+
+window.openEditMaintenance = async function(docId) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  showLoading('Loading record...');
+  try {
+    const snap = await db.collection('maintenance').doc(docId).get();
+    if (!snap.exists) { toast('Record not found.', 'error'); return; }
+    const d = snap.data();
+    _editMaintDocId = docId;
+
+    // Populate fields
+    const knownTypes = ['Oil Change','Tire Rotation','Brake Inspection','Brake Pads/Rotors','Air Filter','Cabin Filter',
+      'Transmission Fluid','Coolant Flush','Spark Plugs','Battery','Tires (New)','Alignment','Wiper Blades',
+      'Belts/Hoses','A/C Service','Inspection/Safety','Roach Treatment'];
+    const isCustom = d.serviceType && !knownTypes.includes(d.serviceType);
+    $('em-type').value = isCustom ? 'Custom' : (d.serviceType || '');
+    $('em-custom-row').style.display = isCustom ? '' : 'none';
+    $('em-custom-type').value = isCustom ? (d.serviceType || '') : '';
+    $('em-date').value = d.date || '';
+    $('em-mileage').value = d.mileage || '';
+    $('em-cost').value = d.cost != null ? d.cost : '';
+    $('em-location').value = d.location || '';
+    $('em-notes').value = d.notes || '';
+
+    // Invoice
+    $('em-invoice-input').value = '';
+    $('em-invoice-filename').textContent = 'No file chosen';
+    $('em-invoice-preview-wrap').style.display = 'none';
+    $('em-invoice-preview').src = '';
+    if (d.invoiceUrl) {
+      $('em-invoice-existing-img').src = d.invoiceUrl;
+      $('em-invoice-existing-link').href = d.invoiceUrl;
+      $('em-invoice-existing-wrap').style.display = 'block';
+    } else {
+      $('em-invoice-existing-wrap').style.display = 'none';
+    }
+
+    $('edit-maint-overlay').style.display = 'flex';
+  } catch(e) {
+    console.error('Open edit maintenance error:', e);
+    toast('Could not load record.', 'error');
+  } finally {
+    hideLoading();
+  }
+};
+
+// Wire new invoice preview in edit modal
+$('em-invoice-input').addEventListener('change', function() {
+  const file = this.files[0];
+  if (!file) return;
+  $('em-invoice-filename').textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    $('em-invoice-preview').src = e.target.result;
+    $('em-invoice-preview-wrap').style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+});
+$('em-invoice-clear').addEventListener('click', () => {
+  $('em-invoice-input').value = '';
+  $('em-invoice-filename').textContent = 'No file chosen';
+  $('em-invoice-preview-wrap').style.display = 'none';
+  $('em-invoice-preview').src = '';
+});
+$('em-invoice-remove').addEventListener('click', () => {
+  $('em-invoice-existing-wrap').style.display = 'none';
+  $('em-invoice-existing-img').src = '';
+  $('em-invoice-existing-link').href = '#';
+  // Mark for removal: store empty string sentinel
+  $('em-invoice-existing-img').dataset.removed = '1';
+});
+
+[$('btn-edit-maint-close'), $('btn-edit-maint-cancel')].forEach(btn => {
+  btn.addEventListener('click', () => { $('edit-maint-overlay').style.display = 'none'; });
+});
+$('edit-maint-overlay').addEventListener('click', (e) => {
+  if (e.target === $('edit-maint-overlay')) $('edit-maint-overlay').style.display = 'none';
+});
+
+$('edit-maint-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!_editMaintDocId) return;
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+
+  const rawType = $('em-type').value;
+  const serviceType = rawType === 'Custom' ? $('em-custom-type').value.trim() : rawType;
+  if (!serviceType) { toast('Select a service type.', 'warning'); return; }
+  const date = $('em-date').value;
+  if (!date) { toast('Enter a date.', 'warning'); return; }
+
+  const mileage = $('em-mileage').value ? parseInt($('em-mileage').value) : null;
+  const cost = $('em-cost').value !== '' ? parseFloat($('em-cost').value) : null;
+  const location = $('em-location').value.trim() || null;
+  const notes = $('em-notes').value.trim() || null;
+
+  showLoading('Saving changes...');
+  try {
+    const updateData = { serviceType, date };
+    updateData.mileage = mileage ?? firebase.firestore.FieldValue.delete();
+    updateData.cost = cost != null ? cost : firebase.firestore.FieldValue.delete();
+    updateData.location = location ?? firebase.firestore.FieldValue.delete();
+    updateData.notes = notes ?? firebase.firestore.FieldValue.delete();
+
+    // Handle invoice: new upload, keep existing, or remove
+    const newFile = $('em-invoice-input').files[0];
+    const existingRemoved = $('em-invoice-existing-img').dataset.removed === '1';
+    if (newFile) {
+      try {
+        const st = getStorage();
+        const compressed = await compressImage(newFile, 1600, 0.78);
+        const safePlate = sanitizePlate(selectedVehicle.plate || selectedVehicle.id);
+        const fname = 'inv_' + date + '_' + Date.now() + '.jpg';
+        const ref = st.ref('vehicles/' + safePlate + '/maintenance/' + fname);
+        await ref.put(compressed, { contentType: 'image/jpeg' });
+        updateData.invoiceUrl = await ref.getDownloadURL();
+      } catch(invErr) {
+        console.error('Invoice upload error:', invErr);
+        toast('Invoice upload failed — saved without it.', 'warning');
+      }
+    } else if (existingRemoved) {
+      updateData.invoiceUrl = firebase.firestore.FieldValue.delete();
+    }
+    // else: leave existing invoiceUrl unchanged (don't set it in updateData)
+
+    await db.collection('maintenance').doc(_editMaintDocId).update(updateData);
+    // Reset removal sentinel
+    $('em-invoice-existing-img').dataset.removed = '';
+    toast('Record updated!', 'success');
+    $('edit-maint-overlay').style.display = 'none';
+    if (selectedVehicle) {
+      loadMaintenanceHistory(selectedVehicle.id);
+      updateRecommendedServices(selectedVehicle.id);
+    }
+  } catch(err) {
+    console.error('Edit maintenance error:', err);
+    toast('Failed to save changes.', 'error');
+  } finally {
+    hideLoading();
+  }
+});
 
 // ================================================================
 // VEHICLE NOTES & FOLLOW-UPS

@@ -5149,3 +5149,9 @@ body {
   border-color: #6366f1;
   box-shadow: 0 0 0 2px rgba(99,102,241,0.15);
 }
+
+/* Dan Easter Egg */
+@keyframes danFlicker {
+  from { opacity: 0.2; transform: rotate(var(--r, -10deg)) scale(0.9); }
+  to   { opacity: 1;   transform: rotate(var(--r, -10deg)) scale(1.1); }
+}

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425b">
+  <link rel="stylesheet" href="style.css?v=20260425c">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -644,6 +644,100 @@
         <!-- Maintenance history -->
         <div id="maintenance-history" class="data-list"></div>
       </section>
+
+      <!-- ====== Edit Maintenance Modal ====== -->
+      <div id="edit-maint-overlay" class="edit-vehicle-overlay" style="display:none;">
+        <div class="edit-vehicle-modal">
+          <div class="edit-vehicle-header">
+            <h3>✏️ Edit Maintenance Record</h3>
+            <button id="btn-edit-maint-close" class="btn-close">&times;</button>
+          </div>
+          <form id="edit-maint-form">
+            <input type="hidden" id="em-id">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-type">Service Type</label>
+                <select id="em-type" class="form-select" onchange="document.getElementById('em-custom-row').style.display=this.value==='Custom'?'':'none'">
+                  <option value="">-- Select --</option>
+                  <option value="Oil Change">Oil Change</option>
+                  <option value="Tire Rotation">Tire Rotation</option>
+                  <option value="Brake Inspection">Brake Inspection</option>
+                  <option value="Brake Pads/Rotors">Brake Pads/Rotors</option>
+                  <option value="Air Filter">Air Filter</option>
+                  <option value="Cabin Filter">Cabin Filter</option>
+                  <option value="Transmission Fluid">Transmission Fluid</option>
+                  <option value="Coolant Flush">Coolant Flush</option>
+                  <option value="Spark Plugs">Spark Plugs</option>
+                  <option value="Battery">Battery</option>
+                  <option value="Tires (New)">Tires (New)</option>
+                  <option value="Alignment">Alignment</option>
+                  <option value="Wiper Blades">Wiper Blades</option>
+                  <option value="Belts/Hoses">Belts/Hoses</option>
+                  <option value="A/C Service">A/C Service</option>
+                  <option value="Inspection/Safety">Inspection/Safety</option>
+                  <option value="Roach Treatment">Roach Treatment</option>
+                  <option value="Custom">✏️ Custom (type below)...</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="em-date">Date</label>
+                <input type="date" id="em-date" required>
+              </div>
+            </div>
+            <div class="form-row" id="em-custom-row" style="display:none;">
+              <div class="form-group" style="flex:1;">
+                <label for="em-custom-type">Custom Service Name</label>
+                <input type="text" id="em-custom-type" class="form-select" placeholder="e.g. Full Detail..." maxlength="100">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-mileage">Mileage at Service</label>
+                <input type="number" id="em-mileage" placeholder="e.g. 45000" min="0" max="999999">
+              </div>
+              <div class="form-group">
+                <label for="em-cost">Cost ($)</label>
+                <input type="number" id="em-cost" placeholder="0.00" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-location">Where Serviced</label>
+                <input type="text" id="em-location" placeholder="e.g. Jiffy Lube" maxlength="100">
+              </div>
+              <div class="form-group">
+                <label for="em-notes">Notes</label>
+                <input type="text" id="em-notes" placeholder="Optional details" maxlength="200">
+              </div>
+            </div>
+            <!-- Invoice section -->
+            <div class="form-row m-invoice-row">
+              <div class="form-group" style="flex:1;">
+                <label>📎 Invoice / Receipt</label>
+                <div id="em-invoice-existing-wrap" style="display:none; margin-bottom:8px;">
+                  <a id="em-invoice-existing-link" href="#" target="_blank">
+                    <img id="em-invoice-existing-img" class="m-invoice-preview-img" src="" alt="Current invoice">
+                  </a>
+                  <button type="button" id="em-invoice-remove" class="m-invoice-clear-btn" style="margin-top:6px;">✕ Remove invoice</button>
+                </div>
+                <div class="m-invoice-input-wrap">
+                  <label class="m-invoice-upload-label" for="em-invoice-input">📎 Replace / Add Invoice</label>
+                  <input type="file" id="em-invoice-input" accept="image/*" style="display:none;">
+                  <span id="em-invoice-filename" class="m-invoice-filename">No file chosen</span>
+                </div>
+                <div id="em-invoice-preview-wrap" class="m-invoice-preview-wrap" style="display:none;">
+                  <img id="em-invoice-preview" class="m-invoice-preview-img" src="" alt="New invoice preview">
+                  <button type="button" id="em-invoice-clear" class="m-invoice-clear-btn">✕ Cancel new</button>
+                </div>
+              </div>
+            </div>
+            <div class="edit-vehicle-actions">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <button type="button" id="btn-edit-maint-cancel" class="btn btn-outline">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
       <!-- Vehicle Information Section (key photo, videos, customer info) -->
       <section id="vehicle-info-section" class="card" style="display:none;">
@@ -1474,6 +1568,16 @@
     <div class="bg-upload-body">
       <div class="progress-bar"><div id="bg-upload-fill" class="progress-fill"></div></div>
       <span id="bg-upload-text">0 / 0</span>
+    </div>
+  </div>
+
+  <!-- DAN EASTER EGG OVERLAY -->
+  <div id="dan-overlay" style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;cursor:default;user-select:none;" aria-hidden="true">
+    <div id="dan-bg" style="position:absolute;inset:0;background:#ff0040;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+      <div id="dan-title" style="font-size:clamp(2.5rem,8vw,5rem);font-weight:900;color:#fff;text-shadow:0 0 30px rgba(0,0,0,0.5);text-align:center;letter-spacing:0.05em;line-height:1.1;z-index:1;">
+        WELCOME BACK<br>BITCH 😈
+      </div>
+      <div id="dan-words" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
     </div>
   </div>
 </body>
