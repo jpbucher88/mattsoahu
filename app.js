@@ -5021,22 +5021,12 @@ window.changeComplianceMonth = function(delta) {
   renderTaskAgenda(cachedTaskItems);
 };
 
-function _buildComplianceMonthBrowser(taskItems) {
+function _buildComplianceMonthBrowser() {
   const month = _complianceViewMonth || todayDateString().substring(0, 7);
   const [y, m] = month.split('-').map(Number);
   const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   const todayMonth = todayDateString().substring(0, 7);
   const isCurrent = month === todayMonth;
-
-  // Build a map of vehicleId → compliance tasks for quick lookup
-  const tasksByVehicle = new Map();
-  if (taskItems) {
-    for (const item of taskItems) {
-      const vid = item.vehicleId || '_general';
-      if (!tasksByVehicle.has(vid)) tasksByVehicle.set(vid, []);
-      tasksByVehicle.get(vid).push(item);
-    }
-  }
 
   // Collect all vehicles with compliance due in the selected month
   const rows = [];
@@ -5056,13 +5046,9 @@ function _buildComplianceMonthBrowser(taskItems) {
   </div>`;
 
   if (rows.length === 0) {
-    // Still show any tasks with no-date or different month (edge case)
-    const orphanTasks = taskItems && taskItems.length ? taskItems : [];
-    const orphanHtml = orphanTasks.length ? orphanTasks.map(item => renderAgendaItem(item)).join('') : '';
     return `<div class="comp-month-browser">
       ${navHtml}
       <div class="comp-month-empty">&#x2705; No compliance items due in ${monthName}.</div>
-      ${orphanHtml ? `<div class="comp-unified-extra">${orphanHtml}</div>` : ''}
     </div>`;
   }
 
@@ -5073,63 +5059,25 @@ function _buildComplianceMonthBrowser(taskItems) {
   });
 
   let rowsHtml = '';
-  const renderedVehicleIds = new Set();
   for (const { v, its } of rows) {
-    renderedVehicleIds.add(v.id);
     const hasUrgent = its.some(i => i.status.cls === 'compliance-urgent');
     const hasWarn   = its.some(i => i.status.cls === 'compliance-warn');
-    const rowCls    = hasUrgent ? 'comp-unified-row comp-row-urgent' : hasWarn ? 'comp-unified-row comp-row-warn' : 'comp-unified-row comp-row-ok';
+    const rowCls    = hasUrgent ? 'comp-month-row comp-row-urgent' : hasWarn ? 'comp-month-row comp-row-warn' : 'comp-month-row comp-row-ok';
     const tagHtml   = its.map(i => {
       const tc = i.status.cls === 'compliance-urgent' ? 'comp-tag-urgent'
                : i.status.cls === 'compliance-warn'   ? 'comp-tag-warn' : 'comp-tag-ok';
       return `<span class="comp-month-tag ${tc}">${i.label} \u2014 ${i.status.label}</span>`;
     }).join('');
-
-    // Tasks for this vehicle
-    const vTasks = tasksByVehicle.get(v.id) || [];
-    const tasksHtml = vTasks.length
-      ? `<div class="comp-unified-tasks">${vTasks.map(item => renderAgendaItem(item)).join('')}</div>`
-      : '';
-
-    rowsHtml += `<div class="${rowCls}">
-      <div class="comp-unified-header" onclick="openVehicleCompliancePage('${v.id}')">
-        <span class="comp-month-plate">&#x1F697; ${escapeHtml(v.plate)}</span>
-        <span class="comp-month-tags">${tagHtml}</span>
-      </div>
-      ${tasksHtml}
-    </div>`;
-  }
-
-  // Any tasks for vehicles NOT in the current month (no-date tasks, etc.)
-  let extraHtml = '';
-  for (const [vid, tasks] of tasksByVehicle.entries()) {
-    if (!renderedVehicleIds.has(vid) && vid !== '_general') {
-      const v = vehiclesCache.find(x => x.id === vid);
-      const plate = v ? v.plate : vid;
-      extraHtml += `<div class="comp-unified-row comp-row-warn">
-        <div class="comp-unified-header">
-          <span class="comp-month-plate">&#x1F697; ${escapeHtml(plate)}</span>
-          <span class="comp-month-tags"><span class="comp-month-tag comp-tag-warn">📋 Open Tasks</span></span>
-        </div>
-        <div class="comp-unified-tasks">${tasks.map(item => renderAgendaItem(item)).join('')}</div>
-      </div>`;
-    }
-  }
-  const generalTasks = tasksByVehicle.get('_general') || [];
-  if (generalTasks.length) {
-    extraHtml += `<div class="comp-unified-row comp-row-warn">
-      <div class="comp-unified-header">
-        <span class="comp-month-plate">📋 General</span>
-        <span class="comp-month-tags"></span>
-      </div>
-      <div class="comp-unified-tasks">${generalTasks.map(item => renderAgendaItem(item)).join('')}</div>
+    rowsHtml += `<div class="${rowCls}" onclick="openVehicleCompliancePage('${v.id}')">
+      <span class="comp-month-plate">&#x1F697; ${escapeHtml(v.plate)}</span>
+      <span class="comp-month-tags">${tagHtml}</span>
     </div>`;
   }
 
   return `<div class="comp-month-browser">
     ${navHtml}
     <div class="comp-month-count">${rows.length} vehicle${rows.length !== 1 ? 's' : ''} due in ${monthName}</div>
-    <div class="comp-month-rows">${rowsHtml}${extraHtml}</div>
+    <div class="comp-month-rows">${rowsHtml}</div>
   </div>`;
 }
 
@@ -5754,7 +5702,7 @@ function renderTaskAgenda(allItems) {
     el.innerHTML = html;
   }
 
-  // Compliance tab: unified view — month browser with tasks inline per vehicle
+  // Compliance tab: month browser at top + task cards below
   const compGroupEl = $('compliance-grouped-view');
   if (currentTaskTab === 'compliance') {
     [overdueEl, todayEl, upcomingEl, noDateEl].forEach(el => { if (el) el.style.display = 'none'; });
@@ -5763,8 +5711,54 @@ function renderTaskAgenda(allItems) {
       compGroupEl.style.display = '';
       if (!_complianceViewMonth) _complianceViewMonth = today.substring(0, 7);
 
-      // Build unified view — vehicle rows with inline task cards
-      const fullHtml = _buildComplianceMonthBrowser(items);
+      // Month browser at top
+      let fullHtml = _buildComplianceMonthBrowser();
+
+      // Task cards below
+      if (items.length === 0) {
+        fullHtml += '<div class="comp-tasks-section"><div class="comp-tasks-header">📋 Compliance Tasks</div><div class="agenda-empty"><p class="hint">No open compliance tasks. ✅</p></div></div>';
+      } else {
+        const todayMonth = today.substring(0, 7);
+        const groupMap = new Map();
+        for (const item of items) {
+          const month = item.dueDate ? item.dueDate.substring(0, 7) : 'nodate';
+          const key = `${item.vehicleId || 'general'}__${month}`;
+          if (!groupMap.has(key)) groupMap.set(key, { vehicleId: item.vehicleId, month, items: [] });
+          groupMap.get(key).items.push(item);
+        }
+        const groups = [...groupMap.values()].sort((a, b) => {
+          const aOver = a.month !== 'nodate' && a.month < todayMonth;
+          const bOver = b.month !== 'nodate' && b.month < todayMonth;
+          if (aOver !== bOver) return aOver ? -1 : 1;
+          return (a.month === 'nodate' ? 'zzzz' : a.month).localeCompare(b.month === 'nodate' ? 'zzzz' : b.month);
+        });
+        let taskHtml = '<div class="comp-tasks-section"><div class="comp-tasks-header">📋 Compliance Tasks</div>';
+        for (const group of groups) {
+          const v = group.vehicleId ? vehiclesCache.find(x => x.id === group.vehicleId) : null;
+          const plate = v ? v.plate : 'General';
+          const isOver = group.month !== 'nodate' && group.month < todayMonth;
+          const monthStr = group.month !== 'nodate'
+            ? new Date(group.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+            : 'No Due Date';
+          const typeTags = group.items.map(i => {
+            if (i.complianceType === 'safety') return '<span class="ctag ctag-safety">🔧 Safety</span>';
+            if (i.complianceType === 'registration') return '<span class="ctag ctag-reg">📝 Registration</span>';
+            return '<span class="ctag">📄 Insurance</span>';
+          }).join('');
+          taskHtml += `<div class="compliance-group-card${isOver ? ' compliance-group-overdue' : ''}">
+            <div class="compliance-group-header">
+              <span class="compliance-group-plate">🚗 ${escapeHtml(plate)}</span>
+              <span class="compliance-group-month">${monthStr}</span>
+              ${isOver ? '<span class="compliance-group-badge overdue-badge">OVERDUE</span>' : ''}
+              <span class="compliance-group-types">${typeTags}</span>
+            </div>
+            <div class="compliance-group-items">`;
+          for (const item of group.items) taskHtml += renderAgendaItem(item);
+          taskHtml += '</div></div>';
+        }
+        taskHtml += '</div>';
+        fullHtml += taskHtml;
+      }
 
       compGroupEl.innerHTML = fullHtml;
       compGroupEl.querySelectorAll('.followup-item').forEach(el => {
@@ -5874,15 +5868,55 @@ window.agendaMarkDone = async function(docId) {
 
 async function agendaMarkDoneVehicle(docId) {
   try {
+    const snap = await db.collection('vehicleNotes').doc(docId).get();
     await db.collection('vehicleNotes').doc(docId).update({
       done: true,
       completedBy: currentUser.uid,
       completedByName: currentUser.displayName || currentUser.email,
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    toast('Task completed! ✓', 'success');
+
+    // Auto-advance compliance date by 1 year when a compliance task is marked done
+    if (snap.exists) {
+      const data = snap.data();
+      if (data.sourceType === 'compliance' && data.vehicleId && data.complianceType) {
+        const fieldMap = { safety: 'complianceSafety', registration: 'complianceRegistration', insurance: 'complianceInsurance' };
+        const field = fieldMap[data.complianceType];
+        if (field) {
+          const vehicleSnap = await db.collection('vehicles').doc(data.vehicleId).get();
+          if (vehicleSnap.exists) {
+            const current = vehicleSnap.data()[field]; // 'YYYY-MM'
+            let nextVal = null;
+            if (current) {
+              const [y, m] = current.split('-').map(Number);
+              const nextDate = new Date(y + 1, m - 1, 1);
+              nextVal = nextDate.getFullYear() + '-' + String(nextDate.getMonth() + 1).padStart(2, '0');
+            } else {
+              // No existing date — set to same month next year
+              const now = new Date();
+              nextVal = (now.getFullYear() + 1) + '-' + String(now.getMonth() + 1).padStart(2, '0');
+            }
+            await db.collection('vehicles').doc(data.vehicleId).update({ [field]: nextVal });
+            // Refresh cache
+            const idx = vehiclesCache.findIndex(v => v.id === data.vehicleId);
+            if (idx !== -1) vehiclesCache[idx][field] = nextVal;
+            toast(`Task complete ✓ — ${data.complianceType === 'safety' ? 'Safety' : data.complianceType === 'registration' ? 'Registration' : 'Insurance'} renewed to ${nextVal}`, 'success');
+          } else {
+            toast('Task completed! ✓', 'success');
+          }
+        } else {
+          toast('Task completed! ✓', 'success');
+        }
+      } else {
+        toast('Task completed! ✓', 'success');
+      }
+    } else {
+      toast('Task completed! ✓', 'success');
+    }
+
     loadDashboardFollowUps();
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
+    if (selectedVehicle) loadComplianceData(vehiclesCache.find(v => v.id === (selectedVehicle.id || selectedVehicle)) || selectedVehicle);
   } catch (err) {
     console.error('Mark done error:', err);
     toast('Failed to update.', 'error');
