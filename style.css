@@ -5331,6 +5331,45 @@ body {
 }
 #btn-photo-override:hover { background: #f3f4f6; border-color: #6b7280; }
 
+/* Upload section override button */
+.upload-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.upload-section-header h3 { margin: 0; }
+#btn-upload-override {
+  font-size: 0.85rem; padding: 6px 14px;
+  border-color: #9ca3af; color: #374151;
+}
+#btn-upload-override:hover { background: #f3f4f6; border-color: #6b7280; }
+
+/* Exclude toggle button */
+#photo-exclude-wrap { margin-top: 8px; }
+.btn-exclude {
+  font-size: 0.82rem; padding: 5px 14px;
+  background: transparent;
+  border: 1.5px dashed #ef4444;
+  color: #ef4444;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-exclude:hover { background: #fef2f2; }
+.btn-exclude-active {
+  font-size: 0.82rem; padding: 5px 14px;
+  background: #f0fdf4;
+  border: 1.5px solid #16a34a;
+  color: #15803d;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.btn-exclude-active:hover { background: #dcfce7; }
+
 /* Inspection All Pass button */
 .dmg-all-pass-row {
   padding: 10px 16px 4px;

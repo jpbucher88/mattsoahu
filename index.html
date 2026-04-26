@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425i">
+  <link rel="stylesheet" href="style.css?v=20260425j">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -307,6 +307,9 @@
         <div id="photo-override-wrap" style="display:none;">
           <button id="btn-photo-override" class="btn btn-sm btn-outline">📷 Mark Photos Up to Date</button>
         </div>
+        <div id="photo-exclude-wrap" style="display:none;">
+          <button id="btn-photo-exclude" class="btn btn-sm btn-exclude">🚫 Exclude from Photos &amp; Cleaning</button>
+        </div>
       </section>
 
       <!-- Vehicle Compliance Section -->
@@ -348,7 +351,12 @@
 
       <!-- Camera / Upload Section -->
       <section id="upload-section" class="card" style="display:none;">
-        <h3>Take / Upload Photos</h3>
+        <div class="upload-section-header">
+          <h3>Take / Upload Photos</h3>
+          <div id="upload-override-wrap" style="display:none;">
+            <button id="btn-upload-override" class="btn btn-sm btn-outline">📷 Mark Photos Up to Date</button>
+          </div>
+        </div>
 
         <!-- Mileage prompt — required before uploading -->
         <div id="mileage-prompt" class="mileage-prompt">

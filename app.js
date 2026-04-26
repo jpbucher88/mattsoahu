@@ -895,7 +895,7 @@ function renderLocationsWidget() {
 
   // ── Per-location combined sections ──────────────────────────────
   for (const loc of allLocations) {
-    const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && v.homeLocation === loc);
+    const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && !v.photoExcluded && v.homeLocation === loc);
     const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && v.homeLocation === loc);
     const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !needsPhotosCheck(v) && v.homeLocation === loc);
     const overdueHere = [...overdueTrip, ...overdueRepair].filter(v => (v.homeLocation || '') === loc);
@@ -1672,10 +1672,34 @@ async function openVehiclePage(vid) {
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
 
-  // Photo override button — show when stale and admin/manager
+  // Photo override button — show when stale and admin/manager (top of info card)
   const photoOverrideWrap = $('photo-override-wrap');
   const isStaleNow = !suppressStale && selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H;
-  photoOverrideWrap.style.display = (canUpload && (isStaleNow || selectedVehicle.lastPhotoAge === Infinity)) ? 'block' : 'none';
+  const showOverride = canUpload && !isExcluded && (isStaleNow || selectedVehicle.lastPhotoAge === Infinity);
+  photoOverrideWrap.style.display = showOverride ? 'block' : 'none';
+
+  // Upload-section override button — same logic, shown inside the photo section
+  const uploadOverrideWrap = $('upload-override-wrap');
+  if (uploadOverrideWrap) uploadOverrideWrap.style.display = showOverride ? 'block' : 'none';
+
+  // Exclude toggle — admin only
+  const photoExcludeWrap = $('photo-exclude-wrap');
+  const isAdmin = currentUserRole === 'admin';
+  if (photoExcludeWrap) {
+    photoExcludeWrap.style.display = isAdmin ? 'block' : 'none';
+    const excludeBtn = $('btn-photo-exclude');
+    if (excludeBtn) {
+      if (isExcluded) {
+        excludeBtn.textContent = '✅ Excluded — Click to Re-enable Prompts';
+        excludeBtn.classList.add('btn-exclude-active');
+        excludeBtn.classList.remove('btn-exclude');
+      } else {
+        excludeBtn.textContent = '🚫 Exclude from Photos & Cleaning';
+        excludeBtn.classList.add('btn-exclude');
+        excludeBtn.classList.remove('btn-exclude-active');
+      }
+    }
+  }
 
   // Reset mileage prompt for this vehicle
   if (canUpload) {
@@ -1801,7 +1825,7 @@ function confirmMileage() {
 $('btn-mileage-confirm').addEventListener('click', confirmMileage);
 
 // Photo override — mark photos as up to date without uploading
-$('btn-photo-override').addEventListener('click', async () => {
+async function doPhotoOverride() {
   if (!selectedVehicle) return;
   const ok = await confirm('Mark Photos Up to Date', `Mark ${selectedVehicle.plate} photos as current? Use this when photos were taken locally and not uploaded, or data was kept from a previous session.`);
   if (!ok) return;
@@ -1820,6 +1844,7 @@ $('btn-photo-override').addEventListener('click', async () => {
       cached.lastPhotoDate = new Date(now);
     }
     $('photo-override-wrap').style.display = 'none';
+    if ($('upload-override-wrap')) $('upload-override-wrap').style.display = 'none';
     $('stale-alert').style.display = 'none';
     $('last-photo-time').textContent = '📷 Photos marked up to date just now';
     $('last-photo-time').style.display = 'block';
@@ -1827,6 +1852,47 @@ $('btn-photo-override').addEventListener('click', async () => {
     renderLocationsWidget();
   } catch (err) {
     console.error('Photo override error:', err);
+    toast('Failed to update.', 'error');
+  }
+}
+$('btn-photo-override').addEventListener('click', doPhotoOverride);
+$('btn-upload-override').addEventListener('click', doPhotoOverride);
+
+// Exclude toggle — admin only — bypass photos & cleaning prompts
+$('btn-photo-exclude').addEventListener('click', async () => {
+  if (!selectedVehicle || currentUserRole !== 'admin') return;
+  const isCurrentlyExcluded = !!selectedVehicle.photoExcluded;
+  const action = isCurrentlyExcluded ? 'Re-enable' : 'Exclude';
+  const msg = isCurrentlyExcluded
+    ? `Re-enable photo and cleaning prompts for ${selectedVehicle.plate}?`
+    : `Exclude ${selectedVehicle.plate} from all photo and cleaning prompts?\n\nThis vehicle will appear as ✅ Ready in Fleet Status even without photos.`;
+  const ok = await confirm(`${action} ${selectedVehicle.plate}`, msg);
+  if (!ok) return;
+  try {
+    const newVal = !isCurrentlyExcluded;
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ photoExcluded: newVal });
+    selectedVehicle.photoExcluded = newVal;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.photoExcluded = newVal;
+    // Refresh UI
+    const excludeBtn = $('btn-photo-exclude');
+    if (newVal) {
+      excludeBtn.textContent = '✅ Excluded — Click to Re-enable Prompts';
+      excludeBtn.classList.add('btn-exclude-active');
+      excludeBtn.classList.remove('btn-exclude');
+      $('stale-alert').style.display = 'none';
+      $('photo-override-wrap').style.display = 'none';
+      if ($('upload-override-wrap')) $('upload-override-wrap').style.display = 'none';
+      toast(`${selectedVehicle.plate} excluded from photos & cleaning ✓`, 'success');
+    } else {
+      excludeBtn.textContent = '🚫 Exclude from Photos & Cleaning';
+      excludeBtn.classList.remove('btn-exclude-active');
+      excludeBtn.classList.add('btn-exclude');
+      toast(`${selectedVehicle.plate} prompts re-enabled ✓`, 'success');
+    }
+    renderLocationsWidget();
+  } catch (err) {
+    console.error('Exclude toggle error:', err);
     toast('Failed to update.', 'error');
   }
 });
