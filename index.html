@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260426f">
+  <link rel="stylesheet" href="style.css?v=20260426g">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1432,6 +1432,42 @@
             <label class="exp-label">Month</label>
             <input type="month" id="fin-rev-month" class="form-select exp-input" style="width:auto;">
             <button class="btn btn-sm btn-primary" onclick="loadFinanceRevenue()">Load</button>
+            <button class="btn btn-sm btn-success" onclick="toggleFinRevForm()" id="fin-rev-add-btn">➕ Add Revenue</button>
+          </div>
+          <!-- Add Revenue Form -->
+          <div id="fin-rev-add-form" class="fin-add-rev-form" style="display:none;">
+            <div class="fin-add-rev-title">➕ Add Revenue Entry</div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Vehicle</label>
+                <select id="fin-rev-vehicle" class="form-select exp-input"></select>
+              </div>
+              <div class="exp-field">
+                <label class="exp-label">Type</label>
+                <select id="fin-rev-type" class="form-select exp-input">
+                  <option value="on-trip">📅 Turo</option>
+                  <option value="private-trip">🔒 Private</option>
+                </select>
+              </div>
+            </div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Date</label>
+                <input type="date" id="fin-rev-date" class="form-select exp-input">
+              </div>
+              <div class="exp-field exp-field-amount">
+                <label class="exp-label">Amount ($)</label>
+                <input type="number" id="fin-rev-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
+              </div>
+            </div>
+            <div class="exp-field" style="margin-bottom:10px;">
+              <label class="exp-label">Note <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+              <input type="text" id="fin-rev-note" class="form-select exp-input" placeholder="e.g. April Turo payout" maxlength="120">
+            </div>
+            <div class="exp-form-actions">
+              <button class="btn btn-primary" id="fin-rev-save-btn" onclick="saveFinanceRevenue()">Save</button>
+              <button class="btn btn-outline" onclick="toggleFinRevForm()">Cancel</button>
+            </div>
           </div>
           <div id="finance-revenue-body"></div>
         </div>

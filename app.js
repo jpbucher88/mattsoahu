@@ -10641,6 +10641,96 @@ async function loadFinanceOverview() {
   }
 }
 
+window.toggleFinRevForm = function() {
+  const form = $('fin-rev-add-form');
+  if (!form) return;
+  const isOpen = form.style.display !== 'none';
+  form.style.display = isOpen ? 'none' : '';
+  if (!isOpen) {
+    // Populate vehicle dropdown
+    const sel = $('fin-rev-vehicle');
+    if (sel) {
+      sel.innerHTML = '<option value="">-- Select Vehicle --</option>';
+      (vehiclesCache || []).slice().sort((a,b) => (a.plate||'').localeCompare(b.plate||'')).forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        opt.dataset.plate = v.plate || '';
+        opt.dataset.model = ((v.make||'') + ' ' + (v.model||'')).trim();
+        opt.textContent = v.plate + (v.make && v.model ? ' – ' + v.make + ' ' + v.model : '');
+        sel.appendChild(opt);
+      });
+    }
+    // Default date to today within selected month
+    const dateEl = $('fin-rev-date');
+    if (dateEl && !dateEl.value) {
+      const { start, end } = _finMonthRange('fin-rev-month');
+      const today = todayDateString();
+      dateEl.value = today >= start && today <= end ? today : start;
+    }
+    setTimeout(() => { const s = $('fin-rev-vehicle'); if (s) s.focus(); }, 60);
+  }
+};
+
+window.saveFinanceRevenue = async function() {
+  const vehicleSel = $('fin-rev-vehicle');
+  const vehicleId = vehicleSel?.value;
+  const vehiclePlate = vehicleSel?.selectedOptions[0]?.dataset.plate || '';
+  const vehicleModel = vehicleSel?.selectedOptions[0]?.dataset.model || '';
+  const tripType = $('fin-rev-type').value;
+  const date = $('fin-rev-date').value;
+  const amount = parseFloat($('fin-rev-amount').value);
+  const note = $('fin-rev-note')?.value.trim() || '';
+
+  if (!vehicleId) { toast('Select a vehicle.', 'warning'); return; }
+  if (!date) { toast('Enter a date.', 'warning'); return; }
+  if (!amount || amount <= 0) { toast('Enter a valid amount.', 'warning'); return; }
+
+  const btn = $('fin-rev-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try {
+    const logKey = vehicleId + '_' + date + '_manrev_' + Date.now();
+    const record = {
+      vehicleId,
+      vehiclePlate,
+      vehicleMakeModel: vehicleModel,
+      startDate: date,
+      endDate: date,
+      tripType,
+      revenue: amount,
+      manualRevenueEntry: true,
+      loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      loggedBy: currentUser.uid,
+      loggedByName: currentUser.displayName || currentUser.email,
+    };
+    if (note) record.notes = note;
+    await db.collection('tripLogs').doc(logKey).set(record);
+    toast('Revenue added!', 'success');
+    // Reset form fields
+    $('fin-rev-amount').value = '';
+    $('fin-rev-note').value = '';
+    $('fin-rev-vehicle').value = '';
+    toggleFinRevForm();
+    loadFinanceRevenue();
+  } catch(e) {
+    console.error('saveFinanceRevenue error:', e);
+    toast('Failed to save revenue.', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save';
+  }
+};
+
+window.deleteManualRevenue = async function(docId) {
+  if (!confirm('Delete this manual revenue entry?')) return;
+  try {
+    await db.collection('tripLogs').doc(docId).delete();
+    toast('Revenue entry deleted.', 'success');
+    loadFinanceRevenue();
+  } catch(e) {
+    toast('Failed to delete.', 'error');
+  }
+};
+
 window.loadFinanceRevenue = async function() {
   const body = $('finance-revenue-body');
   if (!body) return;
@@ -10650,24 +10740,47 @@ window.loadFinanceRevenue = async function() {
     let snap = { forEach: () => {} };
     try { snap = await db.collection('tripLogs').where('startDate','>=',start).where('startDate','<=',end).get(); } catch(e) {}
     const byVehicle = {};
+    const manualEntries = []; // track for delete buttons
     snap.forEach(doc => {
       const d = doc.data();
       if (d.cancelled) return;
-      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, trips: 0, untracked: 0 };
+      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, trips: 0, untracked: 0, manual: 0 };
       const rev = Number(d.revenue) || 0;
       if (d.tripType === 'private-trip') byVehicle[d.vehicleId].priv += rev;
       else byVehicle[d.vehicleId].turo += rev;
       if (!rev) byVehicle[d.vehicleId].untracked++;
+      if (d.manualRevenueEntry) byVehicle[d.vehicleId].manual++;
       byVehicle[d.vehicleId].trips++;
+      if (d.manualRevenueEntry) manualEntries.push({ id: doc.id, ...d });
     });
     const rows = Object.values(byVehicle).sort((a,b) => (b.turo+b.priv) - (a.turo+a.priv));
     if (!rows.length) {
-      body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No trips found for this period. Revenue is added from the 📊 Productivity → 📋 Trips view.</p>';
+      body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No trips or revenue found for this period. Use <strong>➕ Add Revenue</strong> above to log a payout.</p>';
       return;
     }
     const fmtR = n => n > 0 ? '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
     const totalTuro = rows.reduce((s,r) => s+r.turo, 0);
     const totalPriv = rows.reduce((s,r) => s+r.priv, 0);
+
+    // Manual entries section (deleteable)
+    const manualHtml = manualEntries.length ? `
+      <div class="fin-manual-entries">
+        <div class="fin-manual-entries-title">📝 Manual Revenue Entries</div>
+        ${manualEntries.sort((a,b) => a.startDate.localeCompare(b.startDate)).map(e => `
+          <div class="fin-manual-row">
+            <div>
+              <span class="fin-manual-plate">${escapeHtml(e.vehiclePlate||'')}</span>
+              <span class="fin-manual-type">${e.tripType === 'private-trip' ? '🔒 Private' : '📅 Turo'}</span>
+              <span class="fin-manual-date">${e.startDate}</span>
+              ${e.notes ? `<span class="fin-manual-note">${escapeHtml(e.notes)}</span>` : ''}
+            </div>
+            <div class="fin-manual-right">
+              <span class="fin-manual-amount">$${Number(e.revenue).toFixed(2)}</span>
+              <button class="btn btn-xs btn-danger" onclick="deleteManualRevenue('${e.id}')">✕</button>
+            </div>
+          </div>`).join('')}
+      </div>` : '';
+
     body.innerHTML = `
       <div class="fin-rev-totals">
         <span class="prod-rev-badge turo">📅 Turo: <strong>$${totalTuro.toFixed(2)}</strong></span>
@@ -10679,14 +10792,15 @@ window.loadFinanceRevenue = async function() {
         <tbody>
           ${rows.map(r => `<tr>
             <td><strong>${escapeHtml(r.plate||'')}</strong><br><span style="font-size:0.78rem;color:#6b7280;">${escapeHtml(r.makeModel||'')}</span></td>
-            <td>${r.trips}${r.untracked ? `<span style="font-size:0.72rem;color:#f59e0b;margin-left:4px;">(${r.untracked} no $)</span>` : ''}</td>
-            <td>${fmtR(r.turo)}</td>
-            <td>${fmtR(r.priv)}</td>
+            <td>${r.trips}${r.untracked ? `<span style="font-size:0.72rem;color:#f59e0b;margin-left:4px;">(${r.untracked} no $)</span>` : ''}${r.manual ? `<span style="font-size:0.72rem;color:#6b7280;margin-left:4px;">(${r.manual} manual)</span>` : ''}</td>
+            <td class="fin-td-rev">${fmtR(r.turo)}</td>
+            <td class="fin-td-rev">${fmtR(r.priv)}</td>
             <td><strong>${fmtR(r.turo+r.priv)}</strong></td>
           </tr>`).join('')}
         </tbody>
       </table>
-      <p class="hint" style="font-size:0.78rem;margin-top:8px;">Trips showing "no $" have no revenue entered yet. Add revenue via 📊 Productivity → 📋 Trips.</p>
+      ${manualHtml}
+      <p class="hint" style="font-size:0.78rem;margin-top:8px;">Trips showing "no $" have no revenue yet. Add via ➕ above or 📊 Productivity → 📋 Trips.</p>
     `;
   } catch(e) {
     console.error('Finance revenue error:', e);

@@ -3974,6 +3974,73 @@ body {
   margin-bottom: 4px;
   flex-wrap: wrap;
 }
+/* Add Revenue form */
+.fin-add-rev-form {
+  background: #f0fdf4;
+  border: 1.5px solid #86efac;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.fin-add-rev-title {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #166534;
+  margin-bottom: 10px;
+}
+/* Manual revenue entries list */
+.fin-manual-entries {
+  margin-top: 14px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+.fin-manual-entries-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.fin-manual-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #f3f4f6;
+  gap: 8px;
+}
+.fin-manual-plate {
+  font-weight: 700;
+  font-size: 0.88rem;
+  margin-right: 6px;
+}
+.fin-manual-type {
+  font-size: 0.78rem;
+  color: #6b7280;
+  margin-right: 6px;
+}
+.fin-manual-date {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  margin-right: 6px;
+}
+.fin-manual-note {
+  font-size: 0.78rem;
+  color: #6b7280;
+  font-style: italic;
+}
+.fin-manual-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.fin-manual-amount {
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: #166534;
+}
 /* Overview cards */
 .fin-overview-month {
   font-size: 1rem;
