@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425e">
+  <link rel="stylesheet" href="style.css?v=20260425f">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -56,10 +56,7 @@
   <div id="page-dashboard" class="page">
     <header class="app-header">
       <div class="header-brand" id="brand-home" style="cursor:pointer;"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Aloha Fleet</h2></div>
-      <button id="btn-tasks" class="task-alert-btn" style="display:none;" title="Open Tasks">
-        <span class="task-alert-icon">📋</span>
-        <span id="task-alert-count" class="task-alert-count">0</span>
-      </button>
+      <div id="btn-tasks" style="display:none;"><span id="task-alert-count" class="task-alert-count">0</span></div>
       <button id="btn-mailbox" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
         <span class="task-alert-icon">📬</span>
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
@@ -79,6 +76,19 @@
       </div>
     </header>
     <main class="dashboard-main">
+      <!-- Locations & Fleet Status Widget -->
+      <section id="locations-widget" class="card">
+        <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>📍 Fleet Status</h3>
+          </div>
+          <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
+        </div>
+        <div id="locations-widget-body" class="collapsible-body">
+          <div id="locations-grid" class="locations-grid"></div>
+        </div>
+      </section>
+
       <!-- Urgent Notifications Banner -->
       <section id="urgent-banner" class="card urgent-banner" style="display:none;">
         <div class="urgent-banner-header collapsible-header" onclick="toggleSection('urgent-banner-body', 'urgent-banner-toggle')">
@@ -112,31 +122,28 @@
       </section>
 
       <!-- Task Calendar + Incidents (merged card) -->
-      <section id="task-calendar-section" class="card">
-        <div class="task-calendar-header collapsible-header" onclick="toggleSection('task-calendar-body', 'task-calendar-toggle')">
-          <div class="collapsible-title">
-            <h3>� Operations Hub</h3>
+      <!-- Operations Hub Widget -->
+      <section id="ops-hub-widget" class="card ops-hub-widget">
+        <div class="ops-hub-top">
+          <div class="ops-hub-title-row" onclick="openTaskPanel()">
+            <span class="ops-hub-icon">🚀</span>
+            <h3 class="ops-hub-heading">Operations Hub</h3>
+            <span id="ops-hub-badge" class="ops-hub-badge" style="display:none;">0</span>
           </div>
-          <div class="collapsible-header-right">
-            <div class="task-calendar-nav" onclick="event.stopPropagation()">
-              <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
-              <span id="cal-month-label" class="cal-month-label"></span>
-              <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
-            </div>
-            <button class="collapse-btn" id="task-calendar-toggle">&#8722;</button>
+          <div class="ops-hub-cal-nav">
+            <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
+            <span id="cal-month-label" class="cal-month-label"></span>
+            <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
+            <button class="btn btn-sm btn-primary ops-hub-open-btn" onclick="openTaskPanel()">📥 Manage</button>
           </div>
         </div>
-        <div id="task-calendar-body" class="collapsible-body">
-          <div id="task-calendar-grid" class="task-calendar-grid"></div>
-          <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
-            <div class="task-calendar-detail-header">
-              <h4 id="cal-detail-date"></h4>
-              <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
-            </div>
-            <div id="cal-detail-list" class="cal-detail-list"></div>
+        <div id="task-calendar-grid" class="task-calendar-grid"></div>
+        <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
+          <div class="task-calendar-detail-header">
+            <h4 id="cal-detail-date"></h4>
+            <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
           </div>
-
-
+          <div id="cal-detail-list" class="cal-detail-list"></div>
         </div>
       </section>
 
@@ -156,19 +163,6 @@
             </select>
           </div>
           <div id="fleet-dashboard" class="fleet-dashboard"></div>
-        </div>
-      </section>
-
-      <!-- Locations & Fleet Status Widget -->
-      <section id="locations-widget" class="card">
-        <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
-          <div class="collapsible-title">
-            <h3>📍 Fleet Status</h3>
-          </div>
-          <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
-        </div>
-        <div id="locations-widget-body" class="collapsible-body">
-          <div id="locations-grid" class="locations-grid"></div>
         </div>
       </section>
 
@@ -219,19 +213,6 @@
         </div>
       </section>
 
-      <!-- ==================== TIME CLOCK WIDGET (Owner Only) ==================== -->
-      <section id="time-clock-widget" class="card" style="display:none;">
-        <div class="collapsible-header" onclick="toggleSection('time-clock-body', 'time-clock-toggle')">
-          <div class="collapsible-title">
-            <h3>⏱️ Elizabeth's Self Accountability</h3>
-          </div>
-          <button class="collapse-btn" id="time-clock-toggle">&#8722;</button>
-        </div>
-        <div id="time-clock-body" class="collapsible-body">
-          <div id="tc-view-banner" style="display:none;"></div>
-          <div id="time-clock-content" class="time-clock-content"></div>
-        </div>
-      </section>
     </main>
   </div>
 
@@ -1392,6 +1373,7 @@
         <button class="mailbox-tab active" id="mb-tab-inbox" onclick="switchMailTab('inbox')">📥 Inbox <span id="mb-inbox-count" class="mb-count"></span></button>
         <button class="mailbox-tab" id="mb-tab-sent" onclick="switchMailTab('sent')">📤 Sent</button>
         <button class="mailbox-tab" id="mb-tab-compose" onclick="switchMailTab('compose')">✉️ Compose</button>
+        <button class="mailbox-tab" id="mb-tab-timeclock" onclick="switchMailTab('timeclock')" style="display:none;">⏱️ Time Clock</button>
       </div>
       <div class="mailbox-body">
         <!-- Inbox -->
@@ -1427,6 +1409,11 @@
             <button class="btn btn-primary" onclick="sendMailMessage()">✉️ Send Message</button>
           </div>
         </div>
+        <!-- Time Clock -->
+        <div id="mb-timeclock" class="mb-tab-content" style="display:none;">
+          <div id="tc-view-banner" style="display:none;"></div>
+          <div id="time-clock-content" class="time-clock-content"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -1435,7 +1422,7 @@
   <div id="task-panel-overlay" class="task-panel-overlay" style="display:none;" onclick="if(event.target===this)closeTaskPanel()">
     <div class="task-panel">
       <div class="task-panel-header">
-        <h3>� Operations Hub</h3>
+        <h3>🚀 Operations Hub</h3>
         <button class="task-panel-close" onclick="closeTaskPanel()">&times;</button>
       </div>
       <div class="task-panel-body">

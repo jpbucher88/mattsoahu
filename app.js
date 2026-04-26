@@ -5241,6 +5241,13 @@ async function loadDashboardFollowUps() {
       const hasUrgent = items.some(i => i.urgent);
       badgeEl.classList.toggle('has-urgent', hasUrgent);
     }
+    // Update ops-hub widget badge
+    const opsHubBadge = $('ops-hub-badge');
+    if (opsHubBadge) {
+      opsHubBadge.textContent = items.length;
+      opsHubBadge.style.display = items.length > 0 ? '' : 'none';
+      opsHubBadge.classList.toggle('has-urgent', items.some(i => i.urgent));
+    }
     if (tasksBtn) tasksBtn.style.display = '';
 
     // Sync vehicle-page task button badge
@@ -7998,6 +8005,8 @@ window.switchMailTab = function(tab) {
   const tabContent = $('mb-' + tab);
   if (tabBtn) tabBtn.classList.add('active');
   if (tabContent) tabContent.style.display = '';
+  // Load time clock data when switching to that tab
+  if (tab === 'timeclock') initTimeClock();
 };
 
 async function loadMailboxUsers() {
@@ -8911,12 +8920,12 @@ window.deleteIncident = async function(docId) {
 
 function initTimeClock() {
   if (!currentUser) return;
-  const widget = $('time-clock-widget');
+  const tabBtn = $('mb-tab-timeclock');
   if (!currentUserTimeclockAccess) {
-    if (widget) widget.style.display = 'none';
+    if (tabBtn) tabBtn.style.display = 'none';
     return;
   }
-  if (widget) widget.style.display = '';
+  if (tabBtn) tabBtn.style.display = '';
   tcViewingUid = currentUser.uid;
   if (currentUserCanViewAllTimeclocks) {
     loadTcEmployees().then(() => loadWeekData(0));
