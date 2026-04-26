@@ -3332,6 +3332,31 @@ body {
   padding: 6px 2px 8px;
 }
 
+/* Unified compliance rows — vehicle header + inline tasks */
+.comp-unified-row {
+  border: 1.5px solid #bae6fd;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+.comp-unified-row.comp-row-urgent { border-color: #fca5a5; background: #fff5f5; }
+.comp-unified-row.comp-row-warn   { border-color: #fde68a; background: #fffbeb; }
+.comp-unified-row.comp-row-ok     { border-color: #86efac; background: #f0fdf4; }
+.comp-unified-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  flex-wrap: wrap;
+}
+.comp-unified-header:hover { background: rgba(0,0,0,0.03); }
+.comp-unified-tasks {
+  border-top: 1px solid rgba(0,0,0,0.06);
+  padding: 4px 8px 6px;
+}
+.comp-unified-extra { padding: 6px 0 0; }
 
 .task-log-section { margin-top: 14px; border-top: 1px solid #e5e7eb; padding-top: 12px; }
 .task-log-entries { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
