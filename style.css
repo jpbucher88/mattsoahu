@@ -3904,7 +3904,7 @@ body {
 }
 .finance-panel {
   background: #fff;
-  width: min(520px, 100vw);
+  width: min(560px, 100vw);
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -3915,7 +3915,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 14px 18px 12px;
   border-bottom: 1px solid #e5e7eb;
   background: #f0fdf4;
 }
@@ -3934,6 +3934,30 @@ body {
   line-height: 1;
   padding: 0 4px;
 }
+/* Finance Tabs */
+.finance-tabs {
+  display: flex;
+  border-bottom: 2px solid #e5e7eb;
+  background: #f9fafb;
+  flex-shrink: 0;
+}
+.finance-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 10px 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.finance-tab:hover { color: #374151; }
+.finance-tab.active { color: #16a34a; border-bottom-color: #16a34a; background: #fff; }
+.finance-tab-content { display: flex; flex-direction: column; gap: 12px; }
 .finance-body {
   flex: 1;
   overflow-y: auto;
@@ -3942,6 +3966,69 @@ body {
   flex-direction: column;
   gap: 12px;
 }
+/* Finance controls row */
+.fin-controls-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  flex-wrap: wrap;
+}
+/* Overview cards */
+.fin-overview-month {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #374151;
+  margin-bottom: 10px;
+}
+.fin-overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.fin-card {
+  border-radius: 12px;
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fin-card-revenue { background: #eff6ff; border: 1.5px solid #bfdbfe; }
+.fin-card-expense { background: #fff7ed; border: 1.5px solid #fed7aa; }
+.fin-card-profit  { background: #f0fdf4; border: 1.5px solid #bbf7d0; }
+.fin-card-loss    { background: #fef2f2; border: 1.5px solid #fecaca; }
+.fin-card-label { font-size: 0.78rem; font-weight: 700; color: #6b7280; text-transform: uppercase; letter-spacing: 0.04em; }
+.fin-card-amount { font-size: 1.3rem; font-weight: 800; color: #111827; }
+.fin-card-profit .fin-card-amount { color: #166534; }
+.fin-card-loss .fin-card-amount   { color: #991b1b; }
+.fin-card-sub { font-size: 0.72rem; color: #6b7280; }
+.fin-overview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Revenue tab */
+.fin-rev-totals { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+/* Finance table */
+.fin-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 8px; }
+.fin-table th { background: #f9fafb; padding: 7px 10px; font-weight: 700; color: #374151; border-bottom: 2px solid #e5e7eb; text-align: left; white-space: nowrap; }
+.fin-table td { padding: 8px 10px; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+.fin-table tfoot td { background: #f9fafb; font-weight: 700; border-top: 2px solid #e5e7eb; }
+.fin-tr-general td { background: #fafafa; font-style: italic; }
+.fin-td-rev { color: #1d4ed8; font-weight: 600; }
+.fin-td-exp { color: #c2410c; }
+.fin-td-maint { color: #a16207; }
+.fin-td-net.profit { color: #166534; font-weight: 700; }
+.fin-td-net.loss   { color: #991b1b; font-weight: 700; }
+/* P&L header */
+.fin-pl-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 0.9rem; }
+.fin-pl-net { font-size: 1rem; font-weight: 800; padding: 3px 12px; border-radius: 99px; }
+.fin-pl-net.profit { background: #f0fdf4; color: #166534; }
+.fin-pl-net.loss   { background: #fef2f2; color: #991b1b; }
+/* Expense filter row */
+.exp-filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.exp-vehicle-tag { display: inline-block; background: #eff6ff; color: #1d4ed8; border-radius: 99px; font-size: 0.72rem; font-weight: 700; padding: 1px 7px; margin-right: 5px; vertical-align: middle; }
+/* Expense categories updated */
+.exp-cat-insurance    { background: #f0f9ff; color: #0369a1; border: 1px solid #bae6fd; }
+.exp-cat-registration { background: #faf5ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+.exp-cat-cleaning     { background: #f0fdfa; color: #0f766e; border: 1px solid #99f6e4; }
 
 .mailbox-overlay {
   position: fixed;
@@ -5250,6 +5337,23 @@ body {
 .triplog-edit-field label { font-size: 0.82rem; font-weight: 600; color: #374151; }
 .triplog-edit-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
 .prod-trips-btn { font-size: 0.8rem; padding: 3px 8px; white-space: nowrap; }
+/* Private trip revenue calculator display */
+.private-rev-calc-box {
+  background: #f9fafb;
+  border: 1.5px dashed #d1d5db;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.88rem;
+  color: #6b7280;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+}
+.private-rev-calc-box.active {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
 .prod-rev-badge { display: inline-flex; align-items: center; gap: 3px; border-radius: 99px; padding: 2px 10px; font-size: 0.82rem; white-space: nowrap; }
 .prod-rev-badge.turo { background: #eff6ff; color: #1d4ed8; }
 .prod-rev-badge.private { background: #f5f3ff; color: #6d28d9; }

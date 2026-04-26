@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260426r">
+  <link rel="stylesheet" href="style.css?v=20260426f">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -222,6 +222,11 @@
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
             <input type="datetime-local" id="vehicle-trip-return" class="vehicle-location-custom">
           </div>
+          <!-- On-trip revenue (shown only for On Trip status) -->
+          <div id="on-trip-revenue-row" class="loc-field" style="display:none;">
+            <label for="on-trip-revenue">💰 Trip Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(Turo payout — add when received)</span></label>
+            <input type="number" id="on-trip-revenue" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+          </div>
           <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
             <div class="loc-field">
               <label for="repair-shop-name">🏥 Shop Name:</label>
@@ -234,6 +239,14 @@
             <div class="loc-field">
               <label for="repair-parts-eta">📅 Parts ETA:</label>
               <input type="date" id="repair-parts-eta" class="vehicle-location-custom">
+            </div>
+            <div class="loc-field">
+              <label for="repair-cost">💰 Repair Cost ($):</label>
+              <input type="number" id="repair-cost" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+            </div>
+            <div class="loc-field">
+              <label for="repair-description">🔧 Repair / Work Needed:</label>
+              <input type="text" id="repair-description" class="vehicle-location-custom" placeholder="e.g. Oil change, brake pads, engine work..." maxlength="200">
             </div>
           </div>
           <!-- HNL parking row (shown when HNL selected as home location) -->
@@ -294,7 +307,15 @@
               <input type="number" id="private-trip-daily-tax" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
             </div>
             <div class="loc-field">
-              <label>📄 Customer Contract:</label>
+              <label>� Estimated Revenue:</label>
+              <div id="private-trip-rev-display" class="private-rev-calc-box">— (enter dates &amp; rate to calculate)</div>
+            </div>
+            <div class="loc-field">
+              <label for="private-trip-revenue-override">💵 Actual Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(override if different from calculated)</span></label>
+              <input type="number" id="private-trip-revenue-override" class="vehicle-location-custom" placeholder="Leave blank to use calculated" min="0" step="0.01">
+            </div>
+            <div class="loc-field">
+              <label>�📄 Customer Contract:</label>
               <label class="btn btn-sm btn-outline" for="private-contract-upload" style="cursor:pointer;">📤 Upload Contract</label>
               <input type="file" id="private-contract-upload" accept="image/*,application/pdf" hidden>
               <div id="private-contract-preview" class="private-contract-preview"></div>
@@ -1388,47 +1409,98 @@
       <div class="finance-header">
         <div class="finance-header-left">
           <h3>💵 Finance</h3>
-          <span id="expense-month-total" class="exp-month-total-badge">$0.00</span>
-          <span class="exp-month-label">this month</span>
         </div>
         <button class="finance-close" onclick="closeFinance()">&times;</button>
       </div>
-      <div class="finance-body">
-        <!-- Add Expense Form -->
-        <div class="exp-form">
-          <div class="exp-form-row">
-            <div class="exp-field">
-              <label class="exp-label">Date</label>
-              <input type="date" id="exp-date" class="form-select exp-input">
-            </div>
-            <div class="exp-field exp-field-amount">
-              <label class="exp-label">Amount ($)</label>
-              <input type="number" id="exp-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
-            </div>
-            <div class="exp-field">
-              <label class="exp-label">Category</label>
-              <select id="exp-category" class="form-select exp-input">
-                <option>Venmo Payment</option>
-                <option>Vendor Payment</option>
-                <option>Fuel</option>
-                <option>Supplies</option>
-                <option>Maintenance</option>
-                <option>Other</option>
-              </select>
-            </div>
-          </div>
-          <div class="exp-form-row">
-            <div class="exp-field exp-field-desc">
-              <label class="exp-label">Description</label>
-              <input type="text" id="exp-desc-input" class="form-select exp-input" placeholder="e.g. Sent $50 to vendor via Venmo" maxlength="200">
-            </div>
-            <button id="exp-save-btn" class="btn btn-primary exp-save-btn" onclick="saveExpense()">Save</button>
-          </div>
-        </div>
-        <!-- Expense List -->
-        <div id="expense-list" class="exp-list"></div>
+      <!-- Finance Tabs -->
+      <div class="finance-tabs">
+        <button class="finance-tab active" id="ftab-overview" onclick="switchFinanceTab('overview')">📊 Overview</button>
+        <button class="finance-tab" id="ftab-revenue" onclick="switchFinanceTab('revenue')">💰 Revenue</button>
+        <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
+        <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
       </div>
-    </div>
+      <div class="finance-body">
+
+        <!-- ===== OVERVIEW TAB ===== -->
+        <div id="finance-tab-overview" class="finance-tab-content">
+          <div id="finance-overview-body"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
+
+        <!-- ===== REVENUE TAB ===== -->
+        <div id="finance-tab-revenue" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="fin-rev-month" class="form-select exp-input" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadFinanceRevenue()">Load</button>
+          </div>
+          <div id="finance-revenue-body"></div>
+        </div>
+
+        <!-- ===== EXPENSES TAB ===== -->
+        <div id="finance-tab-expenses" class="finance-tab-content" style="display:none;">
+          <!-- Add Expense Form -->
+          <div class="exp-form">
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Date</label>
+                <input type="date" id="exp-date" class="form-select exp-input">
+              </div>
+              <div class="exp-field exp-field-amount">
+                <label class="exp-label">Amount ($)</label>
+                <input type="number" id="exp-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
+              </div>
+              <div class="exp-field">
+                <label class="exp-label">Category</label>
+                <select id="exp-category" class="form-select exp-input">
+                  <option>Venmo Payment</option>
+                  <option>Vendor Payment</option>
+                  <option>Fuel</option>
+                  <option>Supplies</option>
+                  <option>Maintenance</option>
+                  <option>Insurance</option>
+                  <option>Registration</option>
+                  <option>Cleaning</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Vehicle <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+                <select id="exp-vehicle" class="form-select exp-input">
+                  <option value="">Fleet / General</option>
+                </select>
+              </div>
+              <div class="exp-field exp-field-desc">
+                <label class="exp-label">Description</label>
+                <input type="text" id="exp-desc-input" class="form-select exp-input" placeholder="e.g. Oil change — 613TXU" maxlength="200">
+              </div>
+              <button id="exp-save-btn" class="btn btn-primary exp-save-btn" onclick="saveExpense()">Save</button>
+            </div>
+          </div>
+          <!-- Month filter -->
+          <div class="exp-filter-row">
+            <label class="exp-label">Month:</label>
+            <input type="month" id="exp-month-filter" class="form-select exp-input" style="width:auto;" onchange="loadExpenseWidget()">
+            <span id="expense-month-total" class="exp-month-total-badge">$0.00</span>
+            <span class="exp-month-label">total</span>
+          </div>
+          <!-- Expense List -->
+          <div id="expense-list" class="exp-list"></div>
+        </div>
+
+        <!-- ===== P&L TAB ===== -->
+        <div id="finance-tab-pl" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="fin-pl-month" class="form-select exp-input" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadFinancePL()">Load</button>
+          </div>
+          <div id="finance-pl-body"></div>
+        </div>
+
+      </div><!-- finance-body -->
+    </div><!-- finance-panel -->
   </div>
 
   <!-- ==================== MAILBOX PANEL ==================== -->

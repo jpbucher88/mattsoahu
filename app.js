@@ -1597,6 +1597,7 @@ async function openVehiclePage(vid) {
     $('trip-scheduled-row').style.display = ts === 'scheduled' ? '' : 'none';
     $('trip-expected-end-row').style.display = ts === 'scheduled' ? '' : 'none';
     tripReturnRow.style.display = (ts === 'on-trip' || ts === 'repair-shop') ? '' : 'none';
+    $('on-trip-revenue-row').style.display = ts === 'on-trip' ? '' : 'none';
     repairPartsRow.style.display = ts === 'repair-shop' ? '' : 'none';
     $('hnl-parking-row').style.display = (homeLocSelect.value === 'HNL') ? '' : 'none';
     $('hnl-parking-row-val').value = selectedVehicle.parkingRow || '';
@@ -1643,12 +1644,20 @@ async function openVehiclePage(vid) {
     $('repair-shop-name').value = selectedVehicle.repairShopName || '';
     $('repair-order-number').value = selectedVehicle.repairOrderNumber || '';
     $('repair-parts-eta').value = selectedVehicle.repairPartsEta || '';
+    $('repair-cost').value = selectedVehicle.repairCost || '';
+    $('repair-description').value = selectedVehicle.repairDescription || '';
+    // On-trip revenue
+    $('on-trip-revenue').value = selectedVehicle.tripRevenue != null ? selectedVehicle.tripRevenue : '';
+    // Private trip revenue override
+    $('private-trip-revenue-override').value = selectedVehicle.privateTripRevenueOverride != null ? selectedVehicle.privateTripRevenueOverride : '';
+    _calcPrivateTripRevenue();
     // React to trip status dropdown changes
     tripStatusSelect.onchange = function() {
       const v = this.value;
       $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
       $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
       tripReturnRow.style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
+      $('on-trip-revenue-row').style.display = v === 'on-trip' ? '' : 'none';
       repairPartsRow.style.display = v === 'repair-shop' ? '' : 'none';
     };
   }
@@ -3014,9 +3023,51 @@ $('vehicle-home-location').addEventListener('change', function() {
   $('hnl-parking-row').style.display = this.value === 'HNL' ? '' : 'none';
 });
 
+// ================================================================
+// PRIVATE TRIP REVENUE CALCULATOR
+// ================================================================
+function _calcPrivateTripRevenue() {
+  const display = $('private-trip-rev-display');
+  if (!display) return;
+  const startDate = $('private-trip-start-date')?.value;
+  const endDate = $('private-trip-end-date')?.value;
+  const dailyRate = parseFloat($('private-trip-cost')?.value) || 0;
+  const getRate = parseFloat($('private-trip-get')?.value) || 0;
+  const dailyTax = parseFloat($('private-trip-daily-tax')?.value) || 0;
+
+  if (!startDate || !endDate || dailyRate === 0) {
+    display.textContent = '— (enter dates & daily rate to calculate)';
+    display.className = 'private-rev-calc-box';
+    return;
+  }
+  // Count trip days (Turo-style: endDate excluded)
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  if (end <= start) { display.textContent = '— (end date must be after start date)'; return; }
+  const days = Math.round((end - start) / 86400000);
+  const rentalRevenue = dailyRate * days;
+  const getTaxAmt = rentalRevenue * (getRate / 100);
+  const vehicleTaxAmt = dailyTax * days;
+  const total = rentalRevenue + getTaxAmt + vehicleTaxAmt;
+
+  display.innerHTML = `<strong>$${total.toFixed(2)}</strong> <span style="color:#6b7280;font-size:0.78rem;">($${dailyRate.toFixed(2)}/day × ${days}d + GET $${getTaxAmt.toFixed(2)} + vehicle tax $${vehicleTaxAmt.toFixed(2)})</span>`;
+  display.className = 'private-rev-calc-box active';
+}
+
+// Wire up auto-calculation on private trip field changes
+['private-trip-start-date','private-trip-end-date','private-trip-cost','private-trip-get','private-trip-daily-tax'].forEach(id => {
+  document.addEventListener('change', function(e) {
+    if (e.target && e.target.id === id) _calcPrivateTripRevenue();
+  });
+  document.addEventListener('input', function(e) {
+    if (e.target && e.target.id === id) _calcPrivateTripRevenue();
+  });
+});
+
 $('vehicle-trip-status').addEventListener('change', function() {
   const v = this.value;
   $('trip-return-row').style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
+  $('on-trip-revenue-row').style.display = v === 'on-trip' ? '' : 'none';
   $('repair-parts-row').style.display = v === 'repair-shop' ? '' : 'none';
   $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
   $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
@@ -3058,6 +3109,9 @@ $('btn-save-location').addEventListener('click', async () => {
   const repairShopName = $('repair-shop-name').value.trim();
   const repairOrderNumber = $('repair-order-number').value.trim();
   const repairPartsEta = $('repair-parts-eta').value;
+  const repairCostRaw = $('repair-cost').value.trim();
+  const repairCost = repairCostRaw !== '' ? (parseFloat(repairCostRaw) || 0) : null;
+  const repairDescription = $('repair-description').value.trim();
   // HNL parking
   const parkingRow = homeLocation === 'HNL' ? ($('hnl-parking-row-val').value.trim() || null) : null;
   const parkingLevel = homeLocation === 'HNL' ? ($('hnl-parking-level').value.trim() || null) : null;
@@ -3099,12 +3153,32 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
+    updateData.repairCost = firebase.firestore.FieldValue.delete();
+    updateData.repairDescription = firebase.firestore.FieldValue.delete();
     updateData.privateTripCustomerName = $('private-customer-name').value.trim() || null;
     updateData.privateTripCustomerPhone = $('private-customer-phone').value.trim() || null;
     updateData.privateTripCustomerEmail = $('private-customer-email').value.trim() || null;
     updateData.privateTripDailyRate = parseFloat($('private-trip-cost').value) || null;
     updateData.privateTripGET = parseFloat($('private-trip-get').value) || null;
     updateData.privateTripDailyTax = parseFloat($('private-trip-daily-tax').value) || null;
+    // Calculate private trip revenue
+    const ptStartDate = $('private-trip-start-date')?.value;
+    const ptEndDate = $('private-trip-end-date')?.value;
+    const ptDailyRate = parseFloat($('private-trip-cost').value) || 0;
+    const ptGET = parseFloat($('private-trip-get').value) || 0;
+    const ptDailyTax = parseFloat($('private-trip-daily-tax').value) || 0;
+    let calcRevenue = null;
+    if (ptStartDate && ptEndDate && ptDailyRate > 0) {
+      const ptDays = Math.round((new Date(ptEndDate + 'T00:00:00') - new Date(ptStartDate + 'T00:00:00')) / 86400000);
+      if (ptDays > 0) {
+        calcRevenue = (ptDailyRate * ptDays) * (1 + ptGET / 100) + (ptDailyTax * ptDays);
+      }
+    }
+    // Override trumps calculated
+    const ptRevOverride = parseFloat($('private-trip-revenue-override').value);
+    const privateTripRevenue = !isNaN(ptRevOverride) && ptRevOverride > 0 ? ptRevOverride : calcRevenue;
+    updateData.privateTripRevenueOverride = !isNaN(ptRevOverride) && ptRevOverride > 0 ? ptRevOverride : firebase.firestore.FieldValue.delete();
+    updateData.tripRevenue = privateTripRevenue != null ? privateTripRevenue : firebase.firestore.FieldValue.delete();
     // Handle contract upload
     const contractFile = $('private-contract-upload').files[0];
     if (contractFile) {
@@ -3126,9 +3200,14 @@ $('btn-save-location').addEventListener('click', async () => {
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
+    // On-trip revenue
+    const onTripRev = parseFloat($('on-trip-revenue').value);
+    updateData.tripRevenue = isNaN(onTripRev) ? firebase.firestore.FieldValue.delete() : onTripRev;
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
+    updateData.repairCost = firebase.firestore.FieldValue.delete();
+    updateData.repairDescription = firebase.firestore.FieldValue.delete();
   } else if (tripStatus === 'repair-shop') {
     updateData.location = 'Repair Shop';
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
@@ -3145,6 +3224,8 @@ $('btn-save-location').addEventListener('click', async () => {
     if (repairPartsEta) {
       updateData.repairPartsEta = repairPartsEta;
     }
+    updateData.repairCost = repairCost != null ? repairCost : firebase.firestore.FieldValue.delete();
+    updateData.repairDescription = repairDescription || firebase.firestore.FieldValue.delete();
   } else {
     updateData.location = homeLocation;
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
@@ -3191,10 +3272,14 @@ $('btn-save-location').addEventListener('click', async () => {
       selectedVehicle.repairShopName = repairShopName || '';
       selectedVehicle.repairOrderNumber = repairOrderNumber || '';
       selectedVehicle.repairPartsEta = repairPartsEta || '';
+      if (repairCost != null) selectedVehicle.repairCost = repairCost;
+      if (repairDescription) selectedVehicle.repairDescription = repairDescription;
     } else {
       delete selectedVehicle.repairShopName;
       delete selectedVehicle.repairOrderNumber;
       delete selectedVehicle.repairPartsEta;
+      delete selectedVehicle.repairCost;
+      delete selectedVehicle.repairDescription;
     }
     if ((wasOnTrip && nowHome) || nowReturnFromRepair) {
       selectedVehicle.needsCleaning = true;
@@ -3211,6 +3296,32 @@ $('btn-save-location').addEventListener('click', async () => {
     if (cached) Object.assign(cached, selectedVehicle);
     toast('Location saved!', 'success');
     renderFleetDashboard();
+
+    // ── Auto-log maintenance record when returning from repair shop ──
+    if (nowReturnFromRepair) {
+      const prevShopName = selectedVehicle.repairShopName || repairShopName || '';
+      const prevDescription = selectedVehicle.repairDescription || repairDescription || '';
+      const prevCost = selectedVehicle.repairCost ?? repairCost;
+      const maintRecord = {
+        vehicleId: selectedVehicle.id,
+        plate: selectedVehicle.plate || '',
+        serviceType: prevDescription || 'Shop Repair',
+        date: todayDateString(),
+        cost: prevCost != null ? prevCost : null,
+        location: prevShopName || null,
+        notes: repairOrderNumber ? ('Order/Tracking: ' + repairOrderNumber) : null,
+        autoCreatedFromRepairShop: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+      };
+      // Remove nulls
+      Object.keys(maintRecord).forEach(k => { if (maintRecord[k] == null) delete maintRecord[k]; });
+      try {
+        await db.collection('maintenance').add(maintRecord);
+        toast('Maintenance record auto-logged from repair shop ✓', 'success');
+      } catch(mErr) { console.warn('Auto-maintenance log error:', mErr); }
+    }
+
     // Log trip to tripLogs for productivity tracking
     if (tripStatus === 'scheduled' || tripStatus === 'private-trip') {
       const logStart = tripStatus === 'scheduled'
@@ -3224,7 +3335,7 @@ $('btn-save-location').addEventListener('click', async () => {
         const endDate = logEnd.slice(0, 10);
         const logKey = selectedVehicle.id + '_' + startDate + '_' + endDate;
         try {
-          await db.collection('tripLogs').doc(logKey).set({
+          const tripLogData = {
             vehicleId: selectedVehicle.id,
             vehiclePlate: selectedVehicle.plate || '',
             vehicleMakeModel: ((selectedVehicle.make || '') + ' ' + (selectedVehicle.model || '')).trim(),
@@ -3234,7 +3345,12 @@ $('btn-save-location').addEventListener('click', async () => {
             loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
             loggedBy: currentUser.uid,
             loggedByName: currentUser.displayName || currentUser.email,
-          }, { merge: true });
+          };
+          // Save calculated private trip revenue to tripLog
+          if (tripStatus === 'private-trip' && updateData.tripRevenue != null && typeof updateData.tripRevenue === 'number') {
+            tripLogData.revenue = updateData.tripRevenue;
+          }
+          await db.collection('tripLogs').doc(logKey).set(tripLogData, { merge: true });
         } catch(e) { console.warn('tripLog write error', e); }
       }
     } else if (tripStatus === 'on-trip' && selectedVehicle.tripStatus !== 'scheduled') {
@@ -3243,7 +3359,8 @@ $('btn-save-location').addEventListener('click', async () => {
       const endDate = tripReturnVal ? tripReturnVal.slice(0, 10) : startDate;
       const logKey = selectedVehicle.id + '_' + startDate + '_direct_trip';
       try {
-        await db.collection('tripLogs').doc(logKey).set({
+        const onTripRevSave = typeof updateData.tripRevenue === 'number' ? updateData.tripRevenue : null;
+        const onTripLogData = {
           vehicleId: selectedVehicle.id,
           vehiclePlate: selectedVehicle.plate || '',
           vehicleMakeModel: ((selectedVehicle.make || '') + ' ' + (selectedVehicle.model || '')).trim(),
@@ -3253,7 +3370,9 @@ $('btn-save-location').addEventListener('click', async () => {
           loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
           loggedBy: currentUser.uid,
           loggedByName: currentUser.displayName || currentUser.email,
-        }, { merge: true });
+        };
+        if (onTripRevSave != null) onTripLogData.revenue = onTripRevSave;
+        await db.collection('tripLogs').doc(logKey).set(onTripLogData, { merge: true });
       } catch(e) { console.warn('tripLog write error (on-trip)', e); }
     }
   } catch (err) {
@@ -10304,25 +10423,39 @@ function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
 // ================================================================
 // EXPENSE TRACKER
 // ================================================================
-const EXPENSE_CATEGORIES = ['Venmo Payment', 'Vendor Payment', 'Fuel', 'Supplies', 'Maintenance', 'Other'];
+const EXPENSE_CATEGORIES = ['Venmo Payment', 'Vendor Payment', 'Fuel', 'Supplies', 'Maintenance', 'Insurance', 'Registration', 'Cleaning', 'Other'];
+
+function _finMonthRange(monthInputId) {
+  const raw = $(monthInputId)?.value;
+  const [y, m] = raw ? raw.split('-').map(Number) : todayDateString().split('-').map(Number).slice(0,2);
+  const start = `${y}-${String(m).padStart(2,'0')}-01`;
+  const end = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y, m, 0).getDate()).padStart(2,'0')}`;
+  return { y, m, start, end, label: new Date(y, m-1, 1).toLocaleDateString('en-US', { month:'long', year:'numeric' }) };
+}
+
+function _todayMonthVal() {
+  const [y, m] = todayDateString().split('-');
+  return y + '-' + m;
+}
 
 async function loadExpenseWidget() {
   const overlay = $('finance-overlay');
   if (!overlay) return;
   if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
 
-  // Set default date input to today
   const dateInput = $('exp-date');
   if (dateInput && !dateInput.value) dateInput.value = todayDateString();
+
+  // Set default month filter to current month
+  const filterEl = $('exp-month-filter');
+  if (filterEl && !filterEl.value) filterEl.value = _todayMonthVal();
+
+  const { start: monthStart, end: monthEnd } = _finMonthRange('exp-month-filter');
 
   const list = $('expense-list');
   const totalEl = $('expense-month-total');
   if (!list) return;
   list.innerHTML = '<p class="hint">Loading...</p>';
-
-  const [y, m] = todayDateString().split('-').map(Number);
-  const monthStart = `${y}-${String(m).padStart(2,'0')}-01`;
-  const monthEnd = `${y}-${String(m).padStart(2,'0')}-${String(new Date(y, m, 0).getDate()).padStart(2,'0')}`;
 
   try {
     const snap = await db.collection('expenses')
@@ -10337,19 +10470,20 @@ async function loadExpenseWidget() {
     if (totalEl) totalEl.textContent = `$${monthTotal.toFixed(2)}`;
 
     if (expenses.length === 0) {
-      list.innerHTML = '<p class="hint">No expenses this month.</p>';
+      list.innerHTML = '<p class="hint">No expenses this period.</p>';
       return;
     }
 
     list.innerHTML = expenses.map(e => {
       const catCls = 'exp-cat-' + (e.category || 'other').toLowerCase().replace(/\s+/g, '-');
       const canDelete = currentUserRole === 'admin' || e.submittedBy === currentUser.uid;
+      const vehicleTag = e.vehiclePlate ? `<span class="exp-vehicle-tag">${escapeHtml(e.vehiclePlate)}</span>` : '';
       return `
         <div class="exp-row">
           <div class="exp-row-left">
             <span class="exp-cat-badge ${catCls}">${escapeHtml(e.category || 'Other')}</span>
             <div class="exp-row-info">
-              <span class="exp-desc">${escapeHtml(e.description || '')}</span>
+              <span class="exp-desc">${vehicleTag}${escapeHtml(e.description || '')}</span>
               <span class="exp-meta">${e.date} · ${escapeHtml(e.submittedByName || '')}</span>
             </div>
           </div>
@@ -10365,11 +10499,25 @@ async function loadExpenseWidget() {
   }
 }
 
+function populateExpenseVehicleDropdown() {
+  const sel = $('exp-vehicle');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">Fleet / General</option>';
+  (vehiclesCache || []).slice().sort((a,b) => (a.plate||'').localeCompare(b.plate||'')).forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = v.plate + (v.make && v.model ? ' – ' + v.make + ' ' + v.model : '');
+    sel.appendChild(opt);
+  });
+}
+
 window.saveExpense = async function() {
   const date = $('exp-date').value || todayDateString();
   const amount = parseFloat($('exp-amount').value);
   const category = $('exp-category').value;
   const description = $('exp-desc-input').value.trim();
+  const vehicleId = $('exp-vehicle')?.value || '';
+  const vehicleObj = vehicleId ? vehiclesCache.find(v => v.id === vehicleId) : null;
 
   if (!amount || amount <= 0) { toast('Enter a valid amount.', 'warning'); return; }
   if (!description) { toast('Enter a description.', 'warning'); return; }
@@ -10378,18 +10526,18 @@ window.saveExpense = async function() {
   btn.disabled = true;
   btn.textContent = 'Saving...';
   try {
-    await db.collection('expenses').add({
-      date,
-      amount,
-      category,
-      description,
+    const record = {
+      date, amount, category, description,
       submittedBy: currentUser.uid,
       submittedByName: currentUser.displayName || currentUser.email,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    if (vehicleId) { record.vehicleId = vehicleId; record.vehiclePlate = vehicleObj?.plate || ''; }
+    await db.collection('expenses').add(record);
     $('exp-amount').value = '';
     $('exp-desc-input').value = '';
     $('exp-date').value = todayDateString();
+    if ($('exp-vehicle')) $('exp-vehicle').value = '';
     toast('Expense saved!', 'success');
     loadExpenseWidget();
   } catch (err) {
@@ -10403,7 +10551,6 @@ window.saveExpense = async function() {
 
 window.deleteExpense = async function(docId) {
   if (currentUserRole !== 'admin') {
-    // managers can only delete their own — server-side check on load
     if (!confirm('Delete this expense?')) return;
   }
   try {
@@ -10416,11 +10563,237 @@ window.deleteExpense = async function(docId) {
   }
 };
 
+// ================================================================
+// FINANCE TABS
+// ================================================================
+window.switchFinanceTab = function(tab) {
+  ['overview','revenue','expenses','pl'].forEach(t => {
+    const btn = $('ftab-' + t);
+    const content = $('finance-tab-' + t);
+    if (btn) btn.classList.toggle('active', t === tab);
+    if (content) content.style.display = t === tab ? '' : 'none';
+  });
+  if (tab === 'overview') loadFinanceOverview();
+  if (tab === 'revenue') { const el = $('fin-rev-month'); if (el && !el.value) el.value = _todayMonthVal(); loadFinanceRevenue(); }
+  if (tab === 'expenses') loadExpenseWidget();
+  if (tab === 'pl') { const el = $('fin-pl-month'); if (el && !el.value) el.value = _todayMonthVal(); loadFinancePL(); }
+};
+
+async function loadFinanceOverview() {
+  const body = $('finance-overview-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  const { start: monthStart, end: monthEnd, label: monthName } = _finMonthRange('fin-rev-month');
+  try {
+    let revSnap = { forEach: () => {} };
+    try { revSnap = await db.collection('tripLogs').where('startDate','>=',monthStart).where('startDate','<=',monthEnd).get(); } catch(e) {}
+    let turoRev = 0, privRev = 0;
+    revSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.cancelled) return;
+      const rev = Number(d.revenue) || 0;
+      if (d.tripType === 'private-trip') privRev += rev; else turoRev += rev;
+    });
+    const totalRev = turoRev + privRev;
+
+    const expSnap = await db.collection('expenses').where('date','>=',monthStart).where('date','<=',monthEnd).get();
+    const totalExp = expSnap.docs.reduce((s,d) => s + (Number(d.data().amount)||0), 0);
+
+    const maintSnap = await db.collection('maintenance').where('date','>=',monthStart).where('date','<=',monthEnd).get();
+    const totalMaint = maintSnap.docs.reduce((s,d) => s + (Number(d.data().cost)||0), 0);
+
+    const totalCosts = totalExp + totalMaint;
+    const netPL = totalRev - totalCosts;
+    const fmtD = n => '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
+
+    body.innerHTML = `
+      <div class="fin-overview-month">${monthName}</div>
+      <div class="fin-overview-cards">
+        <div class="fin-card fin-card-revenue">
+          <div class="fin-card-label">💰 Revenue</div>
+          <div class="fin-card-amount">${fmtD(totalRev)}</div>
+          <div class="fin-card-sub">📅 Turo ${fmtD(turoRev)} · 🔒 Private ${fmtD(privRev)}</div>
+        </div>
+        <div class="fin-card fin-card-expense">
+          <div class="fin-card-label">🧾 Expenses</div>
+          <div class="fin-card-amount">${fmtD(totalCosts)}</div>
+          <div class="fin-card-sub">General ${fmtD(totalExp)} · Maintenance ${fmtD(totalMaint)}</div>
+        </div>
+        <div class="fin-card ${netPL >= 0 ? 'fin-card-profit' : 'fin-card-loss'}">
+          <div class="fin-card-label">📈 Net P&amp;L</div>
+          <div class="fin-card-amount">${netPL >= 0 ? '+' : ''}${fmtD(netPL)}</div>
+          <div class="fin-card-sub">${netPL >= 0 ? 'Profitable ✅' : 'Operating at a loss ⚠️'}</div>
+        </div>
+      </div>
+      <div class="fin-overview-actions">
+        <button class="btn btn-sm btn-outline" onclick="switchFinanceTab('revenue')">Revenue Details →</button>
+        <button class="btn btn-sm btn-outline" onclick="switchFinanceTab('expenses')">Expenses →</button>
+        <button class="btn btn-sm btn-outline" onclick="switchFinanceTab('pl')">P&amp;L by Vehicle →</button>
+      </div>
+      <p class="hint" style="font-size:0.78rem;margin-top:12px;">💡 Revenue is pulled from Trip Logs. Add revenue to trips via the 📊 Productivity button → 📋 Trips.</p>
+    `;
+  } catch(e) {
+    console.error('Finance overview error:', e);
+    body.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load overview.</p>';
+  }
+}
+
+window.loadFinanceRevenue = async function() {
+  const body = $('finance-revenue-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:16px;text-align:center;">Loading…</p>';
+  const { start, end, label } = _finMonthRange('fin-rev-month');
+  try {
+    let snap = { forEach: () => {} };
+    try { snap = await db.collection('tripLogs').where('startDate','>=',start).where('startDate','<=',end).get(); } catch(e) {}
+    const byVehicle = {};
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (d.cancelled) return;
+      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, trips: 0, untracked: 0 };
+      const rev = Number(d.revenue) || 0;
+      if (d.tripType === 'private-trip') byVehicle[d.vehicleId].priv += rev;
+      else byVehicle[d.vehicleId].turo += rev;
+      if (!rev) byVehicle[d.vehicleId].untracked++;
+      byVehicle[d.vehicleId].trips++;
+    });
+    const rows = Object.values(byVehicle).sort((a,b) => (b.turo+b.priv) - (a.turo+a.priv));
+    if (!rows.length) {
+      body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No trips found for this period. Revenue is added from the 📊 Productivity → 📋 Trips view.</p>';
+      return;
+    }
+    const fmtR = n => n > 0 ? '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
+    const totalTuro = rows.reduce((s,r) => s+r.turo, 0);
+    const totalPriv = rows.reduce((s,r) => s+r.priv, 0);
+    body.innerHTML = `
+      <div class="fin-rev-totals">
+        <span class="prod-rev-badge turo">📅 Turo: <strong>$${totalTuro.toFixed(2)}</strong></span>
+        <span class="prod-rev-badge private">🔒 Private: <strong>$${totalPriv.toFixed(2)}</strong></span>
+        <span class="prod-rev-badge total">Total: <strong>$${(totalTuro+totalPriv).toFixed(2)}</strong></span>
+      </div>
+      <table class="fin-table">
+        <thead><tr><th>Vehicle</th><th>Trips</th><th>Turo $</th><th>Private $</th><th>Total</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr>
+            <td><strong>${escapeHtml(r.plate||'')}</strong><br><span style="font-size:0.78rem;color:#6b7280;">${escapeHtml(r.makeModel||'')}</span></td>
+            <td>${r.trips}${r.untracked ? `<span style="font-size:0.72rem;color:#f59e0b;margin-left:4px;">(${r.untracked} no $)</span>` : ''}</td>
+            <td>${fmtR(r.turo)}</td>
+            <td>${fmtR(r.priv)}</td>
+            <td><strong>${fmtR(r.turo+r.priv)}</strong></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <p class="hint" style="font-size:0.78rem;margin-top:8px;">Trips showing "no $" have no revenue entered yet. Add revenue via 📊 Productivity → 📋 Trips.</p>
+    `;
+  } catch(e) {
+    console.error('Finance revenue error:', e);
+    body.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load revenue.</p>';
+  }
+};
+
+window.loadFinancePL = async function() {
+  const body = $('finance-pl-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:16px;text-align:center;">Loading…</p>';
+  const { start, end, label } = _finMonthRange('fin-pl-month');
+  try {
+    // Revenue by vehicle
+    let revSnap = { forEach: () => {} };
+    try { revSnap = await db.collection('tripLogs').where('startDate','>=',start).where('startDate','<=',end).get(); } catch(e) {}
+    const revByV = {};
+    revSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.cancelled) return;
+      if (!revByV[d.vehicleId]) revByV[d.vehicleId] = { plate: d.vehiclePlate, turo: 0, priv: 0 };
+      const rev = Number(d.revenue) || 0;
+      if (d.tripType === 'private-trip') revByV[d.vehicleId].priv += rev; else revByV[d.vehicleId].turo += rev;
+    });
+
+    // Expenses by vehicle
+    const expSnap = await db.collection('expenses').where('date','>=',start).where('date','<=',end).get();
+    const expByV = {}; let generalExp = 0;
+    expSnap.forEach(doc => {
+      const d = doc.data();
+      const amt = Number(d.amount) || 0;
+      if (d.vehicleId) expByV[d.vehicleId] = (expByV[d.vehicleId]||0) + amt;
+      else generalExp += amt;
+    });
+
+    // Maintenance costs by vehicle
+    const maintSnap = await db.collection('maintenance').where('date','>=',start).where('date','<=',end).get();
+    const maintByV = {};
+    maintSnap.forEach(doc => {
+      const d = doc.data();
+      const cost = Number(d.cost) || 0;
+      if (cost && d.vehicleId) maintByV[d.vehicleId] = (maintByV[d.vehicleId]||0) + cost;
+    });
+
+    const allIds = new Set([...Object.keys(revByV),...Object.keys(expByV),...Object.keys(maintByV)]);
+    const rows = [...allIds].map(vid => {
+      const rv = revByV[vid] || { plate: '', turo: 0, priv: 0 };
+      const v = vehiclesCache.find(x => x.id === vid);
+      const plate = rv.plate || v?.plate || vid;
+      const totalRev = rv.turo + rv.priv;
+      const expenses = expByV[vid] || 0;
+      const maint = maintByV[vid] || 0;
+      const totalCost = expenses + maint;
+      const net = totalRev - totalCost;
+      return { plate, totalRev, expenses, maint, totalCost, net };
+    });
+    rows.sort((a,b) => b.net - a.net);
+
+    const fmtR = n => '$' + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const fleetRev = rows.reduce((s,r) => s+r.totalRev, 0);
+    const fleetExp = rows.reduce((s,r) => s+r.expenses, 0) + generalExp;
+    const fleetMaint = rows.reduce((s,r) => s+r.maint, 0);
+    const fleetNet = fleetRev - fleetExp - fleetMaint;
+
+    body.innerHTML = `
+      <div class="fin-pl-header">
+        <strong>${label}</strong>
+        <span class="fin-pl-net ${fleetNet >= 0 ? 'profit':'loss'}">${fleetNet >= 0 ? '+' : '−'}${fmtR(fleetNet)}</span>
+      </div>
+      <table class="fin-table">
+        <thead><tr><th>Vehicle</th><th>Revenue</th><th>Expenses</th><th>Maint.</th><th>Net P&amp;L</th></tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr>
+            <td><strong>${escapeHtml(r.plate)}</strong></td>
+            <td class="fin-td-rev">${r.totalRev > 0 ? fmtR(r.totalRev) : '—'}</td>
+            <td class="fin-td-exp">${r.expenses > 0 ? fmtR(r.expenses) : '—'}</td>
+            <td class="fin-td-maint">${r.maint > 0 ? fmtR(r.maint) : '—'}</td>
+            <td class="fin-td-net ${r.net >= 0 ? 'profit':'loss'}">${r.net >= 0 ? '+' : '−'}${fmtR(r.net)}</td>
+          </tr>`).join('')}
+          ${generalExp > 0 ? `<tr class="fin-tr-general">
+            <td><em style="color:#6b7280;">Fleet / General</em></td>
+            <td>—</td>
+            <td class="fin-td-exp">${fmtR(generalExp)}</td>
+            <td>—</td>
+            <td class="fin-td-net loss">−${fmtR(generalExp)}</td>
+          </tr>` : ''}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td><strong>TOTAL</strong></td>
+            <td class="fin-td-rev"><strong>${fmtR(fleetRev)}</strong></td>
+            <td class="fin-td-exp"><strong>${fmtR(fleetExp)}</strong></td>
+            <td class="fin-td-maint"><strong>${fmtR(fleetMaint)}</strong></td>
+            <td class="fin-td-net ${fleetNet >= 0 ? 'profit':'loss'}"><strong>${fleetNet >= 0 ? '+' : '−'}${fmtR(fleetNet)}</strong></td>
+          </tr>
+        </tfoot>
+      </table>
+    `;
+  } catch(e) {
+    console.error('Finance P&L error:', e);
+    body.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load P&L.</p>';
+  }
+};
+
 window.openFinance = function() {
   const overlay = $('finance-overlay');
   if (!overlay) return;
   overlay.style.display = 'flex';
-  loadExpenseWidget();
+  populateExpenseVehicleDropdown();
+  switchFinanceTab('overview');
 };
 
 window.closeFinance = function() {
