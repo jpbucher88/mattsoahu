@@ -3792,6 +3792,57 @@ body {
 }
 
 /* ============ MAILBOX PANEL ============ */
+/* ============ FINANCE PANEL ============ */
+.finance-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9100;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+}
+.finance-panel {
+  background: #fff;
+  width: min(520px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+  animation: slideInRight 0.22s ease;
+}
+.finance-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f0fdf4;
+}
+.finance-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.finance-header-left h3 { margin: 0; font-size: 1.1rem; }
+.finance-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  line-height: 1;
+  padding: 0 4px;
+}
+.finance-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .mailbox-overlay {
   position: fixed;
   inset: 0;

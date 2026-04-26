@@ -372,7 +372,8 @@ auth.onAuthStateChanged(async (user) => {
       startIncidentListener();
       initTimeClock();
       if (currentUserRole === 'admin' || currentUserRole === 'manager') {
-        loadExpenseWidget();
+        const financeBtn = $('btn-finance');
+        if (financeBtn) financeBtn.style.display = '';
         const prodBtn = $('productivity-open-btn');
         if (prodBtn) prodBtn.style.display = '';
       }
@@ -9588,10 +9589,9 @@ function startElapsedTimer(clockInTime, breaks, currentBreakStart) {
 const EXPENSE_CATEGORIES = ['Venmo Payment', 'Vendor Payment', 'Fuel', 'Supplies', 'Maintenance', 'Other'];
 
 async function loadExpenseWidget() {
-  const section = $('expense-widget');
-  if (!section) return;
+  const overlay = $('finance-overlay');
+  if (!overlay) return;
   if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
-  section.style.display = '';
 
   // Set default date input to today
   const dateInput = $('exp-date');
@@ -9696,6 +9696,18 @@ window.deleteExpense = async function(docId) {
     console.error('deleteExpense error:', err);
     toast('Failed to delete.', 'error');
   }
+};
+
+window.openFinance = function() {
+  const overlay = $('finance-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  loadExpenseWidget();
+};
+
+window.closeFinance = function() {
+  const overlay = $('finance-overlay');
+  if (overlay) overlay.style.display = 'none';
 };
 
 
