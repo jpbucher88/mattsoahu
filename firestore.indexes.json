@@ -85,6 +85,15 @@
         { "fieldPath": "maintenanceService", "order": "ASCENDING" },
         { "fieldPath": "autoCreated", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "incidents",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vehicleId", "order": "ASCENDING" },
+        { "fieldPath": "inspectionKey", "order": "ASCENDING" },
+        { "fieldPath": "status", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

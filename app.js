@@ -1404,8 +1404,10 @@ function showDamageCheckModal(vid, plate) {
     const safePlate = vehicleObj ? sanitizePlate(vehicleObj.plate) : 'unknown';
 
     try {
+      let newIncCount = 0, reusedCount = 0, newTaskCount = 0;
+
       for (const item of failItems) {
-        // Bugs-spotted: create a scheduled task (not urgent) and skip photo/notes
+        // ── Bugs-spotted: monitoring/urgent vehicleNotes task, no incident ──
         if (item.yesno) {
           const isNow = bugUrgency[item.key] === 'urgent';
           await db.collection('vehicleNotes').add({
@@ -1421,6 +1423,7 @@ function showDamageCheckModal(vid, plate) {
           });
           continue;
         }
+
         const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
         const photoFiles = failFiles[item.key] || [];
         const photoUrls = [];
@@ -1437,44 +1440,91 @@ function showDamageCheckModal(vid, plate) {
           }
         }
 
-        const noteData = {
-          vehicleId: vid,
-          text: 'INSPECTION FAIL - ' + item.label + (notes ? ': ' + notes : ''),
-          isFollowUp: true,
-          done: false,
-          urgent: true,
-          taskStatus: 'urgent',
-          sourceType: 'inspection',
-          inspectionKey: item.key,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          createdBy: currentUser.uid,
-          createdByName: currentUser.displayName || currentUser.email,
-        };
-        if (photoUrls.length > 0) noteData.photos = photoUrls;
-        await db.collection('vehicleNotes').add(noteData);
+        if (item.incidentType) {
+          // ── CLOSED-LOOP: create incident + Turo task (with deduplication) ──
+          const vehicleObj2 = vehiclesCache.find(v => v.id === vid);
+          const plate = vehicleObj2 ? (vehicleObj2.plate || '') : '';
 
-        // Auto-create an incident report so a claim can be filed
-        const vehicleObj2 = vehiclesCache.find(v => v.id === vid);
-        await db.collection('incidents').add({
-          vehicleId: vid,
-          vehiclePlate: vehicleObj2 ? (vehicleObj2.plate || '') : '',
-          type: 'damage',
-          title: 'File Claim: ' + item.label + (notes ? ' — ' + notes : ''),
-          description: notes || ('Inspection fail logged for: ' + item.label),
-          urgent: true,
-          status: 'open',
-          resolution: '',
-          resolvedBy: '', resolvedByName: '',
-          resolvedAt: null,
-          followUpDate: '',
-          photoUrls: photoUrls,
-          reportedBy: currentUser.uid,
-          reportedByName: currentUser.displayName || currentUser.email,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          sourceType: 'inspection',
-          inspectionKey: item.key,
-        });
+          // Check for an already-open incident for this exact inspection item on this vehicle
+          const existSnap = await db.collection('incidents')
+            .where('vehicleId', '==', vid)
+            .where('inspectionKey', '==', item.key)
+            .where('status', 'in', ['open', 'in-progress'])
+            .get();
+
+          if (!existSnap.empty) {
+            // Re-flag existing incident — no duplicate
+            const existRef = existSnap.docs[0].ref;
+            const updatePayload = {
+              urgent: true,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            };
+            if (notes) updatePayload.lastInspectionNote = notes;
+            if (photoUrls.length) updatePayload.photoUrls = firebase.firestore.FieldValue.arrayUnion(...photoUrls);
+            await existRef.update(updatePayload);
+            reusedCount++;
+          } else {
+            // Create fresh incident
+            const isTuro = TURO_ELIGIBLE_INCIDENT_TYPES.includes(item.incidentType);
+            const nowSec = Math.floor(Date.now() / 1000);
+            const turoDeadlineAt = isTuro
+              ? new firebase.firestore.Timestamp(nowSec + 86400, 0)
+              : null;
+            const title = item.label + (notes ? ' — ' + notes : '');
+
+            const incRef = await db.collection('incidents').add({
+              vehicleId: vid,
+              vehiclePlate: plate,
+              type: item.incidentType,
+              title: title,
+              description: notes || ('Inspection fail: ' + item.label),
+              urgent: true,
+              status: 'open',
+              resolution: '',
+              resolvedBy: '', resolvedByName: '', resolvedAt: null,
+              followUpDate: '',
+              photoUrls: photoUrls,
+              reportedBy: currentUser.uid,
+              reportedByName: currentUser.displayName || currentUser.email,
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+              sourceType: 'inspection',
+              inspectionKey: item.key,
+              ...(turoDeadlineAt ? { turoDeadlineAt } : {}),
+            });
+
+            // Auto-create Turo 24h claim task so it surfaces in homepage urgent banner
+            if (isTuro) {
+              await db.collection('generalNotes').add({
+                text: '🛡️ FILE TURO CLAIM: ' + title + (plate ? ' [' + plate + ']' : ''),
+                isFollowUp: true, done: false,
+                urgent: true, taskStatus: 'urgent',
+                dueDate: todayDateString(),
+                sourceType: 'incident_turo',
+                incidentDocId: incRef.id,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                createdBy: currentUser.uid,
+                createdByName: currentUser.displayName || currentUser.email,
+              });
+            }
+            newIncCount++;
+          }
+        } else {
+          // ── Non-incident ops items (clean, refueled): plain urgent task ──
+          const noteData = {
+            vehicleId: vid,
+            text: 'INSPECTION FAIL - ' + item.label + (notes ? ': ' + notes : ''),
+            isFollowUp: true, done: false,
+            urgent: true, taskStatus: 'urgent',
+            sourceType: 'inspection', inspectionKey: item.key,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid,
+            createdByName: currentUser.displayName || currentUser.email,
+          };
+          if (photoUrls.length > 0) noteData.photos = photoUrls;
+          await db.collection('vehicleNotes').add(noteData);
+          newTaskCount++;
+        }
       }
 
       await db.collection('vehicles').doc(vid).update({
@@ -1486,8 +1536,11 @@ function showDamageCheckModal(vid, plate) {
       if (cached) cached.needsDamageCheck = false;
 
       if (failItems.length > 0) {
-        const damageCount = failItems.filter(i => !i.yesno).length;
-        toast('Inspection submitted - ' + failItems.length + ' issue(s) logged as urgent' + (damageCount > 0 ? ', incident report(s) created' : ''), 'warning');
+        const parts = [];
+        if (newIncCount > 0)   parts.push(newIncCount + ' incident(s) created' + (TURO_ELIGIBLE_INCIDENT_TYPES.includes(failItems.find(i => i.incidentType)?.incidentType) ? ' — Turo claim task added' : ''));
+        if (reusedCount > 0)   parts.push(reusedCount + ' existing incident(s) re-flagged');
+        if (newTaskCount > 0)  parts.push(newTaskCount + ' task(s) logged');
+        toast('Inspection submitted. ' + parts.join(', ') + '.', 'warning');
         loadDashboardFollowUps();
         loadAllOpenIncidentsDashboard();
       } else {
@@ -1506,11 +1559,13 @@ function showDamageCheckModal(vid, plate) {
 
 // INSPECTION ITEMS LIST
 // ================================================================
+// incidentType: if set, a failed item auto-creates an Incident Report + (if Turo-eligible) a 24h claim task.
+// Items without incidentType (clean, refueled) create a plain vehicleNotes urgent task.
 const INSPECTION_ITEMS = [
-  { key: 'exterior', label: 'Exterior - No new damage' },
-  { key: 'interior', label: 'Interior - No new damage' },
-  { key: 'tires',    label: 'Tires - Good condition' },
-  { key: 'smoking',  label: 'Smoking / Odor - None detected' },
+  { key: 'exterior', label: 'Exterior - No new damage',        incidentType: 'damage'  },
+  { key: 'interior', label: 'Interior - No new damage',        incidentType: 'damage'  },
+  { key: 'tires',    label: 'Tires - Good condition',          incidentType: 'damage'  },
+  { key: 'smoking',  label: 'Smoking / Odor - None detected',  incidentType: 'smoking' },
   { key: 'clean',    label: 'Vehicle Cleaned' },
   { key: 'refueled', label: 'Vehicle Refueled ⛽' },
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
