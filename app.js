@@ -6832,14 +6832,18 @@ window.runProductivityReport = async function() {
       const entry = logsByVehicle[v.id] || { plate: v.plate, makeModel: ((v.make||'')+' '+(v.model||'')).trim(), logs: [] };
       const bookedSet = new Set();
       let lastBookingDate = '';
+      let tripCount = 0;
       entry.logs.forEach(log => {
-        // Turo-style: the return/end date is NOT a rental day
-        // e.g. trip start 04/23, return 04/25 = 2 days (04/23, 04/24)
-        // Exception: if the trip end is beyond our range end (still ongoing),
-        // count all days up to rangeEnd inclusive — we don't know the real end yet.
+        tripCount++;
+        // Turo-style: the return/end date is NOT a rental day.
+        // Exception 1: still-ongoing trip (end beyond range) — count through range boundary.
+        // Exception 2: same-day trip (endDate <= startDate) — count as 1 day.
         let countEnd;
         if (log.endDate > rangeEnd) {
           countEnd = rangeEnd; // still ongoing — count through range boundary
+        } else if (log.endDate <= log.startDate) {
+          // Same-day or bad data — count the start day as 1 rental day
+          countEnd = log.startDate;
         } else {
           // Completed trip: subtract 1 day so return day isn't counted
           const endDt = new Date(log.endDate + 'T00:00:00');
@@ -6853,12 +6857,34 @@ window.runProductivityReport = async function() {
         if (log.endDate > lastBookingDate) lastBookingDate = log.endDate;
       });
 
-      // Live-trip fallback: vehicle is currently on-trip/private-trip but no tripLog covers today
-      // (e.g. trip was set on an older app version, or set directly without going through scheduled)
+      // Live-trip fallback: vehicle is currently on-trip/private-trip but no tripLog covers today.
+      // Use tripScheduledStart→tripReturnDate (Turo-style) to fill the full current trip range.
       const isCurrentlyOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
       if (isCurrentlyOnTrip && rangeSet.has(todayStr) && !bookedSet.has(todayStr)) {
-        bookedSet.add(todayStr);
-        if (todayStr > lastBookingDate) lastBookingDate = todayStr;
+        // Determine trip start (tripScheduledStart if set, otherwise today)
+        let liveStart = todayStr;
+        if (v.tripScheduledStart) {
+          const ss = v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart);
+          liveStart = ss.getFullYear() + '-' + String(ss.getMonth()+1).padStart(2,'0') + '-' + String(ss.getDate()).padStart(2,'0');
+        }
+        // Determine trip end: tripReturnDate (Turo-style: return day not counted), else today
+        let liveEnd = todayStr;
+        if (v.tripReturnDate) {
+          const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+          const rdDate = new Date(rd.getFullYear(), rd.getMonth(), rd.getDate());
+          rdDate.setDate(rdDate.getDate() - 1); // exclude return day
+          liveEnd = rdDate.getFullYear() + '-' + String(rdDate.getMonth()+1).padStart(2,'0') + '-' + String(rdDate.getDate()).padStart(2,'0');
+        }
+        // Clamp to report range and cap at today (don't count future days for a live trip)
+        const liveCountStart = (liveStart < rangeStart ? rangeStart : liveStart);
+        const liveCountEnd   = (liveEnd > todayStr ? todayStr : (liveEnd > rangeEnd ? rangeEnd : liveEnd));
+        if (liveCountStart <= liveCountEnd) {
+          datesInRange(liveCountStart, liveCountEnd).forEach(d => bookedSet.add(d));
+          if (liveCountEnd > lastBookingDate) lastBookingDate = liveCountEnd;
+        } else {
+          bookedSet.add(todayStr); // absolute fallback: at least today
+          if (todayStr > lastBookingDate) lastBookingDate = todayStr;
+        }
       }
 
       const bookedDays = bookedSet.size;
@@ -6877,7 +6903,7 @@ window.runProductivityReport = async function() {
         if (idleStreak > 365) break; // safety cap
       }
 
-      return { v, plate: v.plate, makeModel: entry.makeModel, bookedDays, utilPct, lastBookingDate, idleStreak };
+      return { v, plate: v.plate, makeModel: entry.makeModel, bookedDays, utilPct, lastBookingDate, idleStreak, tripCount };
     });
 
     // Sort: idle streak > 2 first (descending), then by plate
@@ -6917,6 +6943,7 @@ window.runProductivityReport = async function() {
         <table class="prod-table">
           <thead><tr>
             <th>Vehicle</th>
+            <th>Trips</th>
             <th>Days Booked</th>
             <th>Utilization</th>
             <th>Last Booking</th>
@@ -6930,8 +6957,12 @@ window.runProductivityReport = async function() {
                 ? `<span class="prod-idle-alert">${r.idleStreak}d idle 🚨</span>`
                 : (r.idleStreak > 0 ? `<span class="prod-idle-ok">${r.idleStreak}d</span>` : '<span class="prod-idle-ok">Active ✅</span>');
               const utilBar = `<div class="prod-util-wrap"><div class="prod-util-bar" style="width:${r.utilPct}%"></div><span class="prod-util-pct">${r.utilPct}%</span></div>`;
+              const tripsDisplay = r.tripCount > 0
+                ? `<span class="prod-trip-count">${r.tripCount}</span>`
+                : `<span class="prod-trip-zero">—</span>`;
               return `<tr class="${alertRow ? 'prod-row-alert' : ''}">
                 <td><strong>${escapeHtml(r.plate)}</strong><br><span class="prod-make-model">${escapeHtml(r.makeModel)}</span></td>
+                <td>${tripsDisplay}</td>
                 <td>${r.bookedDays} / ${totalDays}</td>
                 <td>${utilBar}</td>
                 <td>${fmtDate(r.lastBookingDate)}</td>
@@ -6997,14 +7028,32 @@ async function _refreshTripLogBody(vehicleId, plate) {
 
     body.innerHTML = `
       <table class="prod-table triplog-table">
-        <thead><tr><th>Start</th><th>End</th><th>Type</th><th>Logged By</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Start</th><th>End</th><th>Days</th><th>Type</th><th>Logged By</th><th>Status</th><th></th></tr></thead>
         <tbody>
           ${logs.map(log => {
             const cancelled = log.cancelled;
             const typeLabel = log.tripType === 'private-trip' ? '🔒 Private' : '📅 Scheduled';
+            // Compute days this log contributed (Turo-style)
+            let logDays = 0;
+            if (!cancelled && log.startDate && log.endDate) {
+              if (log.endDate <= log.startDate) {
+                logDays = 1;
+              } else {
+                const endDt = new Date(log.endDate + 'T00:00:00');
+                endDt.setDate(endDt.getDate() - 1);
+                const countEnd = endDt.getFullYear() + '-' + String(endDt.getMonth()+1).padStart(2,'0') + '-' + String(endDt.getDate()).padStart(2,'0');
+                if (countEnd >= log.startDate) {
+                  const a = new Date(log.startDate + 'T00:00:00');
+                  const b = new Date(countEnd + 'T00:00:00');
+                  logDays = Math.round((b - a) / 86400000) + 1;
+                }
+              }
+            }
+            const daysBadge = cancelled ? '—' : `<span class="prod-trip-count">${logDays}d</span>`;
             return `<tr class="${cancelled ? 'triplog-cancelled' : ''}">
               <td>${fmtD(log.startDate)}</td>
               <td>${fmtD(log.endDate)}</td>
+              <td>${daysBadge}</td>
               <td>${typeLabel}</td>
               <td>${escapeHtml(log.loggedByName || '—')}</td>
               <td>${cancelled ? '<span class="prod-idle-alert">Cancelled</span>' : '<span class="prod-idle-ok">Active</span>'}</td>
