@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425j">
+  <link rel="stylesheet" href="style.css?v=20260425k">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -942,9 +942,10 @@
       <div class="form-row">
         <div class="form-group" style="flex:1;">
           <label>Type</label>
-          <select id="incident-type" class="form-select" onchange="toggleCitationFields()">
+          <select id="incident-type" class="form-select" onchange="toggleIncidentTypeFields()">
             <option value="damage">🛠️ Vehicle Damage</option>
             <option value="accident">💥 Accident / Collision</option>
+            <option value="maintenance">🔧 Maintenance Issue</option>
             <option value="key_lost">🔑 Key Lost</option>
             <option value="theft">🚔 Theft / Break-in</option>
             <option value="smoking">🚬 Smoking Violation</option>
@@ -967,6 +968,52 @@
       <div class="form-group">
         <label>Details</label>
         <textarea id="incident-description" class="note-textarea" rows="3" placeholder="Describe what happened, when, and any other relevant info..." maxlength="1000"></textarea>
+      </div>
+
+      <!-- Damage / Accident fields — Turo claim + reimbursement -->
+      <div id="damage-fields" class="damage-fields-panel" style="display:none;">
+        <div class="damage-fields-header">🛡️ Claim &amp; Reimbursement</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Claim Opened with Turo?</label>
+            <select id="damage-turo-claim" class="form-select">
+              <option value="no">❌ No</option>
+              <option value="yes">✅ Yes — Claim Filed</option>
+              <option value="pending">🕐 Considering / Pending</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Turo Claim # <span class="hint">(if filed)</span></label>
+            <input type="text" id="damage-turo-claim-num" class="form-select" placeholder="e.g. TC-2026-XXXXX">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Reimbursement Status</label>
+            <select id="damage-reimb-status" class="form-select">
+              <option value="na">🚫 N/A — Not Pursuing</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="paid">💵 Paid / Reimbursed ✅</option>
+              <option value="partial">🔁 Partial Reimbursement</option>
+              <option value="denied">❌ Denied</option>
+              <option value="escalated">⚠️ Escalated / Disputed</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Amount Claimed ($)</label>
+            <input type="number" id="damage-amount-claimed" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Amount Received ($)</label>
+            <input type="number" id="damage-amount-received" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Claim Notes</label>
+            <input type="text" id="damage-claim-notes" class="form-select" placeholder="e.g. Awaiting adjuster review" maxlength="200">
+          </div>
+        </div>
       </div>
 
       <!-- Citation-specific fields (shown only when type = citation) -->

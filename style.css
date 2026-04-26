@@ -4579,7 +4579,19 @@ body {
    INCIDENT REPORTS
    ================================================================ */
 
-/* Incident modal overlay */
+/* Incident modal overlay — fixed centered modal */
+#incident-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 20px 12px;
+}
+
 .incident-modal {
   width: 100%;
   max-width: 520px;
@@ -5186,6 +5198,52 @@ body {
 .inc-cite-reimb-reimbursed       { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
 .inc-cite-reimb-escalated        { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 .inc-cite-reimb-written_off      { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+
+/* Damage / Claim fields panel */
+.damage-fields-panel {
+  background: #fff7ed;
+  border: 1.5px solid #fed7aa;
+  border-radius: 10px;
+  padding: 14px 16px 10px;
+  margin-bottom: 14px;
+}
+.damage-fields-header {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #c2410c;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+}
+/* Reimbursement status tags on incident cards */
+.inc-damage-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 4px;
+}
+.inc-dmg-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  color: #9a3412;
+  font-weight: 500;
+}
+.inc-dmg-reimb {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.inc-dmg-reimb-na        { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+.inc-dmg-reimb-pending   { background: #fef9c3; color: #92400e; border: 1px solid #fde047; }
+.inc-dmg-reimb-paid      { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.inc-dmg-reimb-denied    { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+.inc-dmg-reimb-partial   { background: #e0f2fe; color: #0369a1; border: 1px solid #7dd3fc; }
+.inc-dmg-reimb-escalated { background: #fef3c7; color: #92400e; border: 1px solid #fbbf24; }
 
 /* ================================================================
    MAINTENANCE INVOICE UPLOAD

@@ -998,7 +998,7 @@ function renderLocationsWidget() {
   // No location set
   const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation && !v.photoExcluded);
   if (noLocation.length > 0) {
-    const needsCleaningNoLoc = noLocation.filter(v => v.needsCleaning);
+    const needsCleaningNoLoc = noLocation.filter(v => v.needsCleaning && !v.photoExcluded);
     const cleanNoLoc = noLocation.filter(v => !v.needsCleaning && !needsPhotosCheck(v));
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#6b7280;">
@@ -8512,15 +8512,16 @@ function updateMailboxIcon(count) {
 // ================================================================
 
 const INCIDENT_TYPES = {
-  damage:    { label: '🛠️ Vehicle Damage',      color: '#f59e0b' },
-  accident:  { label: '💥 Accident / Collision', color: '#ef4444' },
-  key_lost:  { label: '🔑 Key Lost',             color: '#8b5cf6' },
-  theft:     { label: '🚔 Theft / Break-in',     color: '#dc2626' },
-  smoking:   { label: '🚬 Smoking Violation',    color: '#dc2626' },
-  cleaning:  { label: '🧹 Cleaning Violation',   color: '#f97316' },
-  citation:  { label: '🎫 Citation / Ticket',    color: '#7c3aed' },
-  complaint: { label: '📢 Customer Complaint',   color: '#0ea5e9' },
-  other:     { label: '📝 Other',                color: '#6b7280' },
+  damage:      { label: '🛠️ Vehicle Damage',      color: '#f59e0b' },
+  accident:    { label: '💥 Accident / Collision', color: '#ef4444' },
+  maintenance: { label: '🔧 Maintenance Issue',    color: '#0ea5e9' },
+  key_lost:    { label: '🔑 Key Lost',             color: '#8b5cf6' },
+  theft:       { label: '🚔 Theft / Break-in',     color: '#dc2626' },
+  smoking:     { label: '🚬 Smoking Violation',    color: '#dc2626' },
+  cleaning:    { label: '🧹 Cleaning Violation',   color: '#f97316' },
+  citation:    { label: '🎫 Citation / Ticket',    color: '#7c3aed' },
+  complaint:   { label: '📢 Customer Complaint',   color: '#0ea5e9' },
+  other:       { label: '📝 Other',                color: '#6b7280' },
 };
 
 const INCIDENT_STATUS = {
@@ -8598,6 +8599,16 @@ async function loadAllOpenIncidentsDashboard() {
         ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
         ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
       </div>` : '';
+      const REIMB_LABELS2 = {na:'🚫 N/A',pending:'⏳ Pending',paid:'💵 Paid ✅',partial:'🔁 Partial',denied:'❌ Denied',escalated:'⚠️ Escalated'};
+      const TURO_LABELS2  = {no:'❌ No Claim',yes:'✅ Claim Filed',pending:'🕐 Pending'};
+      const damageHTML2 = (d.type === 'damage' || d.type === 'accident') ? `<div class="inc-damage-summary">
+        ${d.damgeTuroClaim && d.damgeTuroClaim !== 'no' ? `<span class="inc-dmg-tag">🛡️ Turo: ${TURO_LABELS2[d.damgeTuroClaim]||d.damgeTuroClaim}</span>` : ''}
+        ${d.damgeTuroClaimNum ? `<span class="inc-dmg-tag">📋 ${escapeHtml(d.damgeTuroClaimNum)}</span>` : ''}
+        ${d.damgeAmountClaimed != null ? `<span class="inc-dmg-tag">💸 Claimed $${Number(d.damgeAmountClaimed).toFixed(2)}</span>` : ''}
+        ${d.damgeAmountReceived != null ? `<span class="inc-dmg-tag">💰 Received $${Number(d.damgeAmountReceived).toFixed(2)}</span>` : ''}
+        ${d.damgeReimbStatus ? `<span class="inc-dmg-reimb inc-dmg-reimb-${d.damgeReimbStatus}">${REIMB_LABELS2[d.damgeReimbStatus]||d.damgeReimbStatus}</span>` : ''}
+        ${d.damgeClaimNotes ? `<span class="inc-dmg-tag">📝 ${escapeHtml(d.damgeClaimNotes)}</span>` : ''}
+      </div>` : '';
       const resolvedBlock = d.status === 'resolved' && d.resolution
         ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
         : '';
@@ -8613,6 +8624,7 @@ async function loadAllOpenIncidentsDashboard() {
         <div class="inc-title">${escapeHtml(d.title||'')}</div>
         ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
         ${citationHTML2}
+        ${damageHTML2}
         <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
         ${followUpHTML}${photosHTML}${resolvedBlock}
         <div class="inc-actions">
@@ -8676,6 +8688,16 @@ function renderIncidentsList(docs) {
       ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
       ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
     </div>` : '';
+    const REIMB_LABELS = {na:'🚫 N/A',pending:'⏳ Pending',paid:'💵 Paid ✅',partial:'🔁 Partial',denied:'❌ Denied',escalated:'⚠️ Escalated'};
+    const TURO_LABELS  = {no:'❌ No Claim',yes:'✅ Claim Filed',pending:'🕐 Pending'};
+    const damageHTML = (d.type === 'damage' || d.type === 'accident') ? `<div class="inc-damage-summary">
+      ${d.damgeTuroClaim && d.damgeTuroClaim !== 'no' ? `<span class="inc-dmg-tag">🛡️ Turo: ${TURO_LABELS[d.damgeTuroClaim]||d.damgeTuroClaim}</span>` : ''}
+      ${d.damgeTuroClaimNum ? `<span class="inc-dmg-tag">📋 ${escapeHtml(d.damgeTuroClaimNum)}</span>` : ''}
+      ${d.damgeAmountClaimed != null ? `<span class="inc-dmg-tag">💸 Claimed $${Number(d.damgeAmountClaimed).toFixed(2)}</span>` : ''}
+      ${d.damgeAmountReceived != null ? `<span class="inc-dmg-tag">💰 Received $${Number(d.damgeAmountReceived).toFixed(2)}</span>` : ''}
+      ${d.damgeReimbStatus ? `<span class="inc-dmg-reimb inc-dmg-reimb-${d.damgeReimbStatus}">${REIMB_LABELS[d.damgeReimbStatus]||d.damgeReimbStatus}</span>` : ''}
+      ${d.damgeClaimNotes ? `<span class="inc-dmg-tag">📝 ${escapeHtml(d.damgeClaimNotes)}</span>` : ''}
+    </div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
       ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
       : '';
@@ -8697,6 +8719,7 @@ function renderIncidentsList(docs) {
       <div class="inc-title">${escapeHtml(d.title || '')}</div>
       ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
       ${citationHTML}
+      ${damageHTML}
       <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || '—')}</div>
       ${followUpHTML}${photosHTML}${resolvedBlock}
       ${actionBtns}
@@ -8748,7 +8771,14 @@ window.openIncidentModal = function(incidentId, focusResolve) {
     if ($('citation-due-date')) $('citation-due-date').value = d.citationDueDate || '';
     if ($('citation-customer')) $('citation-customer').value = d.citationCustomer || '';
     if ($('citation-reimb-status')) $('citation-reimb-status').value = d.citationReimbStatus || 'pending';
-    toggleCitationFields();
+    // Populate damage/claim fields if applicable
+    if ($('damage-turo-claim')) $('damage-turo-claim').value = d.damgeTuroClaim || 'no';
+    if ($('damage-turo-claim-num')) $('damage-turo-claim-num').value = d.damgeTuroClaimNum || '';
+    if ($('damage-reimb-status')) $('damage-reimb-status').value = d.damgeReimbStatus || 'na';
+    if ($('damage-amount-claimed')) $('damage-amount-claimed').value = d.damgeAmountClaimed != null ? d.damgeAmountClaimed : '';
+    if ($('damage-amount-received')) $('damage-amount-received').value = d.damgeAmountReceived != null ? d.damgeAmountReceived : '';
+    if ($('damage-claim-notes')) $('damage-claim-notes').value = d.damgeClaimNotes || '';
+    toggleIncidentTypeFields();
   } else {
     $('incident-type').value          = 'damage';
     $('incident-title').value         = '';
@@ -8766,7 +8796,14 @@ window.openIncidentModal = function(incidentId, focusResolve) {
     if ($('citation-customer')) $('citation-customer').value = '';
     if ($('citation-violation-type')) $('citation-violation-type').value = 'parking';
     if ($('citation-reimb-status')) $('citation-reimb-status').value = 'pending';
-    toggleCitationFields();
+    // Clear damage/claim fields
+    if ($('damage-turo-claim')) $('damage-turo-claim').value = 'no';
+    if ($('damage-turo-claim-num')) $('damage-turo-claim-num').value = '';
+    if ($('damage-reimb-status')) $('damage-reimb-status').value = 'na';
+    if ($('damage-amount-claimed')) $('damage-amount-claimed').value = '';
+    if ($('damage-amount-received')) $('damage-amount-received').value = '';
+    if ($('damage-claim-notes')) $('damage-claim-notes').value = '';
+    toggleIncidentTypeFields();
     const vehicleRow = $('incident-vehicle-row');
     const vehicleSel = $('incident-vehicle-select');
     if (vehicleRow) vehicleRow.style.display = '';
@@ -8832,11 +8869,15 @@ window.closeIncidentModal = function() {
   if (overlay) overlay.style.display = 'none';
 };
 
-window.toggleCitationFields = function() {
+window.toggleIncidentTypeFields = function() {
   const type = $('incident-type') ? $('incident-type').value : '';
-  const panel = $('citation-fields');
-  if (panel) panel.style.display = type === 'citation' ? '' : 'none';
+  const citPanel = $('citation-fields');
+  const dmgPanel = $('damage-fields');
+  if (citPanel) citPanel.style.display = type === 'citation' ? '' : 'none';
+  if (dmgPanel) dmgPanel.style.display = (type === 'damage' || type === 'accident') ? '' : 'none';
 };
+// Legacy alias
+window.toggleCitationFields = window.toggleIncidentTypeFields;
 
 window.saveIncident = async function() {
   const title = ($('incident-title').value || '').trim();
@@ -8859,6 +8900,18 @@ window.saveIncident = async function() {
     citationDueDate:    ($('citation-due-date')      ? $('citation-due-date').value            : ''),
     citationCustomer:   ($('citation-customer')      ? $('citation-customer').value.trim()     : ''),
     citationReimbStatus:($('citation-reimb-status')  ? $('citation-reimb-status').value        : 'pending'),
+  } : null;
+
+  // Damage/accident-specific fields
+  const isDamage = (type === 'damage' || type === 'accident');
+  const damageData = isDamage ? {
+    damgeTuroClaim:     ($('damage-turo-claim')       ? $('damage-turo-claim').value           : 'no'),
+    damgeTuroClaimNum:  ($('damage-turo-claim-num')   ? $('damage-turo-claim-num').value.trim(): ''),
+    damgeReimbStatus:   ($('damage-reimb-status')     ? $('damage-reimb-status').value         : 'na'),
+    damgeAmountClaimed: ($('damage-amount-claimed')   ? parseFloat($('damage-amount-claimed').value) || null : null),
+    damgeAmountReceived:($('damage-amount-received')  ? parseFloat($('damage-amount-received').value) || null : null),
+    damgeClaimNotes:    ($('damage-claim-notes')      ? $('damage-claim-notes').value.trim()   : ''),
+  } : null;
   } : null;
 
   const vehicleId    = selectedVehicle ? (selectedVehicle.id || selectedVehicle) : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
@@ -8906,6 +8959,12 @@ window.saveIncident = async function() {
         ['citationNumber','citationViolation','citationAmount','citationDueDate','citationCustomer','citationReimbStatus']
           .forEach(k => { updateData[k] = firebase.firestore.FieldValue.delete(); });
       }
+      if (damageData) Object.assign(updateData, damageData);
+      else {
+        // clear damage fields if type changed away from damage/accident
+        ['damgeTuroClaim','damgeTuroClaimNum','damgeReimbStatus','damgeAmountClaimed','damgeAmountReceived','damgeClaimNotes']
+          .forEach(k => { updateData[k] = firebase.firestore.FieldValue.delete(); });
+      }
       if (followUpDate) updateData.followUpDate = followUpDate;
       if (resolution) {
         updateData.resolution     = resolution;
@@ -8931,6 +8990,7 @@ window.saveIncident = async function() {
         followUpDate: followUpDate || '',
         photoUrls: newPhotoUrls,
         ...(citationData || {}),
+        ...(damageData || {}),
         reportedBy: currentUser.uid,
         reportedByName: currentUser.displayName || currentUser.email,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
