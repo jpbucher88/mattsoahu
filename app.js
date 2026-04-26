@@ -8912,7 +8912,6 @@ window.saveIncident = async function() {
     damgeAmountReceived:($('damage-amount-received')  ? parseFloat($('damage-amount-received').value) || null : null),
     damgeClaimNotes:    ($('damage-claim-notes')      ? $('damage-claim-notes').value.trim()   : ''),
   } : null;
-  } : null;
 
   const vehicleId    = selectedVehicle ? (selectedVehicle.id || selectedVehicle) : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
   const vehiclePlate = selectedVehicle ? selectedVehicle.plate : (vehiclesCache.find(v => v.id === vehicleId) || {}).plate || '';
