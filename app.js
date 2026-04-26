@@ -1597,7 +1597,7 @@ async function openVehiclePage(vid) {
     $('trip-scheduled-row').style.display = ts === 'scheduled' ? '' : 'none';
     $('trip-expected-end-row').style.display = ts === 'scheduled' ? '' : 'none';
     tripReturnRow.style.display = (ts === 'on-trip' || ts === 'repair-shop') ? '' : 'none';
-    $('on-trip-revenue-row').style.display = ts === 'on-trip' ? '' : 'none';
+    $('on-trip-revenue-row').style.display = (ts === 'on-trip' || ts === 'scheduled') ? '' : 'none';
     repairPartsRow.style.display = ts === 'repair-shop' ? '' : 'none';
     $('hnl-parking-row').style.display = (homeLocSelect.value === 'HNL') ? '' : 'none';
     $('hnl-parking-row-val').value = selectedVehicle.parkingRow || '';
@@ -1657,7 +1657,7 @@ async function openVehiclePage(vid) {
       $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
       $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
       tripReturnRow.style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
-      $('on-trip-revenue-row').style.display = v === 'on-trip' ? '' : 'none';
+      $('on-trip-revenue-row').style.display = (v === 'on-trip' || v === 'scheduled') ? '' : 'none';
       repairPartsRow.style.display = v === 'repair-shop' ? '' : 'none';
     };
   }
@@ -3067,7 +3067,7 @@ function _calcPrivateTripRevenue() {
 $('vehicle-trip-status').addEventListener('change', function() {
   const v = this.value;
   $('trip-return-row').style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
-  $('on-trip-revenue-row').style.display = v === 'on-trip' ? '' : 'none';
+  $('on-trip-revenue-row').style.display = (v === 'on-trip' || v === 'scheduled') ? '' : 'none';
   $('repair-parts-row').style.display = v === 'repair-shop' ? '' : 'none';
   $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
   $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
@@ -3142,6 +3142,9 @@ $('btn-save-location').addEventListener('click', async () => {
      'privateTripDailyRate','privateTripGET','privateTripDailyTax'].forEach(k => {
       updateData[k] = firebase.firestore.FieldValue.delete();
     });
+    // Scheduled trip revenue (Turo payout — added when received)
+    const schedRev = parseFloat($('on-trip-revenue').value);
+    updateData.tripRevenue = isNaN(schedRev) ? firebase.firestore.FieldValue.delete() : schedRev;
   } else if (tripStatus === 'private-trip') {
     updateData.location = 'Private Trip';
     const ptStart = getDTValue('private-trip-start-date', 'private-trip-start-time');
@@ -3346,8 +3349,8 @@ $('btn-save-location').addEventListener('click', async () => {
             loggedBy: currentUser.uid,
             loggedByName: currentUser.displayName || currentUser.email,
           };
-          // Save calculated private trip revenue to tripLog
-          if (tripStatus === 'private-trip' && updateData.tripRevenue != null && typeof updateData.tripRevenue === 'number') {
+          // Save revenue to tripLog (private-trip: calculated, scheduled: entered payout)
+          if ((tripStatus === 'private-trip' || tripStatus === 'scheduled') && updateData.tripRevenue != null && typeof updateData.tripRevenue === 'number') {
             tripLogData.revenue = updateData.tripRevenue;
           }
           await db.collection('tripLogs').doc(logKey).set(tripLogData, { merge: true });
