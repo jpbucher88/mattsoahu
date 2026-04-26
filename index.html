@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425g">
+  <link rel="stylesheet" href="style.css?v=20260425h">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -111,6 +111,19 @@
         </div>
       </section>
 
+      <!-- Locations & Fleet Status Widget -->
+      <section id="locations-widget" class="card">
+        <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>🚗 Fleet Status</h3>
+          </div>
+          <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
+        </div>
+        <div id="locations-widget-body" class="collapsible-body">
+          <div id="locations-grid" class="locations-grid"></div>
+        </div>
+      </section>
+
       <section id="fleet-overview" class="card">
         <div class="collapsible-header" onclick="toggleSection('fleet-overview-body', 'fleet-overview-toggle')">
           <div class="collapsible-title">
@@ -127,19 +140,6 @@
             </select>
           </div>
           <div id="fleet-dashboard" class="fleet-dashboard"></div>
-        </div>
-      </section>
-
-      <!-- Locations & Fleet Status Widget -->
-      <section id="locations-widget" class="card">
-        <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
-          <div class="collapsible-title">
-            <h3>📍 Fleet Status</h3>
-          </div>
-          <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
-        </div>
-        <div id="locations-widget-body" class="collapsible-body">
-          <div id="locations-grid" class="locations-grid"></div>
         </div>
       </section>
 
