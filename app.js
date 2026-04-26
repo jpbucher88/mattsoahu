@@ -887,7 +887,7 @@ function renderLocationsWidget() {
   sortByReturn(onTrip);
   sortByReturn(atRepair);
 
-  const knownLocations = ['HNL', '1585 Kapiolani'];
+  const knownLocations = ['HNL', '1585 Kapiolani', '94-530 Lumiauau'];
   const allHomeVehicles = [...vehiclesCache.filter(v => isAtHome(v)), ...overdueTrip, ...overdueRepair];
   const otherLocations = [...new Set(allHomeVehicles.filter(v => v.homeLocation && !knownLocations.includes(v.homeLocation)).map(v => v.homeLocation))];
   const allLocations = [...knownLocations, ...otherLocations];
