@@ -863,7 +863,8 @@ function renderLocationsWidget() {
   const overdueRepair = atRepairAll.filter(v => isOverdue(v));
 
   function isAtHome(v) {
-    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop' && !v.photoExcluded;
+    // photoExcluded only suppresses photo/cleaning prompts — vehicle is still treated as at-home for all other ops
+    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop';
   }
   function needsPhotosCheck(v) {
     if (v.photoExcluded) return false;
@@ -996,7 +997,7 @@ function renderLocationsWidget() {
   }
 
   // No location set
-  const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation && !v.photoExcluded);
+  const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation);
   if (noLocation.length > 0) {
     const needsCleaningNoLoc = noLocation.filter(v => v.needsCleaning && !v.photoExcluded);
     const cleanNoLoc = noLocation.filter(v => !v.needsCleaning && !needsPhotosCheck(v));
@@ -4991,6 +4992,77 @@ window.deleteNote = async function(docId) {
 // VEHICLE COMPLIANCE (Safety / Registration / Insurance / VIN)
 // ================================================================
 
+// ── Compliance month-browser state & helpers ─────────────────────
+let _complianceViewMonth = ''; // YYYY-MM — blank = use current month
+
+window.changeComplianceMonth = function(delta) {
+  const base = _complianceViewMonth || todayDateString().substring(0, 7);
+  const [y, m] = base.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  _complianceViewMonth = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  renderTaskAgenda(cachedTaskItems);
+};
+
+function _buildComplianceMonthBrowser() {
+  const month = _complianceViewMonth || todayDateString().substring(0, 7);
+  const [y, m] = month.split('-').map(Number);
+  const monthName = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  const todayMonth = todayDateString().substring(0, 7);
+  const isCurrent = month === todayMonth;
+
+  // Collect all vehicles with compliance due in the selected month
+  const rows = [];
+  vehiclesCache.forEach(v => {
+    const its = [];
+    if (v.complianceSafety === month)
+      its.push({ label: '\uD83D\uDD27 Safety', status: complianceMonthStatus(v.complianceSafety) });
+    if (v.complianceRegistration === month)
+      its.push({ label: '\uD83D\uDCDD Registration', status: complianceMonthStatus(v.complianceRegistration) });
+    if (its.length) rows.push({ v, its });
+  });
+
+  const navHtml = `<div class="comp-month-nav">
+    <button class="comp-month-btn" onclick="changeComplianceMonth(-1)" title="Previous month">&#8249;</button>
+    <span class="comp-month-label">${monthName}${isCurrent ? ' <span class="comp-month-current-chip">Current</span>' : ''}</span>
+    <button class="comp-month-btn" onclick="changeComplianceMonth(1)" title="Next month">&#8250;</button>
+  </div>`;
+
+  if (rows.length === 0) {
+    return `<div class="comp-month-browser">
+      ${navHtml}
+      <div class="comp-month-empty">&#x2705; No compliance items due in ${monthName}.</div>
+    </div>`;
+  }
+
+  rows.sort((a, b) => {
+    const aWorst = Math.min(...a.its.map(i => i.status.daysLeft ?? 999));
+    const bWorst = Math.min(...b.its.map(i => i.status.daysLeft ?? 999));
+    return aWorst - bWorst;
+  });
+
+  let rowsHtml = '';
+  for (const { v, its } of rows) {
+    const hasUrgent = its.some(i => i.status.cls === 'compliance-urgent');
+    const hasWarn   = its.some(i => i.status.cls === 'compliance-warn');
+    const rowCls    = hasUrgent ? 'comp-month-row comp-row-urgent' : hasWarn ? 'comp-month-row comp-row-warn' : 'comp-month-row comp-row-ok';
+    const tagHtml   = its.map(i => {
+      const tc = i.status.cls === 'compliance-urgent' ? 'comp-tag-urgent'
+               : i.status.cls === 'compliance-warn'   ? 'comp-tag-warn' : 'comp-tag-ok';
+      return `<span class="comp-month-tag ${tc}">${i.label} \u2014 ${i.status.label}</span>`;
+    }).join('');
+    rowsHtml += `<div class="${rowCls}" onclick="openVehicleCompliancePage('${v.id}')">
+      <span class="comp-month-plate">&#x1F697; ${escapeHtml(v.plate)}</span>
+      <span class="comp-month-tags">${tagHtml}</span>
+    </div>`;
+  }
+
+  return `<div class="comp-month-browser">
+    ${navHtml}
+    <div class="comp-month-count">${rows.length} vehicle${rows.length !== 1 ? 's' : ''} due in ${monthName}</div>
+    <div class="comp-month-rows">${rowsHtml}</div>
+  </div>`;
+}
+
 function complianceMonthStatus(yyyyMM) {
   if (!yyyyMM) return { label: '—', cls: '', nextDue: '', daysLeft: null };
   const [y, m] = yyyyMM.split('-').map(Number);
@@ -5259,6 +5331,8 @@ window.switchTaskTab = function(tab) {
   document.querySelectorAll('.task-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
+  // Reset compliance month browser to current month each time the compliance tab opens
+  if (tab === 'compliance') _complianceViewMonth = todayDateString().substring(0, 7);
   const incPanel = $('incidents-tab-content');
   const userFilterRow = $('task-user-filter-row');
   if (tab === 'incidents') {
@@ -5608,15 +5682,21 @@ function renderTaskAgenda(allItems) {
     el.innerHTML = html;
   }
 
-  // Compliance tab: use grouped-by-vehicle card view
+  // Compliance tab: month browser at top + task cards below
   const compGroupEl = $('compliance-grouped-view');
   if (currentTaskTab === 'compliance') {
     [overdueEl, todayEl, upcomingEl, noDateEl].forEach(el => { if (el) el.style.display = 'none'; });
     if (emptyEl) emptyEl.style.display = 'none';
     if (compGroupEl) {
       compGroupEl.style.display = '';
+      if (!_complianceViewMonth) _complianceViewMonth = today.substring(0, 7);
+
+      // Month browser at top
+      let fullHtml = _buildComplianceMonthBrowser();
+
+      // Task cards below
       if (items.length === 0) {
-        compGroupEl.innerHTML = '<div class="agenda-empty"><p class="hint">No compliance tasks. ✅</p></div>';
+        fullHtml += '<div class="comp-tasks-section"><div class="comp-tasks-header">📋 Compliance Tasks</div><div class="agenda-empty"><p class="hint">No open compliance tasks. ✅</p></div></div>';
       } else {
         const todayMonth = today.substring(0, 7);
         const groupMap = new Map();
@@ -5632,7 +5712,7 @@ function renderTaskAgenda(allItems) {
           if (aOver !== bOver) return aOver ? -1 : 1;
           return (a.month === 'nodate' ? 'zzzz' : a.month).localeCompare(b.month === 'nodate' ? 'zzzz' : b.month);
         });
-        let html = '';
+        let taskHtml = '<div class="comp-tasks-section"><div class="comp-tasks-header">📋 Compliance Tasks</div>';
         for (const group of groups) {
           const v = group.vehicleId ? vehiclesCache.find(x => x.id === group.vehicleId) : null;
           const plate = v ? v.plate : 'General';
@@ -5645,7 +5725,7 @@ function renderTaskAgenda(allItems) {
             if (i.complianceType === 'registration') return '<span class="ctag ctag-reg">📝 Registration</span>';
             return '<span class="ctag">📄 Insurance</span>';
           }).join('');
-          html += `<div class="compliance-group-card${isOver ? ' compliance-group-overdue' : ''}">
+          taskHtml += `<div class="compliance-group-card${isOver ? ' compliance-group-overdue' : ''}">
             <div class="compliance-group-header">
               <span class="compliance-group-plate">🚗 ${escapeHtml(plate)}</span>
               <span class="compliance-group-month">${monthStr}</span>
@@ -5653,20 +5733,23 @@ function renderTaskAgenda(allItems) {
               <span class="compliance-group-types">${typeTags}</span>
             </div>
             <div class="compliance-group-items">`;
-          for (const item of group.items) html += renderAgendaItem(item);
-          html += '</div></div>';
+          for (const item of group.items) taskHtml += renderAgendaItem(item);
+          taskHtml += '</div></div>';
         }
-        compGroupEl.innerHTML = html;
-        compGroupEl.querySelectorAll('.followup-item').forEach(el => {
-          el.addEventListener('click', e => {
-            if (e.target.closest('button')) return;
-            const wrap = el.closest('.followup-item-wrap');
-            const dd = wrap ? wrap.dataset.due : '';
-            if (dd) jumpToCalendarDay(dd);
-            else if (el.dataset.vid) { closeTaskPanel(); openVehiclePage(el.dataset.vid); }
-          });
-        });
+        taskHtml += '</div>';
+        fullHtml += taskHtml;
       }
+
+      compGroupEl.innerHTML = fullHtml;
+      compGroupEl.querySelectorAll('.followup-item').forEach(el => {
+        el.addEventListener('click', e => {
+          if (e.target.closest('button')) return;
+          const wrap = el.closest('.followup-item-wrap');
+          const dd = wrap ? wrap.dataset.due : '';
+          if (dd) jumpToCalendarDay(dd);
+          else if (el.dataset.vid) { closeTaskPanel(); openVehiclePage(el.dataset.vid); }
+        });
+      });
     }
     return;
   }

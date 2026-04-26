@@ -59,6 +59,15 @@
       ]
     },
     {
+      "collectionGroup": "vehicleNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "done", "order": "ASCENDING" },
+        { "fieldPath": "isFollowUp", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "generalNotes",
       "queryScope": "COLLECTION",
       "fields": [
