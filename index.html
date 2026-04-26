@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425k">
+  <link rel="stylesheet" href="style.css?v=20260425l">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1558,9 +1558,17 @@
             <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
             <div id="compliance-grouped-view" class="compliance-grouped-view" style="display:none;"></div>
             <div id="incidents-tab-content" class="incidents-tab-panel" style="display:none;">
-              <div class="incidents-sub-header" style="margin-bottom:10px;">
+              <div class="incidents-sub-header" style="margin-bottom:8px;">
                 <span class="incidents-sub-title">🚨 Incident Reports</span>
                 <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+              </div>
+              <!-- Turo 24h deadline banner -->
+              <div id="turo-claims-banner" style="display:none;margin-bottom:10px;"></div>
+              <!-- Filter tabs -->
+              <div class="inc-filter-row">
+                <button class="inc-filter-btn active" data-filter="all" onclick="setIncidentFilter('all')">All</button>
+                <button class="inc-filter-btn" data-filter="open" onclick="setIncidentFilter('open')">🔴 Open</button>
+                <button class="inc-filter-btn" data-filter="turo" onclick="setIncidentFilter('turo')">🛡️ Turo Claims</button>
               </div>
               <div id="incidents-dashboard-list" class="incidents-list"></div>
             </div>

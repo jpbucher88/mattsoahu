@@ -4727,6 +4727,106 @@ body {
   font-weight: 700;
   color: #dc2626;
 }
+
+/* Incident filter tab row */
+.inc-filter-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.inc-filter-btn {
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1.5px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.inc-filter-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
+.inc-filter-btn.active { background: #1e40af; color: #fff; border-color: #1e40af; }
+
+/* Turo 24h deadline banner */
+.turo-claims-banner {
+  background: linear-gradient(135deg, #fff7ed, #fef2f2);
+  border: 2px solid #fb923c;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 4px;
+}
+.turo-banner-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.turo-banner-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #c2410c;
+}
+.turo-banner-count {
+  font-size: 0.78rem;
+  background: #fee2e2;
+  color: #dc2626;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-weight: 600;
+}
+.turo-banner-items { display: flex; flex-direction: column; gap: 8px; }
+.turo-claim-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid #fed7aa;
+  border-radius: 9px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.turo-claim-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+.turo-item-critical { border-color: #fca5a5; background: #fff5f5; }
+.turo-item-warning  { border-color: #fde68a; background: #fffbeb; }
+.turo-item-expired  { border-color: #d1d5db; background: #f9fafb; opacity: 0.8; }
+.turo-item-left { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.turo-item-type  { font-size: 0.78rem; font-weight: 600; }
+.turo-item-plate { font-size: 0.78rem; color: #6b7280; font-weight: 500; }
+.turo-item-title { font-size: 0.82rem; color: #374151; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+.turo-item-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.turo-file-btn {
+  font-size: 0.75rem;
+  padding: 3px 10px;
+  background: #fff;
+  border: 1.5px solid #f97316;
+  color: #ea580c;
+  border-radius: 7px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.turo-file-btn:hover { background: #fff7ed; }
+
+/* Turo countdown chips on incident cards */
+.turo-countdown {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+.turo-cd-critical { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; animation: turo-pulse 1.5s infinite; }
+.turo-cd-warning  { background: #fef9c3; color: #92400e; border: 1px solid #fde047; }
+.turo-cd-ok       { background: #f0fdf4; color: #166534; border: 1px solid #86efac; }
+.turo-cd-expired  { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
+.turo-cd-filed    { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+@keyframes turo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
 .inc-badge-inline {
   background: #fee2e2;
   color: #dc2626;

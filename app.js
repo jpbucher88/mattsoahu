@@ -8554,6 +8554,183 @@ function startIncidentListener() {
   } catch(e) { loadAllOpenIncidentsDashboard(); }
 }
 
+// Turo-eligible incident types (24-hour claim window)
+const TURO_ELIGIBLE_INCIDENT_TYPES = ['damage', 'accident', 'cleaning', 'smoking'];
+
+let _cachedIncidentDocs = [];
+let _currentIncidentFilter = 'all';
+
+window.setIncidentFilter = function(filter) {
+  _currentIncidentFilter = filter;
+  document.querySelectorAll('.inc-filter-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.filter === filter);
+  });
+  _renderFilteredIncidentList(_cachedIncidentDocs);
+};
+
+function _renderFilteredIncidentList(docs) {
+  let filtered = docs;
+  if (_currentIncidentFilter === 'open') {
+    filtered = docs.filter(d => d.data().status !== 'resolved');
+  } else if (_currentIncidentFilter === 'turo') {
+    filtered = docs.filter(d => TURO_ELIGIBLE_INCIDENT_TYPES.includes(d.data().type));
+  }
+  // Reuse existing render logic inline
+  const list = $('incidents-dashboard-list');
+  if (!list) return;
+  if (!filtered.length) {
+    list.innerHTML = '<p class="hint" style="padding:16px 0;">No incidents in this view.</p>';
+    return;
+  }
+  const isPriv = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const nowMs = Date.now();
+  list.innerHTML = filtered.map(doc => {
+    const d = doc.data();
+    const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
+    const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
+    const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+    const photosHTML = (d.photoUrls && d.photoUrls.length)
+      ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="incident photo"></a>`).join('')}</div>`
+      : '';
+    const followUpHTML = d.followUpDate ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>` : '';
+    const citationHTML2 = d.type === 'citation' ? `<div class="inc-citation-summary">
+      ${d.citationNumber ? `<span class="inc-cite-tag">🎫 #${escapeHtml(d.citationNumber)}</span>` : ''}
+      ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'🅿️ Parking',red_light:'🚦 Red Light',speeding:'💨 Speeding',toll:'🛣️ Toll',other:'📝 Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
+      ${d.citationAmount != null ? `<span class="inc-cite-tag">💵 $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
+      ${d.citationDueDate ? `<span class="inc-cite-tag">⏰ Due ${d.citationDueDate}</span>` : ''}
+      ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
+      ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
+    </div>` : '';
+    const REIMB_LABELS = {na:'🚫 N/A',pending:'⏳ Pending',paid:'💵 Paid ✅',partial:'🔁 Partial',denied:'❌ Denied',escalated:'⚠️ Escalated'};
+    const TURO_LABELS  = {no:'❌ No Claim',yes:'✅ Claim Filed',pending:'🕐 Pending'};
+    const damageHTML2 = TURO_ELIGIBLE_INCIDENT_TYPES.includes(d.type) ? `<div class="inc-damage-summary">
+      ${d.damgeTuroClaim && d.damgeTuroClaim !== 'no' ? `<span class="inc-dmg-tag">🛡️ Turo: ${TURO_LABELS[d.damgeTuroClaim]||d.damgeTuroClaim}</span>` : ''}
+      ${d.damgeTuroClaimNum ? `<span class="inc-dmg-tag">📋 ${escapeHtml(d.damgeTuroClaimNum)}</span>` : ''}
+      ${d.damgeAmountClaimed != null ? `<span class="inc-dmg-tag">💸 Claimed $${Number(d.damgeAmountClaimed).toFixed(2)}</span>` : ''}
+      ${d.damgeAmountReceived != null ? `<span class="inc-dmg-tag">💰 Received $${Number(d.damgeAmountReceived).toFixed(2)}</span>` : ''}
+      ${d.damgeReimbStatus ? `<span class="inc-dmg-reimb inc-dmg-reimb-${d.damgeReimbStatus}">${REIMB_LABELS[d.damgeReimbStatus]||d.damgeReimbStatus}</span>` : ''}
+      ${d.damgeClaimNotes ? `<span class="inc-dmg-tag">📝 ${escapeHtml(d.damgeClaimNotes)}</span>` : ''}
+      ${_buildTuroCountdown(d, nowMs)}
+    </div>` : '';
+    const resolvedBlock = d.status === 'resolved' && d.resolution
+      ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
+      : '';
+    const canResolve = d.status !== 'resolved';
+    return `<div class="inc-card ${d.status === 'resolved' ? 'inc-resolved' : ''} ${d.urgent ? 'inc-urgent' : ''}">
+      <div class="inc-header">
+        <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'—')}</span>
+        <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
+        ${d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : ''}
+        <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
+        <span class="inc-date">${dateStr}</span>
+      </div>
+      <div class="inc-title">${escapeHtml(d.title||'')}</div>
+      ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
+      ${citationHTML2}
+      ${damageHTML2}
+      <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
+      ${followUpHTML}${photosHTML}${resolvedBlock}
+      <div class="inc-actions">
+        ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openIncidentEditFromDashboard('${doc.id}',true)">Update Status</button>` : ''}
+        <button class="btn btn-sm btn-outline" onclick="openIncidentEditFromDashboard('${doc.id}',false)">Edit</button>
+        ${currentUserRole === 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Build a countdown chip for Turo-eligible incidents
+function _buildTuroCountdown(d, nowMs) {
+  if (!TURO_ELIGIBLE_INCIDENT_TYPES.includes(d.type)) return '';
+  if (d.status === 'resolved') return '';
+  if (d.damgeTuroClaim === 'yes') return '<span class="turo-countdown turo-cd-filed">🛡️ Turo Claim Filed</span>';
+  if (d.damgeTuroClaim === 'no') return '';
+  const createdMs = d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : 0) : 0;
+  if (!createdMs) return '';
+  const deadlineMs = createdMs + 24 * 3600 * 1000;
+  const msLeft = deadlineMs - nowMs;
+  const hoursLeft = msLeft / 3600000;
+  if (hoursLeft < 0) {
+    const hoursAgo = Math.abs(hoursLeft);
+    return `<span class="turo-countdown turo-cd-expired">⚠️ Turo window expired ${hoursAgo < 24 ? Math.floor(hoursAgo)+'h ago' : Math.floor(hoursAgo/24)+'d ago'}</span>`;
+  }
+  if (hoursLeft < 4) return `<span class="turo-countdown turo-cd-critical">🔴 ${Math.floor(hoursLeft)}h ${Math.floor((hoursLeft%1)*60)}m — FILE TURO NOW</span>`;
+  if (hoursLeft < 12) return `<span class="turo-countdown turo-cd-warning">🟡 ${Math.floor(hoursLeft)}h left to file Turo claim</span>`;
+  return `<span class="turo-countdown turo-cd-ok">🟢 ${Math.floor(hoursLeft)}h left to file Turo claim</span>`;
+}
+
+// Turo Claims banner — shows at top of incidents tab for open Turo-eligible incidents
+function renderTuroClaimsBanner(docs) {
+  const banner = $('turo-claims-banner');
+  if (!banner) return;
+  const nowMs = Date.now();
+  const TURO_ELIGIBLE = TURO_ELIGIBLE_INCIDENT_TYPES;
+  const turoOpen = docs.filter(d => {
+    const data = d.data();
+    return TURO_ELIGIBLE.includes(data.type) && data.status !== 'resolved' && data.damgeTuroClaim !== 'yes' && data.damgeTuroClaim !== 'no';
+  });
+  if (!turoOpen.length) { banner.style.display = 'none'; return; }
+
+  // Show within 48h only (beyond that it's clearly expired, less urgent)
+  const relevant = turoOpen.filter(d => {
+    const createdMs = d.data().createdAt ? (d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) : 0;
+    return !createdMs || (nowMs - createdMs) < 48 * 3600000;
+  });
+  if (!relevant.length) { banner.style.display = 'none'; return; }
+
+  relevant.sort((a, b) => {
+    const aMs = a.data().createdAt ? (a.data().createdAt.toMillis ? a.data().createdAt.toMillis() : 0) : 0;
+    const bMs = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
+    return aMs - bMs; // oldest first = most urgent
+  });
+
+  banner.style.display = '';
+  const items = relevant.map(doc => {
+    const d = doc.data();
+    const createdMs = d.createdAt ? (d.createdAt.toMillis ? d.createdAt.toMillis() : 0) : 0;
+    const msLeft = createdMs ? (createdMs + 24 * 3600000) - nowMs : null;
+    const hoursLeft = msLeft !== null ? msLeft / 3600000 : null;
+    let countdownHtml, urgencyClass;
+    if (hoursLeft === null) {
+      countdownHtml = '<span class="turo-countdown turo-cd-ok">⏱️ File within 24h</span>';
+      urgencyClass = '';
+    } else if (hoursLeft < 0) {
+      const ago = Math.abs(hoursLeft);
+      countdownHtml = `<span class="turo-countdown turo-cd-expired">⚠️ Expired ${ago < 24 ? Math.floor(ago)+'h ago' : Math.floor(ago/24)+'d ago'}</span>`;
+      urgencyClass = 'turo-item-expired';
+    } else if (hoursLeft < 4) {
+      countdownHtml = `<span class="turo-countdown turo-cd-critical">🔴 ${Math.floor(hoursLeft)}h ${Math.floor((hoursLeft%1)*60)}m LEFT</span>`;
+      urgencyClass = 'turo-item-critical';
+    } else if (hoursLeft < 12) {
+      countdownHtml = `<span class="turo-countdown turo-cd-warning">🟡 ${Math.floor(hoursLeft)}h left</span>`;
+      urgencyClass = 'turo-item-warning';
+    } else {
+      countdownHtml = `<span class="turo-countdown turo-cd-ok">🟢 ${Math.floor(hoursLeft)}h left</span>`;
+      urgencyClass = '';
+    }
+    const typeInfo = INCIDENT_TYPES[d.type] || INCIDENT_TYPES.other;
+    return `<div class="turo-claim-item ${urgencyClass}" onclick="openIncidentEditFromDashboard('${doc.id}',false)" title="Click to update claim">
+      <div class="turo-item-left">
+        <span class="turo-item-type" style="color:${typeInfo.color};">${typeInfo.label}</span>
+        <span class="turo-item-plate">🚗 ${escapeHtml(d.vehiclePlate||'—')}</span>
+        <span class="turo-item-title">${escapeHtml(d.title||'')}</span>
+      </div>
+      <div class="turo-item-right">
+        ${countdownHtml}
+        <button class="btn btn-sm turo-file-btn" onclick="event.stopPropagation(); openIncidentEditFromDashboard('${doc.id}',false)">Update Claim →</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  banner.innerHTML = `<div class="turo-claims-banner">
+    <div class="turo-banner-header">
+      <span class="turo-banner-title">🛡️ Turo Claim Window — File Within 24 Hours</span>
+      <span class="turo-banner-count">${relevant.length} pending</span>
+    </div>
+    <div class="turo-banner-items">${items}</div>
+  </div>`;
+}
+
 async function loadAllOpenIncidentsDashboard() {
   const list = $('incidents-dashboard-list');
   if (!list) return;
@@ -8573,6 +8750,7 @@ async function loadAllOpenIncidentsDashboard() {
       const bt = b.data().createdAt ? (b.data().createdAt.toMillis ? b.data().createdAt.toMillis() : 0) : 0;
       return bt - at;
     });
+    _cachedIncidentDocs = docs;
     // Sync vehicle page incidents if open
     if (selectedVehicle) {
       const vid = selectedVehicle.id || selectedVehicle;
@@ -8586,63 +8764,15 @@ async function loadAllOpenIncidentsDashboard() {
       badge.style.display = openCount > 0 ? '' : 'none';
     }
     if (!docs.length) {
-      list.innerHTML = '<p class="hint">No incidents reported yet. Use + Report Incident to log one.</p>';
+      if (list) list.innerHTML = '<p class="hint">No incidents reported yet. Use + Report Incident to log one.</p>';
+      const banner = $('turo-claims-banner');
+      if (banner) banner.style.display = 'none';
       return;
     }
-    list.innerHTML = docs.map(doc => {
-      const d = doc.data();
-      const typeInfo   = INCIDENT_TYPES[d.type]   || INCIDENT_TYPES.other;
-      const statusInfo = INCIDENT_STATUS[d.status] || INCIDENT_STATUS.open;
-      const dateStr    = d.createdAt ? new Date(d.createdAt.toMillis ? d.createdAt.toMillis() : d.createdAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
-      const photosHTML = (d.photoUrls && d.photoUrls.length)
-        ? `<div class="inc-photos">${d.photoUrls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="inc-thumb" alt="incident photo"></a>`).join('')}</div>`
-        : '';
-      const followUpHTML = d.followUpDate
-        ? `<div class="inc-followup">📅 Follow-up: <strong>${d.followUpDate}</strong></div>`
-        : '';
-      const citationHTML2 = d.type === 'citation' ? `<div class="inc-citation-summary">
-        ${d.citationNumber ? `<span class="inc-cite-tag">🎫 #${escapeHtml(d.citationNumber)}</span>` : ''}
-        ${d.citationViolation ? `<span class="inc-cite-tag">${{parking:'🅿️ Parking',red_light:'🚦 Red Light',speeding:'💨 Speeding',toll:'🛣️ Toll',other:'📝 Other'}[d.citationViolation]||d.citationViolation}</span>` : ''}
-        ${d.citationAmount != null ? `<span class="inc-cite-tag">💵 $${Number(d.citationAmount).toFixed(2)}</span>` : ''}
-        ${d.citationDueDate ? `<span class="inc-cite-tag">⏰ Due ${d.citationDueDate}</span>` : ''}
-        ${d.citationCustomer ? `<span class="inc-cite-tag">👤 ${escapeHtml(d.citationCustomer)}</span>` : ''}
-        ${d.citationReimbStatus ? `<span class="inc-cite-reimb inc-cite-reimb-${d.citationReimbStatus}">${{pending:'⏳ Pending',paid_by_company:'💳 Paid by Co.',reimbursed:'✅ Reimbursed',escalated:'⚠️ Escalated',written_off:'🗑️ Written Off'}[d.citationReimbStatus]||d.citationReimbStatus}</span>` : ''}
-      </div>` : '';
-      const REIMB_LABELS2 = {na:'🚫 N/A',pending:'⏳ Pending',paid:'💵 Paid ✅',partial:'🔁 Partial',denied:'❌ Denied',escalated:'⚠️ Escalated'};
-      const TURO_LABELS2  = {no:'❌ No Claim',yes:'✅ Claim Filed',pending:'🕐 Pending'};
-      const damageHTML2 = (d.type === 'damage' || d.type === 'accident') ? `<div class="inc-damage-summary">
-        ${d.damgeTuroClaim && d.damgeTuroClaim !== 'no' ? `<span class="inc-dmg-tag">🛡️ Turo: ${TURO_LABELS2[d.damgeTuroClaim]||d.damgeTuroClaim}</span>` : ''}
-        ${d.damgeTuroClaimNum ? `<span class="inc-dmg-tag">📋 ${escapeHtml(d.damgeTuroClaimNum)}</span>` : ''}
-        ${d.damgeAmountClaimed != null ? `<span class="inc-dmg-tag">💸 Claimed $${Number(d.damgeAmountClaimed).toFixed(2)}</span>` : ''}
-        ${d.damgeAmountReceived != null ? `<span class="inc-dmg-tag">💰 Received $${Number(d.damgeAmountReceived).toFixed(2)}</span>` : ''}
-        ${d.damgeReimbStatus ? `<span class="inc-dmg-reimb inc-dmg-reimb-${d.damgeReimbStatus}">${REIMB_LABELS2[d.damgeReimbStatus]||d.damgeReimbStatus}</span>` : ''}
-        ${d.damgeClaimNotes ? `<span class="inc-dmg-tag">📝 ${escapeHtml(d.damgeClaimNotes)}</span>` : ''}
-      </div>` : '';
-      const resolvedBlock = d.status === 'resolved' && d.resolution
-        ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
-        : '';
-      const canResolve = d.status !== 'resolved';
-      return `<div class="inc-card ${d.status === 'resolved' ? 'inc-resolved' : ''} ${d.urgent ? 'inc-urgent' : ''}">
-        <div class="inc-header">
-          <span class="inc-plate-tag">${escapeHtml(d.vehiclePlate||'—')}</span>
-          <span class="inc-type-badge" style="background:${typeInfo.color}20;color:${typeInfo.color};border-color:${typeInfo.color}40;">${typeInfo.label}</span>
-          ${d.urgent ? '<span class="inc-urgent-badge">🚨 URGENT</span>' : ''}
-          <span class="inc-status-badge ${statusInfo.cls}">${statusInfo.label}</span>
-          <span class="inc-date">${dateStr}</span>
-        </div>
-        <div class="inc-title">${escapeHtml(d.title||'')}</div>
-        ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
-        ${citationHTML2}
-        ${damageHTML2}
-        <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
-        ${followUpHTML}${photosHTML}${resolvedBlock}
-        <div class="inc-actions">
-          ${canResolve ? `<button class="btn btn-sm inc-resolve-btn" onclick="openIncidentEditFromDashboard('${doc.id}',true)">Update Status</button>` : ''}
-          <button class="btn btn-sm btn-outline" onclick="openIncidentEditFromDashboard('${doc.id}',false)">Edit</button>
-          ${currentUserRole === 'admin' ? `<button class="btn btn-sm btn-danger" onclick="deleteIncident('${doc.id}')">Delete</button>` : ''}
-        </div>
-      </div>`;
-    }).join('');
+    // Render Turo claims deadline banner
+    renderTuroClaimsBanner(docs);
+    // Render filtered list
+    _renderFilteredIncidentList(docs);
   } catch(e) { console.error(e); }
 }
 
@@ -8882,8 +9012,17 @@ window.toggleIncidentTypeFields = function() {
   const type = $('incident-type') ? $('incident-type').value : '';
   const citPanel = $('citation-fields');
   const dmgPanel = $('damage-fields');
+  const dmgHeader = dmgPanel ? dmgPanel.querySelector('.damage-fields-header') : null;
   if (citPanel) citPanel.style.display = type === 'citation' ? '' : 'none';
-  if (dmgPanel) dmgPanel.style.display = (type === 'damage' || type === 'accident') ? '' : 'none';
+  const turoTypes = ['damage', 'accident', 'cleaning', 'smoking'];
+  if (dmgPanel) {
+    dmgPanel.style.display = turoTypes.includes(type) ? '' : 'none';
+    if (dmgHeader) {
+      if (type === 'cleaning') dmgHeader.textContent = '🧹 Turo Cleaning Claim';
+      else if (type === 'smoking') dmgHeader.textContent = '🚬 Turo Smoking Claim';
+      else dmgHeader.textContent = '🛡️ Claim & Reimbursement';
+    }
+  }
 };
 // Legacy alias
 window.toggleCitationFields = window.toggleIncidentTypeFields;
@@ -8912,7 +9051,7 @@ window.saveIncident = async function() {
   } : null;
 
   // Damage/accident-specific fields
-  const isDamage = (type === 'damage' || type === 'accident');
+  const isDamage = ['damage', 'accident', 'cleaning', 'smoking'].includes(type);
   const damageData = isDamage ? {
     damgeTuroClaim:     ($('damage-turo-claim')       ? $('damage-turo-claim').value           : 'no'),
     damgeTuroClaimNum:  ($('damage-turo-claim-num')   ? $('damage-turo-claim-num').value.trim(): ''),
@@ -8983,13 +9122,21 @@ window.saveIncident = async function() {
       await db.collection('incidents').doc(editId).update(updateData);
       toast('Incident updated.', 'success');
     } else {
+      // For Turo-eligible types on new incidents: force urgent + store deadline timestamp
+      const TURO_ELIGIBLE = ['damage', 'accident', 'cleaning', 'smoking'];
+      const isTuroEligible = TURO_ELIGIBLE.includes(type);
+      const finalUrgent = isTuroEligible ? true : urgent;
+      const turoDeadlineAt = isTuroEligible
+        ? firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 3600 * 1000))
+        : null;
+
       const docRef = await db.collection('incidents').add({
         vehicleId,
         vehiclePlate,
         type,
         title,
         description: desc,
-        urgent,
+        urgent: finalUrgent,
         status,
         resolution: resolution || '',
         resolvedBy: resolution ? currentUser.uid : '',
@@ -8997,6 +9144,7 @@ window.saveIncident = async function() {
         resolvedAt: (resolution && status === 'resolved') ? firebase.firestore.FieldValue.serverTimestamp() : null,
         followUpDate: followUpDate || '',
         photoUrls: newPhotoUrls,
+        ...(turoDeadlineAt ? { turoDeadlineAt } : {}),
         ...(citationData || {}),
         ...(damageData || {}),
         reportedBy: currentUser.uid,
@@ -9005,7 +9153,29 @@ window.saveIncident = async function() {
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       docId = docRef.id;
-      toast('Incident reported.', 'success');
+      toast('Incident reported.' + (isTuroEligible ? ' ⚠️ Turo claim window: 24 hours.' : ''), 'success');
+
+      // Auto-create urgent Turo claim follow-up task on the dashboard
+      if (isTuroEligible) {
+        try {
+          const turoTaskText = `🛡️ FILE TURO CLAIM: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
+          await db.collection('generalNotes').add({
+            text: turoTaskText,
+            isFollowUp: true,
+            done: false,
+            urgent: true,
+            taskStatus: 'urgent',
+            dueDate: todayDateString(),
+            sourceType: 'incident_turo',
+            incidentDocId: docId,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid,
+            createdByName: currentUser.displayName || currentUser.email,
+          });
+        } catch(calErr) {
+          console.warn('Could not create Turo follow-up task:', calErr);
+        }
+      }
     }
 
     incidentStagedFiles = [];
