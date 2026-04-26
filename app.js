@@ -6903,7 +6903,21 @@ window.runProductivityReport = async function() {
         if (idleStreak > 365) break; // safety cap
       }
 
-      return { v, plate: v.plate, makeModel: entry.makeModel, bookedDays, utilPct, lastBookingDate, idleStreak, tripCount };
+      // Revenue for the period: sum from logs whose startDate falls within range
+      let turoRevenue = 0;
+      let privateRevenue = 0;
+      entry.logs.forEach(log => {
+        if (log.cancelled) return;
+        const rev = Number(log.revenue) || 0;
+        if (rev === 0) return;
+        const ls = log.startDate || '';
+        if (ls >= rangeStart && ls <= rangeEnd) {
+          if (log.tripType === 'private-trip') { privateRevenue += rev; }
+          else { turoRevenue += rev; }
+        }
+      });
+
+      return { v, plate: v.plate, makeModel: entry.makeModel, bookedDays, utilPct, lastBookingDate, idleStreak, tripCount, turoRevenue, privateRevenue };
     });
 
     // Sort: idle streak > 2 first (descending), then by plate
@@ -6932,18 +6946,28 @@ window.runProductivityReport = async function() {
       const [y,m,d] = ds.split('-');
       return new Date(+y, +m-1, +d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
     };
+    const fmtRev = n => n > 0 ? '$' + n.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}) : '—';
+
+    const fleetTuro = rows.reduce((s,r) => s + r.turoRevenue, 0);
+    const fleetPrivate = rows.reduce((s,r) => s + r.privateRevenue, 0);
+    const fleetTotal = fleetTuro + fleetPrivate;
 
     resultsEl.innerHTML = `
-      <div class="prod-summary-row">
-        <span class="prod-summary-label">Period:</span>
-        <strong>${fmtDate(rangeStart)} — ${fmtDate(rangeEnd)}</strong>
-        <span class="prod-summary-label" style="margin-left:12px;">${totalDays} calendar days</span>
+      <div class="prod-summary-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;">
+        <span><span class="prod-summary-label">Period:</span> <strong>${fmtDate(rangeStart)} — ${fmtDate(rangeEnd)}</strong> <span class="prod-summary-label">${totalDays} calendar days</span></span>
+        ${fleetTotal > 0 ? `<span class="prod-fleet-rev-row">
+          <span class="prod-rev-badge turo">📅 Turo: <strong>${fmtRev(fleetTuro)}</strong></span>
+          <span class="prod-rev-badge private">🔒 Private: <strong>${fmtRev(fleetPrivate)}</strong></span>
+          <span class="prod-rev-badge total">Fleet Total: <strong>${fmtRev(fleetTotal)}</strong></span>
+        </span>` : ''}
       </div>
       <div class="prod-table-wrap">
         <table class="prod-table">
           <thead><tr>
             <th>Vehicle</th>
             <th>Trips</th>
+            <th>Turo $</th>
+            <th>Private $</th>
             <th>Days Booked</th>
             <th>Utilization</th>
             <th>Last Booking</th>
@@ -6960,9 +6984,17 @@ window.runProductivityReport = async function() {
               const tripsDisplay = r.tripCount > 0
                 ? `<span class="prod-trip-count">${r.tripCount}</span>`
                 : `<span class="prod-trip-zero">—</span>`;
+              const turoRevDisplay = r.turoRevenue > 0
+                ? `<span class="prod-rev-badge turo">${fmtRev(r.turoRevenue)}</span>`
+                : `<span class="prod-trip-zero">—</span>`;
+              const privRevDisplay = r.privateRevenue > 0
+                ? `<span class="prod-rev-badge private">${fmtRev(r.privateRevenue)}</span>`
+                : `<span class="prod-trip-zero">—</span>`;
               return `<tr class="${alertRow ? 'prod-row-alert' : ''}">
                 <td><strong>${escapeHtml(r.plate)}</strong><br><span class="prod-make-model">${escapeHtml(r.makeModel)}</span></td>
                 <td>${tripsDisplay}</td>
+                <td>${turoRevDisplay}</td>
+                <td>${privRevDisplay}</td>
                 <td>${r.bookedDays} / ${totalDays}</td>
                 <td>${utilBar}</td>
                 <td>${fmtDate(r.lastBookingDate)}</td>
@@ -7026,13 +7058,23 @@ async function _refreshTripLogBody(vehicleId, plate) {
       return new Date(+y, +m-1, +d).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
     };
 
+    const tripTuroRev = logs.filter(l => !l.cancelled && l.tripType !== 'private-trip').reduce((s,l) => s + (Number(l.revenue)||0), 0);
+    const tripPrivRev = logs.filter(l => !l.cancelled && l.tripType === 'private-trip').reduce((s,l) => s + (Number(l.revenue)||0), 0);
+    const fmtRev = n => n > 0 ? '$' + n.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0}) : '—';
+    const hasTotals = tripTuroRev > 0 || tripPrivRev > 0;
     body.innerHTML = `
+      ${hasTotals ? `<div class="triplog-rev-summary">
+        <span class="triplog-rev-badge turo">📅 Turo: <strong>${fmtRev(tripTuroRev)}</strong></span>
+        <span class="triplog-rev-badge private">🔒 Private: <strong>${fmtRev(tripPrivRev)}</strong></span>
+        ${tripTuroRev + tripPrivRev > 0 ? `<span class="triplog-rev-badge total">Total: <strong>${fmtRev(tripTuroRev + tripPrivRev)}</strong></span>` : ''}
+      </div>` : ''}
       <table class="prod-table triplog-table">
-        <thead><tr><th>Start</th><th>End</th><th>Days</th><th>Type</th><th>Logged By</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Start</th><th>End</th><th>Days</th><th>Type</th><th>Revenue</th><th>Logged By</th><th>Status</th><th></th></tr></thead>
         <tbody>
           ${logs.map(log => {
             const cancelled = log.cancelled;
             const typeLabel = log.tripType === 'private-trip' ? '🔒 Private' : '📅 Scheduled';
+            const isPrivate = log.tripType === 'private-trip';
             // Compute days this log contributed (Turo-style)
             let logDays = 0;
             if (!cancelled && log.startDate && log.endDate) {
@@ -7050,11 +7092,16 @@ async function _refreshTripLogBody(vehicleId, plate) {
               }
             }
             const daysBadge = cancelled ? '—' : `<span class="prod-trip-count">${logDays}d</span>`;
+            const revAmt = Number(log.revenue) || 0;
+            const revDisplay = cancelled ? '—' : (revAmt > 0
+              ? `<span class="triplog-rev-cell ${isPrivate ? 'private' : 'turo'}">$${revAmt.toLocaleString('en-US', {minimumFractionDigits:0, maximumFractionDigits:0})}</span>`
+              : `<button class="btn btn-xs triplog-add-rev-btn" onclick="quickAddRevenue('${log.id}','${escapeHtml(vehicleId)}','${escapeHtml(plate)}',0)">+ $</button>`);
             return `<tr class="${cancelled ? 'triplog-cancelled' : ''}">
               <td>${fmtD(log.startDate)}</td>
               <td>${fmtD(log.endDate)}</td>
               <td>${daysBadge}</td>
               <td>${typeLabel}</td>
+              <td>${revDisplay}</td>
               <td>${escapeHtml(log.loggedByName || '—')}</td>
               <td>${cancelled ? '<span class="prod-idle-alert">Cancelled</span>' : '<span class="prod-idle-ok">Active</span>'}</td>
               <td class="triplog-actions">
@@ -7093,6 +7140,13 @@ window.editTripLog = async function(logId, vehicleId, plate) {
         <input type="date" id="tledit-end" class="vehicle-location-custom" value="${log.endDate || ''}">
       </div>
       <div class="triplog-edit-field">
+        <label>Revenue <span style="color:#9ca3af;font-size:0.8rem;">(optional — what was earned on this trip)</span></label>
+        <div class="tledit-rev-wrap">
+          <span class="tledit-rev-prefix">$</span>
+          <input type="number" id="tledit-revenue" class="vehicle-location-custom" placeholder="0" min="0" step="1" value="${log.revenue != null ? log.revenue : ''}" style="padding-left:26px;">
+        </div>
+      </div>
+      <div class="triplog-edit-field">
         <label>Note <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
         <input type="text" id="tledit-note" class="vehicle-location-custom" placeholder="e.g. Shortened – early return" maxlength="200" value="${escapeHtml(log.note || '')}">
       </div>
@@ -7108,15 +7162,19 @@ window.editTripLog = async function(logId, vehicleId, plate) {
     const newStart = overlay.querySelector('#tledit-start').value;
     const newEnd = overlay.querySelector('#tledit-end').value;
     const note = overlay.querySelector('#tledit-note').value.trim();
+    const revRaw = overlay.querySelector('#tledit-revenue').value.trim();
+    const revenue = revRaw !== '' ? (parseFloat(revRaw) || 0) : null;
     if (!newStart || !newEnd) { toast('Start and end date are required.', 'warning'); return; }
     if (newEnd < newStart) { toast('End date cannot be before start date.', 'warning'); return; }
     try {
-      await db.collection('tripLogs').doc(logId).update({
+      const updateData = {
         startDate: newStart, endDate: newEnd,
         note: note || firebase.firestore.FieldValue.delete(),
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedBy: currentUser.uid, updatedByName: currentUser.displayName || currentUser.email,
-      });
+      };
+      if (revenue !== null) { updateData.revenue = revenue; } else { updateData.revenue = firebase.firestore.FieldValue.delete(); }
+      await db.collection('tripLogs').doc(logId).update(updateData);
       toast('Trip updated.', 'success');
       overlay.remove();
       await _refreshTripLogBody(vehicleId, plate);
@@ -7132,6 +7190,47 @@ window.deleteTripLog = async function(logId, vehicleId, plate) {
     toast('Trip log deleted.', 'success');
     await _refreshTripLogBody(vehicleId, plate);
   } catch(e) { toast('Failed to delete trip.', 'error'); }
+};
+
+// Quick revenue entry — lightweight popup from the trip log table
+window.quickAddRevenue = async function(logId, vehicleId, plate, currentRevenue) {
+  const existing = document.querySelector('.triplog-reventry-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'triplog-reventry-overlay';
+  overlay.innerHTML = `
+    <div class="triplog-reventry-modal">
+      <h4>💰 Add Revenue</h4>
+      <p class="hint" style="margin:0 0 12px;font-size:0.82rem;">Enter the revenue earned for this trip.</p>
+      <div class="tledit-rev-wrap">
+        <span class="tledit-rev-prefix">$</span>
+        <input type="number" id="reventry-amount" class="vehicle-location-custom" placeholder="0" min="0" step="1" style="padding-left:26px;" value="${currentRevenue || ''}">
+      </div>
+      <div class="triplog-edit-actions" style="margin-top:14px;">
+        <button class="btn btn-primary" id="reventry-save">Save</button>
+        <button class="btn btn-outline" onclick="this.closest('.triplog-reventry-overlay').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  // Auto-focus the input
+  setTimeout(() => { const inp = overlay.querySelector('#reventry-amount'); if (inp) inp.focus(); }, 80);
+
+  overlay.querySelector('#reventry-save').addEventListener('click', async () => {
+    const val = overlay.querySelector('#reventry-amount').value.trim();
+    const revenue = val !== '' ? (parseFloat(val) || 0) : 0;
+    try {
+      await db.collection('tripLogs').doc(logId).update({
+        revenue,
+        revenueUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        revenueUpdatedBy: currentUser.uid,
+      });
+      toast('Revenue saved!', 'success');
+      overlay.remove();
+      await _refreshTripLogBody(vehicleId, plate);
+    } catch(e) { toast('Failed to save revenue.', 'error'); }
+  });
 };
 
 // ================================================================
