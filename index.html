@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260425o">
+  <link rel="stylesheet" href="style.css?v=20260425p">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1059,6 +1059,37 @@
               <option value="escalated">⚠️ Escalated / Disputed</option>
               <option value="written_off">🗑️ Written Off</option>
             </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cost & Recovery fields — shown for key_lost, theft, maintenance, complaint, other -->
+      <div id="recovery-fields" class="recovery-fields-panel" style="display:none;">
+        <div class="recovery-fields-header">💰 Cost &amp; Recovery</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Cost to Company ($)</label>
+            <input type="number" id="recovery-cost" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Amount Billed to Customer ($)</label>
+            <input type="number" id="recovery-billed" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Collection Status</label>
+            <select id="recovery-status" class="form-select">
+              <option value="na">🚫 N/A — Not Applicable</option>
+              <option value="pending">⏳ Pending — Not Yet Collected</option>
+              <option value="collected">✅ Collected</option>
+              <option value="partial">🔁 Partial Recovery</option>
+              <option value="written_off">🗑️ Written Off</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Collection Notes</label>
+            <input type="text" id="recovery-notes" class="form-select" placeholder="e.g. Customer paid via Venmo, charged on Turo" maxlength="200">
           </div>
         </div>
       </div>

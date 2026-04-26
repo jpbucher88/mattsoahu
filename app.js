@@ -8790,6 +8790,14 @@ function _renderFilteredIncidentList(docs) {
       ${d.damgeClaimNotes ? `<span class="inc-dmg-tag">📝 ${escapeHtml(d.damgeClaimNotes)}</span>` : ''}
       ${_buildTuroCountdown(d, nowMs)}
     </div>` : '';
+    const REC_STATUS_LABELS2 = {na:'🚫 N/A',pending:'⏳ Pending',collected:'✅ Collected',partial:'🔁 Partial',written_off:'🗑️ Written Off'};
+    const RECOVERY_CARD_TYPES2 = ['key_lost','theft','maintenance','complaint','other'];
+    const recoveryHTML2 = RECOVERY_CARD_TYPES2.includes(d.type) && (d.recoveryCost != null || d.recoveryBilled != null || (d.recoveryStatus && d.recoveryStatus !== 'na')) ? `<div class="inc-recovery-summary">
+      ${d.recoveryCost   != null ? `<span class="inc-rec-tag">💸 Cost: $${Number(d.recoveryCost).toFixed(2)}</span>` : ''}
+      ${d.recoveryBilled != null ? `<span class="inc-rec-tag">📋 Billed: $${Number(d.recoveryBilled).toFixed(2)}</span>` : ''}
+      ${d.recoveryStatus && d.recoveryStatus !== 'na' ? `<span class="inc-rec-status inc-rec-status-${d.recoveryStatus}">${REC_STATUS_LABELS2[d.recoveryStatus]||d.recoveryStatus}</span>` : ''}
+      ${d.recoveryNotes ? `<span class="inc-rec-tag">📝 ${escapeHtml(d.recoveryNotes)}</span>` : ''}
+    </div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
       ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
       : '';
@@ -8806,6 +8814,7 @@ function _renderFilteredIncidentList(docs) {
       ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
       ${citationHTML2}
       ${damageHTML2}
+      ${recoveryHTML2}
       <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
       ${followUpHTML}${photosHTML}${resolvedBlock}
       <div class="inc-actions">
@@ -9007,6 +9016,7 @@ function renderIncidentsList(docs) {
     </div>` : '';
     const REIMB_LABELS = {na:'🚫 N/A',pending:'⏳ Pending',paid:'💵 Paid ✅',partial:'🔁 Partial',denied:'❌ Denied',escalated:'⚠️ Escalated'};
     const TURO_LABELS  = {no:'❌ No Claim',yes:'✅ Claim Filed',pending:'🕐 Pending'};
+    const REC_STATUS_LABELS = {na:'🚫 N/A',pending:'⏳ Pending',collected:'✅ Collected',partial:'🔁 Partial',written_off:'🗑️ Written Off'};
     const damageHTML = (d.type === 'damage' || d.type === 'accident') ? `<div class="inc-damage-summary">
       ${d.damgeTuroClaim && d.damgeTuroClaim !== 'no' ? `<span class="inc-dmg-tag">🛡️ Turo: ${TURO_LABELS[d.damgeTuroClaim]||d.damgeTuroClaim}</span>` : ''}
       ${d.damgeTuroClaimNum ? `<span class="inc-dmg-tag">📋 ${escapeHtml(d.damgeTuroClaimNum)}</span>` : ''}
@@ -9014,6 +9024,13 @@ function renderIncidentsList(docs) {
       ${d.damgeAmountReceived != null ? `<span class="inc-dmg-tag">💰 Received $${Number(d.damgeAmountReceived).toFixed(2)}</span>` : ''}
       ${d.damgeReimbStatus ? `<span class="inc-dmg-reimb inc-dmg-reimb-${d.damgeReimbStatus}">${REIMB_LABELS[d.damgeReimbStatus]||d.damgeReimbStatus}</span>` : ''}
       ${d.damgeClaimNotes ? `<span class="inc-dmg-tag">📝 ${escapeHtml(d.damgeClaimNotes)}</span>` : ''}
+    </div>` : '';
+    const RECOVERY_CARD_TYPES = ['key_lost','theft','maintenance','complaint','other'];
+    const recoveryHTML = RECOVERY_CARD_TYPES.includes(d.type) && (d.recoveryCost != null || d.recoveryBilled != null || (d.recoveryStatus && d.recoveryStatus !== 'na')) ? `<div class="inc-recovery-summary">
+      ${d.recoveryCost   != null ? `<span class="inc-rec-tag">💸 Cost: $${Number(d.recoveryCost).toFixed(2)}</span>` : ''}
+      ${d.recoveryBilled != null ? `<span class="inc-rec-tag">📋 Billed: $${Number(d.recoveryBilled).toFixed(2)}</span>` : ''}
+      ${d.recoveryStatus && d.recoveryStatus !== 'na' ? `<span class="inc-rec-status inc-rec-status-${d.recoveryStatus}">${REC_STATUS_LABELS[d.recoveryStatus]||d.recoveryStatus}</span>` : ''}
+      ${d.recoveryNotes ? `<span class="inc-rec-tag">📝 ${escapeHtml(d.recoveryNotes)}</span>` : ''}
     </div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
       ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
@@ -9037,6 +9054,7 @@ function renderIncidentsList(docs) {
       ${d.description ? `<div class="inc-desc">${escapeHtml(d.description)}</div>` : ''}
       ${citationHTML}
       ${damageHTML}
+      ${recoveryHTML}
       <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName || '—')}</div>
       ${followUpHTML}${photosHTML}${resolvedBlock}
       ${actionBtns}
@@ -9095,6 +9113,11 @@ window.openIncidentModal = function(incidentId, focusResolve) {
     if ($('damage-amount-claimed')) $('damage-amount-claimed').value = d.damgeAmountClaimed != null ? d.damgeAmountClaimed : '';
     if ($('damage-amount-received')) $('damage-amount-received').value = d.damgeAmountReceived != null ? d.damgeAmountReceived : '';
     if ($('damage-claim-notes')) $('damage-claim-notes').value = d.damgeClaimNotes || '';
+    // Populate cost/recovery fields if applicable
+    if ($('recovery-cost'))   $('recovery-cost').value   = d.recoveryCost   != null ? d.recoveryCost   : '';
+    if ($('recovery-billed')) $('recovery-billed').value = d.recoveryBilled != null ? d.recoveryBilled : '';
+    if ($('recovery-status')) $('recovery-status').value = d.recoveryStatus || 'na';
+    if ($('recovery-notes'))  $('recovery-notes').value  = d.recoveryNotes  || '';
     toggleIncidentTypeFields();
   } else {
     $('incident-type').value          = 'damage';
@@ -9120,6 +9143,11 @@ window.openIncidentModal = function(incidentId, focusResolve) {
     if ($('damage-amount-claimed')) $('damage-amount-claimed').value = '';
     if ($('damage-amount-received')) $('damage-amount-received').value = '';
     if ($('damage-claim-notes')) $('damage-claim-notes').value = '';
+    // Clear cost/recovery fields
+    if ($('recovery-cost'))   $('recovery-cost').value   = '';
+    if ($('recovery-billed')) $('recovery-billed').value = '';
+    if ($('recovery-status')) $('recovery-status').value = 'na';
+    if ($('recovery-notes'))  $('recovery-notes').value  = '';
     toggleIncidentTypeFields();
     const vehicleRow = $('incident-vehicle-row');
     const vehicleSel = $('incident-vehicle-select');
@@ -9190,6 +9218,7 @@ window.toggleIncidentTypeFields = function() {
   const type = $('incident-type') ? $('incident-type').value : '';
   const citPanel = $('citation-fields');
   const dmgPanel = $('damage-fields');
+  const recPanel = $('recovery-fields');
   const dmgHeader = dmgPanel ? dmgPanel.querySelector('.damage-fields-header') : null;
   if (citPanel) citPanel.style.display = type === 'citation' ? '' : 'none';
   const turoTypes = ['damage', 'accident', 'cleaning', 'smoking'];
@@ -9201,6 +9230,8 @@ window.toggleIncidentTypeFields = function() {
       else dmgHeader.textContent = '🛡️ Claim & Reimbursement';
     }
   }
+  const recoveryTypes = ['key_lost', 'theft', 'maintenance', 'complaint', 'other'];
+  if (recPanel) recPanel.style.display = recoveryTypes.includes(type) ? '' : 'none';
 };
 // Legacy alias
 window.toggleCitationFields = window.toggleIncidentTypeFields;
@@ -9237,6 +9268,16 @@ window.saveIncident = async function() {
     damgeAmountClaimed: ($('damage-amount-claimed')   ? parseFloat($('damage-amount-claimed').value) || null : null),
     damgeAmountReceived:($('damage-amount-received')  ? parseFloat($('damage-amount-received').value) || null : null),
     damgeClaimNotes:    ($('damage-claim-notes')      ? $('damage-claim-notes').value.trim()   : ''),
+  } : null;
+
+  // Cost/recovery fields — for key_lost, theft, maintenance, complaint, other
+  const RECOVERY_TYPES = ['key_lost', 'theft', 'maintenance', 'complaint', 'other'];
+  const isRecovery = RECOVERY_TYPES.includes(type);
+  const recoveryData = isRecovery ? {
+    recoveryCost:   ($('recovery-cost')   ? parseFloat($('recovery-cost').value)   || null : null),
+    recoveryBilled: ($('recovery-billed') ? parseFloat($('recovery-billed').value) || null : null),
+    recoveryStatus: ($('recovery-status') ? $('recovery-status').value             : 'na'),
+    recoveryNotes:  ($('recovery-notes')  ? $('recovery-notes').value.trim()       : ''),
   } : null;
 
   const vehicleId    = selectedVehicle ? (selectedVehicle.id || selectedVehicle) : ($('incident-vehicle-select') ? $('incident-vehicle-select').value : '');
@@ -9290,6 +9331,12 @@ window.saveIncident = async function() {
         ['damgeTuroClaim','damgeTuroClaimNum','damgeReimbStatus','damgeAmountClaimed','damgeAmountReceived','damgeClaimNotes']
           .forEach(k => { updateData[k] = firebase.firestore.FieldValue.delete(); });
       }
+      if (recoveryData) Object.assign(updateData, recoveryData);
+      else {
+        // clear recovery fields if type changed away from recovery types
+        ['recoveryCost','recoveryBilled','recoveryStatus','recoveryNotes']
+          .forEach(k => { updateData[k] = firebase.firestore.FieldValue.delete(); });
+      }
       if (followUpDate) updateData.followUpDate = followUpDate;
       if (resolution) {
         updateData.resolution     = resolution;
@@ -9325,6 +9372,7 @@ window.saveIncident = async function() {
         ...(turoDeadlineAt ? { turoDeadlineAt } : {}),
         ...(citationData || {}),
         ...(damageData || {}),
+        ...(recoveryData || {}),
         reportedBy: currentUser.uid,
         reportedByName: currentUser.displayName || currentUser.email,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
