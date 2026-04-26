@@ -567,6 +567,14 @@ async function loadVehicles() {
           v.lastPhotoDate = null;
         }
       }
+      // Check manual override — if more recent than last photo, use it
+      if (v.lastPhotoOverrideAt) {
+        const overrideTime = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate().getTime() : new Date(v.lastPhotoOverrideAt).getTime();
+        if (v.lastPhotoAge === Infinity || overrideTime > (now - v.lastPhotoAge)) {
+          v.lastPhotoAge = now - overrideTime;
+          v.lastPhotoDate = new Date(overrideTime);
+        }
+      }
     } catch (e) {
       v.lastPhotoAge = null;
       v.lastPhotoDate = null;
@@ -836,8 +844,22 @@ function renderLocationsWidget() {
 
   const MS_24H = 24 * 60 * 60 * 1000;
   const MS_2H = 2 * 60 * 60 * 1000;
-  const onTrip = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
-  const atRepair = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
+  const now = Date.now();
+
+  // Split on-trip into overdue (show under home location) vs. active (On the Road)
+  function getReturnTime(v) {
+    return v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate().getTime() : new Date(v.tripReturnDate).getTime()) : null;
+  }
+  function isOverdue(v) {
+    const rt = getReturnTime(v);
+    return rt !== null && rt < now;
+  }
+  const onTripAll = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
+  const onTrip = onTripAll.filter(v => !isOverdue(v));
+  const overdueTrip = onTripAll.filter(v => isOverdue(v));
+  const atRepairAll = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
+  const atRepair = atRepairAll.filter(v => !isOverdue(v));
+  const overdueRepair = atRepairAll.filter(v => isOverdue(v));
 
   function isAtHome(v) {
     return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop' && !v.photoExcluded;
@@ -864,7 +886,8 @@ function renderLocationsWidget() {
   sortByReturn(atRepair);
 
   const knownLocations = ['HNL', '1585 Kapiolani'];
-  const otherLocations = [...new Set(vehiclesCache.filter(v => isAtHome(v) && v.homeLocation && !knownLocations.includes(v.homeLocation)).map(v => v.homeLocation))];
+  const allHomeVehicles = [...vehiclesCache.filter(v => isAtHome(v)), ...overdueTrip, ...overdueRepair];
+  const otherLocations = [...new Set(allHomeVehicles.filter(v => v.homeLocation && !knownLocations.includes(v.homeLocation)).map(v => v.homeLocation))];
   const allLocations = [...knownLocations, ...otherLocations];
 
   let html = '';
@@ -874,7 +897,8 @@ function renderLocationsWidget() {
     const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && v.homeLocation === loc);
     const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && v.homeLocation === loc);
     const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !needsPhotosCheck(v) && v.homeLocation === loc);
-    const total = cleaning.length + photosOnly.length + atHomeClean.length;
+    const overdueHere = [...overdueTrip, ...overdueRepair].filter(v => (v.homeLocation || '') === loc);
+    const total = cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length;
     if (total === 0) continue;
 
     const isKapiolani = loc === '1585 Kapiolani';
@@ -884,6 +908,24 @@ function renderLocationsWidget() {
         <span class="location-group-name">🏠 ${escapeHtml(loc)}</span>
         <span class="location-group-count">${total}</span>
       </div>`;
+
+    // Overdue / awaiting return sub-section
+    if (overdueHere.length > 0) {
+      html += `<div class="loc-sub-header loc-sub-overdue">⏰ Awaiting Return <span class="loc-sub-count">${overdueHere.length}</span></div>
+        <div class="location-group-vehicles trip-list">`;
+      for (const v of overdueHere) {
+        const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
+        const returnLabel = rd ? `<span class="trip-return-label trip-overdue">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })} OVERDUE</span>` : '';
+        const returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
+        html += `<div class="trip-item">
+          <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+          <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+          ${returnLabel}
+          ${returnBtn}
+        </div>`;
+      }
+      html += '</div>';
+    }
 
     // Needs Cleaning sub-section
     if (cleaning.length > 0) {
@@ -984,8 +1026,7 @@ function renderLocationsWidget() {
     html += '</div>';
   }
 
-  // On the Road
-  // On the Road
+  // On the Road (non-overdue only)
   if (onTrip.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#2563eb;">
@@ -995,27 +1036,20 @@ function renderLocationsWidget() {
       <div class="location-group-vehicles trip-list">`;
     for (const v of onTrip) {
       let returnLabel = '';
-      let returnBtn = '';
       if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        const now = new Date();
-        const isOverdue = rd < now;
-        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
-        if (isOverdue) {
-          returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
-        }
+        returnLabel = `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
       }
       html += `<div class="trip-item">
         <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
-        ${returnBtn}
       </div>`;
     }
     html += '</div></div>';
   }
 
-  // Repair Shop
+  // Repair Shop (non-overdue only)
   if (atRepair.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#dc2626;">
@@ -1027,9 +1061,7 @@ function renderLocationsWidget() {
       let returnLabel = '';
       if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        const now = new Date();
-        const isOverdue = rd < now;
-        returnLabel = `<span class="trip-return-label${isOverdue ? ' trip-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isOverdue ? ' OVERDUE' : ''}</span>`;
+        returnLabel = `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
       }
       let partsInfo = '';
       if (v.repairShopName) partsInfo += `<span class="repair-parts-tag">🏥 ${escapeHtml(v.repairShopName)}</span>`;
@@ -1040,6 +1072,28 @@ function renderLocationsWidget() {
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
         ${partsInfo}
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+
+  // Overdue with no home location
+  const overdueNoLoc = [...overdueTrip, ...overdueRepair].filter(v => !v.homeLocation);
+  if (overdueNoLoc.length > 0) {
+    html += `<div class="location-group">
+      <div class="location-group-header" style="background:#6b7280;">
+        <span class="location-group-name">⏰ Overdue — No Location Set</span>
+        <span class="location-group-count">${overdueNoLoc.length}</span>
+      </div>
+      <div class="location-group-vehicles trip-list">`;
+    for (const v of overdueNoLoc) {
+      const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
+      const returnLabel = rd ? `<span class="trip-return-label trip-overdue">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })} OVERDUE</span>` : '';
+      html += `<div class="trip-item">
+        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+        <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+        ${returnLabel}
+        <button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>
       </div>`;
     }
     html += '</div></div>';
@@ -1195,6 +1249,9 @@ function showDamageCheckModal(vid, plate) {
       <div class="damage-checklist dmg-pf-list">
         ${INSPECTION_ITEMS.map(buildItemHTML).join('')}
       </div>
+      <div class="dmg-all-pass-row">
+        <button class="btn btn-primary dmg-all-pass-btn">✅ All Pass — No Issues</button>
+      </div>
       <div class="damage-check-actions">
         <button class="btn btn-sm btn-outline dmg-cancel-btn">Cancel</button>
         <button class="btn btn-sm btn-primary dmg-confirm-btn" disabled>Submit Inspection</button>
@@ -1311,6 +1368,28 @@ function showDamageCheckModal(vid, plate) {
 
   overlay.querySelector('.dmg-cancel-btn').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  // All Pass — set every item to pass/no-bugs in one click
+  overlay.querySelector('.dmg-all-pass-btn').addEventListener('click', () => {
+    INSPECTION_ITEMS.forEach(item => {
+      if (item.yesno) {
+        // "No" = no bugs = the fail button for yesno items
+        itemState[item.key] = 'fail';
+        const itemEl = overlay.querySelector('#dmg-item-' + item.key);
+        if (itemEl) { itemEl.classList.remove('dmg-state-pass'); itemEl.classList.add('dmg-state-fail'); }
+        const bugUrgencyEl = overlay.querySelector('#dmg-bug-urgency-' + item.key);
+        if (bugUrgencyEl) bugUrgencyEl.style.display = 'none';
+        bugUrgency[item.key] = null;
+      } else {
+        itemState[item.key] = 'pass';
+        const itemEl = overlay.querySelector('#dmg-item-' + item.key);
+        if (itemEl) { itemEl.classList.remove('dmg-state-fail'); itemEl.classList.add('dmg-state-pass'); }
+        const failEl = overlay.querySelector('#dmg-fail-' + item.key);
+        if (failEl) failEl.style.display = 'none';
+      }
+    });
+    refreshConfirmBtn();
+  });
 
   confirmBtn.addEventListener('click', async () => {
     confirmBtn.disabled = true;
@@ -1432,6 +1511,7 @@ const INSPECTION_ITEMS = [
   { key: 'tires',    label: 'Tires - Good condition' },
   { key: 'smoking',  label: 'Smoking / Odor - None detected' },
   { key: 'clean',    label: 'Vehicle Cleaned' },
+  { key: 'refueled', label: 'Vehicle Refueled ⛽' },
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
 ];
 
@@ -1577,7 +1657,7 @@ async function openVehiclePage(vid) {
     }
     staleAlert.style.display = 'block';
   } else if (isOnTrip) {
-    staleAlert.textContent = '\ud83d\ude97 Vehicle is on a trip \u2014 photos not required until after return & cleaning.';
+    staleAlert.textContent = '🚗 Vehicle is on a trip — photos not required until after return & cleaning.';
     staleAlert.style.display = 'block';
     staleAlert.className = 'stale-alert stale-info';
   } else {
@@ -1590,6 +1670,11 @@ async function openVehiclePage(vid) {
   $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
+
+  // Photo override button — show when stale and admin/manager
+  const photoOverrideWrap = $('photo-override-wrap');
+  const isStaleNow = !suppressStale && selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H;
+  photoOverrideWrap.style.display = (canUpload && (isStaleNow || selectedVehicle.lastPhotoAge === Infinity)) ? 'block' : 'none';
 
   // Reset mileage prompt for this vehicle
   if (canUpload) {
@@ -1713,6 +1798,37 @@ function confirmMileage() {
 }
 
 $('btn-mileage-confirm').addEventListener('click', confirmMileage);
+
+// Photo override — mark photos as up to date without uploading
+$('btn-photo-override').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const ok = await confirm('Mark Photos Up to Date', `Mark ${selectedVehicle.plate} photos as current? Use this when photos were taken locally and not uploaded, or data was kept from a previous session.`);
+  if (!ok) return;
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({
+      lastPhotoOverrideAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    const now = Date.now();
+    selectedVehicle.lastPhotoOverrideAt = { toDate: () => new Date(now) };
+    selectedVehicle.lastPhotoAge = 0;
+    selectedVehicle.lastPhotoDate = new Date(now);
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) {
+      cached.lastPhotoOverrideAt = selectedVehicle.lastPhotoOverrideAt;
+      cached.lastPhotoAge = 0;
+      cached.lastPhotoDate = new Date(now);
+    }
+    $('photo-override-wrap').style.display = 'none';
+    $('stale-alert').style.display = 'none';
+    $('last-photo-time').textContent = '📷 Photos marked up to date just now';
+    $('last-photo-time').style.display = 'block';
+    toast('Photos marked as up to date ✓', 'success');
+    renderLocationsWidget();
+  } catch (err) {
+    console.error('Photo override error:', err);
+    toast('Failed to update.', 'error');
+  }
+});
 
 $('mileage-prompt-input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {

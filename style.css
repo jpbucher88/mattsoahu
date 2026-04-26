@@ -5170,6 +5170,7 @@ body {
 .loc-sub-cleaning { background: #fef3c7; color: #92400e; }
 .loc-sub-photos   { background: #ede9fe; color: #5b21b6; }
 .loc-sub-home     { background: #d1fae5; color: #065f46; }
+.loc-sub-overdue  { background: #fee2e2; color: #991b1b; }
 
 /* ── Kapiolani parking feature ──────────────────────────────── */
 .location-vehicle-chip-wrap {
@@ -5188,3 +5189,24 @@ body {
   font-weight: 700; cursor: pointer; white-space: nowrap;
 }
 .btn-parking:hover { background: #1d4ed8; }
+
+/* Photo override button */
+#photo-override-wrap { margin-top: 8px; }
+#btn-photo-override {
+  font-size: 0.85rem; padding: 6px 14px;
+  border-color: #9ca3af; color: #374151;
+}
+#btn-photo-override:hover { background: #f3f4f6; border-color: #6b7280; }
+
+/* Inspection All Pass button */
+.dmg-all-pass-row {
+  padding: 10px 16px 4px;
+  display: flex; justify-content: center;
+}
+.dmg-all-pass-btn {
+  width: 100%; max-width: 340px;
+  padding: 10px 0; font-size: 1rem; font-weight: 700;
+  background: #16a34a; color: #fff; border: none;
+  border-radius: 10px; cursor: pointer;
+}
+.dmg-all-pass-btn:hover { background: #15803d; }
