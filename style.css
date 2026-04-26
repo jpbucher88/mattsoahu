@@ -2416,6 +2416,27 @@ body {
   font-weight: 600;
 }
 
+/* Operations Hub dartboard header button */
+.ops-hub-btn { position: relative; }
+.ops-hub-dart-icon { font-size: 1.35rem; }
+
+/* Task panel calendar section */
+.task-panel-cal-section { padding: 12px 0 4px; border-bottom: 2px solid #e5e7eb; margin-bottom: 4px; }
+.task-panel-cal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px 10px;
+}
+.task-panel-cal-header h4 { margin: 0; font-size: 1rem; }
+.task-panel-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.task-panel-cal-section .task-calendar-grid { border-radius: 8px; }
+.task-panel-cal-section .task-calendar-detail { border-radius: 0 0 8px 8px; margin-top: 4px; }
+
 /* ============ OPERATIONS HUB WIDGET ============ */
 .ops-hub-widget { padding: 0; overflow: hidden; }
 .ops-hub-top {
