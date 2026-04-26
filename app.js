@@ -1690,11 +1690,11 @@ async function openVehiclePage(vid) {
     const excludeBtn = $('btn-photo-exclude');
     if (excludeBtn) {
       if (isExcluded) {
-        excludeBtn.textContent = '✅ Excluded — Click to Re-enable Prompts';
+        excludeBtn.textContent = '✅ Excluded This Trip — Click to Re-enable';
         excludeBtn.classList.add('btn-exclude-active');
         excludeBtn.classList.remove('btn-exclude');
       } else {
-        excludeBtn.textContent = '🚫 Exclude from Photos & Cleaning';
+        excludeBtn.textContent = '🚫 Exclude This Trip (Photos & Cleaning)';
         excludeBtn.classList.add('btn-exclude');
         excludeBtn.classList.remove('btn-exclude-active');
       }
@@ -1865,7 +1865,7 @@ $('btn-photo-exclude').addEventListener('click', async () => {
   const action = isCurrentlyExcluded ? 'Re-enable' : 'Exclude';
   const msg = isCurrentlyExcluded
     ? `Re-enable photo and cleaning prompts for ${selectedVehicle.plate}?`
-    : `Exclude ${selectedVehicle.plate} from all photo and cleaning prompts?\n\nThis vehicle will appear as ✅ Ready in Fleet Status even without photos.`;
+    : `Exclude ${selectedVehicle.plate} from photo and cleaning prompts for this trip?\n\nThe exclusion will automatically clear when the vehicle is returned home.`;
   const ok = await confirm(`${action} ${selectedVehicle.plate}`, msg);
   if (!ok) return;
   try {
@@ -1877,7 +1877,7 @@ $('btn-photo-exclude').addEventListener('click', async () => {
     // Refresh UI
     const excludeBtn = $('btn-photo-exclude');
     if (newVal) {
-      excludeBtn.textContent = '✅ Excluded — Click to Re-enable Prompts';
+      excludeBtn.textContent = '✅ Excluded This Trip — Click to Re-enable';
       excludeBtn.classList.add('btn-exclude-active');
       excludeBtn.classList.remove('btn-exclude');
       $('stale-alert').style.display = 'none';
@@ -1885,7 +1885,7 @@ $('btn-photo-exclude').addEventListener('click', async () => {
       if ($('upload-override-wrap')) $('upload-override-wrap').style.display = 'none';
       toast(`${selectedVehicle.plate} excluded from photos & cleaning ✓`, 'success');
     } else {
-      excludeBtn.textContent = '🚫 Exclude from Photos & Cleaning';
+      excludeBtn.textContent = '🚫 Exclude This Trip (Photos & Cleaning)';
       excludeBtn.classList.remove('btn-exclude-active');
       excludeBtn.classList.add('btn-exclude');
       toast(`${selectedVehicle.plate} prompts re-enabled ✓`, 'success');
@@ -3117,6 +3117,10 @@ $('btn-save-location').addEventListener('click', async () => {
       updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.delete();
     }
   }
+  // Auto-clear trip-scoped photoExcluded whenever vehicle returns home
+  if (nowHome && selectedVehicle.photoExcluded) {
+    updateData.photoExcluded = firebase.firestore.FieldValue.delete();
+  }
 
   try {
     await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
@@ -3141,6 +3145,11 @@ $('btn-save-location').addEventListener('click', async () => {
       selectedVehicle.needsDamageCheck = true;
       if (homeLocation === '1585 Kapiolani') selectedVehicle.needsParking = true;
       if (nowReturnFromRepair) delete selectedVehicle.cleaningFlaggedAt;
+    }
+    if (nowHome && selectedVehicle.photoExcluded) {
+      delete selectedVehicle.photoExcluded;
+      const cachedV = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cachedV) delete cachedV.photoExcluded;
     }
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, selectedVehicle);
