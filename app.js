@@ -3237,6 +3237,24 @@ $('btn-save-location').addEventListener('click', async () => {
           }, { merge: true });
         } catch(e) { console.warn('tripLog write error', e); }
       }
+    } else if (tripStatus === 'on-trip' && selectedVehicle.tripStatus !== 'scheduled') {
+      // Direct on-trip (not auto-started from scheduled) — log it so it shows in productivity report
+      const startDate = todayDateString();
+      const endDate = tripReturnVal ? tripReturnVal.slice(0, 10) : startDate;
+      const logKey = selectedVehicle.id + '_' + startDate + '_direct_trip';
+      try {
+        await db.collection('tripLogs').doc(logKey).set({
+          vehicleId: selectedVehicle.id,
+          vehiclePlate: selectedVehicle.plate || '',
+          vehicleMakeModel: ((selectedVehicle.make || '') + ' ' + (selectedVehicle.model || '')).trim(),
+          startDate,
+          endDate,
+          tripType: 'on-trip',
+          loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          loggedBy: currentUser.uid,
+          loggedByName: currentUser.displayName || currentUser.email,
+        }, { merge: true });
+      } catch(e) { console.warn('tripLog write error (on-trip)', e); }
     }
   } catch (err) {
     console.error('Save location error:', err);
@@ -6773,13 +6791,33 @@ window.runProductivityReport = async function() {
       const bookedSet = new Set();
       let lastBookingDate = '';
       entry.logs.forEach(log => {
-        const days = datesInRange(
-          log.startDate < rangeStart ? rangeStart : log.startDate,
-          log.endDate > rangeEnd ? rangeEnd : log.endDate
-        );
-        days.forEach(d => bookedSet.add(d));
+        // Turo-style: the return/end date is NOT a rental day
+        // e.g. trip start 04/23, return 04/25 = 2 days (04/23, 04/24)
+        // Exception: if the trip end is beyond our range end (still ongoing),
+        // count all days up to rangeEnd inclusive — we don't know the real end yet.
+        let countEnd;
+        if (log.endDate > rangeEnd) {
+          countEnd = rangeEnd; // still ongoing — count through range boundary
+        } else {
+          // Completed trip: subtract 1 day so return day isn't counted
+          const endDt = new Date(log.endDate + 'T00:00:00');
+          endDt.setDate(endDt.getDate() - 1);
+          countEnd = endDt.getFullYear() + '-' + String(endDt.getMonth()+1).padStart(2,'0') + '-' + String(endDt.getDate()).padStart(2,'0');
+        }
+        const countStart = log.startDate < rangeStart ? rangeStart : log.startDate;
+        if (countStart <= countEnd) {
+          datesInRange(countStart, countEnd).forEach(d => bookedSet.add(d));
+        }
         if (log.endDate > lastBookingDate) lastBookingDate = log.endDate;
       });
+
+      // Live-trip fallback: vehicle is currently on-trip/private-trip but no tripLog covers today
+      // (e.g. trip was set on an older app version, or set directly without going through scheduled)
+      const isCurrentlyOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+      if (isCurrentlyOnTrip && rangeSet.has(todayStr) && !bookedSet.has(todayStr)) {
+        bookedSet.add(todayStr);
+        if (todayStr > lastBookingDate) lastBookingDate = todayStr;
+      }
 
       const bookedDays = bookedSet.size;
       const utilPct = totalDays > 0 ? Math.round(bookedDays / totalDays * 100) : 0;
