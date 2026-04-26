@@ -5458,17 +5458,19 @@ async function loadDashboardFollowUps() {
     addDoneItems(gDoneSnap, 'general', 'generalNotes');
 
     // Update badge count (active tasks)
+    // Only count: urgent tasks + compliance items (due ≤15d — they're only created at that threshold)
+    const badgeCount = items.filter(i => i.urgent || i.sourceType === 'compliance').length;
     if (badgeEl) {
-      badgeEl.textContent = items.length;
-      badgeEl.classList.toggle('count-zero', items.length === 0);
+      badgeEl.textContent = badgeCount;
+      badgeEl.classList.toggle('count-zero', badgeCount === 0);
       const hasUrgent = items.some(i => i.urgent);
       badgeEl.classList.toggle('has-urgent', hasUrgent);
     }
     // Update ops-hub widget badge
     const opsHubBadge = $('ops-hub-badge');
     if (opsHubBadge) {
-      opsHubBadge.textContent = items.length;
-      opsHubBadge.style.display = items.length > 0 ? '' : 'none';
+      opsHubBadge.textContent = badgeCount;
+      opsHubBadge.style.display = badgeCount > 0 ? '' : 'none';
       opsHubBadge.classList.toggle('has-urgent', items.some(i => i.urgent));
     }
     if (tasksBtn) tasksBtn.style.display = '';
@@ -5477,8 +5479,8 @@ async function loadDashboardFollowUps() {
     const badgeVehicle = $('task-alert-count-vehicle');
     const tasksBtnVehicle = $('btn-tasks-vehicle');
     if (badgeVehicle) {
-      badgeVehicle.textContent = items.length;
-      badgeVehicle.classList.toggle('count-zero', items.length === 0);
+      badgeVehicle.textContent = badgeCount;
+      badgeVehicle.classList.toggle('count-zero', badgeCount === 0);
       badgeVehicle.classList.toggle('has-urgent', items.some(i => i.urgent));
     }
     if (tasksBtnVehicle) tasksBtnVehicle.style.display = '';
