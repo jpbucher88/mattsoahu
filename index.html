@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427d">
+  <link rel="stylesheet" href="style.css?v=20260427e">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -226,6 +226,24 @@
           <div id="on-trip-revenue-row" class="loc-field" style="display:none;">
             <label for="on-trip-revenue">💰 Trip Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(Turo payout — add when received)</span></label>
             <input type="number" id="on-trip-revenue" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+            <div class="loc-extras-row">
+              <div class="loc-extras-field">
+                <label class="exp-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                <select id="on-trip-extras-type" class="vehicle-location-custom">
+                  <option value="">-- None --</option>
+                  <option value="beach-gear">🏖️ Beach Gear</option>
+                  <option value="parking">🅿️ Parking</option>
+                  <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
+                  <option value="beach-tent">⛺ Beach Tent</option>
+                  <option value="car-seat">🪑 Car Seat</option>
+                  <option value="other">✏️ Other</option>
+                </select>
+              </div>
+              <div class="loc-extras-field">
+                <label class="exp-label">Extras Amount ($)</label>
+                <input type="number" id="on-trip-extras-amount" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+              </div>
+            </div>
           </div>
           <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
             <div class="loc-field">
@@ -313,6 +331,26 @@
             <div class="loc-field">
               <label for="private-trip-revenue-override">💵 Actual Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(override if different from calculated)</span></label>
               <input type="number" id="private-trip-revenue-override" class="vehicle-location-custom" placeholder="Leave blank to use calculated" min="0" step="0.01">
+            </div>
+            <div class="loc-field">
+              <div class="loc-extras-row">
+                <div class="loc-extras-field">
+                  <label class="exp-label">\ud83c\udf92 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                  <select id="private-trip-extras-type" class="vehicle-location-custom">
+                    <option value="">-- None --</option>
+                    <option value="beach-gear">\ud83c\udfd6\ufe0f Beach Gear</option>
+                    <option value="parking">\ud83c\udd7f\ufe0f Parking</option>
+                    <option value="snorkeling-gear">\ud83e\udd3f Snorkeling Gear</option>
+                    <option value="beach-tent">\u26fa Beach Tent</option>
+                    <option value="car-seat">\ud83e\ude91 Car Seat</option>
+                    <option value="other">\u270f\ufe0f Other</option>
+                  </select>
+                </div>
+                <div class="loc-extras-field">
+                  <label class="exp-label">Extras Amount ($)</label>
+                  <input type="number" id="private-trip-extras-amount" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+                </div>
+              </div>
             </div>
             <div class="loc-field">
               <label>�📄 Customer Contract:</label>
@@ -1481,6 +1519,7 @@
                   <option value="parking">🅿️ Parking</option>
                   <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
                   <option value="beach-tent">⛺ Beach Tent</option>
+                  <option value="car-seat">🪑 Car Seat</option>
                   <option value="other">✏️ Other</option>
                 </select>
               </div>

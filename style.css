@@ -3638,6 +3638,21 @@ body {
   flex-wrap: wrap;
   width: 100%;
 }
+/* Extras row inside trip status forms */
+.loc-extras-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 6px;
+}
+.loc-extras-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 140px;
+}
 .repair-parts-tag {
   font-size: 0.75rem;
   font-weight: 600;

@@ -1648,6 +1648,12 @@ async function openVehiclePage(vid) {
     $('repair-description').value = selectedVehicle.repairDescription || '';
     // On-trip revenue
     $('on-trip-revenue').value = selectedVehicle.tripRevenue != null ? selectedVehicle.tripRevenue : '';
+    // On-trip extras
+    if ($('on-trip-extras-type')) $('on-trip-extras-type').value = selectedVehicle.extrasType || '';
+    if ($('on-trip-extras-amount')) $('on-trip-extras-amount').value = selectedVehicle.extrasAmount || '';
+    // Private trip extras
+    if ($('private-trip-extras-type')) $('private-trip-extras-type').value = selectedVehicle.extrasType || '';
+    if ($('private-trip-extras-amount')) $('private-trip-extras-amount').value = selectedVehicle.extrasAmount || '';
     // Private trip revenue override
     $('private-trip-revenue-override').value = selectedVehicle.privateTripRevenueOverride != null ? selectedVehicle.privateTripRevenueOverride : '';
     _calcPrivateTripRevenue();
@@ -3367,6 +3373,10 @@ $('btn-save-location').addEventListener('click', async () => {
     // Scheduled trip revenue (Turo payout — added when received)
     const schedRev = parseFloat($('on-trip-revenue').value);
     updateData.tripRevenue = isNaN(schedRev) ? firebase.firestore.FieldValue.delete() : schedRev;
+    const schedExtrasType = $('on-trip-extras-type')?.value || '';
+    const schedExtrasAmount = parseFloat($('on-trip-extras-amount')?.value) || 0;
+    updateData.extrasType = schedExtrasType || firebase.firestore.FieldValue.delete();
+    updateData.extrasAmount = (schedExtrasType && schedExtrasAmount > 0) ? schedExtrasAmount : firebase.firestore.FieldValue.delete();
   } else if (tripStatus === 'private-trip') {
     updateData.location = 'Private Trip';
     const ptStart = getDTValue('private-trip-start-date', 'private-trip-start-time');
@@ -3404,6 +3414,10 @@ $('btn-save-location').addEventListener('click', async () => {
     const privateTripRevenue = !isNaN(ptRevOverride) && ptRevOverride > 0 ? ptRevOverride : calcRevenue;
     updateData.privateTripRevenueOverride = !isNaN(ptRevOverride) && ptRevOverride > 0 ? ptRevOverride : firebase.firestore.FieldValue.delete();
     updateData.tripRevenue = privateTripRevenue != null ? privateTripRevenue : firebase.firestore.FieldValue.delete();
+    const ptExtrasType = $('private-trip-extras-type')?.value || '';
+    const ptExtrasAmount = parseFloat($('private-trip-extras-amount')?.value) || 0;
+    updateData.extrasType = ptExtrasType || firebase.firestore.FieldValue.delete();
+    updateData.extrasAmount = (ptExtrasType && ptExtrasAmount > 0) ? ptExtrasAmount : firebase.firestore.FieldValue.delete();
     // Handle contract upload
     const contractFile = $('private-contract-upload').files[0];
     if (contractFile) {
@@ -3428,6 +3442,10 @@ $('btn-save-location').addEventListener('click', async () => {
     // On-trip revenue
     const onTripRev = parseFloat($('on-trip-revenue').value);
     updateData.tripRevenue = isNaN(onTripRev) ? firebase.firestore.FieldValue.delete() : onTripRev;
+    const onExtrasType = $('on-trip-extras-type')?.value || '';
+    const onExtrasAmount = parseFloat($('on-trip-extras-amount')?.value) || 0;
+    updateData.extrasType = onExtrasType || firebase.firestore.FieldValue.delete();
+    updateData.extrasAmount = (onExtrasType && onExtrasAmount > 0) ? onExtrasAmount : firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
@@ -3575,6 +3593,10 @@ $('btn-save-location').addEventListener('click', async () => {
           if ((tripStatus === 'private-trip' || tripStatus === 'scheduled') && updateData.tripRevenue != null && typeof updateData.tripRevenue === 'number') {
             tripLogData.revenue = updateData.tripRevenue;
           }
+          if (updateData.extrasType && updateData.extrasType !== firebase.firestore.FieldValue.delete() && updateData.extrasAmount > 0) {
+            tripLogData.extrasType = updateData.extrasType;
+            tripLogData.extrasAmount = updateData.extrasAmount;
+          }
           await db.collection('tripLogs').doc(logKey).set(tripLogData, { merge: true });
         } catch(e) { console.warn('tripLog write error', e); }
       }
@@ -3597,6 +3619,10 @@ $('btn-save-location').addEventListener('click', async () => {
           loggedByName: currentUser.displayName || currentUser.email,
         };
         if (onTripRevSave != null) onTripLogData.revenue = onTripRevSave;
+        if (updateData.extrasType && updateData.extrasType !== firebase.firestore.FieldValue.delete() && updateData.extrasAmount > 0) {
+          onTripLogData.extrasType = updateData.extrasType;
+          onTripLogData.extrasAmount = updateData.extrasAmount;
+        }
         await db.collection('tripLogs').doc(logKey).set(onTripLogData, { merge: true });
       } catch(e) { console.warn('tripLog write error (on-trip)', e); }
     }
