@@ -1278,6 +1278,9 @@ body {
   overflow-x: auto;
   max-width: 100%;
   padding: 4px 0;
+  height: 56px;        /* fixed height — always reserved, never shifts layout */
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .camera-thumbs img {
