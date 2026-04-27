@@ -2141,6 +2141,56 @@ $('btn-open-camera').addEventListener('click', async () => {
   await openCamera();
 });
 
+// Pinch-to-zoom handler for the in-browser camera
+// Reads current zoom from the active track, scales it by the pinch ratio, then clamps to [min, max]
+let _cameraPinchZoomInit = false;
+function _initCameraPinchZoom() {
+  if (_cameraPinchZoomInit) return; // only attach once — listeners persist on the element
+  _cameraPinchZoomInit = true;
+
+  const overlay = $('camera-overlay');
+  let pinchStartDist = null;
+  let pinchStartZoom = 1;
+
+  function _pinchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  overlay.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2) {
+      pinchStartDist = _pinchDist(e.touches);
+      // Snapshot current zoom level from the active track
+      if (cameraStream) {
+        const [t] = cameraStream.getVideoTracks();
+        if (t) {
+          const settings = t.getSettings();
+          pinchStartZoom = settings.zoom || 1;
+        }
+      }
+    }
+  }, { passive: true });
+
+  overlay.addEventListener('touchmove', (e) => {
+    if (e.touches.length !== 2 || pinchStartDist === null) return;
+    // Don't call preventDefault — allow the gesture but handle zoom ourselves
+    const dist = _pinchDist(e.touches);
+    const scale = dist / pinchStartDist;
+    if (!cameraStream) return;
+    const [t] = cameraStream.getVideoTracks();
+    if (!t || !t.getCapabilities) return;
+    const caps = t.getCapabilities();
+    if (!caps.zoom) return;
+    const newZoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, pinchStartZoom * scale));
+    t.applyConstraints({ advanced: [{ zoom: newZoom }] }).catch(() => {});
+  }, { passive: true });
+
+  overlay.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) pinchStartDist = null;
+  }, { passive: true });
+}
+
 async function openCamera() {
   cameraShotCount = 0;
   cameraUploadQueue = [];
@@ -2154,11 +2204,9 @@ async function openCamera() {
   updateFlashButton();
   $('camera-overlay').style.display = 'flex';
 
-  // Prevent pinch-to-zoom gestures on camera
-  const preventZoom = (e) => { if (e.touches && e.touches.length > 1) e.preventDefault(); };
-  $('camera-overlay').addEventListener('touchmove', preventZoom, { passive: false });
-  $('camera-overlay').addEventListener('gesturestart', (e) => e.preventDefault());
-  $('camera-overlay').addEventListener('gesturechange', (e) => e.preventDefault());
+  // Pinch-to-zoom on the camera video feed
+  // Auto-zoom is forced to minimum on stream open; user can pinch to zoom in/out freely
+  _initCameraPinchZoom();
 
   try {
     await startCameraStream();
