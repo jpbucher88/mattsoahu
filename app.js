@@ -1801,6 +1801,9 @@ async function openVehiclePage(vid) {
   await loadPhotosForDate(vid, selectedDate);
   loadPhotoDates(vid, selectedDate);
 
+  // Resume any pending photo uploads that didn't finish (IndexedDB recovery)
+  resumePendingUploads(selectedVehicle);
+
   // Load maintenance data
   loadMileage(vid);
   loadMaintenanceHistory(vid);
@@ -2119,6 +2122,84 @@ function updateProgress(uploaded, total) {
 // RAPID-FIRE IN-BROWSER CAMERA
 // ================================================================
 
+// ── IndexedDB: persist compressed photo blobs so uploads survive
+//    page reloads, iOS backgrounding, and camera re-opens ──────
+const _PHOTO_DB_NAME    = 'alohaFleetPendingPhotos';
+const _PHOTO_DB_VER     = 1;
+const _PHOTO_STORE      = 'pending';
+let   _photoIDB         = null;
+
+function _openPhotoDB() {
+  if (_photoIDB) return Promise.resolve(_photoIDB);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(_PHOTO_DB_NAME, _PHOTO_DB_VER);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(_PHOTO_STORE)) {
+        const store = db.createObjectStore(_PHOTO_STORE, { keyPath: 'idbId', autoIncrement: true });
+        store.createIndex('vehicleId', 'vehicleId', { unique: false });
+      }
+    };
+    req.onsuccess = e => { _photoIDB = e.target.result; resolve(_photoIDB); };
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function _idbSavePhoto(blob, vehicle) {
+  try {
+    const db = await _openPhotoDB();
+    return await new Promise((resolve, reject) => {
+      const tx  = db.transaction(_PHOTO_STORE, 'readwrite');
+      const req = tx.objectStore(_PHOTO_STORE).add({
+        vehicleId: vehicle.id,
+        vehiclePlate: vehicle.plate || '',
+        blob,
+        createdAt: Date.now(),
+      });
+      req.onsuccess = () => resolve(req.result);  // auto-incremented idbId
+      req.onerror   = e => reject(e.target.error);
+    });
+  } catch(e) { console.warn('IDB save failed:', e); return null; }
+}
+
+async function _idbDeletePhoto(idbId) {
+  if (idbId == null) return;
+  try {
+    const db = await _openPhotoDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(_PHOTO_STORE, 'readwrite');
+      tx.objectStore(_PHOTO_STORE).delete(idbId);
+      tx.oncomplete = resolve;
+      tx.onerror    = e => reject(e.target.error);
+    });
+  } catch(e) { console.warn('IDB delete failed:', e); }
+}
+
+async function _idbGetPending(vehicleId) {
+  try {
+    const db = await _openPhotoDB();
+    return await new Promise((resolve, reject) => {
+      const tx    = db.transaction(_PHOTO_STORE, 'readonly');
+      const store = tx.objectStore(_PHOTO_STORE);
+      const req   = vehicleId ? store.index('vehicleId').getAll(vehicleId) : store.getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror   = () => resolve([]);
+    });
+  } catch(e) { return []; }
+}
+
+async function _idbCount() {
+  try {
+    const db = await _openPhotoDB();
+    return await new Promise(resolve => {
+      const req = db.transaction(_PHOTO_STORE, 'readonly').objectStore(_PHOTO_STORE).count();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror   = () => resolve(0);
+    });
+  } catch(e) { return 0; }
+}
+// ─────────────────────────────────────────────────────────────
+
 let cameraStream = null;
 let cameraFacingMode = 'environment'; // back camera
 let cameraFlashOn = false;
@@ -2192,8 +2273,9 @@ function _initCameraPinchZoom() {
 }
 
 async function openCamera() {
+  // Reset session display counters — but do NOT clear cameraUploadQueue.
+  // Any uploads still running from a previous session must continue uninterrupted.
   cameraShotCount = 0;
-  cameraUploadQueue = [];
   cameraUploadedCount = 0;
   cameraTotalQueued = 0;
   cameraUploadedUrls = [];
@@ -2303,6 +2385,51 @@ async function startCameraStream() {
   }
 }
 
+// Resume any photos saved to IndexedDB that didn't finish uploading
+// Called when opening a vehicle page — catches any photos left over from:
+//   • interrupted sessions, iOS app suspension, page reloads, or upload errors
+async function resumePendingUploads(vehicle) {
+  if (!vehicle) return;
+  try {
+    const pending = await _idbGetPending(vehicle.id);
+    // Update banner regardless
+    _updatePendingBanner(pending.length, vehicle.plate);
+
+    if (!pending.length) return;
+
+    // Find IDB IDs already in the in-memory queue so we don't double-queue
+    const queuedIds = new Set(cameraUploadQueue.map(i => i.idbId).filter(Boolean));
+    const toResume = pending.filter(p => !queuedIds.has(p.idbId));
+    if (!toResume.length) return;
+
+    toast(`📤 Resuming ${toResume.length} unfinished upload${toResume.length !== 1 ? 's' : ''} for ${vehicle.plate}…`, 'info');
+    toResume.forEach(p => {
+      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId });
+      cameraTotalQueued++;
+    });
+    updateCameraUploadBar();
+    processCameraQueue();
+  } catch(e) { console.warn('resumePendingUploads error:', e); }
+}
+
+function _updatePendingBanner(count, plate) {
+  const banner = $('pending-uploads-banner');
+  if (!banner) return;
+  if (count > 0) {
+    banner.style.display = '';
+    banner.textContent = `📤 ${count} photo${count !== 1 ? 's' : ''} pending upload for ${plate} — will upload automatically.`;
+  } else {
+    banner.style.display = 'none';
+  }
+}
+
+// Periodically restart the queue if it stalls (safety net for stuck cameraUploading flag)
+setInterval(() => {
+  if (!cameraUploading && cameraUploadQueue.length > 0) {
+    processCameraQueue();
+  }
+}, 8000);
+
 // Shutter button — captures frame and queues upload
 $('camera-shutter').addEventListener('click', () => {
   const video = $('camera-video');
@@ -2337,10 +2464,14 @@ $('camera-shutter').addEventListener('click', () => {
 });
 
 async function queueCameraUpload(blob) {
-  const capturedVehicle = selectedVehicle; // capture immediately before async compression
-  // Compress first
+  const capturedVehicle = selectedVehicle; // snapshot before any async gap
   const compressed = await compressBlob(blob, 1920, 0.82);
-  cameraUploadQueue.push({ blob: compressed, vehicle: capturedVehicle });
+
+  // 1. Persist to IndexedDB FIRST — survives page reload, iOS backgrounding, camera re-open
+  const idbId = await _idbSavePhoto(compressed, capturedVehicle);
+
+  // 2. Add to in-memory queue
+  cameraUploadQueue.push({ blob: compressed, vehicle: capturedVehicle, idbId });
   cameraTotalQueued++;
   updateCameraUploadBar();
   processCameraQueue();
@@ -2369,23 +2500,34 @@ async function processCameraQueue() {
   if (cameraUploading || cameraUploadQueue.length === 0) return;
   cameraUploading = true;
 
-  while (cameraUploadQueue.length > 0) {
-    const { blob, vehicle } = cameraUploadQueue.shift();
-    try {
-      const url = await uploadPhoto(blob, vehicle);
-      cameraUploadedUrls.push(url);
-      cameraUploadedCount++;
-      updateCameraUploadBar();
-    } catch (err) {
-      console.error('Camera upload error:', err);
-      if (!getStorage() && !storageWarningShown) {
-        storageWarningShown = true;
-        toast('Photos saved locally but uploads need Firebase Storage enabled.', 'warning');
+  try {
+    while (cameraUploadQueue.length > 0) {
+      // Peek — don't shift yet; only remove after confirmed upload
+      const item = cameraUploadQueue[0];
+      try {
+        const url = await uploadPhoto(item.blob, item.vehicle);
+        cameraUploadQueue.shift();          // remove only on success
+        cameraUploadedUrls.push(url);
+        cameraUploadedCount++;
+        _idbDeletePhoto(item.idbId);       // remove from IndexedDB on success
+        updateCameraUploadBar();
+      } catch (uploadErr) {
+        console.error('Camera upload error (will retry):', uploadErr);
+        cameraUploadQueue.shift();          // remove from queue but LEAVE in IndexedDB
+        // Item stays in IndexedDB — resumePendingUploads will re-queue it later
+        if (!storageWarningShown) {
+          storageWarningShown = true;
+          toast('Upload failed — photos saved locally and will retry automatically.', 'warning');
+        }
       }
     }
+  } finally {
+    cameraUploading = false;              // ALWAYS release the lock
+    // Update pending banner after queue drains
+    if (selectedVehicle) {
+      _idbGetPending(selectedVehicle.id).then(p => _updatePendingBanner(p.length, selectedVehicle.plate)).catch(() => {});
+    }
   }
-
-  cameraUploading = false;
 }
 
 // Flash toggle
