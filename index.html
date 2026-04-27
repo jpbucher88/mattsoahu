@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427a">
+  <link rel="stylesheet" href="style.css?v=20260427b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1376,7 +1376,9 @@
 
   <!-- ==================== FULLSCREEN CAMERA ==================== -->
   <div id="camera-overlay" class="camera-overlay" style="display:none;">
-    <video id="camera-video" autoplay playsinline muted></video>
+    <div class="camera-video-wrap">
+      <video id="camera-video" autoplay playsinline muted></video>
+    </div>
     <div class="camera-hud">
       <div class="camera-top-bar">
         <button id="camera-close" class="camera-btn-close">&times;</button>
@@ -1396,6 +1398,11 @@
       </div>
       <div class="camera-bottom-bar">
         <div class="camera-thumbs" id="camera-thumbs"></div>
+        <div class="camera-zoom-row">
+          <button id="camera-zoom-out" class="camera-zoom-btn">&#8722;</button>
+          <span id="camera-zoom-label" class="camera-zoom-label">1.0&times;</span>
+          <button id="camera-zoom-in" class="camera-zoom-btn">+</button>
+        </div>
         <button id="camera-shutter" class="camera-shutter"></button>
       </div>
     </div>

@@ -2210,6 +2210,45 @@ let cameraUploadedCount = 0;
 let cameraTotalQueued = 0;
 let cameraUploadedUrls = [];
 
+// Zoom state — software zoom is the primary path (works on iOS Safari).
+// Hardware zoom via applyConstraints is tried first but only works on Android Chrome.
+let cameraZoomLevel  = 1.0;
+let cameraZoomMin    = 1.0;
+let cameraZoomMax    = 5.0;   // overridden from caps when hardware zoom available
+let _cameraHwZoom    = false; // true when the track supports hardware zoom
+
+function _setCameraZoom(level) {
+  level = Math.max(cameraZoomMin, Math.min(cameraZoomMax, level));
+  // Round to 1 decimal to avoid floating-point drift from repeated pinches
+  level = Math.round(level * 10) / 10;
+  cameraZoomLevel = level;
+
+  if (_cameraHwZoom && cameraStream) {
+    const [t] = cameraStream.getVideoTracks();
+    if (t) t.applyConstraints({ advanced: [{ zoom: level }] }).catch(() => _applySwZoom(level));
+  }
+  // Always apply software zoom — ensures the video display reflects the zoom on iOS
+  _applySwZoom(level);
+  _updateZoomUI();
+}
+
+function _applySwZoom(level) {
+  const video = $('camera-video');
+  if (!video) return;
+  // scale() on the video; the wrapper clips overflow so it stays fullscreen
+  video.style.transform = level > 1 ? `scale(${level})` : '';
+  video.style.transformOrigin = 'center center';
+}
+
+function _updateZoomUI() {
+  const lbl = $('camera-zoom-label');
+  if (lbl) lbl.textContent = cameraZoomLevel.toFixed(1) + '×';
+  const btnOut = $('camera-zoom-out');
+  if (btnOut) btnOut.disabled = cameraZoomLevel <= cameraZoomMin;
+  const btnIn = $('camera-zoom-in');
+  if (btnIn) btnIn.disabled = cameraZoomLevel >= cameraZoomMax;
+}
+
 $('btn-open-camera').addEventListener('click', async () => {
   if (!selectedVehicle) {
     toast('Select a vehicle first.', 'warning');
@@ -2242,29 +2281,14 @@ function _initCameraPinchZoom() {
   overlay.addEventListener('touchstart', (e) => {
     if (e.touches.length === 2) {
       pinchStartDist = _pinchDist(e.touches);
-      // Snapshot current zoom level from the active track
-      if (cameraStream) {
-        const [t] = cameraStream.getVideoTracks();
-        if (t) {
-          const settings = t.getSettings();
-          pinchStartZoom = settings.zoom || 1;
-        }
-      }
+      pinchStartZoom = cameraZoomLevel; // snapshot current logical zoom
     }
   }, { passive: true });
 
   overlay.addEventListener('touchmove', (e) => {
     if (e.touches.length !== 2 || pinchStartDist === null) return;
-    // Don't call preventDefault — allow the gesture but handle zoom ourselves
-    const dist = _pinchDist(e.touches);
-    const scale = dist / pinchStartDist;
-    if (!cameraStream) return;
-    const [t] = cameraStream.getVideoTracks();
-    if (!t || !t.getCapabilities) return;
-    const caps = t.getCapabilities();
-    if (!caps.zoom) return;
-    const newZoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, pinchStartZoom * scale));
-    t.applyConstraints({ advanced: [{ zoom: newZoom }] }).catch(() => {});
+    const scale = _pinchDist(e.touches) / pinchStartDist;
+    _setCameraZoom(pinchStartZoom * scale);
   }, { passive: true });
 
   overlay.addEventListener('touchend', (e) => {
@@ -2333,24 +2357,31 @@ async function startCameraStream() {
 
   cameraStream = stream;
 
-  // Force zoom to 1x (minimum) and apply flash state
+  // Detect hardware zoom support (Android Chrome) and reset zoom to minimum.
+  // On iOS Safari, getCapabilities() won't include 'zoom' — we rely on software zoom instead.
+  _cameraHwZoom = false;
   const [track] = cameraStream.getVideoTracks();
   if (track && track.getCapabilities) {
     try {
       const caps = track.getCapabilities();
-      const constraintUpdates = {};
       if (caps.zoom) {
-        constraintUpdates.zoom = caps.zoom.min;
+        _cameraHwZoom = true;
+        cameraZoomMin = caps.zoom.min;
+        cameraZoomMax = caps.zoom.max;
       }
       // Apply torch state if supported
-      if (caps.torch) {
-        constraintUpdates.torch = cameraFlashOn;
-      }
+      const constraintUpdates = {};
+      if (caps.zoom) constraintUpdates.zoom = caps.zoom.min;
+      if (caps.torch) constraintUpdates.torch = cameraFlashOn;
       if (Object.keys(constraintUpdates).length) {
         await track.applyConstraints({ advanced: [constraintUpdates] });
       }
     } catch (e) { /* zoom/torch not supported — ok */ }
   }
+  // Always reset to 1× when starting a new stream (flip, or first open)
+  cameraZoomLevel = 1.0;
+  _applySwZoom(1.0);
+  _updateZoomUI();
   updateFlashButton();
 
   const video = $('camera-video');
@@ -2359,21 +2390,6 @@ async function startCameraStream() {
   video.setAttribute('playsinline', 'true');
   video.setAttribute('muted', 'true');
   video.muted = true;
-
-  // Re-apply min zoom whenever the stream resizes (e.g. iOS auto-lens switch)
-  // Using a named handler so we can remove it on next startCameraStream call
-  if (video._zoomResizeHandler) video.removeEventListener('resize', video._zoomResizeHandler);
-  video._zoomResizeHandler = async () => {
-    if (!cameraStream) return;
-    const [t] = cameraStream.getVideoTracks();
-    if (t && t.getCapabilities) {
-      try {
-        const caps = t.getCapabilities();
-        if (caps.zoom) await t.applyConstraints({ advanced: [{ zoom: caps.zoom.min }] });
-      } catch(e) {}
-    }
-  };
-  video.addEventListener('resize', video._zoomResizeHandler);
 
   try {
     await video.play();
@@ -2435,11 +2451,23 @@ $('camera-shutter').addEventListener('click', () => {
   const video = $('camera-video');
   const canvas = $('camera-canvas');
 
-  // Capture at video resolution
-  canvas.width = video.videoWidth;
+  // Capture at full sensor resolution, but crop to the zoomed region when using software zoom.
+  // Software zoom shows a scaled-up center crop on screen — we replicate that in the canvas so
+  // the saved photo matches exactly what the user saw in the viewfinder.
+  canvas.width  = video.videoWidth;
   canvas.height = video.videoHeight;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0);
+  const z = cameraZoomLevel;
+  if (z > 1) {
+    // Crop center (1/z × 1/z) of the sensor frame and stretch it to full canvas
+    const srcW = video.videoWidth  / z;
+    const srcH = video.videoHeight / z;
+    const srcX = (video.videoWidth  - srcW) / 2;
+    const srcY = (video.videoHeight - srcH) / 2;
+    ctx.drawImage(video, srcX, srcY, srcW, srcH, 0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.drawImage(video, 0, 0);
+  }
 
   // Flash effect
   video.classList.add('camera-shutter-flash');
@@ -2578,6 +2606,10 @@ $('camera-flip').addEventListener('click', async () => {
     toast('Could not switch camera.', 'warning');
   }
 });
+
+// Zoom buttons — step 0.5×, clamp to min/max
+$('camera-zoom-in').addEventListener('click', () => _setCameraZoom(cameraZoomLevel + 0.5));
+$('camera-zoom-out').addEventListener('click', () => _setCameraZoom(cameraZoomLevel - 0.5));
 
 // Close camera
 $('camera-close').addEventListener('click', async () => {
