@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427c">
+  <link rel="stylesheet" href="style.css?v=20260427d">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1471,6 +1471,23 @@
             <div class="exp-field" style="margin-bottom:10px;">
               <label class="exp-label">Note <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
               <input type="text" id="fin-rev-note" class="form-select exp-input" placeholder="e.g. April Turo payout" maxlength="120">
+            </div>
+            <div class="exp-form-row" style="margin-bottom:10px;">
+              <div class="exp-field">
+                <label class="exp-label">Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                <select id="fin-rev-extras-type" class="form-select exp-input">
+                  <option value="">-- None --</option>
+                  <option value="beach-gear">🏖️ Beach Gear</option>
+                  <option value="parking">🅿️ Parking</option>
+                  <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
+                  <option value="beach-tent">⛺ Beach Tent</option>
+                  <option value="other">✏️ Other</option>
+                </select>
+              </div>
+              <div class="exp-field exp-field-amount">
+                <label class="exp-label">Extras Amount ($)</label>
+                <input type="number" id="fin-rev-extras-amount" class="form-select exp-input" placeholder="0.00" min="0" step="0.01">
+              </div>
             </div>
             <div class="exp-form-actions">
               <button class="btn btn-primary" id="fin-rev-save-btn" onclick="saveFinanceRevenue()">Save</button>

@@ -10902,10 +10902,14 @@ window.saveFinanceRevenue = async function() {
   const date = $('fin-rev-date').value;
   const amount = parseFloat($('fin-rev-amount').value);
   const note = $('fin-rev-note')?.value.trim() || '';
+  const extrasType = $('fin-rev-extras-type')?.value || '';
+  const extrasAmount = parseFloat($('fin-rev-extras-amount')?.value) || 0;
 
   if (!vehicleId) { toast('Select a vehicle.', 'warning'); return; }
   if (!date) { toast('Enter a date.', 'warning'); return; }
-  if (!amount || amount <= 0) { toast('Enter a valid amount.', 'warning'); return; }
+  if ((!amount || amount <= 0) && (!extrasType || extrasAmount <= 0)) {
+    toast('Enter an amount or an extras amount.', 'warning'); return;
+  }
 
   const btn = $('fin-rev-save-btn');
   btn.disabled = true; btn.textContent = 'Saving…';
@@ -10919,19 +10923,25 @@ window.saveFinanceRevenue = async function() {
       startDate: date,
       endDate: date,
       tripType,
-      revenue: amount,
+      revenue: amount > 0 ? amount : 0,
       manualRevenueEntry: true,
       loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
       loggedBy: currentUser.uid,
       loggedByName: currentUser.displayName || currentUser.email,
     };
     if (note) record.notes = note;
+    if (extrasType && extrasAmount > 0) {
+      record.extrasType = extrasType;
+      record.extrasAmount = extrasAmount;
+    }
     await db.collection('tripLogs').doc(logKey).set(record);
     toast('Revenue added!', 'success');
     // Reset form fields
     $('fin-rev-amount').value = '';
     $('fin-rev-note').value = '';
     $('fin-rev-vehicle').value = '';
+    if ($('fin-rev-extras-type')) $('fin-rev-extras-type').value = '';
+    if ($('fin-rev-extras-amount')) $('fin-rev-extras-amount').value = '';
     toggleFinRevForm();
     loadFinanceRevenue();
   } catch(e) {
@@ -10966,10 +10976,11 @@ window.loadFinanceRevenue = async function() {
     snap.forEach(doc => {
       const d = doc.data();
       if (d.cancelled) return;
-      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, trips: 0, untracked: 0, manual: 0 };
+      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, extras: 0, trips: 0, untracked: 0, manual: 0 };
       const rev = Number(d.revenue) || 0;
       if (d.tripType === 'private-trip') byVehicle[d.vehicleId].priv += rev;
       else byVehicle[d.vehicleId].turo += rev;
+      byVehicle[d.vehicleId].extras += Number(d.extrasAmount) || 0;
       if (!rev) byVehicle[d.vehicleId].untracked++;
       if (d.manualRevenueEntry) byVehicle[d.vehicleId].manual++;
       byVehicle[d.vehicleId].trips++;
@@ -10983,6 +10994,9 @@ window.loadFinanceRevenue = async function() {
     const fmtR = n => n > 0 ? '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
     const totalTuro = rows.reduce((s,r) => s+r.turo, 0);
     const totalPriv = rows.reduce((s,r) => s+r.priv, 0);
+    const totalExtras = rows.reduce((s,r) => s+r.extras, 0);
+
+    const extraLabels = { 'beach-gear':'🏖️ Beach Gear', 'parking':'🅿️ Parking', 'snorkeling-gear':'🤿 Snorkeling Gear', 'beach-tent':'⛺ Beach Tent', 'other':'✏️ Other' };
 
     // Manual entries section (deleteable)
     const manualHtml = manualEntries.length ? `
@@ -10995,9 +11009,10 @@ window.loadFinanceRevenue = async function() {
               <span class="fin-manual-type">${e.tripType === 'private-trip' ? '🔒 Private' : '📅 Turo'}</span>
               <span class="fin-manual-date">${e.startDate}</span>
               ${e.notes ? `<span class="fin-manual-note">${escapeHtml(e.notes)}</span>` : ''}
+              ${e.extrasType ? `<span class="fin-manual-extras">${extraLabels[e.extrasType]||e.extrasType}: $${Number(e.extrasAmount||0).toFixed(2)}</span>` : ''}
             </div>
             <div class="fin-manual-right">
-              <span class="fin-manual-amount">$${Number(e.revenue).toFixed(2)}</span>
+              <span class="fin-manual-amount">$${(Number(e.revenue||0) + Number(e.extrasAmount||0)).toFixed(2)}</span>
               <button class="btn btn-xs btn-danger" onclick="deleteManualRevenue('${e.id}')">✕</button>
             </div>
           </div>`).join('')}
@@ -11007,17 +11022,19 @@ window.loadFinanceRevenue = async function() {
       <div class="fin-rev-totals">
         <span class="prod-rev-badge turo">📅 Turo: <strong>$${totalTuro.toFixed(2)}</strong></span>
         <span class="prod-rev-badge private">🔒 Private: <strong>$${totalPriv.toFixed(2)}</strong></span>
-        <span class="prod-rev-badge total">Total: <strong>$${(totalTuro+totalPriv).toFixed(2)}</strong></span>
+        ${totalExtras > 0 ? `<span class="prod-rev-badge extras">🎒 Extras: <strong>$${totalExtras.toFixed(2)}</strong></span>` : ''}
+        <span class="prod-rev-badge total">Total: <strong>$${(totalTuro+totalPriv+totalExtras).toFixed(2)}</strong></span>
       </div>
       <table class="fin-table">
-        <thead><tr><th>Vehicle</th><th>Trips</th><th>Turo $</th><th>Private $</th><th>Total</th></tr></thead>
+        <thead><tr><th>Vehicle</th><th>Trips</th><th>Turo $</th><th>Private $</th><th>Extras $</th><th>Total</th></tr></thead>
         <tbody>
           ${rows.map(r => `<tr>
             <td><strong>${escapeHtml(r.plate||'')}</strong><br><span style="font-size:0.78rem;color:#6b7280;">${escapeHtml(r.makeModel||'')}</span></td>
             <td>${r.trips}${r.untracked ? `<span style="font-size:0.72rem;color:#f59e0b;margin-left:4px;">(${r.untracked} no $)</span>` : ''}${r.manual ? `<span style="font-size:0.72rem;color:#6b7280;margin-left:4px;">(${r.manual} manual)</span>` : ''}</td>
             <td class="fin-td-rev">${fmtR(r.turo)}</td>
             <td class="fin-td-rev">${fmtR(r.priv)}</td>
-            <td><strong>${fmtR(r.turo+r.priv)}</strong></td>
+            <td class="fin-td-extras">${fmtR(r.extras)}</td>
+            <td><strong>${fmtR(r.turo+r.priv+r.extras)}</strong></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -11043,9 +11060,10 @@ window.loadFinancePL = async function() {
     revSnap.forEach(doc => {
       const d = doc.data();
       if (d.cancelled) return;
-      if (!revByV[d.vehicleId]) revByV[d.vehicleId] = { plate: d.vehiclePlate, turo: 0, priv: 0 };
+      if (!revByV[d.vehicleId]) revByV[d.vehicleId] = { plate: d.vehiclePlate, turo: 0, priv: 0, extras: 0 };
       const rev = Number(d.revenue) || 0;
       if (d.tripType === 'private-trip') revByV[d.vehicleId].priv += rev; else revByV[d.vehicleId].turo += rev;
+      revByV[d.vehicleId].extras += Number(d.extrasAmount) || 0;
     });
 
     // Expenses by vehicle
@@ -11072,7 +11090,7 @@ window.loadFinancePL = async function() {
       const rv = revByV[vid] || { plate: '', turo: 0, priv: 0 };
       const v = vehiclesCache.find(x => x.id === vid);
       const plate = rv.plate || v?.plate || vid;
-      const totalRev = rv.turo + rv.priv;
+      const totalRev = rv.turo + rv.priv + (rv.extras || 0);
       const expenses = expByV[vid] || 0;
       const maint = maintByV[vid] || 0;
       const totalCost = expenses + maint;
