@@ -4258,6 +4258,9 @@ body {
 .fin-card-profit .fin-card-amount { color: #166534; }
 .fin-card-loss .fin-card-amount   { color: #991b1b; }
 .fin-card-sub { font-size: 0.72rem; color: #6b7280; }
+.fin-card-clickable { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; transition: transform 0.12s, box-shadow 0.12s; }
+.fin-card-clickable:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.10); }
+.fin-card-clickable:active { transform: translateY(0); box-shadow: none; }
 .fin-overview-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 /* Revenue tab */
 .fin-rev-totals { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }

@@ -10932,17 +10932,17 @@ async function loadFinanceOverview() {
     body.innerHTML = `
       <div class="fin-overview-month">${monthName}</div>
       <div class="fin-overview-cards">
-        <div class="fin-card fin-card-revenue">
+        <div class="fin-card fin-card-revenue fin-card-clickable" onclick="switchFinanceTab('revenue')" title="View revenue details">
           <div class="fin-card-label">💰 Revenue</div>
           <div class="fin-card-amount">${fmtD(totalRev)}</div>
           <div class="fin-card-sub">📅 Turo ${fmtD(turoRev)} · 🔒 Private ${fmtD(privRev)}</div>
         </div>
-        <div class="fin-card fin-card-expense">
+        <div class="fin-card fin-card-expense fin-card-clickable" onclick="switchFinanceTab('expenses')" title="View expense details">
           <div class="fin-card-label">🧾 Expenses</div>
           <div class="fin-card-amount">${fmtD(totalCosts)}</div>
           <div class="fin-card-sub">General ${fmtD(totalExp)} · Maintenance ${fmtD(totalMaint)}</div>
         </div>
-        <div class="fin-card ${netPL >= 0 ? 'fin-card-profit' : 'fin-card-loss'}">
+        <div class="fin-card ${netPL >= 0 ? 'fin-card-profit' : 'fin-card-loss'} fin-card-clickable" onclick="switchFinanceTab('pl')" title="View P&amp;L by vehicle">
           <div class="fin-card-label">📈 Net P&amp;L</div>
           <div class="fin-card-amount">${netPL >= 0 ? '+' : ''}${fmtD(netPL)}</div>
           <div class="fin-card-sub">${netPL >= 0 ? 'Profitable ✅' : 'Operating at a loss ⚠️'}</div>
