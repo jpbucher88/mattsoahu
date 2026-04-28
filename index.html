@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427f">
+  <link rel="stylesheet" href="style.css?v=20260427h">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -226,23 +226,12 @@
           <div id="on-trip-revenue-row" class="loc-field" style="display:none;">
             <label for="on-trip-revenue">💰 Trip Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(Turo payout — add when received)</span></label>
             <input type="number" id="on-trip-revenue" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
-            <div class="loc-extras-row">
-              <div class="loc-extras-field">
-                <label class="exp-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
-                <select id="on-trip-extras-type" class="vehicle-location-custom">
-                  <option value="">-- None --</option>
-                  <option value="beach-gear">🏖️ Beach Gear</option>
-                  <option value="parking">🅿️ Parking</option>
-                  <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
-                  <option value="beach-tent">⛺ Beach Tent</option>
-                  <option value="car-seat">🪑 Car Seat</option>
-                  <option value="other">✏️ Other</option>
-                </select>
+            <div class="loc-extras-section">
+              <div class="loc-extras-header">
+                <span class="loc-extras-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></span>
+                <button type="button" class="btn btn-xs btn-outline" onclick="addExtraRow('on-trip-extras-list')">+ Add Extra</button>
               </div>
-              <div class="loc-extras-field">
-                <label class="exp-label">Extras Amount ($)</label>
-                <input type="number" id="on-trip-extras-amount" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
-              </div>
+              <div id="on-trip-extras-list" class="loc-extras-list"></div>
             </div>
           </div>
           <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
@@ -280,84 +269,83 @@
           </div>
           <!-- Private Trip fields (shown when private-trip selected) -->
           <div id="private-trip-row" class="loc-parts-row" style="display:none;">
-            <div class="loc-field">
-              <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-              <div class="dt-split-wrap">
-                <input type="date" id="private-trip-start-date" class="vehicle-location-custom dt-date-input">
-                <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
-                <select id="private-trip-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
-              </div>
-            </div>
-            <div class="loc-field">
-              <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-              <div class="dt-split-wrap">
-                <input type="date" id="private-trip-end-date" class="vehicle-location-custom dt-date-input">
-                <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
-                <select id="private-trip-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
-              </div>
-            </div>
-            <div class="loc-field">
-              <label for="private-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-              <input type="datetime-local" id="private-trip-return" class="vehicle-location-custom">
-            </div>
-            <div class="loc-field">
-              <label for="private-customer-name">👤 Customer Name:</label>
-              <input type="text" id="private-customer-name" class="vehicle-location-custom" placeholder="Full name" maxlength="100">
-            </div>
-            <div class="loc-field">
-              <label for="private-customer-phone">📞 Phone:</label>
-              <input type="tel" id="private-customer-phone" class="vehicle-location-custom" placeholder="(808) 555-0000" maxlength="30">
-            </div>
-            <div class="loc-field">
-              <label for="private-customer-email">📧 Email:</label>
-              <input type="email" id="private-customer-email" class="vehicle-location-custom" placeholder="customer@email.com" maxlength="100">
-            </div>
-            <div class="loc-field">
-              <label for="private-trip-cost">💵 Daily Rate ($):</label>
-              <input type="number" id="private-trip-cost" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
-            </div>
-            <div class="loc-field">
-              <label for="private-trip-get">💰 GET Tax (%):</label>
-              <input type="number" id="private-trip-get" class="vehicle-location-custom" placeholder="4.712" min="0" step="0.001" value="4.712">
-            </div>
-            <div class="loc-field">
-              <label for="private-trip-daily-tax">💰 Daily Vehicle Tax ($):</label>
-              <input type="number" id="private-trip-daily-tax" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
-            </div>
-            <div class="loc-field">
-              <label>� Estimated Revenue:</label>
-              <div id="private-trip-rev-display" class="private-rev-calc-box">— (enter dates &amp; rate to calculate)</div>
-            </div>
-            <div class="loc-field">
-              <label for="private-trip-revenue-override">💵 Actual Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(override if different from calculated)</span></label>
-              <input type="number" id="private-trip-revenue-override" class="vehicle-location-custom" placeholder="Leave blank to use calculated" min="0" step="0.01">
-            </div>
-            <div class="loc-field">
-              <div class="loc-extras-row">
-                <div class="loc-extras-field">
-                  <label class="exp-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
-                  <select id="private-trip-extras-type" class="vehicle-location-custom">
-                    <option value="">-- None --</option>
-                    <option value="beach-gear">🏖️ Beach Gear</option>
-                    <option value="parking">🅿️ Parking</option>
-                    <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
-                    <option value="beach-tent">⛺ Beach Tent</option>
-                    <option value="car-seat">🪱 Car Seat</option>
-                    <option value="other">✏️ Other</option>
-                  </select>
-                </div>
-                <div class="loc-extras-field">
-                  <label class="exp-label">Extras Amount ($)</label>
-                  <input type="number" id="private-trip-extras-amount" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+            <details class="priv-section" open>
+              <summary class="priv-section-title">⏰ Trip Dates</summary>
+              <div class="loc-field">
+                <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+                <div class="dt-split-wrap">
+                  <input type="date" id="private-trip-start-date" class="vehicle-location-custom dt-date-input">
+                  <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+                  <select id="private-trip-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
                 </div>
               </div>
-            </div>
+              <div class="loc-field">
+                <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+                <div class="dt-split-wrap">
+                  <input type="date" id="private-trip-end-date" class="vehicle-location-custom dt-date-input">
+                  <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+                  <select id="private-trip-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
+                </div>
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+                <input type="datetime-local" id="private-trip-return" class="vehicle-location-custom">
+              </div>
+            </details>
+            <details class="priv-section" open>
+              <summary class="priv-section-title">👤 Customer Info</summary>
+              <div class="loc-field">
+                <label for="private-customer-name">👤 Customer Name:</label>
+                <input type="text" id="private-customer-name" class="vehicle-location-custom" placeholder="Full name" maxlength="100">
+              </div>
+              <div class="loc-field">
+                <label for="private-customer-phone">📞 Phone:</label>
+                <input type="tel" id="private-customer-phone" class="vehicle-location-custom" placeholder="(808) 555-0000" maxlength="30">
+              </div>
+              <div class="loc-field">
+                <label for="private-customer-email">📧 Email:</label>
+                <input type="email" id="private-customer-email" class="vehicle-location-custom" placeholder="customer@email.com" maxlength="100">
+              </div>
+            </details>
+            <details class="priv-section" open>
+              <summary class="priv-section-title">💰 Revenue &amp; Extras</summary>
+              <div class="loc-field">
+                <label for="private-trip-cost">💵 Daily Rate ($):</label>
+                <input type="number" id="private-trip-cost" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-get">💰 GET Tax (%):</label>
+                <input type="number" id="private-trip-get" class="vehicle-location-custom" placeholder="4.712" min="0" step="0.001" value="4.712">
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-daily-tax">💰 Daily Vehicle Tax ($):</label>
+                <input type="number" id="private-trip-daily-tax" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+              </div>
+              <div class="loc-field">
+                <label>Estimated Revenue:</label>
+                <div id="private-trip-rev-display" class="private-rev-calc-box">— (enter dates &amp; rate to calculate)</div>
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-revenue-override">💵 Actual Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(override if different from calculated)</span></label>
+                <input type="number" id="private-trip-revenue-override" class="vehicle-location-custom" placeholder="Leave blank to use calculated" min="0" step="0.01">
+              </div>
+              <div class="loc-field">
+                <div class="loc-extras-section">
+                  <div class="loc-extras-header">
+                    <span class="loc-extras-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></span>
+                    <button type="button" class="btn btn-xs btn-outline" onclick="addExtraRow('private-trip-extras-list')">+ Add Extra</button>
+                  </div>
+                  <div id="private-trip-extras-list" class="loc-extras-list"></div>
+                </div>
+              </div>
+            </details>
             <div class="loc-field">
-              <label>�📄 Customer Contract:</label>
+              <label>📄 Customer Contract:</label>
               <label class="btn btn-sm btn-outline" for="private-contract-upload" style="cursor:pointer;">📤 Upload Contract</label>
               <input type="file" id="private-contract-upload" accept="image/*,application/pdf" hidden>
               <div id="private-contract-preview" class="private-contract-preview"></div>
             </div>
+          </div>
           </div>
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
           <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>

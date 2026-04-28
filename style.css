@@ -3654,6 +3654,83 @@ body {
   flex: 1;
   min-width: 140px;
 }
+/* Multi-extras section */
+.loc-extras-section {
+  margin-top: 6px;
+  width: 100%;
+}
+.loc-extras-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.loc-extras-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #374151;
+}
+.loc-extras-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.loc-extra-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.loc-extra-row .extra-type-sel {
+  flex: 1;
+  min-width: 130px;
+}
+.loc-extra-row .extra-amt-inp {
+  width: 90px;
+  flex-shrink: 0;
+}
+.loc-extra-row .extra-remove-btn {
+  flex-shrink: 0;
+}
+/* Private trip collapsible sections */
+.priv-section {
+  width: 100%;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.priv-section[open] summary { border-bottom: 1px solid #e5e7eb; }
+.priv-section summary { list-style: none; }
+.priv-section summary::-webkit-details-marker { display: none; }
+.priv-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+  background: #f9fafb;
+  user-select: none;
+}
+.priv-section-title::after {
+  content: '▸';
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  transition: transform 0.15s;
+}
+.priv-section[open] .priv-section-title::after {
+  transform: rotate(90deg);
+}
+.priv-section .loc-field {
+  padding: 0 12px;
+  margin-top: 8px;
+}
+.priv-section .loc-field:last-child {
+  margin-bottom: 10px;
+}
 .repair-parts-tag {
   font-size: 0.75rem;
   font-weight: 600;

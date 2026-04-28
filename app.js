@@ -1648,12 +1648,15 @@ async function openVehiclePage(vid) {
     $('repair-description').value = selectedVehicle.repairDescription || '';
     // On-trip revenue
     $('on-trip-revenue').value = selectedVehicle.tripRevenue != null ? selectedVehicle.tripRevenue : '';
-    // On-trip extras
-    if ($('on-trip-extras-type')) $('on-trip-extras-type').value = selectedVehicle.extrasType || '';
-    if ($('on-trip-extras-amount')) $('on-trip-extras-amount').value = selectedVehicle.extrasAmount || '';
-    // Private trip extras
-    if ($('private-trip-extras-type')) $('private-trip-extras-type').value = selectedVehicle.extrasType || '';
-    if ($('private-trip-extras-amount')) $('private-trip-extras-amount').value = selectedVehicle.extrasAmount || '';
+    // On-trip & private-trip extras (multi-extras lists)
+    ['on-trip-extras-list', 'private-trip-extras-list'].forEach(listId => {
+      const list = $(listId);
+      if (!list) return;
+      list.innerHTML = '';
+      const arr = Array.isArray(selectedVehicle.extras) ? selectedVehicle.extras
+        : (selectedVehicle.extrasType ? [{ type: selectedVehicle.extrasType, amount: selectedVehicle.extrasAmount || 0 }] : []);
+      arr.forEach(e => addExtraRow(listId, e.type, e.amount));
+    });
     // Private trip revenue override
     $('private-trip-revenue-override').value = selectedVehicle.privateTripRevenueOverride != null ? selectedVehicle.privateTripRevenueOverride : '';
     _calcPrivateTripRevenue();
@@ -3378,10 +3381,10 @@ $('btn-save-location').addEventListener('click', async () => {
     // Scheduled trip revenue (Turo payout — added when received)
     const schedRev = parseFloat($('on-trip-revenue').value);
     updateData.tripRevenue = isNaN(schedRev) ? firebase.firestore.FieldValue.delete() : schedRev;
-    const schedExtrasType = $('on-trip-extras-type')?.value || '';
-    const schedExtrasAmount = parseFloat($('on-trip-extras-amount')?.value) || 0;
-    updateData.extrasType = schedExtrasType || firebase.firestore.FieldValue.delete();
-    updateData.extrasAmount = (schedExtrasType && schedExtrasAmount > 0) ? schedExtrasAmount : firebase.firestore.FieldValue.delete();
+    const schedExtrasList = getExtrasList('on-trip-extras-list');
+    updateData.extras = schedExtrasList.length > 0 ? schedExtrasList : firebase.firestore.FieldValue.delete();
+    updateData.extrasType = firebase.firestore.FieldValue.delete();
+    updateData.extrasAmount = firebase.firestore.FieldValue.delete();
   } else if (tripStatus === 'private-trip') {
     updateData.location = 'Private Trip';
     const ptStart = getDTValue('private-trip-start-date', 'private-trip-start-time');
@@ -3419,10 +3422,10 @@ $('btn-save-location').addEventListener('click', async () => {
     const privateTripRevenue = !isNaN(ptRevOverride) && ptRevOverride > 0 ? ptRevOverride : calcRevenue;
     updateData.privateTripRevenueOverride = !isNaN(ptRevOverride) && ptRevOverride > 0 ? ptRevOverride : firebase.firestore.FieldValue.delete();
     updateData.tripRevenue = privateTripRevenue != null ? privateTripRevenue : firebase.firestore.FieldValue.delete();
-    const ptExtrasType = $('private-trip-extras-type')?.value || '';
-    const ptExtrasAmount = parseFloat($('private-trip-extras-amount')?.value) || 0;
-    updateData.extrasType = ptExtrasType || firebase.firestore.FieldValue.delete();
-    updateData.extrasAmount = (ptExtrasType && ptExtrasAmount > 0) ? ptExtrasAmount : firebase.firestore.FieldValue.delete();
+    const ptExtrasList = getExtrasList('private-trip-extras-list');
+    updateData.extras = ptExtrasList.length > 0 ? ptExtrasList : firebase.firestore.FieldValue.delete();
+    updateData.extrasType = firebase.firestore.FieldValue.delete();
+    updateData.extrasAmount = firebase.firestore.FieldValue.delete();
     // Handle contract upload
     const contractFile = $('private-contract-upload').files[0];
     if (contractFile) {
@@ -3447,10 +3450,10 @@ $('btn-save-location').addEventListener('click', async () => {
     // On-trip revenue
     const onTripRev = parseFloat($('on-trip-revenue').value);
     updateData.tripRevenue = isNaN(onTripRev) ? firebase.firestore.FieldValue.delete() : onTripRev;
-    const onExtrasType = $('on-trip-extras-type')?.value || '';
-    const onExtrasAmount = parseFloat($('on-trip-extras-amount')?.value) || 0;
-    updateData.extrasType = onExtrasType || firebase.firestore.FieldValue.delete();
-    updateData.extrasAmount = (onExtrasType && onExtrasAmount > 0) ? onExtrasAmount : firebase.firestore.FieldValue.delete();
+    const onExtrasList = getExtrasList('on-trip-extras-list');
+    updateData.extras = onExtrasList.length > 0 ? onExtrasList : firebase.firestore.FieldValue.delete();
+    updateData.extrasType = firebase.firestore.FieldValue.delete();
+    updateData.extrasAmount = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
     updateData.repairPartsEta = firebase.firestore.FieldValue.delete();
@@ -3598,9 +3601,8 @@ $('btn-save-location').addEventListener('click', async () => {
           if ((tripStatus === 'private-trip' || tripStatus === 'scheduled') && updateData.tripRevenue != null && typeof updateData.tripRevenue === 'number') {
             tripLogData.revenue = updateData.tripRevenue;
           }
-          if (updateData.extrasType && updateData.extrasType !== firebase.firestore.FieldValue.delete() && updateData.extrasAmount > 0) {
-            tripLogData.extrasType = updateData.extrasType;
-            tripLogData.extrasAmount = updateData.extrasAmount;
+          if (Array.isArray(updateData.extras) && updateData.extras.length > 0) {
+            tripLogData.extras = updateData.extras;
           }
           await db.collection('tripLogs').doc(logKey).set(tripLogData, { merge: true });
         } catch(e) { console.warn('tripLog write error', e); }
@@ -3624,9 +3626,8 @@ $('btn-save-location').addEventListener('click', async () => {
           loggedByName: currentUser.displayName || currentUser.email,
         };
         if (onTripRevSave != null) onTripLogData.revenue = onTripRevSave;
-        if (updateData.extrasType && updateData.extrasType !== firebase.firestore.FieldValue.delete() && updateData.extrasAmount > 0) {
-          onTripLogData.extrasType = updateData.extrasType;
-          onTripLogData.extrasAmount = updateData.extrasAmount;
+        if (Array.isArray(updateData.extras) && updateData.extras.length > 0) {
+          onTripLogData.extras = updateData.extras;
         }
         await db.collection('tripLogs').doc(logKey).set(onTripLogData, { merge: true });
       } catch(e) { console.warn('tripLog write error (on-trip)', e); }
@@ -10962,8 +10963,7 @@ window.saveFinanceRevenue = async function() {
     };
     if (note) record.notes = note;
     if (extrasType && extrasAmount > 0) {
-      record.extrasType = extrasType;
-      record.extrasAmount = extrasAmount;
+      record.extras = [{ type: extrasType, amount: extrasAmount }];
     }
     await db.collection('tripLogs').doc(logKey).set(record);
     toast('Revenue added!', 'success');
@@ -11007,11 +11007,18 @@ window.loadFinanceRevenue = async function() {
     snap.forEach(doc => {
       const d = doc.data();
       if (d.cancelled) return;
-      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, extras: 0, trips: 0, untracked: 0, manual: 0 };
+      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = { plate: d.vehiclePlate, makeModel: d.vehicleMakeModel, turo: 0, priv: 0, extrasByType: {}, trips: 0, untracked: 0, manual: 0 };
       const rev = Number(d.revenue) || 0;
       if (d.tripType === 'private-trip') byVehicle[d.vehicleId].priv += rev;
       else byVehicle[d.vehicleId].turo += rev;
-      byVehicle[d.vehicleId].extras += Number(d.extrasAmount) || 0;
+      // Handle both new array format and legacy extrasType/extrasAmount
+      const extrasArr = Array.isArray(d.extras) ? d.extras
+        : (d.extrasType && d.extrasAmount ? [{ type: d.extrasType, amount: Number(d.extrasAmount) }] : []);
+      extrasArr.forEach(e => {
+        const t = e.type || 'other';
+        const a = Number(e.amount) || 0;
+        if (a > 0) byVehicle[d.vehicleId].extrasByType[t] = (byVehicle[d.vehicleId].extrasByType[t] || 0) + a;
+      });
       if (!rev) byVehicle[d.vehicleId].untracked++;
       if (d.manualRevenueEntry) byVehicle[d.vehicleId].manual++;
       byVehicle[d.vehicleId].trips++;
@@ -11025,9 +11032,20 @@ window.loadFinanceRevenue = async function() {
     const fmtR = n => n > 0 ? '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
     const totalTuro = rows.reduce((s,r) => s+r.turo, 0);
     const totalPriv = rows.reduce((s,r) => s+r.priv, 0);
-    const totalExtras = rows.reduce((s,r) => s+r.extras, 0);
 
-    const extraLabels = { 'beach-gear':'🏖️ Beach Gear', 'parking':'🅿️ Parking', 'snorkeling-gear':'🤿 Snorkeling Gear', 'beach-tent':'⛺ Beach Tent', 'other':'✏️ Other' };
+    const extraLabels = { 'beach-gear':'🏖️ Beach Gear', 'parking':'🅿️ Parking', 'snorkeling-gear':'🤿 Snorkeling Gear', 'beach-tent':'⛺ Beach Tent', 'car-seat':'🪱 Car Seat', 'other':'✏️ Other' };
+
+    // Aggregate extras by type across all rows
+    const totalExtrasByType = {};
+    rows.forEach(r => {
+      Object.entries(r.extrasByType).forEach(([t, a]) => {
+        totalExtrasByType[t] = (totalExtrasByType[t] || 0) + a;
+      });
+    });
+    const totalExtras = Object.values(totalExtrasByType).reduce((s,a) => s+a, 0);
+    const extrasBadges = Object.entries(totalExtrasByType).map(([t, a]) =>
+      `<span class="prod-rev-badge extras">${extraLabels[t]||t}: <strong>$${a.toFixed(2)}</strong></span>`
+    ).join('');
 
     // Manual entries section (deleteable)
     const manualHtml = manualEntries.length ? `
@@ -11040,10 +11058,10 @@ window.loadFinanceRevenue = async function() {
               <span class="fin-manual-type">${e.tripType === 'private-trip' ? '🔒 Private' : '📅 Turo'}</span>
               <span class="fin-manual-date">${e.startDate}</span>
               ${e.notes ? `<span class="fin-manual-note">${escapeHtml(e.notes)}</span>` : ''}
-              ${e.extrasType ? `<span class="fin-manual-extras">${extraLabels[e.extrasType]||e.extrasType}: $${Number(e.extrasAmount||0).toFixed(2)}</span>` : ''}
+              ${(() => { const ea = Array.isArray(e.extras) ? e.extras : (e.extrasType && e.extrasAmount ? [{type:e.extrasType,amount:e.extrasAmount}] : []); return ea.map(ex => `<span class="fin-manual-extras">${extraLabels[ex.type]||ex.type}: $${Number(ex.amount||0).toFixed(2)}</span>`).join(''); })()}
             </div>
             <div class="fin-manual-right">
-              <span class="fin-manual-amount">$${(Number(e.revenue||0) + Number(e.extrasAmount||0)).toFixed(2)}</span>
+              <span class="fin-manual-amount">$${(Number(e.revenue||0) + (Array.isArray(e.extras) ? e.extras.reduce((s,ex)=>s+Number(ex.amount||0),0) : Number(e.extrasAmount||0))).toFixed(2)}</span>
               <button class="btn btn-xs btn-danger" onclick="deleteManualRevenue('${e.id}')">✕</button>
             </div>
           </div>`).join('')}
@@ -11053,7 +11071,7 @@ window.loadFinanceRevenue = async function() {
       <div class="fin-rev-totals">
         <span class="prod-rev-badge turo">📅 Turo: <strong>$${totalTuro.toFixed(2)}</strong></span>
         <span class="prod-rev-badge private">🔒 Private: <strong>$${totalPriv.toFixed(2)}</strong></span>
-        ${totalExtras > 0 ? `<span class="prod-rev-badge extras">🎒 Extras: <strong>$${totalExtras.toFixed(2)}</strong></span>` : ''}
+        ${extrasBadges}
         <span class="prod-rev-badge total">Total: <strong>$${(totalTuro+totalPriv+totalExtras).toFixed(2)}</strong></span>
       </div>
       <table class="fin-table">
@@ -11064,8 +11082,8 @@ window.loadFinanceRevenue = async function() {
             <td>${r.trips}${r.untracked ? `<span style="font-size:0.72rem;color:#f59e0b;margin-left:4px;">(${r.untracked} no $)</span>` : ''}${r.manual ? `<span style="font-size:0.72rem;color:#6b7280;margin-left:4px;">(${r.manual} manual)</span>` : ''}</td>
             <td class="fin-td-rev">${fmtR(r.turo)}</td>
             <td class="fin-td-rev">${fmtR(r.priv)}</td>
-            <td class="fin-td-extras">${fmtR(r.extras)}</td>
-            <td><strong>${fmtR(r.turo+r.priv+r.extras)}</strong></td>
+            <td class="fin-td-extras">${Object.entries(r.extrasByType).length > 0 ? Object.entries(r.extrasByType).map(([t,a]) => `<span style="display:block;font-size:0.78rem;">${extraLabels[t]||t}: $${a.toFixed(2)}</span>`).join('') : '—'}</td>
+            <td><strong>${fmtR(r.turo+r.priv+Object.values(r.extrasByType).reduce((s,a)=>s+a,0))}</strong></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -11094,7 +11112,9 @@ window.loadFinancePL = async function() {
       if (!revByV[d.vehicleId]) revByV[d.vehicleId] = { plate: d.vehiclePlate, turo: 0, priv: 0, extras: 0 };
       const rev = Number(d.revenue) || 0;
       if (d.tripType === 'private-trip') revByV[d.vehicleId].priv += rev; else revByV[d.vehicleId].turo += rev;
-      revByV[d.vehicleId].extras += Number(d.extrasAmount) || 0;
+      const plExtrasArr = Array.isArray(d.extras) ? d.extras
+        : (d.extrasType && d.extrasAmount ? [{ type: d.extrasType, amount: Number(d.extrasAmount) }] : []);
+      revByV[d.vehicleId].extras += plExtrasArr.reduce((s, e) => s + (Number(e.amount) || 0), 0);
     });
 
     // Expenses by vehicle
@@ -11176,11 +11196,49 @@ window.loadFinancePL = async function() {
   }
 };
 
+// ── Multi-extras helpers ─────────────────────────────────────────────────────
+const EXTRAS_OPTIONS_HTML = `
+  <option value="">-- None --</option>
+  <option value="beach-gear">🏖️ Beach Gear</option>
+  <option value="parking">🅿️ Parking</option>
+  <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
+  <option value="beach-tent">⛺ Beach Tent</option>
+  <option value="car-seat">🪱 Car Seat</option>
+  <option value="other">✏️ Other</option>`;
+
+window.addExtraRow = function(listId, type, amount) {
+  const list = $(listId);
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'loc-extra-row';
+  row.innerHTML = `<select class="vehicle-location-custom extra-type-sel">${EXTRAS_OPTIONS_HTML}</select><input type="number" class="vehicle-location-custom extra-amt-inp" placeholder="0.00" min="0" step="0.01"><button type="button" class="btn btn-xs btn-danger extra-remove-btn" onclick="this.closest('.loc-extra-row').remove()">✕</button>`;
+  if (type) row.querySelector('.extra-type-sel').value = type;
+  if (amount) row.querySelector('.extra-amt-inp').value = amount;
+  list.appendChild(row);
+};
+
+function getExtrasList(listId) {
+  const list = $(listId);
+  if (!list) return [];
+  const result = [];
+  list.querySelectorAll('.loc-extra-row').forEach(row => {
+    const type = row.querySelector('.extra-type-sel')?.value || '';
+    const amount = parseFloat(row.querySelector('.extra-amt-inp')?.value) || 0;
+    if (type && amount > 0) result.push({ type, amount });
+  });
+  return result;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 window.openFinance = function() {
   const overlay = $('finance-overlay');
   if (!overlay) return;
   overlay.style.display = 'flex';
   populateExpenseVehicleDropdown();
+  const revEl = $('fin-rev-month');
+  if (revEl && !revEl.value) revEl.value = _todayMonthVal();
+  const plEl = $('fin-pl-month');
+  if (plEl && !plEl.value) plEl.value = _todayMonthVal();
   switchFinanceTab('overview');
 };
 
