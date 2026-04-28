@@ -1756,11 +1756,11 @@ async function openVehiclePage(vid) {
   const uploadOverrideWrap = $('upload-override-wrap');
   if (uploadOverrideWrap) uploadOverrideWrap.style.display = showOverride ? 'block' : 'none';
 
-  // Exclude toggle — admin only
+  // Exclude toggle — restricted to matthew.fetterman@gmail.com only
   const photoExcludeWrap = $('photo-exclude-wrap');
-  const isAdmin = currentUserRole === 'admin';
+  const canExclude = !!(currentUser && currentUser.email && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com');
   if (photoExcludeWrap) {
-    photoExcludeWrap.style.display = isAdmin ? 'block' : 'none';
+    photoExcludeWrap.style.display = canExclude ? 'block' : 'none';
     const excludeBtn = $('btn-photo-exclude');
     if (excludeBtn) {
       if (isExcluded) {
@@ -1937,7 +1937,11 @@ $('btn-upload-override').addEventListener('click', doPhotoOverride);
 
 // Exclude toggle — admin only — bypass photos & cleaning prompts
 $('btn-photo-exclude').addEventListener('click', async () => {
-  if (!selectedVehicle || currentUserRole !== 'admin') return;
+  if (!selectedVehicle) return;
+  if (!currentUser || currentUser.email.toLowerCase() !== 'matthew.fetterman@gmail.com') {
+    toast('Only the fleet owner can change this setting.', 'warning');
+    return;
+  }
   const isCurrentlyExcluded = !!selectedVehicle.photoExcluded;
   const action = isCurrentlyExcluded ? 'Re-enable' : 'Exclude';
   const msg = isCurrentlyExcluded
@@ -3866,7 +3870,16 @@ window.openEditVehicle = function (vehicleId) {
   $('ev-color').value = v.color || '';
   $('ev-photo').value = '';
   $('ev-photo-preview').style.display = 'none';
-  $('ev-photo-excluded').checked = !!v.photoExcluded;
+
+  // Exclude checkbox — only matthew.fetterman@gmail.com may toggle
+  const canExcludeEdit = !!(currentUser && currentUser.email && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com');
+  const excludeChk = $('ev-photo-excluded');
+  if (excludeChk) {
+    excludeChk.checked = !!v.photoExcluded;
+    excludeChk.disabled = !canExcludeEdit;
+    excludeChk.closest('.form-group') && (excludeChk.closest('.form-group').style.opacity = canExcludeEdit ? '' : '0.5');
+    excludeChk.closest('[style]') && (excludeChk.parentElement.style.cursor = canExcludeEdit ? 'pointer' : 'not-allowed');
+  }
 
   // Show current default photo if exists
   if (v.defaultImageUrl) {
@@ -3942,7 +3955,8 @@ $('edit-vehicle-form').addEventListener('submit', async (e) => {
   const year = $('ev-year').value ? parseInt($('ev-year').value) : null;
   const color = $('ev-color').value.trim() || null;
   const photoFile = $('ev-photo').files[0] || null;
-  const photoExcluded = $('ev-photo-excluded').checked;
+  const canExcludeOnSave = !!(currentUser && currentUser.email && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com');
+  const photoExcluded = canExcludeOnSave ? $('ev-photo-excluded').checked : !!(vehiclesCache.find(v => v.id === vehicleId)?.photoExcluded);
 
   if (!plate || !make || !model) {
     toast('Please fill in plate, make, and model.', 'warning');
