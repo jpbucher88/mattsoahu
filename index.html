@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427j">
+  <link rel="stylesheet" href="style.css?v=20260427k">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -480,29 +480,10 @@
 
         <div id="recommended-services" class="recommended-services" style="display:none;">
           <div class="rec-header">
-            <h4>&#128736; Recommended Services</h4>
-            <button id="btn-edit-schedule" class="btn btn-sm btn-outline">&#9881; Edit Schedule</button>
+            <h4>&#128736; Service Reminders</h4>
           </div>
+          <p class="hint" style="margin:0 0 8px;">Reminders are set automatically when you log a service with a mileage or time interval. Current mileage is updated from photo check-ins.</p>
           <div id="recommended-list"></div>
-        </div>
-
-        <!-- Per-vehicle schedule editor (hidden by default) -->
-        <div id="schedule-editor" class="schedule-editor" style="display:none;">
-          <div class="rec-header">
-            <h4>&#9881; Maintenance Intervals</h4>
-            <button id="btn-close-schedule" class="btn btn-sm btn-outline">Done</button>
-          </div>
-          <p class="hint">Set custom mileage intervals for this vehicle. Leave blank to use the default.</p>
-          <div id="schedule-items" class="schedule-items"></div>
-          <div class="schedule-custom-section">
-            <div class="schedule-custom-header">
-              <span class="schedule-custom-title">✏️ Custom Services</span>
-              <button type="button" id="btn-add-custom-service" class="btn btn-sm btn-outline">+ Add Service</button>
-            </div>
-            <div id="custom-schedule-rows"></div>
-          </div>
-          <button id="btn-save-schedule" class="btn btn-primary" style="margin-top:10px;">Save Schedule</button>
-          <button id="btn-reset-schedule" class="btn btn-outline btn-sm" style="margin-top:6px;">Reset All to Defaults</button>
         </div>
 
         <!-- Maintenance log form (hidden by default) -->
@@ -512,38 +493,20 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="m-type">Service Type</label>
-                <select id="m-type" class="form-select" onchange="document.getElementById('m-custom-row').style.display=this.value==='Custom'?'':'none'">
-                  <option value="">-- Select --</option>
-                  <option value="Oil Change">Oil Change</option>
-                  <option value="Tire Rotation">Tire Rotation</option>
-                  <option value="Brake Inspection">Brake Inspection</option>
-                  <option value="Brake Pads/Rotors">Brake Pads/Rotors</option>
-                  <option value="Air Filter">Air Filter</option>
-                  <option value="Cabin Filter">Cabin Filter</option>
-                  <option value="Transmission Fluid">Transmission Fluid</option>
-                  <option value="Coolant Flush">Coolant Flush</option>
-                  <option value="Spark Plugs">Spark Plugs</option>
-                  <option value="Battery">Battery</option>
-                  <option value="Tires (New)">Tires (New)</option>
-                  <option value="Alignment">Alignment</option>
-                  <option value="Wiper Blades">Wiper Blades</option>
-                  <option value="Belts/Hoses">Belts/Hoses</option>
-                  <option value="A/C Service">A/C Service</option>
-                  <option value="Inspection/Safety">Inspection/Safety</option>
-                  <option value="Roach Treatment">Roach Treatment</option>
-                  <option value="Custom">✏️ Custom (type below)...</option>
-                </select>
+                <input type="text" id="m-type" class="form-select" placeholder="e.g. Oil Change, Tire Rotation…" list="service-type-suggestions" maxlength="100" autocomplete="off">
+                <datalist id="service-type-suggestions">
+                  <option value="Oil Change"><option value="Tire Rotation"><option value="Brake Inspection">
+                  <option value="Brake Pads/Rotors"><option value="Air Filter"><option value="Cabin Filter">
+                  <option value="Transmission Fluid"><option value="Coolant Flush"><option value="Spark Plugs">
+                  <option value="Battery"><option value="Tires (New)"><option value="Alignment">
+                  <option value="Wiper Blades"><option value="Belts/Hoses"><option value="A/C Service">
+                  <option value="Inspection/Safety"><option value="Roach Treatment"><option value="Detail">
+                  <option value="Window Tint"><option value="Wash">
+                </datalist>
               </div>
               <div class="form-group">
                 <label for="m-date">Date</label>
                 <input type="date" id="m-date" required>
-              </div>
-            </div>
-            <!-- Custom service name row (shown when Custom is selected) -->
-            <div class="form-row" id="m-custom-row" style="display:none;">
-              <div class="form-group" style="flex:1;">
-                <label for="m-custom-type">Custom Service Name</label>
-                <input type="text" id="m-custom-type" class="form-select" placeholder="e.g. Full Detail, Window Tint..." maxlength="100">
               </div>
             </div>
             <div class="form-row">
@@ -630,37 +593,11 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="em-type">Service Type</label>
-                <select id="em-type" class="form-select" onchange="document.getElementById('em-custom-row').style.display=this.value==='Custom'?'':'none'">
-                  <option value="">-- Select --</option>
-                  <option value="Oil Change">Oil Change</option>
-                  <option value="Tire Rotation">Tire Rotation</option>
-                  <option value="Brake Inspection">Brake Inspection</option>
-                  <option value="Brake Pads/Rotors">Brake Pads/Rotors</option>
-                  <option value="Air Filter">Air Filter</option>
-                  <option value="Cabin Filter">Cabin Filter</option>
-                  <option value="Transmission Fluid">Transmission Fluid</option>
-                  <option value="Coolant Flush">Coolant Flush</option>
-                  <option value="Spark Plugs">Spark Plugs</option>
-                  <option value="Battery">Battery</option>
-                  <option value="Tires (New)">Tires (New)</option>
-                  <option value="Alignment">Alignment</option>
-                  <option value="Wiper Blades">Wiper Blades</option>
-                  <option value="Belts/Hoses">Belts/Hoses</option>
-                  <option value="A/C Service">A/C Service</option>
-                  <option value="Inspection/Safety">Inspection/Safety</option>
-                  <option value="Roach Treatment">Roach Treatment</option>
-                  <option value="Custom">✏️ Custom (type below)...</option>
-                </select>
+                <input type="text" id="em-type" class="form-select" placeholder="e.g. Oil Change, Tire Rotation…" list="service-type-suggestions" maxlength="100" autocomplete="off">
               </div>
               <div class="form-group">
                 <label for="em-date">Date</label>
                 <input type="date" id="em-date" required>
-              </div>
-            </div>
-            <div class="form-row" id="em-custom-row" style="display:none;">
-              <div class="form-group" style="flex:1;">
-                <label for="em-custom-type">Custom Service Name</label>
-                <input type="text" id="em-custom-type" class="form-select" placeholder="e.g. Full Detail..." maxlength="100">
               </div>
             </div>
             <div class="form-row">

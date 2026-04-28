@@ -581,26 +581,9 @@ async function loadVehicles() {
       v.lastPhotoDate = null;
     }
 
-    // Overdue maintenance count
+    // Maintenance status — only flag if mileage-based interval notes are overdue
     v.overdueCount = 0;
-    if (v.mileage) {
-      try {
-        const mSnap = await db.collection('maintenance')
-          .where('vehicleId', '==', v.id)
-          .orderBy('mileage', 'desc')
-          .get();
-        const lastServices = {};
-        mSnap.forEach(doc => {
-          const d = doc.data();
-          if (d.serviceType && !lastServices[d.serviceType]) lastServices[d.serviceType] = d.mileage || 0;
-        });
-        MAINTENANCE_SCHEDULE.forEach(item => {
-          const customInterval = (v.customSchedule && v.customSchedule[item.service]) || item.interval;
-          const lastMi = lastServices[item.service] || 0;
-          if (lastMi + customInterval - v.mileage <= 0) v.overdueCount++;
-        });
-      } catch (e) { /* ignore */ }
-    }
+    // (Overdue checks happen per-vehicle on the maintenance tab — no default schedule)
   });
   await Promise.all(checks);
 
@@ -1792,8 +1775,6 @@ async function openVehiclePage(vid) {
   const canMaintain = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
   $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
-  $('btn-edit-schedule').style.display = canMaintain ? '' : 'none';
-  $('schedule-editor').style.display = 'none';
 
   // Show notes section
   $('notes-section').style.display = 'block';
@@ -4437,31 +4418,11 @@ window.deleteUser = async function (uid, name) {
 // ================================================================
 
 // Manufacturer-standard recommended service intervals (miles)
-const MAINTENANCE_SCHEDULE = [
-  { service: 'Oil Change',          interval: 5000,   icon: '🛢️' },
-  { service: 'Tire Rotation',       interval: 7500,   icon: '🔄' },
-  { service: 'Air Filter',          interval: 15000,  icon: '💨' },
-  { service: 'Cabin Filter',        interval: 15000,  icon: '🌬️' },
-  { service: 'Brake Inspection',    interval: 20000,  icon: '🔍' },
-  { service: 'Transmission Fluid',  interval: 30000,  icon: '⚙️' },
-  { service: 'Coolant Flush',       interval: 30000,  icon: '❄️' },
-  { service: 'Spark Plugs',         interval: 30000,  icon: '⚡' },
-  { service: 'Wiper Blades',        interval: 15000,  icon: '🌧️' },
-  { service: 'Belts/Hoses',         interval: 60000,  icon: '🔧' },
-  { service: 'Battery',             interval: 50000,  icon: '🔋' },
-  { service: 'Tires (New)',         interval: 40000,  icon: '🛞' },
-  { service: 'Alignment',           interval: 25000,  icon: '📐' },
-  { service: 'Brake Pads/Rotors',   interval: 40000,  icon: '🛑' },
-];
+const MAINTENANCE_SCHEDULE = [];
 
-// Get schedule for a vehicle, merging custom overrides with defaults
+// Kept for backward compatibility (returns empty array since defaults are removed)
 function getScheduleForVehicle(vehicle) {
-  const custom = (vehicle && vehicle.customSchedule) || {};
-  return MAINTENANCE_SCHEDULE.map(item => ({
-    ...item,
-    interval: custom[item.service] || item.interval,
-    isCustom: !!custom[item.service]
-  }));
+  return [];
 }
 
 function loadMileage(vehicleId) {
@@ -4477,28 +4438,6 @@ async function updateRecommendedServices(vehicleId) {
   const container = $('recommended-services');
   const list = $('recommended-list');
 
-  // Get last service mileage and last service date for each type
-  const lastServices = {};
-  const lastServiceData = {};
-  try {
-    const snap = await db.collection('maintenance')
-      .where('vehicleId', '==', vehicleId)
-      .orderBy('date', 'desc')
-      .get();
-    snap.forEach(doc => {
-      const d = doc.data();
-      if (d.serviceType) {
-        if (!lastServices[d.serviceType]) {
-          lastServices[d.serviceType] = d.mileage || 0;
-          lastServiceData[d.serviceType] = d;
-        }
-      }
-    });
-  } catch (e) {
-    console.warn('Could not load maintenance for recommendations:', e);
-  }
-
-  const schedule = getScheduleForVehicle(v);
   const today = todayDateString();
 
   // --- Time-based section ---
@@ -4555,27 +4494,7 @@ async function updateRecommendedServices(vehicleId) {
     } catch (e) { /* ignore */ }
   }
 
-  // --- Mileage-based section (from MAINTENANCE_SCHEDULE defaults) ---
-  const due = [];
-  const upcoming = [];
-
-  if (mileage) {
-    schedule.forEach(item => {
-      const lastMi = lastServices[item.service] || 0;
-      const nextDue = lastMi + item.interval;
-      const milesUntil = nextDue - mileage;
-      if (milesUntil <= 0) {
-        due.push({ ...item, milesUntil, nextDue, overdue: true });
-      } else if (milesUntil <= 500) {
-        // Early warning within 500 miles
-        upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
-      } else if (milesUntil <= item.interval * 0.2) {
-        upcoming.push({ ...item, milesUntil, nextDue, overdue: false });
-      }
-    });
-  }
-
-  if (timeDue.length === 0 && timeUpcoming.length === 0 && due.length === 0 && upcoming.length === 0 && miIntervalDue.length === 0 && miIntervalWarn.length === 0) {
+  if (timeDue.length === 0 && timeUpcoming.length === 0 && miIntervalDue.length === 0 && miIntervalWarn.length === 0) {
     container.style.display = mileage ? 'block' : 'none';
     if (mileage) list.innerHTML = '<p class="hint" style="margin:0;">✅ All services up to date!</p>';
     return;
@@ -4586,7 +4505,7 @@ async function updateRecommendedServices(vehicleId) {
 
   // Time-based items first
   if (timeDue.length > 0 || timeUpcoming.length > 0) {
-    html += '<div class="rec-section-title">⏱ Time-Based</div>';
+    if (timeDue.length > 0 || miIntervalDue.length > 0) html += '';
     timeDue.sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
     timeDue.forEach(s => {
       html += `<div class="rec-item rec-time rec-time-overdue">🗓️ <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue</span> · Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
@@ -4597,36 +4516,16 @@ async function updateRecommendedServices(vehicleId) {
     });
   }
 
-  // Custom mileage-interval items
-  if (miIntervalDue.length > 0 || miIntervalWarn.length > 0) {
-    html += '<div class="rec-section-title">🛣 Custom Mileage Intervals</div>';
-    miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
-    miIntervalDue.forEach(s => {
-      const over = Math.abs(s.milesLeft).toLocaleString();
-      html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> · Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
-    });
-    miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
-    miIntervalWarn.forEach(s => {
-      html += `<div class="rec-item rec-upcoming">⚠️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.milesLeft.toLocaleString()} mi · at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
-    });
-  }
-
-  // Standard mileage-based items
-  if (due.length > 0 || upcoming.length > 0) {
-    if (timeDue.length > 0 || timeUpcoming.length > 0 || miIntervalDue.length > 0 || miIntervalWarn.length > 0) html += '<div class="rec-section-title">📋 Standard Schedule</div>';
-    due.sort((a, b) => a.milesUntil - b.milesUntil);
-    upcoming.sort((a, b) => a.milesUntil - b.milesUntil);
-    due.forEach(s => {
-      const overMiles = Math.abs(s.milesUntil).toLocaleString();
-      html += `<div class="rec-item rec-overdue">${s.icon} <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${overMiles} mi</span> <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
-    });
-    upcoming.forEach(s => {
-      const untilMiles = s.milesUntil.toLocaleString();
-      const warnClass = s.milesUntil <= 500 ? 'rec-overdue' : 'rec-upcoming';
-      const warnIcon = s.milesUntil <= 500 ? '⚠️' : s.icon;
-      html += `<div class="rec-item ${warnClass}">${warnIcon} <strong>${escapeHtml(s.service)}</strong> — Due in ${untilMiles} mi <span class="hint">(every ${s.interval.toLocaleString()} mi)</span></div>`;
-    });
-  }
+  // Mileage-interval items
+  miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
+  miIntervalDue.forEach(s => {
+    const over = Math.abs(s.milesLeft).toLocaleString();
+    html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> · Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+  });
+  miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
+  miIntervalWarn.forEach(s => {
+    html += `<div class="rec-item rec-upcoming">⚠️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.milesLeft.toLocaleString()} mi · at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+  });
 
   list.innerHTML = html;
 }
@@ -4678,140 +4577,13 @@ $('btn-save-mileage').addEventListener('click', async () => {
 });
 
 // ================================================================
-// PER-VEHICLE SCHEDULE EDITOR
+// PER-VEHICLE SCHEDULE EDITOR (removed — schedule editor UI was deleted)
+// Keeping stubs so any legacy vehicle data with customSchedule is harmless.
 // ================================================================
-
-$('btn-edit-schedule').addEventListener('click', () => {
-  if (!selectedVehicle) return;
-  const schedule = getScheduleForVehicle(selectedVehicle);
-  const container = $('schedule-items');
-
-  container.innerHTML = schedule.map(item => {
-    const defaultVal = MAINTENANCE_SCHEDULE.find(d => d.service === item.service).interval;
-    const customVal = item.isCustom ? item.interval : '';
-    return `
-      <div class="schedule-row">
-        <div class="schedule-label">${item.icon} ${escapeHtml(item.service)}</div>
-        <div class="schedule-input-wrap">
-          <input type="number" class="schedule-input" data-service="${escapeHtml(item.service)}"
-            placeholder="${defaultVal.toLocaleString()}" value="${customVal}" min="500" max="999999"
-            inputmode="numeric">
-          <span class="schedule-unit">mi</span>
-        </div>
-      </div>`;
-  }).join('');
-
-  // Populate custom service rows from vehicle's customServices array
-  const customServicesContainer = $('custom-schedule-rows');
-  customServicesContainer.innerHTML = '';
-  const existingCustom = (selectedVehicle.customServices) || [];
-  existingCustom.forEach(cs => addCustomScheduleRow(cs.name, cs.interval));
-  // If none, start with one blank row
-  if (existingCustom.length === 0) addCustomScheduleRow('', '');
-
-  $('schedule-editor').style.display = 'block';
-  $('recommended-services').style.display = 'none';
-});
-
-function addCustomScheduleRow(name = '', interval = '') {
-  const container = $('custom-schedule-rows');
-  const row = document.createElement('div');
-  row.className = 'schedule-row schedule-custom-row';
-  row.innerHTML = `
-    <input type="text" class="custom-service-name" placeholder="Service name (e.g. Detail, Inspect)" value="${escapeHtml(name)}" maxlength="80">
-    <div class="schedule-input-wrap">
-      <input type="number" class="custom-service-interval" placeholder="mi interval" value="${escapeHtml(String(interval))}" min="100" max="999999" inputmode="numeric">
-      <span class="schedule-unit">mi</span>
-    </div>
-    <button type="button" class="btn btn-sm btn-danger btn-remove-custom-row" title="Remove">✕</button>
-  `;
-  row.querySelector('.btn-remove-custom-row').addEventListener('click', () => row.remove());
-  container.appendChild(row);
-}
-window.addCustomScheduleRow = addCustomScheduleRow;
-
-$('btn-add-custom-service').addEventListener('click', () => addCustomScheduleRow('', ''));
-
-$('btn-close-schedule').addEventListener('click', () => {
-  $('schedule-editor').style.display = 'none';
-  if (selectedVehicle) updateRecommendedServices(selectedVehicle.id);
-});
-
-$('btn-save-schedule').addEventListener('click', async () => {
-  if (!selectedVehicle) return;
-  const inputs = $('schedule-items').querySelectorAll('.schedule-input');
-  const customSchedule = {};
-
-  inputs.forEach(input => {
-    const service = input.dataset.service;
-    const val = parseInt(input.value);
-    if (val && val >= 500) {
-      // Only store if different from default
-      const def = MAINTENANCE_SCHEDULE.find(d => d.service === service);
-      if (def && val !== def.interval) {
-        customSchedule[service] = val;
-      }
-    }
-  });
-
-  // Collect custom service rows
-  const customServices = [];
-  $('custom-schedule-rows').querySelectorAll('.schedule-custom-row').forEach(row => {
-    const nameInput = row.querySelector('.custom-service-name');
-    const intervalInput = row.querySelector('.custom-service-interval');
-    const name = nameInput ? nameInput.value.trim() : '';
-    const interval = intervalInput ? parseInt(intervalInput.value) : 0;
-    if (name && interval >= 100) {
-      customServices.push({ name, interval });
-    }
-  });
-
-  try {
-    const updateData = { customSchedule };
-    if (customServices.length > 0) {
-      updateData.customServices = customServices;
-    } else {
-      updateData.customServices = firebase.firestore.FieldValue.delete();
-    }
-    await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
-    selectedVehicle.customSchedule = customSchedule;
-    selectedVehicle.customServices = customServices.length > 0 ? customServices : null;
-    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) {
-      cached.customSchedule = customSchedule;
-      cached.customServices = customServices.length > 0 ? customServices : null;
-    }
-    toast('Maintenance schedule saved!', 'success');
-    $('schedule-editor').style.display = 'none';
-    updateRecommendedServices(selectedVehicle.id);
-  } catch (err) {
-    console.error('Save schedule error:', err);
-    toast('Failed to save schedule.', 'error');
-  }
-});
-
-$('btn-reset-schedule').addEventListener('click', async () => {
-  if (!selectedVehicle) return;
-  try {
-    await db.collection('vehicles').doc(selectedVehicle.id).update({
-      customSchedule: firebase.firestore.FieldValue.delete()
-    });
-    selectedVehicle.customSchedule = null;
-    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) cached.customSchedule = null;
-    toast('Schedule reset to defaults.', 'success');
-    // Refresh the editor view
-    $('btn-edit-schedule').click();
-  } catch (err) {
-    console.error('Reset schedule error:', err);
-    toast('Failed to reset schedule.', 'error');
-  }
-});
 
 // Show/hide maintenance form
 $('btn-add-maintenance').addEventListener('click', () => {
   const wrap = $('maintenance-form-wrap');
-  // Always show the form (use Cancel button to close)
   wrap.style.display = 'block';
   $('m-date').value = todayDateString();
   $('m-mileage').value = selectedVehicle && selectedVehicle.mileage ? selectedVehicle.mileage : '';
@@ -4819,15 +4591,12 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-mile-interval').value = '';
   $('m-next-due-display').textContent = '—';
   $('m-next-due-mileage-display').textContent = '—';
-  $('m-custom-row').style.display = 'none';
-  $('m-custom-type').value = '';
   $('m-type').value = '';
   // Clear invoice
   $('m-invoice-input').value = '';
   $('m-invoice-filename').textContent = 'No file chosen';
   $('m-invoice-preview-wrap').style.display = 'none';
   $('m-invoice-preview').src = '';
-  // Scroll into view so form is visible even when recommended services section is shown above it
   setTimeout(() => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 });
 
@@ -4864,7 +4633,6 @@ $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form').reset();
   $('m-next-due-display').textContent = '—';
   $('m-next-due-mileage-display').textContent = '—';
-  $('m-custom-row').style.display = 'none';
   // Clear invoice preview
   $('m-invoice-input').value = '';
   $('m-invoice-filename').textContent = 'No file chosen';
@@ -4897,8 +4665,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
   if (!selectedVehicle) return;
 
   const rawType = $('m-type').value;
-  const customTypeName = $('m-custom-type').value.trim();
-  const serviceType = rawType === 'Custom' ? (customTypeName || 'Custom Service') : rawType;
+  const serviceType = rawType.trim();
   const date = $('m-date').value;
   const mileage = $('m-mileage').value ? parseInt($('m-mileage').value) : null;
   const cost = $('m-cost').value ? parseFloat($('m-cost').value) : null;
@@ -4919,8 +4686,8 @@ $('maintenance-form').addEventListener('submit', async (e) => {
   const serviceMileage = mileage || (selectedVehicle && selectedVehicle.mileage) || null;
   const nextDueMileage = (intervalMiles && serviceMileage) ? serviceMileage + intervalMiles : null;
 
-  if (!rawType || !date) {
-    toast('Please select a service type and date.', 'warning');
+  if (!serviceType || !date) {
+    toast('Please enter a service type and date.', 'warning');
     return;
   }
 
@@ -5037,7 +4804,6 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     $('maintenance-form').reset();
     $('m-next-due-display').textContent = '—';
     $('m-next-due-mileage-display').textContent = '—';
-    $('m-custom-row').style.display = 'none';
     $('m-invoice-input').value = '';
     $('m-invoice-filename').textContent = 'No file chosen';
     $('m-invoice-preview-wrap').style.display = 'none';
@@ -5145,13 +4911,7 @@ window.openEditMaintenance = async function(docId) {
     _editMaintDocId = docId;
 
     // Populate fields
-    const knownTypes = ['Oil Change','Tire Rotation','Brake Inspection','Brake Pads/Rotors','Air Filter','Cabin Filter',
-      'Transmission Fluid','Coolant Flush','Spark Plugs','Battery','Tires (New)','Alignment','Wiper Blades',
-      'Belts/Hoses','A/C Service','Inspection/Safety','Roach Treatment'];
-    const isCustom = d.serviceType && !knownTypes.includes(d.serviceType);
-    $('em-type').value = isCustom ? 'Custom' : (d.serviceType || '');
-    $('em-custom-row').style.display = isCustom ? '' : 'none';
-    $('em-custom-type').value = isCustom ? (d.serviceType || '') : '';
+    $('em-type').value = d.serviceType || '';
     $('em-date').value = d.date || '';
     $('em-mileage').value = d.mileage || '';
     $('em-cost').value = d.cost != null ? d.cost : '';
@@ -5218,9 +4978,8 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
   if (!_editMaintDocId) return;
   if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
 
-  const rawType = $('em-type').value;
-  const serviceType = rawType === 'Custom' ? $('em-custom-type').value.trim() : rawType;
-  if (!serviceType) { toast('Select a service type.', 'warning'); return; }
+  const serviceType = ($('em-type').value || '').trim();
+  if (!serviceType) { toast('Enter a service type.', 'warning'); return; }
   const date = $('em-date').value;
   if (!date) { toast('Enter a date.', 'warning'); return; }
 
