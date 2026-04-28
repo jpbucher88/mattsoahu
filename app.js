@@ -302,6 +302,10 @@ function showJasonEasterEgg() {
   const confettiContainer = $('jason-confetti');
   if (!overlay) return;
 
+  // First time ever = must watch the whole thing. After that, tappable.
+  const hasSeenKey = 'jasonEgg_seen_v1';
+  const firstTime = !localStorage.getItem(hasSeenKey);
+
   // Baby + celebration emojis floating around
   const pieces = ['👶', '🍼', '🎉', '🎊', '🎈', '💙', '⭐', '🌟', '🥳', '👼', '🎀', '🤍', '✨', '🏆'];
   confettiContainer.innerHTML = '';
@@ -327,6 +331,7 @@ function showJasonEasterEgg() {
   function dismissEgg() {
     if (dismissed) return;
     dismissed = true;
+    localStorage.setItem(hasSeenKey, '1');
     overlay.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.5s';
@@ -339,8 +344,11 @@ function showJasonEasterEgg() {
     }, 500);
   }
 
-  overlay.addEventListener('click', dismissEgg, { once: true });
-  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+  // First time: no tap-to-dismiss — he watches the full thing
+  if (!firstTime) {
+    overlay.addEventListener('click', dismissEgg, { once: true });
+    overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+  }
 
   // Gentle blue-to-sky cycle
   const blueShades = ['#a8d8f0', '#7ec8e3', '#5bb8d4', '#90caf9', '#a8d8f0', '#64b5f6', '#bbdefb', '#a8d8f0'];
@@ -351,7 +359,7 @@ function showJasonEasterEgg() {
     if (flashCount >= 16) clearInterval(flashInterval);
   }, 240);
 
-  // Auto-dismiss after 5 seconds (give it time to read!)
+  // Auto-dismiss after 5 seconds
   setTimeout(dismissEgg, 5000);
 }
 
