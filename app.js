@@ -363,7 +363,7 @@ function showJasonEasterEgg() {
   setTimeout(dismissEgg, 5000);
 }
 
-
+function confirm(title, message) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
