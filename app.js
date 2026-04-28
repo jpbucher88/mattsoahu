@@ -293,7 +293,69 @@ function showAlondraEasterEgg() {
   setTimeout(dismissEgg, 3500);
 }
 
-function confirm(title, message) {
+// ================================================================
+// JASON BABY #2 EASTER EGG
+// ================================================================
+function showJasonEasterEgg() {
+  const overlay = $('jason-overlay');
+  const bg = $('jason-bg');
+  const confettiContainer = $('jason-confetti');
+  if (!overlay) return;
+
+  // Baby + celebration emojis floating around
+  const pieces = ['👶', '🍼', '🎉', '🎊', '🎈', '💙', '⭐', '🌟', '🥳', '👼', '🎀', '🤍', '✨', '🏆'];
+  confettiContainer.innerHTML = '';
+  for (let i = 0; i < 90; i++) {
+    const span = document.createElement('span');
+    span.textContent = pieces[Math.floor(Math.random() * pieces.length)];
+    span.style.cssText = `
+      position:absolute;
+      left:${Math.random() * 96}%;
+      top:${Math.random() * 96}%;
+      font-size:${12 + Math.random() * 28}px;
+      pointer-events:none;
+      animation:jasonBounce ${0.7 + Math.random() * 1.6}s ease-in-out infinite;
+      animation-delay:${Math.random() * 1.2}s;
+    `;
+    confettiContainer.appendChild(span);
+  }
+
+  overlay.style.display = 'block';
+  overlay.style.pointerEvents = 'auto';
+
+  let dismissed = false;
+  function dismissEgg() {
+    if (dismissed) return;
+    dismissed = true;
+    overlay.style.pointerEvents = 'none';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.5s';
+    clearInterval(flashInterval);
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.transition = '';
+      bg.style.background = '#a8d8f0';
+    }, 500);
+  }
+
+  overlay.addEventListener('click', dismissEgg, { once: true });
+  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+
+  // Gentle blue-to-sky cycle
+  const blueShades = ['#a8d8f0', '#7ec8e3', '#5bb8d4', '#90caf9', '#a8d8f0', '#64b5f6', '#bbdefb', '#a8d8f0'];
+  let flashCount = 0;
+  const flashInterval = setInterval(() => {
+    flashCount++;
+    bg.style.background = blueShades[flashCount % blueShades.length];
+    if (flashCount >= 16) clearInterval(flashInterval);
+  }, 240);
+
+  // Auto-dismiss after 5 seconds (give it time to read!)
+  setTimeout(dismissEgg, 5000);
+}
+
+
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
     overlay.className = 'confirm-overlay';
@@ -455,6 +517,9 @@ auth.onAuthStateChanged(async (user) => {
       }
       if (uName.includes('alondra')) {
         setTimeout(() => showAlondraEasterEgg(), 80);
+      }
+      if (uName.includes('jason')) {
+        setTimeout(() => showJasonEasterEgg(), 80);
       }
     } catch (err) {
       console.error('Auth state error:', err);

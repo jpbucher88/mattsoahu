@@ -6026,6 +6026,14 @@ body {
   100% { transform: translateY(0)     rotate(var(--r, 0deg)) scale(1);    opacity: 0.7; }
 }
 
+/* Jason Baby Easter Egg */
+@keyframes jasonBounce {
+  0%   { transform: translateY(0)     scale(1);    opacity: 0.65; }
+  40%  { transform: translateY(-20px) scale(1.22); opacity: 1;    }
+  70%  { transform: translateY(-8px)  scale(1.1);  opacity: 0.9;  }
+  100% { transform: translateY(0)     scale(1);    opacity: 0.65; }
+}
+
 /* Vehicle nav prev/next arrows */
 .vehicle-nav-wrap {
   display: flex;
