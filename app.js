@@ -2821,7 +2821,7 @@ async function loadPhotosForDate(vehicleId, dateStr) {
     if (delBtn) {
       delBtn.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!confirm('Delete this photo permanently?')) return;
+        if (!(await confirm('Delete Photo', 'Delete this photo permanently? This cannot be undone.'))) return;
         try {
           const docId = delBtn.dataset.docId;
           const storagePath = delBtn.dataset.storagePath;
@@ -6336,7 +6336,7 @@ async function agendaMarkDoneGeneral(docId) {
 
 // Delete a task note (admin/manager only)
 window.deleteTaskNote = async function(docId, col) {
-  if (!confirm('Delete this task permanently?')) return;
+  if (!(await confirm('Delete Task', 'Delete this task permanently?'))) return;
   try {
     await db.collection(col).doc(docId).delete();
     toast('Task deleted.', 'success');
@@ -8145,7 +8145,7 @@ window.saveLearningItem = async function() {
 };
 
 window.deleteLearningItem = async function(docId) {
-  if (!confirm('Delete this item?')) return;
+  if (!(await confirm('Delete Item', 'Delete this item?'))) return;
   try {
     await db.collection('learningItems').doc(docId).delete();
     loadLearningItems();
@@ -10014,7 +10014,7 @@ window.saveIncident = async function() {
 
 // ---- Delete ----
 window.deleteIncident = async function(docId) {
-  if (!confirm('Delete this incident report? This cannot be undone.')) return;
+  if (!(await confirm('Delete Incident', 'Delete this incident report? This cannot be undone.'))) return;
   try {
     await db.collection('incidents').doc(docId).delete();
     toast('Incident deleted.', 'success');
@@ -10822,7 +10822,7 @@ window.saveExpense = async function() {
 
 window.deleteExpense = async function(docId) {
   if (currentUserRole !== 'admin') {
-    if (!confirm('Delete this expense?')) return;
+    if (!(await confirm('Delete Expense', 'Delete this expense?'))) return;
   }
   try {
     await db.collection('expenses').doc(docId).delete();
@@ -10998,7 +10998,7 @@ window.saveFinanceRevenue = async function() {
 };
 
 window.deleteManualRevenue = async function(docId) {
-  if (!confirm('Delete this manual revenue entry?')) return;
+  if (!(await confirm('Delete Entry', 'Delete this manual revenue entry?'))) return;
   try {
     await db.collection('tripLogs').doc(docId).delete();
     toast('Revenue entry deleted.', 'success');
