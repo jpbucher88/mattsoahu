@@ -1179,6 +1179,15 @@ function renderLocationsWidget() {
       }
     });
   });
+
+  // Collapsible group headers
+  container.querySelectorAll('.location-group-header').forEach(header => {
+    header.addEventListener('click', (e) => {
+      if (e.target.closest('.location-vehicle-chip, button')) return;
+      const group = header.closest('.location-group, .location-group-combined');
+      if (group) group.classList.toggle('loc-collapsed');
+    });
+  });
 }
 // Damage check modal � Pass / Fail per item
 function showDamageCheckModal(vid, plate) {
@@ -7702,13 +7711,18 @@ function renderVInfoVideos(videos) {
   const list = $('vinfo-videos-list');
   if (!list) return;
   if (!videos.length) { list.innerHTML = '<p class="hint">No videos added yet.</p>'; return; }
-  list.innerHTML = videos.map((url, i) => {
+  list.innerHTML = videos.map((item, i) => {
+    const url = typeof item === 'string' ? item : (item.url || '');
+    const label = typeof item === 'string' ? '' : (item.label || '');
     const videoId = extractYouTubeId(url);
     const thumb = videoId ? `<img src="https://img.youtube.com/vi/${videoId}/default.jpg" class="vinfo-video-thumb">` : '';
     return `<div class="vinfo-video-row">
-      ${thumb}
-      <a href="${escapeHtml(url)}" target="_blank" class="compliance-doc-anchor vinfo-video-link">${escapeHtml(url)}</a>
-      <button class="btn btn-sm btn-danger" onclick="removeVInfoVideo(${i})" title="Remove">\u00d7</button>
+      ${label ? `<div class="vinfo-video-label-display">${escapeHtml(label)}</div>` : ''}
+      <div class="vinfo-video-content">
+        ${thumb}
+        <a href="${escapeHtml(url)}" target="_blank" class="compliance-doc-anchor vinfo-video-link">${escapeHtml(url)}</a>
+        <button class="btn btn-sm btn-danger" onclick="removeVInfoVideo(${i})" title="Remove">\u00d7</button>
+      </div>
     </div>`;
   }).join('');
 }
@@ -7719,12 +7733,16 @@ function extractYouTubeId(url) {
 }
 
 window.addVInfoVideo = function() {
-  const input = $('vinfo-video-url');
-  const url = (input.value || '').trim();
-  if (!url) return;
-  const videos = [...(selectedVehicle.vehicleInfoVideos || []), url];
+  const labelInput = $('vinfo-video-label');
+  const urlInput = $('vinfo-video-url');
+  const url = (urlInput.value || '').trim();
+  if (!url) { urlInput.focus(); return; }
+  const label = labelInput ? (labelInput.value || '').trim() : '';
+  const entry = label ? { label, url } : url;
+  const videos = [...(selectedVehicle.vehicleInfoVideos || []), entry];
   selectedVehicle.vehicleInfoVideos = videos;
-  input.value = '';
+  urlInput.value = '';
+  if (labelInput) labelInput.value = '';
   renderVInfoVideos(videos);
 };
 

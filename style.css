@@ -3493,6 +3493,25 @@ body {
   padding: 10px 14px;
   background: #1e3a5f;
   color: #fff;
+  cursor: pointer;
+  user-select: none;
+}
+.location-group-header::after {
+  content: '▾';
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin-left: 6px;
+  flex-shrink: 0;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+.location-group.loc-collapsed .location-group-header::after,
+.location-group-combined.loc-collapsed .location-group-header::after {
+  transform: rotate(-90deg);
+}
+.location-group.loc-collapsed > :not(.location-group-header),
+.location-group-combined.loc-collapsed > :not(.location-group-header) {
+  display: none !important;
 }
 .location-group-name {
   font-weight: 600;
@@ -4824,11 +4843,13 @@ body {
 .vinfo-key-img-wrap { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .vinfo-key-img { max-width: 100%; max-height: 300px; border-radius: 10px; object-fit: contain; border: 1px solid #e5e7eb; }
 .vinfo-upload-label { cursor: pointer; font-size: 0.9rem; color: #0369a1; }
-.vinfo-videos-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
-.vinfo-video-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vinfo-videos-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.vinfo-video-row { display: flex; flex-direction: column; gap: 4px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; background: #f9fafb; }
+.vinfo-video-label-display { font-size: 0.8rem; font-weight: 700; color: #374151; letter-spacing: 0.01em; }
+.vinfo-video-content { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .vinfo-video-thumb { width: 60px; height: 45px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; }
 .vinfo-video-link { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.vinfo-add-video-row { display: flex; gap: 8px; align-items: center; }
+.vinfo-add-video-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
 /* Private trip contract preview */
 .private-contract-preview { margin-top: 8px; font-size: 0.85rem; }

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427i">
+  <link rel="stylesheet" href="style.css?v=20260427j">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -829,6 +829,7 @@
           <p class="hint">Paste YouTube links to help customers understand the vehicle (how to start, features, etc.).</p>
           <div id="vinfo-videos-list" class="vinfo-videos-list"></div>
           <div class="vinfo-add-video-row">
+            <input type="text" id="vinfo-video-label" class="vehicle-location-custom" placeholder="Label (e.g. Convertible top)" style="flex:0 0 200px; min-width:120px;">
             <input type="url" id="vinfo-video-url" class="vehicle-location-custom" placeholder="https://youtube.com/watch?v=..." style="flex:1;">
             <button class="btn btn-sm btn-primary" onclick="addVInfoVideo()">+ Add</button>
           </div>
