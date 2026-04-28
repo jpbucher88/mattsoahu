@@ -7189,12 +7189,13 @@ async function refreshStaleComplianceNotes() {
 window.openProductivityReport = function() {
   const modal = $('productivity-modal');
   if (!modal) return;
-  // Default range: last 30 days
+  // Default range: current calendar month (shows full-month occupancy including future bookings)
   const today = new Date();
-  const start = new Date(today); start.setDate(today.getDate() - 29);
+  const start = new Date(today.getFullYear(), today.getMonth(), 1);
+  const end   = new Date(today.getFullYear(), today.getMonth() + 1, 0); // last day of month
   const fmt = d => d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   $('prod-range-start').value = fmt(start);
-  $('prod-range-end').value = fmt(today);
+  $('prod-range-end').value = fmt(end);
   modal.style.display = '';
   runProductivityReport();
 };
@@ -7267,6 +7268,7 @@ window.runProductivityReport = async function() {
       let lastBookingDate = '';
       let tripCount = 0;
       entry.logs.forEach(log => {
+        if (log.cancelled) return; // skip cancelled trips
         tripCount++;
         // Turo-style: the return/end date is NOT a rental day.
         // Exception 1: still-ongoing trip (end beyond range) — count through range boundary.
@@ -7294,11 +7296,18 @@ window.runProductivityReport = async function() {
       // Use tripScheduledStart→tripReturnDate (Turo-style) to fill the full current trip range.
       const isCurrentlyOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
       if (isCurrentlyOnTrip && rangeSet.has(todayStr) && !bookedSet.has(todayStr)) {
-        // Determine trip start (tripScheduledStart if set, otherwise today)
+        // Determine trip start: tripScheduledStart if set, otherwise use most recent log's
+        // startDate as the best proxy for when this trip began (handles same-day direct-on-trip logs)
         let liveStart = todayStr;
         if (v.tripScheduledStart) {
           const ss = v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart);
           liveStart = ss.getFullYear() + '-' + String(ss.getMonth()+1).padStart(2,'0') + '-' + String(ss.getDate()).padStart(2,'0');
+        } else {
+          const activeLogs = entry.logs.filter(l => !l.cancelled && l.startDate <= todayStr);
+          if (activeLogs.length > 0) {
+            const mostRecentStart = activeLogs.reduce((best, l) => l.startDate > best ? l.startDate : best, '');
+            if (mostRecentStart) liveStart = mostRecentStart;
+          }
         }
         // Determine trip end: tripReturnDate (Turo-style: return day not counted), else today
         let liveEnd = todayStr;
