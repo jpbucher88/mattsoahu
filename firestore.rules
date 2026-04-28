@@ -113,5 +113,12 @@ service cloud.firestore {
       allow create, update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
       allow delete: if isAdmin();
     }
+
+    // Expenses - managers/admins can read and write; auto-logged from maintenance
+    match /expenses/{expenseId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow update, delete: if isAdmin();
+    }
   }
 }

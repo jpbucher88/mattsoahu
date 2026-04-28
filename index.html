@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427o">
+  <link rel="stylesheet" href="style.css?v=20260427p">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -154,8 +154,9 @@
     <header class="app-header">
       <div class="header-left">
         <button id="btn-back-fleet" type="button" class="btn btn-sm btn-outline">&larr; Fleet</button>
-        <div class="vehicle-nav-arrows">
+        <div class="vehicle-nav-wrap">
           <button id="btn-prev-vehicle" type="button" class="btn btn-sm btn-outline vehicle-nav-btn" title="Previous vehicle">&#8249;</button>
+          <select id="vehicle-fleet-select" class="vehicle-fleet-select" title="Switch vehicle"></select>
           <button id="btn-next-vehicle" type="button" class="btn btn-sm btn-outline vehicle-nav-btn" title="Next vehicle">&#8250;</button>
         </div>
         <div class="header-brand" id="brand-home-vehicle" style="cursor:pointer;"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2 id="vehicle-page-title">Vehicle</h2></div>

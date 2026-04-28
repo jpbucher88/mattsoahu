@@ -1648,6 +1648,19 @@ async function openVehiclePage(vid) {
   selectedVehicle = vehiclesCache.find(v => v.id === vid);
   if (!selectedVehicle) return;
 
+  // Populate & sync the fleet dropdown
+  const fleetSel = $('vehicle-fleet-select');
+  if (fleetSel) {
+    fleetSel.innerHTML = '';
+    vehiclesCache.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.plate + (v.make ? ' – ' + v.make + (v.model ? ' ' + v.model : '') : '');
+      fleetSel.appendChild(opt);
+    });
+    fleetSel.value = vid;
+  }
+
   // Set page title
   $('vehicle-page-title').textContent = `${selectedVehicle.plate}`;
   $('vehicle-make-model').textContent = `${selectedVehicle.make} ${selectedVehicle.model}` +
@@ -3328,6 +3341,10 @@ $('btn-next-vehicle').addEventListener('click', () => {
   openVehiclePage(vehiclesCache[nextIdx].id);
 });
 
+$('vehicle-fleet-select').addEventListener('change', function() {
+  if (this.value) openVehiclePage(this.value);
+});
+
 $('brand-home').addEventListener('click', () => {
   selectedVehicle = null;
   showPage('dashboard');
@@ -4944,7 +4961,8 @@ $('maintenance-form').addEventListener('submit', async (e) => {
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
       } catch (expErr) {
-        console.warn('Could not auto-log maintenance expense:', expErr);
+        console.error('Could not auto-log maintenance expense:', expErr);
+        toast('Maintenance saved, but expense auto-log failed.', 'warning');
       }
     }
 
