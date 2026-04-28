@@ -5256,8 +5256,9 @@ function complianceMonthStatus(yyyyMM) {
 }
 
 function loadComplianceData(v) {
-  const section = $('compliance-section');
-  if (section) section.style.display = '';
+  // Show the compliance bar wrap (it's now baked into the main vehicle card)
+  const barWrap = $('compliance-bar-wrap');
+  if (barWrap) barWrap.style.display = '';
   const canEditCompliance = (currentUserRole === 'admin');
   // Show/hide Save button and lock inputs for non-admins
   const saveBtn = $('btn-save-compliance');
@@ -5275,13 +5276,18 @@ function loadComplianceData(v) {
   const uploadInput = $('compliance-insurance-upload');
   if (uploadInput) uploadInput.disabled = !canEditCompliance;
   const fields = [
-    { id: 'compliance-safety', statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety },
-    { id: 'compliance-registration', statusId: 'registration-status', nextId: 'registration-next-due', val: v.complianceRegistration },
-    { id: 'compliance-insurance', statusId: 'insurance-status', nextId: null, val: v.complianceInsurance },
+    { id: 'compliance-safety', statusId: 'safety-status', nextId: 'safety-next-due', val: v.complianceSafety, shortName: 'Safety' },
+    { id: 'compliance-registration', statusId: 'registration-status', nextId: 'registration-next-due', val: v.complianceRegistration, shortName: 'Reg' },
+    { id: 'compliance-insurance', statusId: 'insurance-status', nextId: null, val: v.complianceInsurance, shortName: 'Ins' },
   ];
   let warnings = [];
   const urgentCompliance = []; // {complianceType, label}
-  fields.forEach(({ id, statusId, nextId, val }) => {
+
+  // Determine worst status for bar color
+  let worstLevel = 0; // 0=green, 1=red(≤30d), 2=flash(≤15d or expired)
+  const pillParts = [];
+
+  fields.forEach(({ id, statusId, nextId, val, shortName }) => {
     const input = $(id);
     const statusEl = $(statusId);
     if (input) input.value = val || '';
@@ -5294,6 +5300,20 @@ function loadComplianceData(v) {
       }
       if (cls === 'compliance-urgent' && (id === 'compliance-safety' || id === 'compliance-registration')) {
         urgentCompliance.push({ complianceType: id.replace('compliance-', ''), label, daysLeft });
+      }
+      // Bar color logic
+      if (val) {
+        if (daysLeft !== null && (daysLeft < 0 || daysLeft <= 15)) {
+          worstLevel = 2;
+          pillParts.push(`<span class="cbp cbp-flash">${shortName}: ${daysLeft < 0 ? 'Expired' : daysLeft + 'd'}</span>`);
+        } else if (daysLeft !== null && daysLeft <= 30) {
+          if (worstLevel < 1) worstLevel = 1;
+          pillParts.push(`<span class="cbp cbp-warn">${shortName}: ${daysLeft}d</span>`);
+        } else {
+          pillParts.push(`<span class="cbp cbp-ok">${shortName} ✓</span>`);
+        }
+      } else {
+        pillParts.push(`<span class="cbp cbp-none">${shortName}: —</span>`);
       }
       if (nextId) {
         const nextEl = $(nextId);
@@ -5309,6 +5329,16 @@ function loadComplianceData(v) {
       }
     }
   });
+
+  // Update bar color
+  const bar = $('compliance-bar');
+  if (bar) {
+    bar.className = 'compliance-bar ' + (worstLevel === 2 ? 'compliance-bar-flash' : worstLevel === 1 ? 'compliance-bar-red' : 'compliance-bar-green');
+  }
+  // Update pills
+  const pillsEl = $('compliance-bar-pills');
+  if (pillsEl) pillsEl.innerHTML = pillParts.join('');
+
   const vinInput = $('compliance-vin');
   if (vinInput) vinInput.value = v.vin || '';
   // Insurance doc link
@@ -5321,18 +5351,6 @@ function loadComplianceData(v) {
       docLink.innerHTML = '<span style="font-size:0.73rem;color:#9ca3af;">No document uploaded</span>';
     }
   }
-  // Reminder banner
-  let banner = section.querySelector('.compliance-reminder-banner');
-  if (warnings.length > 0) {
-    if (!banner) {
-      banner = document.createElement('div');
-      banner.className = 'compliance-reminder-banner';
-      section.querySelector('.section-header').insertAdjacentElement('afterend', banner);
-    }
-    banner.textContent = '⚠️ Action needed: ' + warnings.join(' · ');
-  } else if (banner) {
-    banner.remove();
-  }
   // Auto-create urgent follow-up notes for compliance items at ≤15 days / expired
   if (urgentCompliance.length > 0 && v.id) {
     urgentCompliance.forEach(({ complianceType, label, daysLeft }) => {
@@ -5340,6 +5358,16 @@ function loadComplianceData(v) {
     });
   }
 }
+
+// Toggle the inline compliance body open/closed
+window.toggleComplianceInline = function() {
+  const body = $('compliance-inline-body');
+  const chevron = $('compliance-bar-chevron');
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : 'block';
+  if (chevron) chevron.innerHTML = isOpen ? '&#9660;' : '&#9650;';
+};
 
 // Auto-create an urgent follow-up note when a compliance item is ≤15 days or expired.
 // Checks for an existing open note first to avoid duplicates.
@@ -6837,8 +6865,15 @@ function loadFleetComplianceWidget() {
 window.openVehicleCompliancePage = function(vehicleId) {
   openVehiclePage(vehicleId);
   setTimeout(() => {
-    const el = $('compliance-section');
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Auto-expand compliance body and scroll to it
+    const body = $('compliance-inline-body');
+    const chevron = $('compliance-bar-chevron');
+    const wrap = $('compliance-bar-wrap');
+    if (body && body.style.display === 'none') {
+      body.style.display = 'block';
+      if (chevron) chevron.innerHTML = '&#9650;';
+    }
+    if (wrap) wrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, 500);
 };
 

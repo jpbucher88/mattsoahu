@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427k">
+  <link rel="stylesheet" href="style.css?v=20260427l">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -358,41 +358,45 @@
         <div id="photo-exclude-wrap" style="display:none;">
           <button id="btn-photo-exclude" class="btn btn-sm btn-exclude">🚫 Exclude from Photos &amp; Cleaning</button>
         </div>
-      </section>
 
-      <!-- Vehicle Compliance Section -->
-      <section id="compliance-section" class="card" style="display:none;">
-        <div class="section-header">
-          <h3>📋 Compliance &amp; Info</h3>
-          <button id="btn-save-compliance" class="btn btn-sm btn-primary" style="display:none;">Save</button>
-        </div>
-        <div class="compliance-grid">
-          <div class="compliance-field">
-            <label class="compliance-label">🔍 Safety Inspection</label>
-            <div id="safety-status" class="compliance-status"></div>
-            <input type="month" id="compliance-safety" class="compliance-input" placeholder="MM/YYYY">
-            <div id="safety-next-due" class="compliance-next-due"></div>
+        <!-- Compliance — inline collapsible baked into vehicle card -->
+        <div id="compliance-bar-wrap" style="display:none; margin-top:12px;">
+          <div id="compliance-bar" class="compliance-bar compliance-bar-green" onclick="toggleComplianceInline()">
+            <span class="compliance-bar-title">📋 Compliance &amp; Info</span>
+            <span id="compliance-bar-pills" class="compliance-bar-pills"></span>
+            <span id="compliance-bar-chevron" class="compliance-bar-chevron">&#9660;</span>
           </div>
-          <div class="compliance-field">
-            <label class="compliance-label">📝 Registration</label>
-            <div id="registration-status" class="compliance-status"></div>
-            <input type="month" id="compliance-registration" class="compliance-input" placeholder="MM/YYYY">
-            <div id="registration-next-due" class="compliance-next-due"></div>
-          </div>
-          <div class="compliance-field">
-            <label class="compliance-label">🛡️ Insurance</label>
-            <div id="insurance-status" class="compliance-status"></div>
-            <input type="month" id="compliance-insurance" class="compliance-input" placeholder="MM/YYYY">
-            <div id="insurance-doc-link" class="compliance-doc-row"></div>
-            <label class="compliance-upload-btn" title="Upload insurance policy PDF or image">
-              📎 Upload Policy
-              <input type="file" id="compliance-insurance-upload" accept=".pdf,image/*" style="display:none;">
-            </label>
-          </div>
-          <div class="compliance-field">
-            <label class="compliance-label">🔢 VIN</label>
-            <div class="compliance-status" style="visibility:hidden;">—</div>
-            <input type="text" id="compliance-vin" class="compliance-input" placeholder="Vehicle Identification Number" maxlength="17" style="text-transform:uppercase;">
+          <div id="compliance-inline-body" class="compliance-inline-body" style="display:none;">
+            <button id="btn-save-compliance" class="btn btn-sm btn-primary" style="display:none;">Save</button>
+            <div class="compliance-grid">
+              <div class="compliance-field">
+                <label class="compliance-label">🔍 Safety Inspection</label>
+                <div id="safety-status" class="compliance-status"></div>
+                <input type="month" id="compliance-safety" class="compliance-input" placeholder="MM/YYYY">
+                <div id="safety-next-due" class="compliance-next-due"></div>
+              </div>
+              <div class="compliance-field">
+                <label class="compliance-label">📝 Registration</label>
+                <div id="registration-status" class="compliance-status"></div>
+                <input type="month" id="compliance-registration" class="compliance-input" placeholder="MM/YYYY">
+                <div id="registration-next-due" class="compliance-next-due"></div>
+              </div>
+              <div class="compliance-field">
+                <label class="compliance-label">🛡️ Insurance</label>
+                <div id="insurance-status" class="compliance-status"></div>
+                <input type="month" id="compliance-insurance" class="compliance-input" placeholder="MM/YYYY">
+                <div id="insurance-doc-link" class="compliance-doc-row"></div>
+                <label class="compliance-upload-btn" title="Upload insurance policy PDF or image">
+                  📎 Upload Policy
+                  <input type="file" id="compliance-insurance-upload" accept=".pdf,image/*" style="display:none;">
+                </label>
+              </div>
+              <div class="compliance-field">
+                <label class="compliance-label">🔢 VIN</label>
+                <div class="compliance-status" style="visibility:hidden;">—</div>
+                <input type="text" id="compliance-vin" class="compliance-input" placeholder="Vehicle Identification Number" maxlength="17" style="text-transform:uppercase;">
+              </div>
+            </div>
           </div>
         </div>
       </section>
