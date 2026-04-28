@@ -145,6 +145,8 @@ body {
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
+  touch-action: manipulation; /* prevent iOS 300ms tap delay */
+  -webkit-tap-highlight-color: transparent;
   transition: all 0.2s;
   text-decoration: none;
 }
@@ -2064,6 +2066,8 @@ body {
   margin-left: 8px;
   font-size: 1.4rem;
   line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .task-alert-count {
   position: absolute;
@@ -4646,6 +4650,8 @@ body {
   user-select: none;
   font-weight: 600;
   font-size: 0.88rem;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: filter 0.15s;
 }
 .compliance-bar:hover { filter: brightness(0.94); }

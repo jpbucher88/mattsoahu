@@ -195,6 +195,28 @@ function showDanEasterEgg() {
   }
 
   overlay.style.display = 'block';
+  overlay.style.pointerEvents = 'auto';
+
+  // Dismiss function (used by both auto-timer and tap)
+  let dismissed = false;
+  function dismissEgg() {
+    if (dismissed) return;
+    dismissed = true;
+    overlay.style.pointerEvents = 'none'; // stop eating taps immediately
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.4s';
+    clearInterval(flashInterval);
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.transition = '';
+      bg.style.background = '#ff0040';
+    }, 400);
+  }
+
+  // Tap/click anywhere to dismiss early
+  overlay.addEventListener('click', dismissEgg, { once: true });
+  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
 
   // Flash the background
   let flashCount = 0;
@@ -204,18 +226,8 @@ function showDanEasterEgg() {
     if (flashCount >= 12) clearInterval(flashInterval);
   }, 220);
 
-  // Dismiss after 3 seconds
-  setTimeout(() => {
-    overlay.style.opacity = '0';
-    overlay.style.transition = 'opacity 0.5s';
-    setTimeout(() => {
-      overlay.style.display = 'none';
-      overlay.style.opacity = '1';
-      overlay.style.transition = '';
-      bg.style.background = '#ff0040';
-      clearInterval(flashInterval);
-    }, 500);
-  }, 3000);
+  // Auto-dismiss after 3 seconds
+  setTimeout(dismissEgg, 3000);
 }
 
 function confirm(title, message) {
