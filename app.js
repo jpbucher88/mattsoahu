@@ -432,14 +432,7 @@ auth.onAuthStateChanged(async (user) => {
       $('user-display').textContent = userData.displayName || user.email;
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
 
-      // Easter egg: welcome Dan
       const uName = (userData.displayName || '').toLowerCase();
-      if (uName.includes('dan')) {
-        setTimeout(() => showDanEasterEgg(), 200);
-      }
-      if (uName.includes('alondra')) {
-        setTimeout(() => showAlondraEasterEgg(), 200);
-      }
 
       // Run auto-cleanup on any login (not just admin)
       cleanupOldPhotos();
@@ -454,6 +447,14 @@ auth.onAuthStateChanged(async (user) => {
         if (financeBtn) financeBtn.style.display = '';
         const prodBtn = $('productivity-open-btn');
         if (prodBtn) prodBtn.style.display = '';
+      }
+
+      // Easter eggs: fire AFTER page is visible so they don't block the loading spinner
+      if (uName.includes('dan')) {
+        setTimeout(() => showDanEasterEgg(), 80);
+      }
+      if (uName.includes('alondra')) {
+        setTimeout(() => showAlondraEasterEgg(), 80);
       }
     } catch (err) {
       console.error('Auth state error:', err);
@@ -4720,6 +4721,41 @@ $('m-date').addEventListener('change', updateNextDueDisplay);
 $('m-mileage').addEventListener('input', updateNextDueDisplay);
 $('m-mile-interval').addEventListener('input', updateNextDueDisplay);
 
+// Maintenance quick-fill templates
+const MAINT_TEMPLATES = {
+  'oil':          { type: 'Oil Change',           months: 3,  miles: 3000  },
+  'tire-rotation':{ type: 'Tire Rotation',         months: 6,  miles: 6000  },
+  'air-filter':   { type: 'Air Filter',            months: 12, miles: 15000 },
+  'cabin-filter': { type: 'Cabin Filter',          months: 12, miles: 15000 },
+  'brakes':       { type: 'Brake Pads/Rotors',     months: 24, miles: null  },
+  'trans':        { type: 'Transmission Fluid',    months: 24, miles: null  },
+  'coolant':      { type: 'Coolant Flush',         months: 24, miles: null  },
+  'spark-plugs':  { type: 'Spark Plugs',           months: 36, miles: null  },
+  'battery':      { type: 'Battery',               months: 48, miles: null  },
+  'tires':        { type: 'Tires (New)',           months: 48, miles: null  },
+  'ac':           { type: 'A/C Service',           months: 12, miles: null  },
+  'inspection':   { type: 'Inspection/Safety',     months: 12, miles: null  },
+  'detail':       { type: 'Detail',                months: 3,  miles: null  },
+  'roach':        { type: 'Roach Treatment',       months: 6,  miles: null  },
+  'wash':         { type: 'Wash',                  months: null,miles: null  },
+  'wiper':        { type: 'Wiper Blades',          months: 12, miles: null  },
+  'alignment':    { type: 'Alignment',             months: 12, miles: null  },
+  'other':        { type: 'Other',                 months: null,miles: null  },
+};
+
+$('btn-apply-template').addEventListener('click', () => {
+  const key = $('m-template-select').value;
+  if (!key) return;
+  const tpl = MAINT_TEMPLATES[key];
+  if (!tpl) return;
+  $('m-type').value = tpl.type;
+  $('m-interval').value = tpl.months ? String(tpl.months) : '';
+  $('m-mile-interval').value = tpl.miles ? String(tpl.miles) : '';
+  $('m-template-select').value = '';
+  updateNextDueDisplay();
+  $('m-type').focus();
+});
+
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
@@ -4888,6 +4924,27 @@ $('maintenance-form').addEventListener('submit', async (e) => {
         $('vehicle-mileage').value = mileage;
       } catch (mileErr) {
         console.warn('Could not auto-update vehicle mileage (may require admin role):', mileErr);
+      }
+    }
+
+    // Auto-log cost as an expense record so maintenance costs track in Finance
+    if (cost && cost > 0) {
+      try {
+        await db.collection('expenses').add({
+          date,
+          amount: cost,
+          category: 'Maintenance',
+          description: `${serviceType}${location ? ' — ' + location : ''}`,
+          vehicleId: selectedVehicle.id,
+          vehiclePlate: selectedVehicle.plate || '',
+          submittedBy: currentUser.uid,
+          submittedByName: currentUser.displayName || currentUser.email,
+          source: 'maintenance',
+          maintenanceRecordId: maintenanceRef.id,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      } catch (expErr) {
+        console.warn('Could not auto-log maintenance expense:', expErr);
       }
     }
 
