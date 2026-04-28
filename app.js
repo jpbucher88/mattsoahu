@@ -7719,6 +7719,9 @@ function loadVehicleInfoSection(v) {
   setV('cheat-oil', cs.oil);
   setV('cheat-battery', cs.battery);
   setV('cheat-coolant', cs.coolant);
+  setV('cheat-light-head', cs.lightHead);
+  setV('cheat-light-tail', cs.lightTail);
+  setV('cheat-light-turn', cs.lightTurn);
   // Gas buttons
   const gasHidden = $('cheat-gas');
   if (gasHidden) gasHidden.value = cs.gas || '';
@@ -7832,6 +7835,9 @@ $('btn-save-vehicle-info').addEventListener('click', async () => {
       gas:         $('cheat-gas') ? $('cheat-gas').value : '',
       battery:     getV('cheat-battery'),
       coolant:     getV('cheat-coolant'),
+      lightHead:   getV('cheat-light-head'),
+      lightTail:   getV('cheat-light-tail'),
+      lightTurn:   getV('cheat-light-turn'),
     };
     // Remove empty keys to keep Firestore clean
     Object.keys(cheatSheet).forEach(k => { if (!cheatSheet[k]) delete cheatSheet[k]; });
