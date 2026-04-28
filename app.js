@@ -230,6 +230,69 @@ function showDanEasterEgg() {
   setTimeout(dismissEgg, 3000);
 }
 
+// ================================================================
+// ALONDRA EASTER EGG
+// ================================================================
+function showAlondraEasterEgg() {
+  const overlay = $('alondra-overlay');
+  const bg = $('alondra-bg');
+  const heartsContainer = $('alondra-hearts');
+  if (!overlay) return;
+
+  // Scatter 80 heart emojis across the screen
+  const hearts = ['❤️', '💕', '💖', '💗', '💓', '💝', '💞', '🌸', '✨', '🩷'];
+  heartsContainer.innerHTML = '';
+  for (let i = 0; i < 80; i++) {
+    const span = document.createElement('span');
+    span.textContent = hearts[Math.floor(Math.random() * hearts.length)];
+    span.style.cssText = `
+      position:absolute;
+      left:${Math.random() * 95}%;
+      top:${Math.random() * 95}%;
+      font-size:${14 + Math.random() * 24}px;
+      --r:${-30 + Math.random() * 60}deg;
+      pointer-events:none;
+      animation:alondraFloat ${0.8 + Math.random() * 1.4}s ease-in-out infinite;
+      animation-delay:${Math.random() * 1.0}s;
+    `;
+    heartsContainer.appendChild(span);
+  }
+
+  overlay.style.display = 'block';
+  overlay.style.pointerEvents = 'auto';
+
+  let dismissed = false;
+  function dismissEgg() {
+    if (dismissed) return;
+    dismissed = true;
+    overlay.style.pointerEvents = 'none';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.5s';
+    clearInterval(flashInterval);
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.transition = '';
+      bg.style.background = '#ff69b4';
+    }, 500);
+  }
+
+  overlay.addEventListener('click', dismissEgg, { once: true });
+  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+
+  // Gentle pink flash cycle
+  const pinkShades = ['#ff69b4', '#ff1493', '#e91e8c', '#f06292', '#ff69b4', '#c2185b', '#ff69b4'];
+  let flashCount = 0;
+  const flashInterval = setInterval(() => {
+    flashCount++;
+    bg.style.background = pinkShades[flashCount % pinkShades.length];
+    if (flashCount >= 14) clearInterval(flashInterval);
+  }, 230);
+
+  // Auto-dismiss after 3.5 seconds
+  setTimeout(dismissEgg, 3500);
+}
+
 function confirm(title, message) {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -373,6 +436,9 @@ auth.onAuthStateChanged(async (user) => {
       const uName = (userData.displayName || '').toLowerCase();
       if (uName.includes('dan')) {
         setTimeout(() => showDanEasterEgg(), 200);
+      }
+      if (uName.includes('alondra')) {
+        setTimeout(() => showAlondraEasterEgg(), 200);
       }
 
       // Run auto-cleanup on any login (not just admin)
@@ -3245,6 +3311,20 @@ $('btn-back-dashboard').addEventListener('click', () => {
 $('btn-back-fleet').addEventListener('click', () => {
   selectedVehicle = null;
   showPage('dashboard');
+});
+
+$('btn-prev-vehicle').addEventListener('click', () => {
+  if (!vehiclesCache.length) return;
+  const idx = vehiclesCache.findIndex(v => v.id === selectedVehicle?.id);
+  const prevIdx = (idx - 1 + vehiclesCache.length) % vehiclesCache.length;
+  openVehiclePage(vehiclesCache[prevIdx].id);
+});
+
+$('btn-next-vehicle').addEventListener('click', () => {
+  if (!vehiclesCache.length) return;
+  const idx = vehiclesCache.findIndex(v => v.id === selectedVehicle?.id);
+  const nextIdx = (idx + 1) % vehiclesCache.length;
+  openVehiclePage(vehiclesCache[nextIdx].id);
 });
 
 $('brand-home').addEventListener('click', () => {
