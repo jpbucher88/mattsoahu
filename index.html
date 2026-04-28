@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260427e">
+  <link rel="stylesheet" href="style.css?v=20260427f">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -335,15 +335,15 @@
             <div class="loc-field">
               <div class="loc-extras-row">
                 <div class="loc-extras-field">
-                  <label class="exp-label">\ud83c\udf92 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                  <label class="exp-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
                   <select id="private-trip-extras-type" class="vehicle-location-custom">
                     <option value="">-- None --</option>
-                    <option value="beach-gear">\ud83c\udfd6\ufe0f Beach Gear</option>
-                    <option value="parking">\ud83c\udd7f\ufe0f Parking</option>
-                    <option value="snorkeling-gear">\ud83e\udd3f Snorkeling Gear</option>
-                    <option value="beach-tent">\u26fa Beach Tent</option>
-                    <option value="car-seat">\ud83e\ude91 Car Seat</option>
-                    <option value="other">\u270f\ufe0f Other</option>
+                    <option value="beach-gear">🏖️ Beach Gear</option>
+                    <option value="parking">🅿️ Parking</option>
+                    <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
+                    <option value="beach-tent">⛺ Beach Tent</option>
+                    <option value="car-seat">🪱 Car Seat</option>
+                    <option value="other">✏️ Other</option>
                   </select>
                 </div>
                 <div class="loc-extras-field">
@@ -1420,8 +1420,13 @@
     <div class="camera-hud">
       <div class="camera-top-bar">
         <button id="camera-close" class="camera-btn-close">&times;</button>
-        <span id="camera-count" class="camera-count-badge">0 photos</span>
+        <div class="camera-zoom-row">
+          <button id="camera-zoom-out" class="camera-zoom-btn">&#8722;</button>
+          <span id="camera-zoom-label" class="camera-zoom-label">1.0&times;</span>
+          <button id="camera-zoom-in" class="camera-zoom-btn">+</button>
+        </div>
         <div class="camera-top-right">
+          <span id="camera-count" class="camera-count-badge">0 photos</span>
           <button id="camera-flash" class="camera-btn-flash" title="Toggle flash">⚡ Off</button>
           <button id="camera-flip" class="camera-btn-flip">&#128260;</button>
         </div>
@@ -1436,11 +1441,6 @@
       </div>
       <div class="camera-bottom-bar">
         <div class="camera-thumbs" id="camera-thumbs"></div>
-        <div class="camera-zoom-row">
-          <button id="camera-zoom-out" class="camera-zoom-btn">&#8722;</button>
-          <span id="camera-zoom-label" class="camera-zoom-label">1.0&times;</span>
-          <button id="camera-zoom-in" class="camera-zoom-btn">+</button>
-        </div>
         <button id="camera-shutter" class="camera-shutter"></button>
       </div>
     </div>

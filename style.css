@@ -1122,6 +1122,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;   /* block browser pinch-to-zoom on the camera screen */
 }
 
 .camera-overlay video {
@@ -1241,16 +1242,16 @@ body {
 .camera-zoom-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
 }
 .camera-zoom-btn {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   background: rgba(255,255,255,0.18);
   border: 1.5px solid rgba(255,255,255,0.5);
   color: #fff;
-  font-size: 1.3rem;
+  font-size: 1.15rem;
   font-weight: 700;
   line-height: 1;
   cursor: pointer;

@@ -2292,10 +2292,15 @@ function _initCameraPinchZoom() {
   }, { passive: true });
 
   overlay.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 2) {
+      // MUST preventDefault to stop iOS Safari from zoom-scaling the entire viewport.
+      // This requires passive: false (set below).
+      e.preventDefault();
+    }
     if (e.touches.length !== 2 || pinchStartDist === null) return;
     const scale = _pinchDist(e.touches) / pinchStartDist;
     _setCameraZoom(pinchStartZoom * scale);
-  }, { passive: true });
+  }, { passive: false });
 
   overlay.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) pinchStartDist = null;
