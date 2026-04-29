@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260428b">
+  <link rel="stylesheet" href="style.css?v=20260428c">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1369,6 +1369,7 @@
             <div class="form-group">
               <label for="u-role">Role</label>
               <select id="u-role" class="form-select">
+                <option value="viewer">Viewer (Browse only — no edits or downloads)</option>
                 <option value="user">User (View &amp; download photos only)</option>
                 <option value="manager">Manager (Upload &amp; view photos)</option>
                 <option value="admin">Admin (Full access)</option>
@@ -1736,7 +1737,7 @@
           </div>
         </div>
         <!-- Create Task -->
-        <div class="task-panel-section">
+        <div id="create-task-section" class="task-panel-section">
           <h4>📝 Create Task</h4>
           <input type="text" id="new-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200">
           <textarea id="new-task-desc" class="note-textarea" placeholder="Description (optional)" maxlength="500" rows="2" style="margin-top:8px;"></textarea>

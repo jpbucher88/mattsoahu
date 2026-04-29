@@ -499,7 +499,22 @@ auth.onAuthStateChanged(async (user) => {
       currentUserTimeclockAccess = currentUserRole === 'admin' || userData.timeclockAccess === true;
       currentUserCanViewAllTimeclocks = currentUserRole === 'admin' || userData.canViewAllTimeclocks === true;
 
+      // Viewer mode: read-only browsing, no edits or photo downloads
+      if (currentUserRole === 'viewer') {
+        document.body.classList.add('viewer-mode');
+        document.addEventListener('contextmenu', function(e) {
+          if (e.target.tagName === 'IMG') e.preventDefault();
+        }, true);
+        document.addEventListener('dragstart', function(e) {
+          if (e.target.tagName === 'IMG') e.preventDefault();
+        }, true);
+      }
+
       $('user-display').textContent = userData.displayName || user.email;
+      if (currentUserRole === 'viewer') {
+        const badge = $('user-display');
+        if (badge) badge.title = 'Browse Mode — view only';
+      }
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
 
       const uName = (userData.displayName || '').toLowerCase();
@@ -3006,6 +3021,7 @@ async function loadPhotosForDate(vehicleId, dateStr) {
 
 $('btn-download-all').addEventListener('click', async () => {
   if (!selectedVehicle) return;
+  if (currentUserRole === 'viewer') { toast('Downloads are disabled in browse mode.', 'warning'); return; }
 
   const vid = selectedVehicle.id;
   const label = `${selectedVehicle.make}_${selectedVehicle.model}`.replace(/\s+/g, '_');
@@ -4505,8 +4521,8 @@ async function loadAdminUsers() {
     snapshot.forEach(doc => {
       const data = doc.data();
       const isSelf = doc.id === currentUser.uid;
-      const roleBadgeClass = data.role === 'admin' ? '' : data.role === 'manager' ? 'badge-warning' : 'badge-muted';
-      const cycle = { user: 'manager', manager: 'admin', admin: 'user' };
+      const roleBadgeClass = data.role === 'admin' ? '' : data.role === 'manager' ? 'badge-warning' : data.role === 'viewer' ? 'badge-info' : 'badge-muted';
+      const cycle = { viewer: 'user', user: 'manager', manager: 'admin', admin: 'viewer' };
       const nextRole = cycle[data.role] || 'user';
       const item = document.createElement('div');
       item.className = 'data-list-item';
@@ -4536,7 +4552,7 @@ async function loadAdminUsers() {
 
 window.toggleUserRole = async function (uid, currentRole) {
   if (currentUserRole !== 'admin') return;
-  const cycle = { user: 'manager', manager: 'admin', admin: 'user' };
+  const cycle = { viewer: 'user', user: 'manager', manager: 'admin', admin: 'viewer' };
   const newRole = cycle[currentRole] || 'user';
   const ok = await confirm('Change Role', `Change this user's role to "${newRole}"?`);
   if (!ok) return;
@@ -8701,6 +8717,7 @@ window.openRescheduleTask = function(docId, col, currentDue) {
 })();
 
 $('btn-save-task') && $('btn-save-task').addEventListener('click', async () => {
+  if (currentUserRole === 'viewer') { toast('Browse mode — task creation is disabled.', 'warning'); return; }
   const title = ($('new-task-title').value || '').trim();
   if (!title) { $('new-task-title').focus(); toast('Please enter a task title.', 'warning'); return; }
   const desc     = ($('new-task-desc').value || '').trim();
