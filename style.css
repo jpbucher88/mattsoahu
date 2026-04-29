@@ -3277,6 +3277,8 @@ body {
 }
 .compliance-group-card.compliance-group-overdue .compliance-group-header { background: #fff1f2; }
 .compliance-group-plate { font-weight: 700; font-size: 0.9rem; color: #1e3a5f; }
+.compliance-plate-link { cursor: pointer; text-decoration: underline dotted; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.compliance-plate-link:hover { color: #2563eb; }
 .compliance-group-month { font-size: 0.82rem; color: #64748b; }
 .compliance-group-badge {
   font-size: 0.7rem;

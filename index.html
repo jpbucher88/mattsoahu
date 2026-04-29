@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260428a">
+  <link rel="stylesheet" href="style.css?v=20260428b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1650,64 +1650,7 @@
         <button class="task-panel-close" onclick="closeTaskPanel()">&times;</button>
       </div>
       <div class="task-panel-body">
-        <!-- Calendar -->
-        <div class="task-panel-section task-panel-cal-section">
-          <div class="task-panel-cal-header">
-            <h4>📅 Calendar</h4>
-            <div class="task-panel-cal-nav">
-              <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
-              <span id="cal-month-label" class="cal-month-label"></span>
-              <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
-            </div>
-          </div>
-          <div id="task-calendar-grid" class="task-calendar-grid"></div>
-          <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
-            <div class="task-calendar-detail-header">
-              <h4 id="cal-detail-date"></h4>
-              <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
-            </div>
-            <div id="cal-detail-list" class="cal-detail-list"></div>
-          </div>
-        </div>
-        <!-- Create Task -->
-        <div class="task-panel-section">
-          <h4>📝 Create Task</h4>
-          <input type="text" id="new-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200">
-          <textarea id="new-task-desc" class="note-textarea" placeholder="Description (optional)" maxlength="500" rows="2" style="margin-top:8px;"></textarea>
-          <div class="task-form-grid">
-            <div class="task-form-field">
-              <label class="task-form-label">⚡ Priority</label>
-              <select id="new-task-priority" class="task-form-select">
-                <option value="low">🟢 Low</option>
-                <option value="normal" selected>🔵 Normal</option>
-                <option value="high">🟠 High</option>
-                <option value="critical">🔴 Critical</option>
-              </select>
-            </div>
-            <div class="task-form-field">
-              <label class="task-form-label">📅 Due Date</label>
-              <input type="date" id="new-task-due" class="task-form-select">
-            </div>
-            <div class="task-form-field">
-              <label class="task-form-label">👤 Assign To</label>
-              <select id="new-task-assignee" class="task-form-select">
-                <option value="">— Team (everyone) —</option>
-              </select>
-            </div>
-            <div class="task-form-field">
-              <label class="task-form-label">📎 Photo / File</label>
-              <input type="file" id="new-task-photo" accept="image/*" class="task-photo-input">
-            </div>
-          </div>
-          <div id="new-task-photo-wrap" style="display:none;margin:6px 0 2px;">
-            <img id="new-task-photo-preview" class="inc-thumb-preview" alt="preview" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
-          </div>
-          <div style="text-align:right;margin-top:10px;">
-            <button id="btn-save-task" class="btn btn-primary" style="padding:8px 22px;">💾 Save Task</button>
-          </div>
-        </div>
-
-        <!-- Action Board with Status Tabs -->
+        <!-- Action Board with Status Tabs — shown first -->
         <div class="task-panel-section">
           <h4>🎯 Action Board</h4>
 
@@ -1770,6 +1713,63 @@
               <span id="completed-bucket-arrow" class="completed-bucket-arrow">▶</span>
             </button>
             <div id="completed-bucket-list" class="completed-bucket-list" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Calendar -->
+        <div class="task-panel-section task-panel-cal-section">
+          <div class="task-panel-cal-header">
+            <h4>📅 Calendar</h4>
+            <div class="task-panel-cal-nav">
+              <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
+              <span id="cal-month-label" class="cal-month-label"></span>
+              <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
+            </div>
+          </div>
+          <div id="task-calendar-grid" class="task-calendar-grid"></div>
+          <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
+            <div class="task-calendar-detail-header">
+              <h4 id="cal-detail-date"></h4>
+              <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
+            </div>
+            <div id="cal-detail-list" class="cal-detail-list"></div>
+          </div>
+        </div>
+        <!-- Create Task -->
+        <div class="task-panel-section">
+          <h4>📝 Create Task</h4>
+          <input type="text" id="new-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200">
+          <textarea id="new-task-desc" class="note-textarea" placeholder="Description (optional)" maxlength="500" rows="2" style="margin-top:8px;"></textarea>
+          <div class="task-form-grid">
+            <div class="task-form-field">
+              <label class="task-form-label">⚡ Priority</label>
+              <select id="new-task-priority" class="task-form-select">
+                <option value="low">🟢 Low</option>
+                <option value="normal" selected>🔵 Normal</option>
+                <option value="high">🟠 High</option>
+                <option value="critical">🔴 Critical</option>
+              </select>
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">📅 Due Date</label>
+              <input type="date" id="new-task-due" class="task-form-select">
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">👤 Assign To</label>
+              <select id="new-task-assignee" class="task-form-select">
+                <option value="">— Team (everyone) —</option>
+              </select>
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">📎 Photo / File</label>
+              <input type="file" id="new-task-photo" accept="image/*" class="task-photo-input">
+            </div>
+          </div>
+          <div id="new-task-photo-wrap" style="display:none;margin:6px 0 2px;">
+            <img id="new-task-photo-preview" class="inc-thumb-preview" alt="preview" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
+          </div>
+          <div style="text-align:right;margin-top:10px;">
+            <button id="btn-save-task" class="btn btn-primary" style="padding:8px 22px;">💾 Save Task</button>
           </div>
         </div>
 

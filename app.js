@@ -6173,7 +6173,10 @@ function renderTaskAgenda(allItems) {
           }).join('');
           taskHtml += `<div class="compliance-group-card${isOver ? ' compliance-group-overdue' : ''}">
             <div class="compliance-group-header">
-              <span class="compliance-group-plate">🚗 ${escapeHtml(plate)}</span>
+              ${group.vehicleId
+                ? `<span class="compliance-group-plate compliance-plate-link" onclick="closeTaskPanel();openVehicleCompliancePage('${group.vehicleId}')" title="Open vehicle compliance page">🚗 ${escapeHtml(plate)} ↗</span>`
+                : `<span class="compliance-group-plate">📝 ${escapeHtml(plate)}</span>`
+              }
               <span class="compliance-group-month">${monthStr}</span>
               ${isOver ? '<span class="compliance-group-badge overdue-badge">OVERDUE</span>' : ''}
               <span class="compliance-group-types">${typeTags}</span>
