@@ -5597,6 +5597,26 @@ function loadComplianceData(v) {
 
   const vinInput = $('compliance-vin');
   if (vinInput) vinInput.value = v.vin || '';
+  // Safety doc link
+  const safetyDocLink = $('safety-doc-link');
+  if (safetyDocLink) {
+    if (v.complianceSafetyDoc) {
+      const name = v.complianceSafetyDocName || 'Safety Certificate';
+      safetyDocLink.innerHTML = `<a href="${escapeHtml(v.complianceSafetyDoc)}" target="_blank" class="compliance-doc-anchor">📎 ${escapeHtml(name)}</a>`;
+    } else {
+      safetyDocLink.innerHTML = '<span style="font-size:0.73rem;color:#9ca3af;">No document uploaded</span>';
+    }
+  }
+  // Registration doc link
+  const regDocLink = $('registration-doc-link');
+  if (regDocLink) {
+    if (v.complianceRegistrationDoc) {
+      const name = v.complianceRegistrationDocName || 'Registration Document';
+      regDocLink.innerHTML = `<a href="${escapeHtml(v.complianceRegistrationDoc)}" target="_blank" class="compliance-doc-anchor">📎 ${escapeHtml(name)}</a>`;
+    } else {
+      regDocLink.innerHTML = '<span style="font-size:0.73rem;color:#9ca3af;">No document uploaded</span>';
+    }
+  }
   // Insurance doc link
   const docLink = $('insurance-doc-link');
   if (docLink) {
@@ -5762,6 +5782,68 @@ $('compliance-insurance-upload').addEventListener('change', async function(e) {
     toast('Insurance document uploaded! ✅', 'success');
   } catch (err) {
     console.error('Insurance doc upload error:', err);
+    toast('Failed to upload document.', 'error');
+  } finally {
+    hideLoading();
+    e.target.value = '';
+  }
+});
+
+// Safety certificate upload
+$('compliance-safety-upload').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file || !selectedVehicle) return;
+  const st = getStorage();
+  if (!st) { toast('Storage not available. Contact admin.', 'error'); e.target.value = ''; return; }
+  const plate = sanitizePlate(selectedVehicle.plate);
+  const ext = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const safeExt = ['pdf','jpg','jpeg','png','gif','webp'].includes(ext) ? ext : 'bin';
+  const storagePath = `vehicles/${plate}/documents/safety_${Date.now()}.${safeExt}`;
+  try {
+    showLoading('Uploading document…');
+    const ref = st.ref(storagePath);
+    await ref.put(file, { contentType: file.type });
+    const url = await ref.getDownloadURL();
+    const docData = { complianceSafetyDoc: url, complianceSafetyDocName: file.name };
+    await db.collection('vehicles').doc(selectedVehicle.id).update(docData);
+    Object.assign(selectedVehicle, docData);
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) Object.assign(cached, docData);
+    loadComplianceData(selectedVehicle);
+    toast('Safety certificate uploaded! ✅', 'success');
+  } catch (err) {
+    console.error('Safety doc upload error:', err);
+    toast('Failed to upload document.', 'error');
+  } finally {
+    hideLoading();
+    e.target.value = '';
+  }
+});
+
+// Registration document upload
+$('compliance-registration-upload').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file || !selectedVehicle) return;
+  const st = getStorage();
+  if (!st) { toast('Storage not available. Contact admin.', 'error'); e.target.value = ''; return; }
+  const plate = sanitizePlate(selectedVehicle.plate);
+  const ext = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
+  const safeExt = ['pdf','jpg','jpeg','png','gif','webp'].includes(ext) ? ext : 'bin';
+  const storagePath = `vehicles/${plate}/documents/registration_${Date.now()}.${safeExt}`;
+  try {
+    showLoading('Uploading document…');
+    const ref = st.ref(storagePath);
+    await ref.put(file, { contentType: file.type });
+    const url = await ref.getDownloadURL();
+    const docData = { complianceRegistrationDoc: url, complianceRegistrationDocName: file.name };
+    await db.collection('vehicles').doc(selectedVehicle.id).update(docData);
+    Object.assign(selectedVehicle, docData);
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) Object.assign(cached, docData);
+    loadComplianceData(selectedVehicle);
+    toast('Registration document uploaded! ✅', 'success');
+  } catch (err) {
+    console.error('Registration doc upload error:', err);
     toast('Failed to upload document.', 'error');
   } finally {
     hideLoading();

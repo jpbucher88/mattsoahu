@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260428c">
+  <link rel="stylesheet" href="style.css?v=20260428d">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -379,12 +379,22 @@
                 <div id="safety-status" class="compliance-status"></div>
                 <input type="month" id="compliance-safety" class="compliance-input" placeholder="MM/YYYY">
                 <div id="safety-next-due" class="compliance-next-due"></div>
+                <div id="safety-doc-link" class="compliance-doc-row"></div>
+                <label class="compliance-upload-btn" title="Upload safety inspection certificate PDF or image">
+                  📎 Upload Certificate
+                  <input type="file" id="compliance-safety-upload" accept=".pdf,image/*" style="display:none;">
+                </label>
               </div>
               <div class="compliance-field">
                 <label class="compliance-label">📝 Registration</label>
                 <div id="registration-status" class="compliance-status"></div>
                 <input type="month" id="compliance-registration" class="compliance-input" placeholder="MM/YYYY">
                 <div id="registration-next-due" class="compliance-next-due"></div>
+                <div id="registration-doc-link" class="compliance-doc-row"></div>
+                <label class="compliance-upload-btn" title="Upload registration document PDF or image">
+                  📎 Upload Document
+                  <input type="file" id="compliance-registration-upload" accept=".pdf,image/*" style="display:none;">
+                </label>
               </div>
               <div class="compliance-field">
                 <label class="compliance-label">🛡️ Insurance</label>
