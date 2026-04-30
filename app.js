@@ -6826,13 +6826,25 @@ function renderUrgentBanner(items) {
       ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>`
       : '';
 
+    // Photos: inline array (inspection fail notes) or single photoUrl
+    const photoArr = Array.isArray(item.photos) ? item.photos : (item.photoUrl ? [item.photoUrl] : []);
+    const photosHTML = photoArr.length
+      ? `<div class="inc-photos urgent-photos">${photoArr.map(url => `<a href="${escapeHtml(url)}" target="_blank"><img src="${escapeHtml(url)}" class="inc-thumb" alt="incident photo" loading="lazy"></a>`).join('')}</div>`
+      : '';
+    // Incident link button for Turo/incident-linked tasks
+    const incidentBtnHTML = item.incidentDocId
+      ? `<button class="btn btn-sm btn-outline urgent-inc-btn" onclick="event.stopPropagation(); openIncidentEditFromDashboard('${item.incidentDocId}', false)" title="View incident report">📋 View Incident</button>`
+      : '';
+
     html += `
       <div class="urgent-banner-item"${vidAttr}>
         <div class="urgent-banner-info">
           <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
           <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
+          ${photosHTML}
         </div>
         <div class="urgent-banner-actions">
+          ${incidentBtnHTML}
           ${reassignBtn}
           ${doneBtn}
           ${editBtn}

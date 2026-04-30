@@ -5338,6 +5338,8 @@ body {
 }
 /* Photo thumbnails */
 .inc-photos { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.urgent-photos { margin-top: 8px; }
+.urgent-inc-btn { margin-bottom: 4px; }
 .inc-thumb {
   width: 72px;
   height: 72px;
