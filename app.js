@@ -523,6 +523,8 @@ auth.onAuthStateChanged(async (user) => {
       cleanupOldPhotos();
 
       await loadVehicles();
+      // Resume any photos left in IndexedDB from a previous session / backgrounded upload
+      resumeAllPendingUploads();
       showPage('dashboard');
       startMailListener();
       startIncidentListener();
@@ -2616,6 +2618,50 @@ async function resumePendingUploads(vehicle) {
   } catch(e) { console.warn('resumePendingUploads error:', e); }
 }
 
+// Global resume — called on login and on visibilitychange.
+// Checks IndexedDB for ALL vehicles and re-queues any unfinished uploads.
+async function resumeAllPendingUploads() {
+  try {
+    const all = await _idbGetPending(null); // all vehicles
+    _updateDashboardPendingBanner(all.length);
+    if (!all.length) return;
+
+    const queuedIds = new Set(cameraUploadQueue.map(i => i.idbId).filter(Boolean));
+    const toResume = all.filter(p => !queuedIds.has(p.idbId));
+    if (!toResume.length) return;
+
+    // Group by vehicleId for the toast message
+    const byVehicle = {};
+    toResume.forEach(p => {
+      const key = p.vehiclePlate || p.vehicleId || 'unknown';
+      byVehicle[key] = (byVehicle[key] || 0) + 1;
+    });
+    const summary = Object.entries(byVehicle).map(([k, n]) => `${n} for ${k}`).join(', ');
+    toast(`📤 Resuming ${toResume.length} unfinished photo upload${toResume.length !== 1 ? 's' : ''}: ${summary}`, 'info');
+
+    toResume.forEach(p => {
+      // Find the vehicle object from cache; fall back to a minimal stub so upload still works
+      const vehicle = vehiclesCache.find(v => v.id === p.vehicleId)
+        || { id: p.vehicleId, plate: p.vehiclePlate || p.vehicleId };
+      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId });
+      cameraTotalQueued++;
+    });
+    updateCameraUploadBar();
+    processCameraQueue();
+  } catch(e) { console.warn('resumeAllPendingUploads error:', e); }
+}
+
+function _updateDashboardPendingBanner(count) {
+  const el = $('dashboard-pending-uploads');
+  if (!el) return;
+  if (count > 0) {
+    el.style.display = '';
+    el.textContent = `📤 ${count} photo${count !== 1 ? 's' : ''} still uploading from your last session — will finish automatically.`;
+  } else {
+    el.style.display = 'none';
+  }
+}
+
 function _updatePendingBanner(count, plate) {
   const banner = $('pending-uploads-banner');
   if (!banner) return;
@@ -2633,6 +2679,13 @@ setInterval(() => {
     processCameraQueue();
   }
 }, 8000);
+
+// When the app comes back to foreground (tab visible / iOS app switch), retry pending IDB uploads
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentUser) {
+    resumeAllPendingUploads();
+  }
+});
 
 // Shutter button — captures frame and queues upload
 $('camera-shutter').addEventListener('click', () => {
@@ -2743,6 +2796,8 @@ async function processCameraQueue() {
     if (selectedVehicle) {
       _idbGetPending(selectedVehicle.id).then(p => _updatePendingBanner(p.length, selectedVehicle.plate)).catch(() => {});
     }
+    // Update dashboard global pending indicator
+    _idbGetPending(null).then(all => _updateDashboardPendingBanner(all.length)).catch(() => {});
   }
 }
 

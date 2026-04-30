@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260429a">
+  <link rel="stylesheet" href="style.css?v=20260429b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -82,6 +82,9 @@
       </div>
     </header>
     <main class="dashboard-main">
+      <!-- Pending photo uploads indicator (shown when photos are stuck in IDB from a backgrounded session) -->
+      <div id="dashboard-pending-uploads" class="dashboard-pending-uploads" style="display:none;"></div>
+
       <!-- Urgent Notifications Banner -->
       <section id="urgent-banner" class="card urgent-banner" style="display:none;">
         <div class="urgent-banner-header collapsible-header" onclick="toggleSection('urgent-banner-body', 'urgent-banner-toggle')">

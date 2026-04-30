@@ -371,6 +371,17 @@ body {
   font-size: 0.82rem;
   font-weight: 600;
 }
+.dashboard-pending-uploads {
+  margin: 0 0 10px;
+  padding: 10px 16px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-left: 4px solid #3b82f6;
+  border-radius: 8px;
+  color: #1e40af;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 
 /* ============ UPLOAD CONTROLS ============ */
 .upload-controls {
