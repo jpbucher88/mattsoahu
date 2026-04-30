@@ -395,6 +395,13 @@ function todayDateString() {
   return parts; // returns YYYY-MM-DD
 }
 
+// Returns true if the vehicle's last photo was taken today (HST calendar day)
+function hasPhotosToday(v) {
+  if (!v || !v.lastPhotoDate) return false;
+  const d = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(v.lastPhotoDate);
+  return d === todayDateString();
+}
+
 // Render a task activity log array as HTML
 function renderTaskLogEntries(log) {
   if (!log || log.length === 0) return '<p class="task-log-empty">No log entries yet.</p>';
@@ -1061,6 +1068,7 @@ function renderLocationsWidget() {
       <div class="location-group-header">
         <span class="location-group-name">🏠 ${escapeHtml(loc)}</span>
         <span class="location-group-count">${total}</span>
+        <button class="btn btn-sm btn-outline loc-at-btn" onclick="event.stopPropagation(); checkLocationPhotos('${escapeHtml(loc)}')" title="I'm at this location — check for missing photos">📍 At Location</button>
       </div>`;
 
     // Overdue / awaiting return sub-section
@@ -1299,6 +1307,12 @@ function renderLocationsWidget() {
         }
         toast('Marked as cleaned! ✓', 'success');
         renderLocationsWidget();
+        // Prompt for photos if none taken today
+        const freshV = vehiclesCache.find(v => v.id === vid);
+        if (freshV && !hasPhotosToday(freshV)) {
+          const goPhoto = await confirm('Photos Needed', `${freshV.plate} has been cleaned — but no photos have been taken today. Take photos now?`);
+          if (goPhoto) openVehiclePage(vid);
+        }
       } catch (err) {
         console.error('Mark cleaned error:', err);
         toast('Failed to update.', 'error');
@@ -1341,6 +1355,55 @@ function renderLocationsWidget() {
     });
   });
 }
+
+// "At Location" check — shows vehicles at this location that are ready but missing today's photos
+window.checkLocationPhotos = function(loc) {
+  const needsPhotos = vehiclesCache.filter(v => {
+    if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip') return false;
+    if (v.tripStatus === 'repair-shop') return false;
+    if (v.needsCleaning) return false;
+    if (v.photoExcluded) return false;
+    if ((v.homeLocation || '') !== loc) return false;
+    return !hasPhotosToday(v);
+  });
+
+  if (needsPhotos.length === 0) {
+    toast(`✅ All vehicles at ${loc} have today's photos!`, 'success');
+    return;
+  }
+
+  let overlay = $('loc-photos-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'loc-photos-overlay';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+
+  const rows = needsPhotos.map(v => {
+    const ageText = !v.lastPhotoDate
+      ? 'No photos yet'
+      : `Last: ${v.lastPhotoDate.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}`;
+    return `<div class="loc-photo-check-row">
+      <span class="location-vehicle-chip">${escapeHtml(v.plate)}</span>
+      <span class="loc-photo-age">${ageText}</span>
+      <button class="btn btn-sm btn-primary" onclick="$('loc-photos-overlay').style.display='none'; openVehiclePage('${v.id}')">📷 Take Photos</button>
+    </div>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <h3>📍 At Location: ${escapeHtml(loc)}</h3>
+        <button class="modal-close" onclick="$('loc-photos-overlay').style.display='none'">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="color:#d97706;font-weight:600;margin-bottom:12px;">⚠️ ${needsPhotos.length} vehicle${needsPhotos.length !== 1 ? 's' : ''} need${needsPhotos.length === 1 ? 's' : ''} today's photos:</p>
+        <div class="loc-photo-check-list">${rows}</div>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+};
 // Damage check modal � Pass / Fail per item
 function showDamageCheckModal(vid, plate) {
   const existing = document.querySelector('.damage-check-overlay');
@@ -10387,8 +10450,8 @@ function renderTimeClock() {
       : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
     const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
     const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
-    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${hasSessions && !isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
-      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ''}${hasSessions && !isToday ? ' <span class="tc-expand-hint">›</span>' : ''}</span>
+    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${!isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
+      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ' <span class="tc-expand-hint">›</span>'}</span>
       <span class="tc-day-hours">${hoursStr}</span>
       <span class="tc-day-rev">${revStr}</span>
     </div>`;
@@ -10719,6 +10782,7 @@ window.tcExpandDay = function(date) {
   const [, mo, dy] = date.split('-');
   const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
   const isOwnClockExpand = !tcViewingUid || tcViewingUid === currentUser.uid;
+  const noSessionsMsg = sessions.length === 0 ? '<p class="tc-no-sessions">No sessions recorded for this day.</p>' : '';
   const rows = sessions.map((s, idx) => {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
@@ -10759,7 +10823,8 @@ window.tcExpandDay = function(date) {
         <button class="modal-close" onclick="$('tc-day-overlay').style.display='none'">&times;</button>
       </div>
       <div class="modal-body">
-        <div class="tc-sessions-list">${rows}</div>
+        <div class="tc-sessions-list">${noSessionsMsg}${rows}</div>
+        ${isOwnClockExpand ? `<button class="btn btn-outline tc-btn-sm" style="margin:8px 0 4px;" onclick="tcAddSession('${date}')">➕ Add Session</button>` : ''}
         <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:flex;flex-direction:column;gap:10px;">
           <div class="tc-rev-row">
             <div class="tc-field-row">
@@ -10899,6 +10964,98 @@ window.tcSaveEditSession = async function(date, idx) {
   } catch (e) {
     console.error('Edit session error:', e);
     toast('Failed to save.', 'error');
+  }
+};
+
+// ── Add a manual session to a past day ──
+window.tcAddSession = function(date) {
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const [, mo, dy] = date.split('-');
+  const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
+  let overlay = $('tc-edit-overlay');
+  if (!overlay) {
+    overlay = document.createElement('div');
+    overlay.id = 'tc-edit-overlay';
+    overlay.className = 'modal-overlay';
+    document.body.appendChild(overlay);
+  }
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:380px;">
+      <div class="modal-header">
+        <h3>➕ Add Session — ${dateLabel}</h3>
+        <button class="modal-close" onclick="$('tc-edit-overlay').style.display='none'">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="tc-fields">
+          <div class="tc-field-row">
+            <label class="tc-label">🕐 Scheduled Start</label>
+            <input type="time" id="tce-sched" class="tc-input-time" value="">
+          </div>
+          <div class="tc-field-row">
+            <label class="tc-label">⏱️ Punch In</label>
+            <input type="time" id="tce-in" class="tc-input-time" value="" required>
+          </div>
+          <div class="tc-field-row">
+            <label class="tc-label">⏹️ Punch Out</label>
+            <input type="time" id="tce-out" class="tc-input-time" value="">
+          </div>
+        </div>
+        <div style="margin-top:16px;display:flex;gap:8px;">
+          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveNewSession('${date}')">💾 Add Session</button>
+          <button class="btn btn-outline" style="flex:1;" onclick="$('tc-edit-overlay').style.display='none'">Cancel</button>
+        </div>
+      </div>
+    </div>`;
+  overlay.style.display = 'flex';
+};
+
+window.tcSaveNewSession = async function(date) {
+  if (!currentUser) return;
+  const inVal = $('tce-in')?.value;
+  const outVal = $('tce-out')?.value;
+  const schedVal = $('tce-sched')?.value || null;
+  if (!inVal) { toast('Punch In time is required.', 'error'); return; }
+  function toTimestamp(dateStr, timeStr) {
+    if (!timeStr) return null;
+    return firebase.firestore.Timestamp.fromMillis(new Date(dateStr + 'T' + timeStr + ':00').getTime());
+  }
+  const clockIn = toTimestamp(date, inVal);
+  const clockOut = outVal ? toTimestamp(date, outVal) : null;
+  if (clockOut && clockOut.toMillis() <= clockIn.toMillis()) {
+    toast('Punch Out must be after Punch In.', 'error'); return;
+  }
+  const docId = currentUser.uid + '_' + date;
+  const newSession = { clockIn, clockOut, scheduledStart: schedVal, breaks: [], manualEntry: true };
+  try {
+    const snap = await db.collection('timeclock').doc(docId).get();
+    if (snap.exists) {
+      const sessions = snap.data().sessions || [];
+      sessions.push(newSession);
+      sessions.sort((a, b) => {
+        const at = a.clockIn.toMillis ? a.clockIn.toMillis() : new Date(a.clockIn).getTime();
+        const bt = b.clockIn.toMillis ? b.clockIn.toMillis() : new Date(b.clockIn).getTime();
+        return at - bt;
+      });
+      await db.collection('timeclock').doc(docId).update({ sessions });
+    } else {
+      // Create new doc for this day
+      await db.collection('timeclock').doc(docId).set({
+        uid: currentUser.uid,
+        date,
+        sessions: [newSession],
+        activeSession: null,
+        revenueGoal: 0,
+        revenueAchieved: 0,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    toast('Session added! ✅', 'success');
+    $('tc-edit-overlay').style.display = 'none';
+    await loadWeekData(currentWeekOffset);
+    window.tcExpandDay(date);
+  } catch (e) {
+    console.error('Add session error:', e);
+    toast('Failed to add session.', 'error');
   }
 };
 
