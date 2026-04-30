@@ -1868,9 +1868,15 @@ async function openVehiclePage(vid) {
         ? `<a href="${escapeHtml(selectedVehicle.privateTripContractUrl)}" target="_blank" class="compliance-doc-anchor">📄 View Contract</a>` : '';
     }
     // Populate scheduled start
-    setDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time', selectedVehicle.tripScheduledStart || null);
+    if (selectedVehicle.tripScheduledStart) {
+      const _ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
+      $('vehicle-trip-scheduled-start').value = _ss.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
+    } else { $('vehicle-trip-scheduled-start').value = ''; }
     // Populate expected end
-    setDTValue('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time', selectedVehicle.tripExpectedEnd || null);
+    if (selectedVehicle.tripExpectedEnd) {
+      const _ee = selectedVehicle.tripExpectedEnd.toDate ? selectedVehicle.tripExpectedEnd.toDate() : new Date(selectedVehicle.tripExpectedEnd);
+      $('vehicle-trip-expected-end').value = _ee.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
+    } else { $('vehicle-trip-expected-end').value = ''; }
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
       tripReturnInput.value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
@@ -3676,10 +3682,10 @@ $('btn-save-location').addEventListener('click', async () => {
   // Compute the display location for backward compat
   if (tripStatus === 'scheduled') {
     updateData.location = homeLocation;
-    const schedVal = getDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time');
-    updateData.tripScheduledStart = schedVal ? firebase.firestore.Timestamp.fromDate(new Date(schedVal)) : firebase.firestore.FieldValue.delete();
-    const endVal = getDTValue('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time');
-    updateData.tripExpectedEnd = endVal ? firebase.firestore.Timestamp.fromDate(new Date(endVal)) : firebase.firestore.FieldValue.delete();
+    const schedVal = $('vehicle-trip-scheduled-start').value;
+    updateData.tripScheduledStart = schedVal ? firebase.firestore.Timestamp.fromDate(new Date(schedVal.slice(0, 16) + ':00-10:00')) : firebase.firestore.FieldValue.delete();
+    const endVal = $('vehicle-trip-expected-end').value;
+    updateData.tripExpectedEnd = endVal ? firebase.firestore.Timestamp.fromDate(new Date(endVal.slice(0, 16) + ':00-10:00')) : firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
     updateData.repairOrderNumber = firebase.firestore.FieldValue.delete();
@@ -3753,8 +3759,8 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
     updateData.tripExpectedEnd = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
-      // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
-      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
+      // Normalize to YYYY-MM-DDTHH:MM then append HST offset (UTC-10) so it's always Hawaii time
+      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal.slice(0, 16) + ':00-10:00'));
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
@@ -3775,8 +3781,8 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
     updateData.tripExpectedEnd = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
-      // Append HST offset so the value is always parsed as Hawaii time (UTC-10), not the user's local timezone
-      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
+      // Normalize to YYYY-MM-DDTHH:MM then append HST offset (UTC-10) so it's always Hawaii time
+      updateData.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal.slice(0, 16) + ':00-10:00'));
     } else {
       updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     }
@@ -3887,10 +3893,10 @@ $('btn-save-location').addEventListener('click', async () => {
     // Log trip to tripLogs for productivity tracking
     if (tripStatus === 'scheduled' || tripStatus === 'private-trip') {
       const logStart = tripStatus === 'scheduled'
-        ? getDTValue('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time')
+        ? $('vehicle-trip-scheduled-start').value.slice(0, 16)
         : getDTValue('private-trip-start-date', 'private-trip-start-time');
       const logEnd = tripStatus === 'scheduled'
-        ? getDTValue('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time')
+        ? $('vehicle-trip-expected-end').value.slice(0, 16)
         : getDTValue('private-trip-end-date', 'private-trip-end-time');
       if (logStart && logEnd) {
         const startDate = logStart.slice(0, 10);

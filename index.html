@@ -211,20 +211,12 @@
             </select>
           </div>
           <div id="trip-scheduled-row" class="loc-field" style="display:none;">
-            <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-            <div class="dt-split-wrap">
-              <input type="date" id="vehicle-trip-scheduled-start-date" class="vehicle-location-custom dt-date-input">
-              <input type="text" id="vehicle-trip-scheduled-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
-              <select id="vehicle-trip-scheduled-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
-            </div>
+            <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+            <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom">
           </div>
           <div id="trip-expected-end-row" class="loc-field" style="display:none;">
-            <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
-            <div class="dt-split-wrap">
-              <input type="date" id="vehicle-trip-expected-end-date" class="vehicle-location-custom dt-date-input">
-              <input type="text" id="vehicle-trip-expected-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
-              <select id="vehicle-trip-expected-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
-            </div>
+            <label for="vehicle-trip-expected-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+            <input type="datetime-local" id="vehicle-trip-expected-end" class="vehicle-location-custom">
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
