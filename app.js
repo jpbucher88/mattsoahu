@@ -13227,51 +13227,115 @@ function _parseDollar(str) {
   return neg ? -n : n;
 }
 
-function _showTuroImportProgress(msg) {
-  let el = $('turo-import-progress');
-  if (!el) {
-    el = document.createElement('div');
-    el.id = 'turo-import-progress';
-    el.style.cssText = [
-      'position:fixed','top:0','left:0','right:0','bottom:0',
-      'background:rgba(0,0,0,0.55)','z-index:9999',
-      'display:flex','align-items:center','justify-content:center',
-    ].join(';');
-    el.innerHTML = `
-      <div style="background:#1f2937;color:#f9fafb;border-radius:14px;padding:28px 36px;text-align:center;min-width:260px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
-        <div id="turo-import-spinner" style="font-size:2rem;margin-bottom:12px;animation:spin 1s linear infinite;display:inline-block;">⏳</div>
-        <div style="font-weight:700;font-size:1rem;margin-bottom:6px;">Importing Turo CSV</div>
-        <div id="turo-import-msg" style="font-size:0.85rem;color:#9ca3af;"></div>
-      </div>`;
-    document.body.appendChild(el);
-    // Add spin keyframes if not already present
-    if (!document.getElementById('turo-spin-style')) {
-      const s = document.createElement('style');
-      s.id = 'turo-spin-style';
-      s.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
-      document.head.appendChild(s);
-    }
+// ── Turo import step modal ──────────────────────────────────────
+// Shows a modal with live step-by-step progress. Stays open until
+// the user taps "Done" so they always see the result summary.
+
+function _turoModalEl() { return $('turo-import-modal'); }
+
+function _buildTuroModal(fileName) {
+  if (_turoModalEl()) return; // already open
+  if (!document.getElementById('turo-spin-style')) {
+    const s = document.createElement('style');
+    s.id = 'turo-spin-style';
+    s.textContent = `@keyframes turo-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+      .turo-step{display:flex;align-items:flex-start;gap:10px;margin:6px 0;font-size:0.88rem;}
+      .turo-step-icon{width:20px;text-align:center;flex-shrink:0;margin-top:1px;}
+      .turo-step-spin{animation:turo-spin 0.9s linear infinite;display:inline-block;}`;
+    document.head.appendChild(s);
   }
-  const msgEl = $('turo-import-msg');
-  if (msgEl) msgEl.textContent = msg || '';
+  const el = document.createElement('div');
+  el.id = 'turo-import-modal';
+  el.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;';
+  el.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:100%;max-width:420px;box-shadow:0 12px 40px rgba(0,0,0,0.25);overflow:hidden;">
+      <div style="background:#111827;padding:16px 20px;display:flex;align-items:center;gap:10px;">
+        <span style="font-size:1.3rem;">📤</span>
+        <div>
+          <div style="font-weight:700;color:#f9fafb;font-size:0.95rem;">Importing Turo CSV</div>
+          <div style="font-size:0.75rem;color:#9ca3af;margin-top:1px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="turo-modal-filename">${escapeHtml(fileName)}</div>
+        </div>
+      </div>
+      <div style="padding:18px 20px;" id="turo-modal-steps"></div>
+      <div id="turo-modal-result" style="display:none;padding:0 20px 16px;"></div>
+      <div id="turo-modal-footer" style="display:none;padding:0 20px 18px;">
+        <button onclick="document.getElementById('turo-import-modal').remove()" style="width:100%;padding:10px;background:#111827;color:#fff;border:none;border-radius:8px;font-size:0.92rem;font-weight:600;cursor:pointer;">✓ Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(el);
 }
 
-function _hideTuroImportProgress() {
-  const el = $('turo-import-progress');
-  if (el) el.remove();
+function _turoStep(id, icon, text, state) {
+  // state: 'pending' | 'running' | 'done' | 'error'
+  const stepsEl = $('turo-modal-steps');
+  if (!stepsEl) return;
+  let row = document.getElementById('turo-step-' + id);
+  if (!row) {
+    row = document.createElement('div');
+    row.id = 'turo-step-' + id;
+    row.className = 'turo-step';
+    stepsEl.appendChild(row);
+  }
+  const iconHtml = state === 'running'
+    ? `<span class="turo-step-icon turo-step-spin">⏳</span>`
+    : state === 'done'  ? `<span class="turo-step-icon">✅</span>`
+    : state === 'error' ? `<span class="turo-step-icon">❌</span>`
+    : `<span class="turo-step-icon" style="color:#9ca3af;">◦</span>`;
+  const color = state === 'error' ? '#dc2626' : state === 'running' ? '#111827' : state === 'done' ? '#15803d' : '#9ca3af';
+  row.innerHTML = `${iconHtml}<span style="color:${color};font-weight:${state === 'running' ? 600 : 400};">${text}</span>`;
 }
+
+function _turoModalDone(added, skipped, cancelled, unmatched) {
+  const resultEl = $('turo-modal-result');
+  const footerEl = $('turo-modal-footer');
+  if (!resultEl || !footerEl) return;
+  const hasNew = added > 0;
+  const lines = [];
+  if (hasNew)     lines.push(`<div style="font-size:1.05rem;font-weight:700;color:#15803d;margin-bottom:6px;">🎉 ${added} new trip${added !== 1 ? 's' : ''} imported!</div>`);
+  else            lines.push(`<div style="font-size:1rem;font-weight:700;color:#374151;margin-bottom:6px;">No new trips to import.</div>`);
+  if (skipped)    lines.push(`<div style="font-size:0.83rem;color:#6b7280;">• ${skipped} trip${skipped !== 1 ? 's' : ''} already existed — skipped</div>`);
+  if (cancelled)  lines.push(`<div style="font-size:0.83rem;color:#6b7280;">• ${cancelled} cancellation${cancelled !== 1 ? 's' : ''} skipped</div>`);
+  if (unmatched)  lines.push(`<div style="font-size:0.83rem;color:#b45309;">• ${unmatched} row${unmatched !== 1 ? 's' : ''} had a VIN not matching any fleet vehicle</div>`);
+  resultEl.innerHTML = `<div style="background:${hasNew ? '#f0fdf4' : '#f9fafb'};border-radius:8px;padding:12px 14px;">${lines.join('')}</div>`;
+  resultEl.style.display = 'block';
+  footerEl.style.display = 'block';
+}
+
+function _turoModalError(msg) {
+  const resultEl = $('turo-modal-result');
+  const footerEl = $('turo-modal-footer');
+  if (resultEl) {
+    resultEl.innerHTML = `<div style="background:#fef2f2;border-radius:8px;padding:12px 14px;color:#dc2626;font-size:0.88rem;font-weight:600;">❌ Import failed: ${escapeHtml(msg)}</div>`;
+    resultEl.style.display = 'block';
+  }
+  if (footerEl) footerEl.style.display = 'block';
+}
+
+// yield to browser so modal renders before sync parsing begins
+function _paint() { return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
 
 window.importTuroCSV = async function(input) {
   const file = input.files[0];
   if (!file) return;
-  input.value = ''; // reset so same file can be re-imported
+  input.value = '';
 
-  _showTuroImportProgress('Reading file…');
+  _buildTuroModal(file.name);
+  _turoStep('read',  '📄', 'Reading file…',           'running');
+  await _paint();
 
   try {
     const text = await file.text();
+    _turoStep('read', '📄', `File read (${(file.size / 1024).toFixed(0)} KB)`, 'done');
+
+    _turoStep('parse', '🔍', 'Parsing CSV rows…', 'running');
+    await _paint();
+
     const rows = _parseCSV(text);
-    if (rows.length < 2) { _hideTuroImportProgress(); toast('CSV appears empty.', 'error'); return; }
+    if (rows.length < 2) {
+      _turoStep('parse', '🔍', 'CSV appears empty — nothing to import.', 'error');
+      _turoModalError('File has no data rows.');
+      return;
+    }
 
     const header = rows[0];
     const IDX = {
@@ -13294,10 +13358,8 @@ window.importTuroCSV = async function(input) {
     vehiclesCache.forEach(v => { if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v; });
 
     let cancelled = 0, unmatched = 0;
-    const candidates = []; // rows that passed local checks
+    const candidates = [];
     const seen = new Set();
-
-    _showTuroImportProgress(`Parsing ${rows.length - 1} rows…`);
 
     for (let i = 1; i < rows.length; i++) {
       const r = rows[i];
@@ -13314,7 +13376,6 @@ window.importTuroCSV = async function(input) {
       const delivery      = _parseDollar(r[IDX.delivery]);
       const smoking       = _parseDollar(r[IDX.smoking]);
       const cleaning      = _parseDollar(r[IDX.cleaning]);
-
       if (totalEarnings === 0 && tripPrice === 0) continue;
 
       const vin = r[IDX.vin]?.trim().toUpperCase() || '';
@@ -13323,9 +13384,9 @@ window.importTuroCSV = async function(input) {
 
       candidates.push({
         reservationId,
+        ref: db.collection('turoTrips').doc(reservationId),
         data: {
-          reservationId,
-          vin,
+          reservationId, vin,
           vehicleId: vehicle.id,
           vehiclePlate: vehicle.plate || '',
           vehicleName: r[IDX.vehicleName]?.trim() || '',
@@ -13343,37 +13404,36 @@ window.importTuroCSV = async function(input) {
       });
     }
 
-    _showTuroImportProgress(`Checking ${candidates.length} trips for duplicates…`);
+    _turoStep('parse', '🔍', `Parsed ${rows.length - 1} rows — ${candidates.length} completed trip${candidates.length !== 1 ? 's' : ''} to check`, 'done');
 
-    // Parallel dedup check — all Firestore reads fire at once instead of one-by-one
-    const refs = candidates.map(c => db.collection('turoTrips').doc(c.reservationId));
-    const snaps = await Promise.all(refs.map(ref => ref.get().catch(() => null)));
+    _turoStep('dedup', '☁️', `Checking ${candidates.length} trip${candidates.length !== 1 ? 's' : ''} for duplicates…`, 'running');
+    await _paint();
+
+    // All Firestore reads fire in parallel
+    const snaps = await Promise.all(candidates.map(c => c.ref.get().catch(() => null)));
 
     const batch = db.batch();
     let added = 0, skipped = 0;
     candidates.forEach((c, i) => {
       if (snaps[i] && snaps[i].exists) { skipped++; return; }
-      batch.set(refs[i], c.data);
+      batch.set(c.ref, c.data);
       added++;
     });
 
-    _showTuroImportProgress(`Saving ${added} new trip(s) to Firestore…`);
+    _turoStep('dedup', '☁️', `Duplicate check complete — ${skipped} already in Firestore`, 'done');
+
+    _turoStep('save', '💾', added > 0 ? `Saving ${added} new trip${added !== 1 ? 's' : ''}…` : 'Nothing new to save', added > 0 ? 'running' : 'done');
+    await _paint();
 
     if (added > 0) await batch.commit();
+    _turoStep('save', '💾', added > 0 ? `${added} trip${added !== 1 ? 's' : ''} saved successfully` : 'Nothing new to save', 'done');
 
-    _hideTuroImportProgress();
-
-    const parts = [`${added} trip(s) imported`];
-    if (skipped)    parts.push(`${skipped} already existed`);
-    if (cancelled)  parts.push(`${cancelled} cancellations skipped`);
-    if (unmatched)  parts.push(`${unmatched} VIN(s) not matched`);
-    toast(parts.join(' · '), added > 0 ? 'success' : 'info');
+    _turoModalDone(added, skipped, cancelled, unmatched);
     if (added > 0) loadTuroEarnings();
 
   } catch (e) {
-    _hideTuroImportProgress();
     console.error('Turo import error:', e);
-    toast('Import failed: ' + e.message, 'error');
+    _turoModalError(e.message || 'Unknown error');
   }
 };
 
