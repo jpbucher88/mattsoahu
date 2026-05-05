@@ -7566,6 +7566,7 @@ window.openFabAddTask = function() {
   const titleEl = $('fab-task-title');
   const descEl = $('fab-task-desc');
   const dueEl = $('fab-task-due');
+  const dueTimeEl = $('fab-task-due-time');
   const priEl = $('fab-task-priority');
   const assigneeSearch = $('fab-task-assignee-search');
   const assigneeId = $('fab-task-assignee-id');
@@ -7574,6 +7575,7 @@ window.openFabAddTask = function() {
   if (titleEl) titleEl.value = '';
   if (descEl) descEl.value = '';
   if (dueEl) dueEl.value = '';
+  if (dueTimeEl) dueTimeEl.value = '';
   if (priEl) priEl.value = 'normal';
   if (assigneeSearch) assigneeSearch.value = '';
   if (assigneeId) assigneeId.value = '';
@@ -7596,6 +7598,7 @@ window.submitFabTask = async function() {
   const desc     = ($('fab-task-desc').value || '').trim();
   const priority = $('fab-task-priority').value || 'normal';
   const dueDate  = $('fab-task-due').value || '';
+  const dueTime  = ($('fab-task-due-time')?.value || '').trim();
   const isUrgent = priority === 'urgent';
   const assigneeId   = ($('fab-task-assignee-id')?.value   || '').trim();
   const assigneeName = ($('fab-task-assignee-name')?.value || '').trim();
@@ -7609,6 +7612,7 @@ window.submitFabTask = async function() {
       urgent: isUrgent,
       taskStatus: isUrgent ? 'urgent' : 'scheduled',
       dueDate: dueDate,
+      ...(dueTime      ? { dueTime }                          : {}),
       ...(assigneeId   ? { assignedTo: assigneeId }           : {}),
       ...(assigneeName ? { assignedToName: assigneeName }     : {}),
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
