@@ -119,6 +119,43 @@ document.addEventListener('input', function(e) {
   if (el.value !== v) el.value = v;
 });
 
+// Snap text time inputs to :00 or :30 on blur
+document.addEventListener('blur', function(e) {
+  const el = e.target;
+  if (!el.classList || !el.classList.contains('dt-time-input')) return;
+  const raw = el.value.trim();
+  if (!raw || !raw.includes(':')) return;
+  let [hStr, mStr] = raw.split(':');
+  let h = parseInt(hStr, 10);
+  let m = parseInt(mStr, 10);
+  if (isNaN(h) || isNaN(m)) return;
+  // Snap minutes to nearest :00 or :30
+  m = m < 15 ? 0 : m < 45 ? 30 : 0;
+  if (m === 0 && parseInt(mStr, 10) >= 45) h += 1; // roll over hour
+  if (h > 12) h = 12; if (h < 1) h = 12;
+  el.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}, true);
+
+// Snap datetime-local inputs to :00 or :30
+function snapDatetimeToHalfHour(el) {
+  if (!el || !el.value) return;
+  const [datePart, timePart] = el.value.split('T');
+  if (!timePart) return;
+  let [hStr, mStr] = timePart.split(':');
+  let h = parseInt(hStr, 10);
+  let m = parseInt(mStr, 10);
+  if (isNaN(h) || isNaN(m)) return;
+  const snappedM = m < 15 ? 0 : m < 45 ? 30 : 0;
+  if (snappedM === 0 && m >= 45) h = (h + 1) % 24;
+  el.value = datePart + 'T' + String(h).padStart(2, '0') + ':' + String(snappedM).padStart(2, '0');
+}
+document.addEventListener('change', function(e) {
+  const el = e.target;
+  if (el.id === 'vehicle-trip-scheduled-start' || el.id === 'vehicle-trip-expected-end') {
+    snapDatetimeToHalfHour(el);
+  }
+});
+
 const pages = {
   login: $('page-login'),
   dashboard: $('page-dashboard'),
@@ -566,6 +603,9 @@ auth.onAuthStateChanged(async (user) => {
     if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
     if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
     if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
+    // Hide FAB on logout
+    const fab = $('notif-fab');
+    if (fab) fab.style.display = 'none';
     showPage('login');
   }
 });
@@ -817,6 +857,41 @@ setInterval(async () => {
   if (!hasScheduled) return;
   await autoStartScheduledTrips();
 }, 60000);
+
+// Background photo refresh — re-check photo timestamps every 5 minutes silently
+setInterval(async () => {
+  if (!currentUser || vehiclesCache.length === 0) return;
+  const now = Date.now();
+  let changed = false;
+  await Promise.all(vehiclesCache.map(async (v) => {
+    try {
+      const photoSnap = await db.collection('photos')
+        .where('vehicleId', '==', v.id)
+        .orderBy('timestamp', 'desc')
+        .limit(1)
+        .get();
+      let newDate = null;
+      if (!photoSnap.empty) {
+        const ts = photoSnap.docs[0].data().timestamp;
+        if (ts) newDate = ts.toDate();
+      }
+      // Apply override if more recent
+      if (v.lastPhotoOverrideAt) {
+        const overrideMs = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate().getTime() : new Date(v.lastPhotoOverrideAt).getTime();
+        const photoMs = newDate ? newDate.getTime() : 0;
+        if (overrideMs > photoMs) newDate = new Date(overrideMs);
+      }
+      const oldStr = v.lastPhotoDate ? v.lastPhotoDate.toISOString() : null;
+      const newStr = newDate ? newDate.toISOString() : null;
+      if (oldStr !== newStr) {
+        v.lastPhotoDate = newDate;
+        v.lastPhotoAge = newDate ? now - newDate.getTime() : (newDate === null ? Infinity : null);
+        changed = true;
+      }
+    } catch (e) { /* keep cached value */ }
+  }));
+  if (changed) renderFleetDashboard();
+}, 5 * 60 * 1000);
 
 function populateVehicleSelect(selectEl) {
   const MS_24H = 24 * 60 * 60 * 1000;
@@ -1357,7 +1432,43 @@ function renderLocationsWidget() {
 }
 
 // "At Location" check — shows vehicles at this location that are ready but missing today's photos
-window.checkLocationPhotos = function(loc) {
+window.checkLocationPhotos = async function(loc) {
+  // Refresh photo timestamps for vehicles at this location before checking
+  toast('🔄 Refreshing photo status...', 'info');
+  const locVehicles = vehiclesCache.filter(v => (v.homeLocation || '') === loc);
+  if (locVehicles.length > 0) {
+    const now = Date.now();
+    await Promise.all(locVehicles.map(async (v) => {
+      try {
+        const photoSnap = await db.collection('photos')
+          .where('vehicleId', '==', v.id)
+          .orderBy('timestamp', 'desc')
+          .limit(1)
+          .get();
+        if (photoSnap.empty) {
+          v.lastPhotoAge = Infinity;
+          v.lastPhotoDate = null;
+        } else {
+          const ts = photoSnap.docs[0].data().timestamp;
+          if (ts) {
+            v.lastPhotoDate = ts.toDate();
+            v.lastPhotoAge = now - v.lastPhotoDate.getTime();
+          } else {
+            v.lastPhotoAge = Infinity;
+            v.lastPhotoDate = null;
+          }
+        }
+        if (v.lastPhotoOverrideAt) {
+          const overrideTime = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate().getTime() : new Date(v.lastPhotoOverrideAt).getTime();
+          if (v.lastPhotoAge === Infinity || overrideTime > (now - v.lastPhotoAge)) {
+            v.lastPhotoAge = now - overrideTime;
+            v.lastPhotoDate = new Date(overrideTime);
+          }
+        }
+      } catch (e) { /* use cached value on error */ }
+    }));
+  }
+
   const needsPhotos = vehiclesCache.filter(v => {
     if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip') return false;
     if (v.tripStatus === 'repair-shop') return false;
@@ -6123,6 +6234,9 @@ async function loadDashboardFollowUps() {
     }
     if (tasksBtn) tasksBtn.style.display = '';
 
+    // Update floating notification bubble (FAB)
+    updateNotifFab(items, badgeCount);
+
     // Sync vehicle-page task button badge
     const badgeVehicle = $('task-alert-count-vehicle');
     const tasksBtnVehicle = $('btn-tasks-vehicle');
@@ -7265,6 +7379,59 @@ function closeTaskPanel() {
 }
 window.openTaskPanel = openTaskPanel;
 window.closeTaskPanel = closeTaskPanel;
+
+// ---- Floating Notification Bubble (FAB) ----
+function updateNotifFab(items, badgeCount) {
+  const fab = $('notif-fab');
+  const fabCount = $('notif-fab-count');
+  const fabPopupBody = $('notif-fab-popup-body');
+  if (!fab) return;
+
+  // Show FAB whenever logged in (currentUser is set)
+  fab.style.display = 'flex';
+
+  const urgentItems = items.filter(i => i.urgent && !i.done);
+  const scheduledItems = items.filter(i => !i.urgent && i.isFollowUp && !i.done);
+  const hasUrgent = urgentItems.length > 0;
+
+  // Badge
+  if (fabCount) {
+    if (badgeCount > 0) {
+      fabCount.textContent = badgeCount > 99 ? '99+' : badgeCount;
+      fabCount.style.display = '';
+    } else {
+      fabCount.style.display = 'none';
+    }
+  }
+  fab.classList.toggle('has-urgent', hasUrgent);
+
+  // Mini popup body
+  if (fabPopupBody) {
+    const urgentCount = urgentItems.length;
+    const taskCount = scheduledItems.length;
+    const photosDue = vehiclesCache.filter(v => {
+      if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'repair-shop') return false;
+      if (v.needsCleaning || v.photoExcluded) return false;
+      return !hasPhotosToday(v);
+    }).length;
+
+    let html = '';
+    html += `<div class="fab-popup-row">
+      <span class="fab-popup-label">🚨 Urgent Tasks</span>
+      <span class="fab-popup-badge${urgentCount === 0 ? ' ok' : ''}">${urgentCount === 0 ? '✅ None' : urgentCount}</span>
+    </div>`;
+    html += `<div class="fab-popup-row">
+      <span class="fab-popup-label">📋 Scheduled Tasks</span>
+      <span class="fab-popup-badge${taskCount === 0 ? ' ok' : ' warn'}">${taskCount === 0 ? '✅ None' : taskCount}</span>
+    </div>`;
+    html += `<div class="fab-popup-row">
+      <span class="fab-popup-label">📷 Photos Due Today</span>
+      <span class="fab-popup-badge${photosDue === 0 ? ' ok' : ''}">${photosDue === 0 ? '✅ All Good' : photosDue + ' vehicle' + (photosDue !== 1 ? 's' : '')}</span>
+    </div>`;
+    fabPopupBody.innerHTML = html;
+  }
+}
+window.updateNotifFab = updateNotifFab;
 
 // Open the task panel directly on the compliance tab
 window.openComplianceView = function() {

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260429c">
+  <link rel="stylesheet" href="style.css?v=20260504a">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -212,11 +212,11 @@
           </div>
           <div id="trip-scheduled-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-            <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom">
+            <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom" step="1800">
           </div>
           <div id="trip-expected-end-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-expected-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-            <input type="datetime-local" id="vehicle-trip-expected-end" class="vehicle-location-custom">
+            <input type="datetime-local" id="vehicle-trip-expected-end" class="vehicle-location-custom" step="1800">
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
@@ -275,7 +275,7 @@
                 <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
                 <div class="dt-split-wrap">
                   <input type="date" id="private-trip-start-date" class="vehicle-location-custom dt-date-input">
-                  <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+                  <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off" list="half-hour-times">
                   <select id="private-trip-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
                 </div>
               </div>
@@ -283,7 +283,7 @@
                 <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
                 <div class="dt-split-wrap">
                   <input type="date" id="private-trip-end-date" class="vehicle-location-custom dt-date-input">
-                  <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off">
+                  <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off" list="half-hour-times">
                   <select id="private-trip-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
                 </div>
               </div>
@@ -341,8 +341,8 @@
             </details>
             <div class="loc-field">
               <label>📄 Customer Contract:</label>
-              <label class="btn btn-sm btn-outline" for="private-contract-upload" style="cursor:pointer;">📤 Upload Contract</label>
-              <input type="file" id="private-contract-upload" accept="image/*,application/pdf" hidden>
+              <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('private-contract-upload').click()" style="cursor:pointer;">📤 Upload Contract</button>
+              <input type="file" id="private-contract-upload" accept="image/*,application/pdf" style="display:none;">
               <div id="private-contract-preview" class="private-contract-preview"></div>
             </div>
           </div>
@@ -1648,6 +1648,18 @@
     </div>
   </div>
 
+  <!-- ==================== FLOATING NOTIFICATION BUBBLE (FAB) ==================== -->
+  <div id="notif-fab" class="notif-fab" style="display:none;" title="Tasks &amp; Urgent Notifications" onclick="openTaskPanel()">
+    <span class="notif-fab-icon">🎯</span>
+    <span id="notif-fab-count" class="notif-fab-count" style="display:none;">0</span>
+    <!-- Mini preview popup on hover -->
+    <div class="notif-fab-popup" id="notif-fab-popup">
+      <div class="notif-fab-popup-title">📋 Quick Summary</div>
+      <div id="notif-fab-popup-body" class="notif-fab-popup-body">Loading...</div>
+      <div class="notif-fab-popup-footer">Tap to open Operations Hub →</div>
+    </div>
+  </div>
+
   <!-- ==================== TASK PANEL OVERLAY ==================== -->
   <div id="task-panel-overlay" class="task-panel-overlay" style="display:none;" onclick="if(event.target===this)closeTaskPanel()">
     <div class="task-panel">
@@ -1849,5 +1861,21 @@
       <div id="jason-confetti" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
     </div>
   </div>
+
+  <!-- Datalist for :00/:30 time snapping (private trip time inputs) -->
+  <datalist id="half-hour-times">
+    <option value="12:00"><option value="12:30">
+    <option value="1:00"><option value="1:30">
+    <option value="2:00"><option value="2:30">
+    <option value="3:00"><option value="3:30">
+    <option value="4:00"><option value="4:30">
+    <option value="5:00"><option value="5:30">
+    <option value="6:00"><option value="6:30">
+    <option value="7:00"><option value="7:30">
+    <option value="8:00"><option value="8:30">
+    <option value="9:00"><option value="9:30">
+    <option value="10:00"><option value="10:30">
+    <option value="11:00"><option value="11:30">
+  </datalist>
 </body>
 </html>
