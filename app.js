@@ -5258,8 +5258,8 @@ function _renderActivityTable(items, el) {
       const det = d.details ? Object.entries(d.details).map(([k, v]) => `${k}: ${v}`).join(' · ') : '';
       const bg = i % 2 === 0 ? '' : 'background:#f9fafb;';
       return `<tr style="border-bottom:1px solid #f3f4f6;${bg}">
-        <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(time)}</td>
-        <td style="padding:5px 8px;font-weight:500;">${escapeHtml(d.userName || '?')}</td>
+        <td style="padding:5px 8px;white-space:nowrap;">${time}</td>
+        <td style="padding:5px 8px;font-weight:500;"><span style="cursor:pointer;color:#1d4ed8;text-decoration:underline;" onclick="_filterActivityByUser('${escapeHtml(d.userName||'?')}')" title="Filter by this person">${escapeHtml(d.userName || '?')}</span></td>
         <td style="padding:5px 8px;"><code style="font-size:0.8em;">${escapeHtml(d.action || '')}</code></td>
         <td style="padding:5px 8px;color:#6b7280;font-size:0.8em;">${escapeHtml(det)}</td>
       </tr>`;
@@ -8047,6 +8047,7 @@ function renderUrgentBanner(items) {
     const isVehicle = item.type === 'vehicle';
     const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
     const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
+    const itemAttrs = `${vidAttr} data-id="${item.id}" data-col="${item.collection}"`;
 
     let metaLabel;
     if (isVehicle) {
@@ -8091,7 +8092,7 @@ function renderUrgentBanner(items) {
       : '';
 
     html += `
-      <div class="urgent-banner-item"${vidAttr}>
+      <div class="urgent-banner-item" style="cursor:pointer;"${itemAttrs}>
         <div class="urgent-banner-info">
           <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
           <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
@@ -8108,9 +8109,9 @@ function renderUrgentBanner(items) {
   }
   list.innerHTML = html;
 
-  // Click vehicle items to navigate
-  list.querySelectorAll('.urgent-banner-item[data-vid]').forEach(el => {
-    el.addEventListener('click', () => openVehiclePage(el.dataset.vid));
+  // Click urgent items to open the note edit modal directly
+  list.querySelectorAll('.urgent-banner-item').forEach(el => {
+    el.addEventListener('click', () => openNoteEditModal(el.dataset.id, el.dataset.col));
   });
 }
 
@@ -11821,6 +11822,7 @@ function renderTimeClock() {
   if (elapsedInterval) { clearInterval(elapsedInterval); elapsedInterval = null; }
 
   const isOwnClock = !tcViewingUid || tcViewingUid === currentUser.uid;
+  const canEditClock = isOwnClock || currentUserRole === 'admin' || currentUserRole === 'manager';
   const today = todayDateString();
   const dates = getWeekDates(currentWeekOffset);
   const isCurrentWeek = currentWeekOffset === 0;
@@ -12144,7 +12146,8 @@ window.clockOut = async function() {
 window.tcSaveRevenue = async function() {
   if (!currentUser) return;
   const today = todayDateString();
-  const docId = currentUser.uid + '_' + today;
+  const targetUid = tcViewingUid || currentUser.uid;
+  const docId = targetUid + '_' + today;
   const goalStr = $('tc-goal-input')?.value;
   const achStr = $('tc-achieved-input')?.value;
   const goal = goalStr !== '' && goalStr != null ? parseFloat(goalStr) : null;
@@ -12155,7 +12158,7 @@ window.tcSaveRevenue = async function() {
       await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
     } else {
       await db.collection('timeclock').doc(docId).set({
-        uid: currentUser.uid, email: currentUser.email, date: today,
+        uid: targetUid, email: currentUser.email, date: today,
         sessions: [], activeSession: null, revenueGoal: goal, revenueAchieved: achieved
       });
     }
@@ -12185,6 +12188,7 @@ window.tcExpandDay = function(date) {
   const [, mo, dy] = date.split('-');
   const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
   const isOwnClockExpand = !tcViewingUid || tcViewingUid === currentUser.uid;
+  const canEditExpand = isOwnClockExpand || currentUserRole === 'admin' || currentUserRole === 'manager';
   const noSessionsMsg = sessions.length === 0 ? '<p class="tc-no-sessions">No sessions recorded for this day.</p>' : '';
   const rows = sessions.map((s, idx) => {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
@@ -12203,7 +12207,7 @@ window.tcExpandDay = function(date) {
       <span class="tc-session-time">${inStr} – ${outStr}</span>
       <span class="tc-session-dur">${sessMs > 0 ? fmtMs(sessMs) : ''}</span>
       <span class="tc-session-actions">
-        ${isOwnClockExpand ? `
+        ${canEditExpand ? `
         <button class="tc-icon-btn" title="Edit" onclick="tcEditSession('${date}',${idx})">✏️</button>
         <button class="tc-icon-btn tc-icon-del" title="Delete" onclick="tcDeleteSession('${date}',${idx})">🗑️</button>
         ` : ''}
@@ -12227,7 +12231,7 @@ window.tcExpandDay = function(date) {
       </div>
       <div class="modal-body">
         <div class="tc-sessions-list">${noSessionsMsg}${rows}</div>
-        ${isOwnClockExpand ? `<button class="btn btn-outline tc-btn-sm" style="margin:8px 0 4px;" onclick="tcAddSession('${date}')">➕ Add Session</button>` : ''}
+        ${canEditExpand ? `<button class="btn btn-outline tc-btn-sm" style="margin:8px 0 4px;" onclick="tcAddSession('${date}')">➕ Add Session</button>` : ''}
         <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:flex;flex-direction:column;gap:10px;">
           <div class="tc-rev-row">
             <div class="tc-field-row">
@@ -12248,7 +12252,8 @@ window.tcExpandDay = function(date) {
 
 window.tcSaveRevenueForDate = async function(date) {
   if (!currentUser) return;
-  const docId = currentUser.uid + '_' + date;
+  const targetUid = tcViewingUid || currentUser.uid;
+  const docId = targetUid + '_' + date;
   const goalStr = $('tcd-goal-input')?.value;
   const achStr = $('tcd-achieved-input')?.value;
   const goal = goalStr !== '' && goalStr != null ? parseFloat(goalStr) : null;
@@ -12267,7 +12272,7 @@ window.tcDeleteSession = async function(date, idx) {
   const ok = await confirm('Delete Session', 'Remove this session permanently? This cannot be undone.');
   if (!ok) return;
   if (!currentUser) return;
-  const docId = currentUser.uid + '_' + date;
+  const docId = (tcViewingUid || currentUser.uid) + '_' + date;
   try {
     const snap = await db.collection('timeclock').doc(docId).get();
     if (!snap.exists) return;
@@ -12352,7 +12357,7 @@ window.tcSaveEditSession = async function(date, idx) {
   if (clockOut && clockOut.toMillis() <= clockIn.toMillis()) {
     toast('Punch Out must be after Punch In.', 'error'); return;
   }
-  const docId = currentUser.uid + '_' + date;
+  const docId = (tcViewingUid || currentUser.uid) + '_' + date;
   try {
     const snap = await db.collection('timeclock').doc(docId).get();
     if (!snap.exists) return;
@@ -12427,7 +12432,8 @@ window.tcSaveNewSession = async function(date) {
   if (clockOut && clockOut.toMillis() <= clockIn.toMillis()) {
     toast('Punch Out must be after Punch In.', 'error'); return;
   }
-  const docId = currentUser.uid + '_' + date;
+  const targetUid = tcViewingUid || currentUser.uid;
+  const docId = targetUid + '_' + date;
   const newSession = { clockIn, clockOut, scheduledStart: schedVal, breaks: [], manualEntry: true };
   try {
     const snap = await db.collection('timeclock').doc(docId).get();
@@ -12443,7 +12449,7 @@ window.tcSaveNewSession = async function(date) {
     } else {
       // Create new doc for this day
       await db.collection('timeclock').doc(docId).set({
-        uid: currentUser.uid,
+        uid: targetUid,
         date,
         sessions: [newSession],
         activeSession: null,

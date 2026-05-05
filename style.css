@@ -3064,9 +3064,10 @@ body {
   background: rgba(0,0,0,0.45);
   z-index: 10000;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: 20px;
+  overflow-y: auto;
 }
 .note-edit-modal {
   background: #fff;
@@ -3075,6 +3076,9 @@ body {
   max-width: 400px;
   width: 100%;
   box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  margin: auto 0;
 }
 .note-edit-modal h4 {
   margin: 0 0 16px;
