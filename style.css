@@ -1641,6 +1641,68 @@ body {
   margin-bottom: 12px;
 }
 
+/* ---- Supplier Star Rating ---- */
+.supplier-rating-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-top: 6px;
+}
+.supplier-rating-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 140px;
+}
+.supplier-rating-item .rating-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #374151;
+}
+.star-picker {
+  display: flex;
+  gap: 2px;
+}
+.star-picker .star {
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: #d1d5db;
+  transition: color 0.1s, transform 0.1s;
+  line-height: 1;
+  user-select: none;
+}
+.star-picker .star.filled {
+  color: #f59e0b;
+}
+.star-picker .star:hover {
+  transform: scale(1.15);
+}
+/* Compact display in history rows */
+.maint-supplier-rating {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin-top: 4px;
+}
+.maint-rating-chip {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.78rem;
+  color: #374151;
+  background: #fef9c3;
+  border: 1px solid #fde68a;
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+.maint-rating-chip .chip-stars {
+  color: #f59e0b;
+  letter-spacing: 1px;
+}
+.maint-rating-chip .chip-stars.dim {
+  color: #d1d5db;
+}
+
 .form-group-inline {
   max-width: 340px;
 }

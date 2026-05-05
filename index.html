@@ -600,6 +600,47 @@
                 <div id="m-next-due-mileage-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
               </div>
             </div>
+            <!-- Supplier Rating -->
+            <div class="form-row" id="m-supplier-rating-row">
+              <div class="form-group" style="flex:1;">
+                <label>⭐ Supplier Rating <span style="color:#9ca3af;font-size:0.77rem;">(optional — rate the shop)</span></label>
+                <div class="supplier-rating-grid">
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">📞 Communication</span>
+                    <div class="star-picker" data-hidden="m-rat-comm">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="m-rat-comm" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">💰 Price / Value</span>
+                    <div class="star-picker" data-hidden="m-rat-price">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="m-rat-price" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">✅ Fixed Correctly</span>
+                    <div class="star-picker" data-hidden="m-rat-fixed">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="m-rat-fixed" value="">
+                  </div>
+                </div>
+              </div>
+            </div>
             <div class="form-row">
               <button type="submit" class="btn btn-primary">Save Record</button>
               <button type="button" id="btn-cancel-maintenance" class="btn btn-outline">Cancel</button>
@@ -682,6 +723,47 @@
                 <div id="em-invoice-preview-wrap" class="m-invoice-preview-wrap" style="display:none;">
                   <img id="em-invoice-preview" class="m-invoice-preview-img" src="" alt="New invoice preview">
                   <button type="button" id="em-invoice-clear" class="m-invoice-clear-btn">✕ Cancel new</button>
+                </div>
+              </div>
+            </div>
+            <!-- Supplier Rating -->
+            <div class="form-row">
+              <div class="form-group" style="flex:1;">
+                <label>⭐ Supplier Rating <span style="color:#9ca3af;font-size:0.77rem;">(optional)</span></label>
+                <div class="supplier-rating-grid">
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">📞 Communication</span>
+                    <div class="star-picker" data-hidden="em-rat-comm">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="em-rat-comm" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">💰 Price / Value</span>
+                    <div class="star-picker" data-hidden="em-rat-price">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="em-rat-price" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">✅ Fixed Correctly</span>
+                    <div class="star-picker" data-hidden="em-rat-fixed">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="em-rat-fixed" value="">
+                  </div>
                 </div>
               </div>
             </div>

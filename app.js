@@ -433,6 +433,51 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ---- Star rating picker ----
+// Used by maintenance supplier ratings. Works for any .star-picker element.
+window.pickStar = function(starEl) {
+  const picker = starEl.closest('.star-picker');
+  if (!picker) return;
+  const val = parseInt(starEl.dataset.val);
+  const hiddenId = picker.dataset.hidden;
+  const hiddenEl = hiddenId ? $(hiddenId) : null;
+  const current = hiddenEl ? parseInt(hiddenEl.value) || 0 : 0;
+  // Click same rating again → deselect (toggle off)
+  const newVal = (current === val) ? 0 : val;
+  if (hiddenEl) hiddenEl.value = newVal || '';
+  picker.querySelectorAll('.star').forEach(s => {
+    s.classList.toggle('filled', parseInt(s.dataset.val) <= newVal);
+  });
+};
+
+// Set stars on a picker programmatically (e.g. when loading existing data)
+function setStarPicker(pickerId, val) {
+  const picker = typeof pickerId === 'string' ? $(pickerId) : pickerId;
+  if (!picker) return;
+  const n = parseInt(val) || 0;
+  const hiddenId = picker.dataset.hidden;
+  if (hiddenId) { const h = $(hiddenId); if (h) h.value = n || ''; }
+  picker.querySelectorAll('.star').forEach(s => {
+    s.classList.toggle('filled', parseInt(s.dataset.val) <= n);
+  });
+}
+
+// Reset all star pickers inside a container
+function clearStarPickers(containerEl) {
+  if (!containerEl) return;
+  containerEl.querySelectorAll('.star-picker').forEach(picker => {
+    const hiddenId = picker.dataset.hidden;
+    if (hiddenId) { const h = $(hiddenId); if (h) h.value = ''; }
+    picker.querySelectorAll('.star').forEach(s => s.classList.remove('filled'));
+  });
+}
+
+// Build a compact HTML chip for a star count (filled + empty)
+function starsHtml(n, max = 5) {
+  n = Math.max(0, Math.min(max, parseInt(n) || 0));
+  return `<span class="chip-stars">${'★'.repeat(n)}</span><span class="chip-stars dim">${'★'.repeat(max - n)}</span>`;
+}
+
 function todayDateString() {
   const d = new Date();
   const parts = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
@@ -5201,6 +5246,7 @@ $('btn-apply-template').addEventListener('click', () => {
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
+  clearStarPickers($('maintenance-form'));
   $('m-next-due-display').textContent = '—';
   $('m-next-due-mileage-display').textContent = '—';
   // Clear invoice preview
@@ -5279,6 +5325,17 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     if (nextDueDate) record.nextDueDate = nextDueDate;
     if (intervalMiles) record.intervalMiles = intervalMiles;
     if (nextDueMileage) record.nextDueMileage = nextDueMileage;
+
+    // Supplier rating (optional)
+    const ratComm  = $('m-rat-comm')?.value  ? parseInt($('m-rat-comm').value)  : null;
+    const ratPrice = $('m-rat-price')?.value ? parseInt($('m-rat-price').value) : null;
+    const ratFixed = $('m-rat-fixed')?.value ? parseInt($('m-rat-fixed').value) : null;
+    if (ratComm || ratPrice || ratFixed) {
+      record.supplierRating = {};
+      if (ratComm)  record.supplierRating.communication  = ratComm;
+      if (ratPrice) record.supplierRating.price          = ratPrice;
+      if (ratFixed) record.supplierRating.fixedCorrectly = ratFixed;
+    }
 
     // Upload invoice if one was selected (compressed: 1600px wide, 0.78 quality ≈ readable but small)
     const invoiceFile = $('m-invoice-input').files[0];
@@ -5394,6 +5451,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     toast('Maintenance record saved!', 'success');
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
+    clearStarPickers($('maintenance-form'));
     $('m-next-due-display').textContent = '—';
     $('m-next-due-mileage-display').textContent = '—';
     $('m-invoice-input').value = '';
@@ -5442,6 +5500,16 @@ async function loadMaintenanceHistory(vehicleId) {
       }
       const nextDueStr = d.nextDueDate ? ` · Next: ${d.nextDueDate}` : '';
       const nextDueMiStr = d.nextDueMileage ? ` · Next: ${d.nextDueMileage.toLocaleString()} mi` : '';
+      // Supplier rating chips
+      let ratingHtml = '';
+      if (d.supplierRating) {
+        const r = d.supplierRating;
+        const chips = [];
+        if (r.communication)  chips.push(`<span class="maint-rating-chip">📞 ${starsHtml(r.communication)}</span>`);
+        if (r.price)          chips.push(`<span class="maint-rating-chip">💰 ${starsHtml(r.price)}</span>`);
+        if (r.fixedCorrectly) chips.push(`<span class="maint-rating-chip">✅ ${starsHtml(r.fixedCorrectly)}</span>`);
+        if (chips.length) ratingHtml = `<div class="maint-supplier-rating">${chips.join('')}</div>`;
+      }
       const invoiceHTML = d.invoiceUrl
         ? `<div class="m-invoice-thumb-row"><a href="${escapeHtml(d.invoiceUrl)}" target="_blank" title="View invoice"><img src="${escapeHtml(d.invoiceUrl)}" class="m-invoice-thumb" alt="Invoice"></a></div>`
         : '';
@@ -5450,6 +5518,7 @@ async function loadMaintenanceHistory(vehicleId) {
           <div class="item-info">
             <div class="item-title">${escapeHtml(d.serviceType)}${intervalBadge}</div>
             <div class="item-subtitle">${escapeHtml(d.date)}${meta ? ' · ' + meta : ''}${nextDueStr}${nextDueMiStr}${d.notes ? ' — ' + escapeHtml(d.notes) : ''}</div>
+            ${ratingHtml}
             ${invoiceHTML}
           </div>
       ${canDelete ? `<div class="item-actions"><button class="btn btn-sm btn-outline" onclick="openEditMaintenance('${doc.id}')">Edit</button><button class="btn btn-sm btn-danger" onclick="deleteMaintenanceRecord('${doc.id}')">Delete</button></div>` : ''}
@@ -5509,6 +5578,16 @@ window.openEditMaintenance = async function(docId) {
     $('em-cost').value = d.cost != null ? d.cost : '';
     $('em-location').value = d.location || '';
     $('em-notes').value = d.notes || '';
+
+    // Supplier rating stars
+    const editForm = $('edit-maint-form');
+    clearStarPickers(editForm);
+    if (d.supplierRating) {
+      const r = d.supplierRating;
+      if (r.communication)  setStarPicker(editForm.querySelector('[data-hidden="em-rat-comm"]'),  r.communication);
+      if (r.price)          setStarPicker(editForm.querySelector('[data-hidden="em-rat-price"]'), r.price);
+      if (r.fixedCorrectly) setStarPicker(editForm.querySelector('[data-hidden="em-rat-fixed"]'), r.fixedCorrectly);
+    }
 
     // Invoice
     $('em-invoice-input').value = '';
@@ -5587,6 +5666,19 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
     updateData.cost = cost != null ? cost : firebase.firestore.FieldValue.delete();
     updateData.location = location ?? firebase.firestore.FieldValue.delete();
     updateData.notes = notes ?? firebase.firestore.FieldValue.delete();
+
+    // Supplier rating
+    const eRatComm  = $('em-rat-comm')?.value  ? parseInt($('em-rat-comm').value)  : null;
+    const eRatPrice = $('em-rat-price')?.value ? parseInt($('em-rat-price').value) : null;
+    const eRatFixed = $('em-rat-fixed')?.value ? parseInt($('em-rat-fixed').value) : null;
+    if (eRatComm || eRatPrice || eRatFixed) {
+      updateData.supplierRating = {};
+      if (eRatComm)  updateData.supplierRating.communication  = eRatComm;
+      if (eRatPrice) updateData.supplierRating.price          = eRatPrice;
+      if (eRatFixed) updateData.supplierRating.fixedCorrectly = eRatFixed;
+    } else {
+      updateData.supplierRating = firebase.firestore.FieldValue.delete();
+    }
 
     // Handle invoice: new upload, keep existing, or remove
     const newFile = $('em-invoice-input').files[0];
