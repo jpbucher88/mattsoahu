@@ -587,6 +587,13 @@ auth.onAuthStateChanged(async (user) => {
         if (financeBtn) financeBtn.style.display = '';
         const prodBtn = $('productivity-open-btn');
         if (prodBtn) prodBtn.style.display = '';
+      } else {
+        // Non-admin/manager users can still add expenses — show finance button with restricted access
+        const financeBtn = $('btn-finance');
+        if (financeBtn) {
+          financeBtn.style.display = '';
+          financeBtn.title = 'Add Expense';
+        }
       }
 
       // Easter eggs: fire AFTER page is visible so they don't block the loading spinner
@@ -7506,6 +7513,53 @@ window.toggleFabMenu = toggleFabMenu;
 window.openFabMenu = openFabMenu;
 window.closeFabMenu = closeFabMenu;
 
+// Cache users for FAB task assignee picker (loaded once on first modal open)
+let _fabUserCache = null;
+
+async function _loadFabUsers() {
+  if (_fabUserCache) return _fabUserCache;
+  try {
+    const snap = await db.collection('users').orderBy('displayName').get();
+    _fabUserCache = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      _fabUserCache.push({ id: doc.id, name: d.displayName || d.email || doc.id });
+    });
+  } catch(e) { _fabUserCache = []; }
+  return _fabUserCache;
+}
+
+window.filterFabAssigneeList = function(query) {
+  const dropdown = $('fab-task-assignee-dropdown');
+  if (!dropdown) return;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { dropdown.style.display = 'none'; return; }
+
+  const users = _fabUserCache || [];
+  const matches = users.filter(u => u.name.toLowerCase().includes(q));
+  if (!matches.length) { dropdown.style.display = 'none'; return; }
+
+  dropdown.innerHTML = matches.map(u =>
+    `<div class="fab-assignee-option" onclick="selectFabAssignee('${escapeHtml(u.id)}','${escapeHtml(u.name)}')"
+      style="padding:8px 12px;cursor:pointer;font-size:0.9rem;border-bottom:1px solid #f3f4f6;"
+      onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
+      👤 ${escapeHtml(u.name)}
+    </div>`
+  ).join('');
+  dropdown.style.display = '';
+};
+
+window.selectFabAssignee = function(id, name) {
+  const searchEl = $('fab-task-assignee-search');
+  const idEl = $('fab-task-assignee-id');
+  const nameEl = $('fab-task-assignee-name');
+  const dropdown = $('fab-task-assignee-dropdown');
+  if (searchEl) searchEl.value = name;
+  if (idEl) idEl.value = id;
+  if (nameEl) nameEl.value = name;
+  if (dropdown) dropdown.style.display = 'none';
+};
+
 window.openFabAddTask = function() {
   const modal = $('fab-task-modal');
   if (!modal) return;
@@ -7513,11 +7567,21 @@ window.openFabAddTask = function() {
   const descEl = $('fab-task-desc');
   const dueEl = $('fab-task-due');
   const priEl = $('fab-task-priority');
+  const assigneeSearch = $('fab-task-assignee-search');
+  const assigneeId = $('fab-task-assignee-id');
+  const assigneeName = $('fab-task-assignee-name');
+  const dropdown = $('fab-task-assignee-dropdown');
   if (titleEl) titleEl.value = '';
   if (descEl) descEl.value = '';
   if (dueEl) dueEl.value = '';
   if (priEl) priEl.value = 'normal';
+  if (assigneeSearch) assigneeSearch.value = '';
+  if (assigneeId) assigneeId.value = '';
+  if (assigneeName) assigneeName.value = '';
+  if (dropdown) dropdown.style.display = 'none';
   modal.style.display = 'flex';
+  // Pre-load user list in background so the dropdown is instant
+  _loadFabUsers();
   setTimeout(() => { if (titleEl) titleEl.focus(); }, 100);
 };
 
@@ -7533,6 +7597,8 @@ window.submitFabTask = async function() {
   const priority = $('fab-task-priority').value || 'normal';
   const dueDate  = $('fab-task-due').value || '';
   const isUrgent = priority === 'urgent';
+  const assigneeId   = ($('fab-task-assignee-id')?.value   || '').trim();
+  const assigneeName = ($('fab-task-assignee-name')?.value || '').trim();
 
   try {
     await db.collection('generalNotes').add({
@@ -7543,11 +7609,14 @@ window.submitFabTask = async function() {
       urgent: isUrgent,
       taskStatus: isUrgent ? 'urgent' : 'scheduled',
       dueDate: dueDate,
+      ...(assigneeId   ? { assignedTo: assigneeId }           : {}),
+      ...(assigneeName ? { assignedToName: assigneeName }     : {}),
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email,
     });
-    toast('✅ Task added!', 'success');
+    const delegateMsg = assigneeName ? ` Delegated to ${assigneeName}.` : '';
+    toast(`✅ Task added!${delegateMsg}`, 'success');
     closeFabTaskModal();
     loadDashboardFollowUps();
   } catch(err) {
@@ -11981,7 +12050,23 @@ window.openFinance = function() {
   if (revEl && !revEl.value) revEl.value = _todayMonthVal();
   const plEl = $('fin-pl-month');
   if (plEl && !plEl.value) plEl.value = _todayMonthVal();
-  switchFinanceTab('overview');
+
+  const isAdminOrManager = currentUserRole === 'admin' || currentUserRole === 'manager';
+  // Show/hide data tabs based on role
+  ['ftab-overview', 'ftab-revenue', 'ftab-pl'].forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = isAdminOrManager ? '' : 'none';
+  });
+  if (isAdminOrManager) {
+    switchFinanceTab('overview');
+    const header = overlay.querySelector('.finance-header-left h3');
+    if (header) header.textContent = '💵 Finance';
+  } else {
+    // Non-admin: go straight to expenses tab, show a note
+    switchFinanceTab('expenses');
+    const header = overlay.querySelector('.finance-header-left h3');
+    if (header) header.textContent = '🧾 Add Expense';
+  }
 };
 
 window.closeFinance = function() {

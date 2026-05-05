@@ -1688,7 +1688,7 @@
   </div>
 
   <!-- FAB Quick Add Task Modal -->
-  <div id="fab-task-modal" class="fab-task-modal-overlay" style="display:none;" onclick="if(event.target===this)closeFabTaskModal()">
+  <div id="fab-task-modal" class="fab-task-modal-overlay" style="display:none;" onclick="if(event.target===this){closeFabTaskModal();}else{const dd=$('fab-task-assignee-dropdown');if(dd&&!event.target.closest('#fab-task-assignee-search')&&!event.target.closest('#fab-task-assignee-dropdown'))dd.style.display='none';}">
     <div class="fab-task-modal-box">
       <div class="fab-task-modal-header">
         <span>➕ Quick Add Task</span>
@@ -1697,6 +1697,13 @@
       <div class="fab-task-modal-body">
         <input type="text" id="fab-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200" style="width:100%;margin-bottom:8px;">
         <textarea id="fab-task-desc" class="note-textarea" placeholder="Description (optional)" rows="2" maxlength="500" style="width:100%;margin-bottom:8px;"></textarea>
+        <!-- Assign To row with name search -->
+        <div style="position:relative;margin-bottom:8px;">
+          <input type="text" id="fab-task-assignee-search" class="vehicle-location-custom" placeholder="👤 Assign to… (start typing name)" autocomplete="off" style="width:100%;" oninput="filterFabAssigneeList(this.value)">
+          <div id="fab-task-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-height:160px;overflow-y:auto;z-index:9200;"></div>
+          <input type="hidden" id="fab-task-assignee-id">
+          <input type="hidden" id="fab-task-assignee-name">
+        </div>
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
           <select id="fab-task-priority" class="note-assignee-select" style="flex:1;min-width:100px;">
             <option value="normal">🔵 Normal</option>
@@ -1722,7 +1729,10 @@
       <div class="task-panel-body">
         <!-- Action Board with Status Tabs — shown first -->
         <div class="task-panel-section">
-          <h4>🎯 Action Board</h4>
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <h4 style="margin:0;">🎯 Action Board</h4>
+            <button class="btn btn-sm btn-primary" onclick="openFabAddTask()" title="Add a new task or follow-up reminder" style="padding:4px 12px;font-size:0.82rem;">➕ Add Task</button>
+          </div>
 
           <!-- Overdue banner — always visible when tasks are late -->
           <div id="task-overdue-banner" class="task-overdue-banner" style="display:none;">
