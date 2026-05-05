@@ -13493,10 +13493,6 @@ window.loadTuroEarnings = async function() {
   if (!body) return;
   body.innerHTML = '<p class="hint" style="padding:8px;">Loading Turo trips…</p>';
 
-  const { start, end, label } = _finMonthRange('fin-rev-month');
-
-  // Turo trip start dates are like "1/8/2026 12:30" — convert range to comparable strings
-  // We fetch all and filter client-side since dates are stored as display strings
   try {
     const snap = await db.collection('turoTrips').get();
     if (snap.empty) { body.innerHTML = ''; return; }
@@ -13504,36 +13500,73 @@ window.loadTuroEarnings = async function() {
     // Parse various date formats Turo may use: "M/D/YYYY H:MM", "MM/DD/YYYY", ISO, etc.
     function parseTuroDate(s) {
       if (!s) return null;
-      // Try native parse first (handles ISO and many locale formats)
       const d = new Date(s);
       if (!isNaN(d)) return d;
-      // M/D/YYYY H:MM or M/D/YYYY
       const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
       if (m) return new Date(+m[3], +m[1]-1, +m[2], +(m[4]||0), +(m[5]||0));
       return null;
     }
+
     const { start, end, label } = _finMonthRange('fin-rev-month');
     const rangeStart = new Date(start + 'T00:00:00');
-    const rangeEnd = new Date(end + 'T23:59:59');
+    const rangeEnd   = new Date(end   + 'T23:59:59');
 
-    const trips = [];
+    // For each trip, compute how much revenue belongs to the selected month.
+    // Rule: trips ≤ 7 days → full revenue goes to the month the trip ENDS.
+    //       trips > 7 days  → revenue split proportionally by days per month.
+    // Returns { revenue, tripPrice, delivery, smoking, cleaning, fraction } for the selected month,
+    // or null if none of the trip falls in this month.
+    function tripPortionForMonth(t) {
+      const startDt = parseTuroDate(t.tripStart);
+      const endDt   = parseTuroDate(t.tripEnd);
+      if (!startDt) return null;
+      const effectiveEnd = (endDt && endDt > startDt) ? endDt : startDt;
+      const msPerDay = 86400000;
+      const totalDays = Math.max(1, t.tripDays || Math.round((effectiveEnd - startDt) / msPerDay));
+
+      if (totalDays <= 7) {
+        // Short trip: attribute to END month
+        if (effectiveEnd >= rangeStart && effectiveEnd <= rangeEnd) {
+          return { revenue: t.totalEarnings||0, tripPrice: t.tripPrice||0,
+                   delivery: t.delivery||0, smoking: t.smoking||0, cleaning: t.cleaning||0,
+                   fraction: 1 };
+        }
+        return null;
+      }
+
+      // Long trip: split proportionally by days in each calendar month
+      // Calculate days that fall inside rangeStart..rangeEnd
+      const overlapStart = startDt > rangeStart ? startDt : rangeStart;
+      const overlapEnd   = effectiveEnd < rangeEnd ? effectiveEnd : rangeEnd;
+      if (overlapStart > overlapEnd) return null;
+      const daysInMonth = Math.round((overlapEnd - overlapStart) / msPerDay) + 1;
+      const fraction = daysInMonth / totalDays;
+      return {
+        revenue:   (t.totalEarnings||0) * fraction,
+        tripPrice: (t.tripPrice||0)     * fraction,
+        delivery:  (t.delivery||0)      * fraction,
+        smoking:   (t.smoking||0)       * fraction,
+        cleaning:  (t.cleaning||0)      * fraction,
+        fraction,
+      };
+    }
+
     const allTrips = [];
-    snap.forEach(doc => {
-      const d = doc.data();
-      allTrips.push(d);
-      const dt = parseTuroDate(d.tripStart);
-      if (!dt || dt < rangeStart || dt > rangeEnd) return;
-      trips.push(d);
+    snap.forEach(doc => allTrips.push(doc.data()));
+
+    // Build list of trips with their prorated amounts for this month
+    const trips = [];
+    allTrips.forEach(t => {
+      const portion = tripPortionForMonth(t);
+      if (portion) trips.push({ ...t, _portion: portion });
     });
 
     if (!trips.length) {
-      // Show hint if there ARE trips in DB but none match this month
       if (allTrips.length > 0) {
-        // Find the date range of stored trips to help user pick the right month
         const dates = allTrips.map(t => parseTuroDate(t.tripStart)).filter(Boolean).sort((a,b)=>a-b);
-        const earliest = dates[0] ? dates[0].toLocaleDateString('en-US', { month:'short', year:'numeric', timeZone: APP_TIMEZONE }) : '?';
-        const latest = dates[dates.length-1] ? dates[dates.length-1].toLocaleDateString('en-US', { month:'short', year:'numeric', timeZone: APP_TIMEZONE }) : '?';
-        body.innerHTML = `<p class="hint" style="padding:8px;color:#f59e0b;">⚠️ ${allTrips.length} Turo trip(s) in database but none match <strong>${label}</strong>. Try changing the month — trips range from <strong>${earliest}</strong> to <strong>${latest}</strong>.</p>`;
+        const earliest = dates[0]                  ? dates[0].toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:APP_TIMEZONE}) : '?';
+        const latest   = dates[dates.length-1]     ? dates[dates.length-1].toLocaleDateString('en-US',{month:'short',year:'numeric',timeZone:APP_TIMEZONE}) : '?';
+        body.innerHTML = `<p class="hint" style="padding:8px;color:#f59e0b;">⚠️ ${allTrips.length} Turo trip(s) in database but none end in <strong>${label}</strong>. Trips range from <strong>${earliest}</strong> to <strong>${latest}</strong>.</p>`;
       } else {
         body.innerHTML = '';
       }
@@ -13548,35 +13581,40 @@ window.loadTuroEarnings = async function() {
       byVehicle[vid].trips.push(t);
     });
 
-    // Summaries
-    const totalBase = trips.reduce((s, t) => s + (t.tripPrice || 0), 0);
-    const totalDelivery = trips.reduce((s, t) => s + (t.delivery || 0), 0);
-    const totalSmoking = trips.reduce((s, t) => s + (t.smoking || 0), 0);
-    const totalCleaning = trips.reduce((s, t) => s + (t.cleaning || 0), 0);
-    const totalNet = trips.reduce((s, t) => s + (t.totalEarnings || 0), 0);
+    // Summaries — use prorated _portion values
+    const totalBase     = trips.reduce((s, t) => s + t._portion.tripPrice, 0);
+    const totalDelivery = trips.reduce((s, t) => s + t._portion.delivery,  0);
+    const totalSmoking  = trips.reduce((s, t) => s + t._portion.smoking,   0);
+    const totalCleaning = trips.reduce((s, t) => s + t._portion.cleaning,  0);
+    const totalNet      = trips.reduce((s, t) => s + t._portion.revenue,   0);
 
-    const fmt = n => n ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+    const fmt = n => (n != null && n !== 0) ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+    const pct = f => f < 0.999 ? `<span style="font-size:0.72rem;color:#6b7280;margin-left:3px;">(${Math.round(f*100)}% of trip)</span>` : '';
 
     const vehicleBlocks = Object.values(byVehicle).sort((a, b) => {
-      const aT = a.trips.reduce((s, t) => s + t.totalEarnings, 0);
-      const bT = b.trips.reduce((s, t) => s + t.totalEarnings, 0);
+      const aT = a.trips.reduce((s, t) => s + t._portion.revenue, 0);
+      const bT = b.trips.reduce((s, t) => s + t._portion.revenue, 0);
       return bT - aT;
     }).map(({ plate, trips: vTrips }) => {
-      const vNet = vTrips.reduce((s, t) => s + t.totalEarnings, 0);
-      const vDel = vTrips.reduce((s, t) => s + t.delivery, 0);
-      const vSmk = vTrips.reduce((s, t) => s + t.smoking, 0);
-      const vCln = vTrips.reduce((s, t) => s + t.cleaning, 0);
-      const rows = vTrips.sort((a, b) => (a.tripStart || '').localeCompare(b.tripStart || '')).map(t => `
-        <tr>
-          <td style="font-size:0.8rem;">${escapeHtml(t.tripStart || '')}</td>
+      const vNet = vTrips.reduce((s, t) => s + t._portion.revenue,   0);
+      const vDel = vTrips.reduce((s, t) => s + t._portion.delivery,  0);
+      const vSmk = vTrips.reduce((s, t) => s + t._portion.smoking,   0);
+      const vCln = vTrips.reduce((s, t) => s + t._portion.cleaning,  0);
+      const rows = vTrips.sort((a, b) => (a.tripStart || '').localeCompare(b.tripStart || '')).map(t => {
+        const p = t._portion;
+        const isSplit = p.fraction < 0.999;
+        return `
+        <tr${isSplit ? ' style="background:#fffbeb;"' : ''}>
+          <td style="font-size:0.8rem;">${escapeHtml(t.tripStart || '')}${isSplit ? `<br><span style="font-size:0.7rem;color:#b45309;">→ ends ${escapeHtml(t.tripEnd||'')} · ${t.tripDays}d total</span>` : ''}</td>
           <td style="font-size:0.8rem;">${escapeHtml(t.guest || '')}</td>
-          <td style="text-align:center;">${t.tripDays || '—'}</td>
-          <td class="fin-td-rev">${fmt(t.tripPrice)}</td>
-          <td class="fin-td-rev">${t.delivery > 0 ? fmt(t.delivery) : '—'}</td>
-          <td class="fin-td-rev">${t.smoking > 0 ? fmt(t.smoking) : '—'}</td>
-          <td class="fin-td-rev">${t.cleaning > 0 ? fmt(t.cleaning) : '—'}</td>
-          <td><strong>${fmt(t.totalEarnings)}</strong></td>
-        </tr>`).join('');
+          <td style="text-align:center;">${isSplit ? `<span title="${t.tripDays}d total trip">${Math.round(t._portion.fraction * t.tripDays)}d${pct(p.fraction)}</span>` : (t.tripDays || '—')}</td>
+          <td class="fin-td-rev">${fmt(p.tripPrice)}${isSplit ? pct(p.fraction) : ''}</td>
+          <td class="fin-td-rev">${p.delivery > 0 ? fmt(p.delivery) : '—'}</td>
+          <td class="fin-td-rev">${p.smoking  > 0 ? fmt(p.smoking)  : '—'}</td>
+          <td class="fin-td-rev">${p.cleaning > 0 ? fmt(p.cleaning) : '—'}</td>
+          <td><strong>${fmt(p.revenue)}</strong>${isSplit ? pct(p.fraction) : ''}</td>
+        </tr>`;
+      }).join('');
       return `
         <div style="margin-bottom:18px;">
           <div style="font-weight:700;font-size:0.92rem;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
@@ -13584,7 +13622,7 @@ window.loadTuroEarnings = async function() {
             <span style="font-size:0.82rem;color:#6b7280;">${vTrips.length} trip(s) · Net <strong style="color:#16a34a;">${fmt(vNet)}</strong>${vDel > 0 ? ` · Delivery <strong>${fmt(vDel)}</strong>` : ''}${vSmk > 0 ? ` · Smoking <strong style="color:#ef4444;">${fmt(vSmk)}</strong>` : ''}${vCln > 0 ? ` · Cleaning <strong style="color:#f59e0b;">${fmt(vCln)}</strong>` : ''}</span>
           </div>
           <table class="fin-table" style="font-size:0.82rem;">
-            <thead><tr><th>Trip Start</th><th>Guest</th><th>Days</th><th>Base Price</th><th>Delivery</th><th>Smoking</th><th>Cleaning</th><th>Net Payout</th></tr></thead>
+            <thead><tr><th>Trip Start</th><th>Guest</th><th>Days (this month)</th><th>Base Price</th><th>Delivery</th><th>Smoking</th><th>Cleaning</th><th>Net Payout</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>`;
