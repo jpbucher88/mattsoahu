@@ -2335,13 +2335,21 @@ function resetMileagePrompt() {
   }
 }
 
-function confirmMileage() {
+async function confirmMileage() {
   const input = $('mileage-prompt-input');
   const val = parseInt(input.value);
   if (!val || val < 1) {
     toast('Enter the current odometer reading to continue.', 'warning');
     input.focus();
     return;
+  }
+  const prev = selectedVehicle && selectedVehicle.mileage;
+  if (prev && val < prev) {
+    const ok = await confirm(
+      '⚠️ Mileage Decrease Warning',
+      `The current recorded mileage is ${prev.toLocaleString()} mi. You entered ${val.toLocaleString()} mi, which is lower.\n\nOdometers don't go backwards — are you sure this is correct?`
+    );
+    if (!ok) { input.focus(); return; }
   }
   mileageConfirmed = true;
 
@@ -5465,6 +5473,14 @@ $('btn-save-mileage').addEventListener('click', async () => {
   if (!val || val < 0) {
     toast('Enter a valid mileage.', 'warning');
     return;
+  }
+  const prev = selectedVehicle.mileage;
+  if (prev && val < prev) {
+    const ok = await confirm(
+      '⚠️ Mileage Decrease Warning',
+      `The current recorded mileage is ${prev.toLocaleString()} mi. You entered ${val.toLocaleString()} mi, which is lower.\n\nOdometers don't go backwards — are you sure this is correct?`
+    );
+    if (!ok) return;
   }
   try {
     await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val });
