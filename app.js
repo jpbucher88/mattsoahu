@@ -354,6 +354,7 @@ function showDanEasterEgg(forceWatch) {
     'NO DEAL NO PAY', 'DIAL MORE', 'STOP WASTING LEADS',
     'ARE YOU CLOSING?', 'GET THE SIGNATURE', 'PIPELINE EMPTY?',
     'MAKE THE CALL', 'MONEY ON THE TABLE', 'CLOSE IT',
+    'BITCH', 'BITCH', 'BITCH',
   ];
   wordsContainer.innerHTML = '';
   for (let i = 0; i < 60; i++) {
