@@ -13380,8 +13380,17 @@ window.importTuroCSV = async function(input) {
     console.log('[Turo Import] CSV headers:', rows[0]);
     console.log('[Turo Import] Column index map:', IDX);
 
+    // Build lookup maps: by VIN (primary) and by normalized vehicle name/plate (fallback)
     const vinMap = {};
-    vehiclesCache.forEach(v => { if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v; });
+    const nameMap = {}; // normalized "make model" or plate -> vehicle
+    vehiclesCache.forEach(v => {
+      if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v;
+      // Name fallback: "Year Make Model" or "Make Model" normalized
+      const nameKey = ((v.year ? v.year + ' ' : '') + (v.make || '') + ' ' + (v.model || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+      if (nameKey) nameMap[nameKey] = v;
+      // Also index plate as fallback
+      if (v.plate) nameMap[v.plate.toUpperCase().trim()] = v;
+    });
 
     let cancelled = 0, unmatched = 0;
     const candidates = [];
@@ -13405,7 +13414,12 @@ window.importTuroCSV = async function(input) {
       if (totalEarnings === 0 && tripPrice === 0) continue;
 
       const vin = r[IDX.vin]?.trim().toUpperCase() || '';
-      const vehicle = vinMap[vin];
+      // Primary: match by VIN. Fallback: match by vehicle name from CSV
+      let vehicle = vin ? vinMap[vin] : null;
+      if (!vehicle && IDX.vehicleName >= 0) {
+        const csvName = (r[IDX.vehicleName] || '').toLowerCase().replace(/\s+/g, ' ').trim();
+        if (csvName) vehicle = nameMap[csvName];
+      }
       if (!vehicle) { unmatched++; continue; }
 
       candidates.push({
