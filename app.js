@@ -5134,48 +5134,103 @@ window.permanentlyDeleteNote = async function(docId, col) {
 // ================================================================
 // ACTIVITY LOG VIEWER (Matthew only)
 // ================================================================
+let _activityAllItems = []; // cache for pill filtering
+
 window.loadActivityLog = async function() {
   const el = $('activity-log-list');
+  const pillsEl = $('activity-user-pills');
   if (!el) return;
   el.innerHTML = '<p class="hint">Loading…</p>';
+  if (pillsEl) pillsEl.style.display = 'none';
   const filterDate = $('activity-filter-date')?.value;
   const filterAction = $('activity-filter-action')?.value;
   try {
-    let q = db.collection('userActivity').orderBy('at', 'desc').limit(200);
+    let q = db.collection('userActivity').orderBy('at', 'desc').limit(300);
     if (filterAction) q = q.where('action', '==', filterAction);
     const snap = await q.get();
     let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     if (filterDate) {
       items = items.filter(d => {
         if (!d.at) return false;
-        const localDate = new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }); // YYYY-MM-DD
-        return localDate === filterDate;
+        return new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }) === filterDate;
       });
     }
+    _activityAllItems = items;
     if (!items.length) { el.innerHTML = '<p class="hint">No activity found.</p>'; return; }
-    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-      <thead><tr style="border-bottom:1px solid #e5e7eb;">
-        <th style="text-align:left;padding:6px 8px;">Time</th>
-        <th style="text-align:left;padding:6px 8px;">User</th>
-        <th style="text-align:left;padding:6px 8px;">Action</th>
-        <th style="text-align:left;padding:6px 8px;">Details</th>
-      </tr></thead>
-      <tbody>${items.map(d => {
-        const time = d.atDisplay || (d.at ? new Date(d.at.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '?');
-        const det = d.details ? Object.entries(d.details).map(([k, v]) => `${k}: ${v}`).join(' · ') : '';
-        return `<tr style="border-bottom:1px solid #f3f4f6;">
-          <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(time)}</td>
-          <td style="padding:5px 8px;">${escapeHtml(d.userName || '?')}</td>
-          <td style="padding:5px 8px;"><code style="font-size:0.8em;">${escapeHtml(d.action || '')}</code></td>
-          <td style="padding:5px 8px;color:#6b7280;font-size:0.8em;">${escapeHtml(det)}</td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table>`;
+
+    // Build user pills
+    if (pillsEl) {
+      const userMap = {};
+      items.forEach(d => {
+        const name = d.userName || '?';
+        userMap[name] = (userMap[name] || 0) + 1;
+      });
+      const sorted = Object.entries(userMap).sort((a, b) => b[1] - a[1]);
+      pillsEl.style.display = 'flex';
+      // Keep label, replace pill buttons
+      const label = pillsEl.querySelector('span');
+      pillsEl.innerHTML = '';
+      if (label) pillsEl.appendChild(label);
+      // "All" pill
+      const allPill = document.createElement('button');
+      allPill.className = 'activity-user-pill activity-user-pill-active';
+      allPill.dataset.user = '';
+      allPill.textContent = `All (${items.length})`;
+      allPill.onclick = () => _filterActivityByUser('');
+      pillsEl.appendChild(allPill);
+      sorted.forEach(([name, count]) => {
+        const pill = document.createElement('button');
+        pill.className = 'activity-user-pill';
+        pill.dataset.user = name;
+        pill.textContent = `${name} (${count})`;
+        pill.onclick = () => _filterActivityByUser(name);
+        pillsEl.appendChild(pill);
+      });
+    }
+
+    _renderActivityTable(items, el);
   } catch (e) {
     el.innerHTML = '<p class="hint">Error loading activity.</p>';
     console.error(e);
   }
 };
+
+function _filterActivityByUser(userName) {
+  const el = $('activity-log-list');
+  const pillsEl = $('activity-user-pills');
+  if (!el) return;
+  // Update active pill
+  if (pillsEl) {
+    pillsEl.querySelectorAll('.activity-user-pill').forEach(p => {
+      p.classList.toggle('activity-user-pill-active', p.dataset.user === userName);
+    });
+  }
+  const filtered = userName ? _activityAllItems.filter(d => (d.userName || '?') === userName) : _activityAllItems;
+  _renderActivityTable(filtered, el);
+}
+
+function _renderActivityTable(items, el) {
+  if (!items.length) { el.innerHTML = '<p class="hint">No activity for this person.</p>'; return; }
+  el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+    <thead><tr style="border-bottom:2px solid #e5e7eb;">
+      <th style="text-align:left;padding:6px 8px;">Time</th>
+      <th style="text-align:left;padding:6px 8px;">User</th>
+      <th style="text-align:left;padding:6px 8px;">Action</th>
+      <th style="text-align:left;padding:6px 8px;">Details</th>
+    </tr></thead>
+    <tbody>${items.map((d, i) => {
+      const time = d.atDisplay || (d.at ? new Date(d.at.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '?');
+      const det = d.details ? Object.entries(d.details).map(([k, v]) => `${k}: ${v}`).join(' · ') : '';
+      const bg = i % 2 === 0 ? '' : 'background:#f9fafb;';
+      return `<tr style="border-bottom:1px solid #f3f4f6;${bg}">
+        <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(time)}</td>
+        <td style="padding:5px 8px;font-weight:500;">${escapeHtml(d.userName || '?')}</td>
+        <td style="padding:5px 8px;"><code style="font-size:0.8em;">${escapeHtml(d.action || '')}</code></td>
+        <td style="padding:5px 8px;color:#6b7280;font-size:0.8em;">${escapeHtml(det)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
 
 async function loadAdminUsers() {
   if (currentUserRole !== 'admin') return;

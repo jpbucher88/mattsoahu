@@ -740,6 +740,25 @@ body {
 }
 .btn-color-edit:hover { opacity: 1; }
 
+/* Activity log user pills */
+.activity-user-pill {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 999px;
+  padding: 3px 12px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.activity-user-pill:hover { background: #e5e7eb; }
+.activity-user-pill.activity-user-pill-active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+  font-weight: 600;
+}
+
 .selectable .photo-grid-item.selected {
   border-color: var(--danger);
 }

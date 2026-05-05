@@ -1517,7 +1517,7 @@
         <div class="card">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
             <h3 style="margin:0;">📋 User Activity Log</h3>
-            <input type="date" id="activity-filter-date" class="form-select" style="width:auto;" placeholder="Filter date">
+            <input type="date" id="activity-filter-date" class="form-select" style="width:auto;">
             <select id="activity-filter-action" class="form-select" style="width:auto;">
               <option value="">All Actions</option>
               <option value="open_task">Open Task</option>
@@ -1527,6 +1527,10 @@
               <option value="edit_vehicle_color">Edit Color</option>
             </select>
             <button class="btn btn-sm btn-primary" onclick="loadActivityLog()">Load</button>
+          </div>
+          <!-- User pills — populated by loadActivityLog -->
+          <div id="activity-user-pills" style="display:none;margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:0.78rem;color:#6b7280;white-space:nowrap;">Filter by person:</span>
           </div>
           <div id="activity-log-list"><p class="hint">Click Load to view activity.</p></div>
         </div>
