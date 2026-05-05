@@ -2262,10 +2262,16 @@ function resetMileagePrompt() {
   // Show previous mileage as hint
   const prev = selectedVehicle && selectedVehicle.mileage;
   const prevEl = $('mileage-prompt-prev');
+  const sameBtn = $('btn-use-same-mileage');
   if (prev) {
     prevEl.textContent = `Last recorded: ${prev.toLocaleString()} mi`;
+    if (sameBtn) {
+      $('use-same-mileage-label').textContent = prev.toLocaleString() + ' mi';
+      sameBtn.style.display = '';
+    }
   } else {
     prevEl.textContent = 'No mileage on file yet';
+    if (sameBtn) sameBtn.style.display = 'none';
   }
 }
 
@@ -2324,6 +2330,14 @@ function confirmMileage() {
 }
 
 $('btn-mileage-confirm').addEventListener('click', confirmMileage);
+
+// "Record Same Mileage" — fills input with last recorded value then confirms
+$('btn-use-same-mileage').addEventListener('click', () => {
+  const prev = selectedVehicle && selectedVehicle.mileage;
+  if (!prev) return;
+  $('mileage-prompt-input').value = prev;
+  confirmMileage();
+});
 
 // Photo override — mark photos as up to date without uploading
 async function doPhotoOverride() {
@@ -3361,11 +3375,12 @@ async function loadPhotosForDate(vehicleId, dateStr) {
     item.dataset.lightboxInfo = `${data.plate} — ${data.date}`;
     const keepBadge = data.protected ? '<div class="keep-badge">🔒</div>' : '';
     const adminDelete = currentUserRole === 'admin' ? `<button class="photo-delete-btn" data-doc-id="${doc.id}" data-storage-path="${escapeHtml(data.storagePath || '')}" title="Delete photo">✕</button>` : '';
+    const uploaderLine = data.uploaderName ? `<br><span class="photo-uploader-name">${escapeHtml(data.uploaderName)}</span>` : '';
     item.innerHTML = `
       ${keepBadge}
       ${adminDelete}
       <img src="${escapeHtml(data.url)}" alt="Vehicle photo" loading="lazy">
-      <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}</div>
+      <div class="photo-time">${data.timestamp ? formatTime(data.timestamp.toDate()) : ''}${uploaderLine}</div>
     `;
     item.querySelector('img').addEventListener('click', () => openLightbox(data.url, `${data.plate} — ${data.date}`));
     const delBtn = item.querySelector('.photo-delete-btn');
@@ -3394,6 +3409,51 @@ async function loadPhotosForDate(vehicleId, dateStr) {
     }
     container.appendChild(item);
   });
+
+  // Load download history for this date
+  loadPhotoDownloadLog(vehicleId, dateStr);
+}
+
+// Log a photo download event to the vehicle's downloadLogs subcollection
+function _logPhotoDownload(vehicleId, dateStr, count) {
+  if (!currentUser) return;
+  db.collection('vehicles').doc(vehicleId).collection('downloadLogs').add({
+    date: dateStr,
+    count,
+    downloadedBy: currentUser.uid,
+    downloadedByName: currentUser.displayName || currentUser.email || 'Unknown',
+    downloadedAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then(() => {
+    // Refresh the log display
+    loadPhotoDownloadLog(vehicleId, dateStr);
+  }).catch(() => {});
+}
+
+// Load and show recent download events for the current vehicle + date
+async function loadPhotoDownloadLog(vehicleId, dateStr) {
+  const logEl = $('photo-download-log');
+  if (!logEl) return;
+  try {
+    const snap = await db.collection('vehicles').doc(vehicleId)
+      .collection('downloadLogs')
+      .where('date', '==', dateStr)
+      .orderBy('downloadedAt', 'desc')
+      .limit(4)
+      .get();
+    if (snap.empty) { logEl.textContent = ''; return; }
+    const entries = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const when = d.downloadedAt
+        ? new Date(d.downloadedAt.toDate()).toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+        : '';
+      entries.push(`📥 ${escapeHtml(d.downloadedByName || 'Unknown')}${when ? ' · ' + when : ''}`);
+    });
+    logEl.innerHTML = '<strong>Downloaded:</strong> ' + entries.join(' &nbsp;|&nbsp; ');
+  } catch (e) {
+    // Silently ignore (e.g. index not yet built)
+    logEl.textContent = '';
+  }
 }
 
 // ================================================================
@@ -3471,6 +3531,7 @@ $('btn-download-all').addEventListener('click', async () => {
         try {
           await navigator.share({ files: shareFiles });
           toast(`${files.length} photos shared!`, 'success');
+          _logPhotoDownload(vid, dateForDownload, files.length);
           return;
         } catch (err) {
           if (err.name === 'AbortError') return; // user cancelled, done
@@ -3563,6 +3624,7 @@ $('btn-download-all').addEventListener('click', async () => {
     URL.revokeObjectURL(a.href);
 
     toast(`ZIP with ${files.length} photos ready!`, 'success');
+    _logPhotoDownload(vid, dateForDownload, files.length);
   } catch (err) {
     console.error('Download all error:', err);
     toast('Failed to download photos.', 'error');
@@ -5732,7 +5794,9 @@ $('btn-save-note').addEventListener('click', async () => {
   const isUrgent = $('note-urgent') ? $('note-urgent').checked : false;
   // Urgent notes are always treated as follow-ups so they appear in the task panel
   const isFollowUp = $('note-followup').checked || isUrgent;
-  const dueDate = isFollowUp ? ($('note-due-date').value || '') : '';
+  const dueDate = ($('note-due-date') && $('note-due-date').value) ? $('note-due-date').value : '';
+  const assignedTo   = $('note-assignee-id')?.value   || '';
+  const assignedToName = $('note-assignee-name')?.value || '';
 
   try {
     const noteData = {
@@ -5747,13 +5811,17 @@ $('btn-save-note').addEventListener('click', async () => {
       createdByName: currentUser.displayName || currentUser.email
     };
     if (dueDate) noteData.dueDate = dueDate;
+    if (assignedTo)   noteData.assignedTo     = assignedTo;
+    if (assignedToName) noteData.assignedToName = assignedToName;
     await db.collection('vehicleNotes').add(noteData);
     $('note-text').value = '';
     $('note-followup').checked = false;
     if ($('note-urgent')) $('note-urgent').checked = false;
     $('note-due-date').value = '';
-    $('note-due-row').style.display = 'none';
-    if ($('note-urgent')) $('note-urgent').checked = false;
+    if ($('note-assignee-search'))  $('note-assignee-search').value  = '';
+    if ($('note-assignee-id'))      $('note-assignee-id').value      = '';
+    if ($('note-assignee-name'))    $('note-assignee-name').value    = '';
+    if ($('note-assignee-dropdown')) $('note-assignee-dropdown').style.display = 'none';
     toast(isFollowUp ? 'Follow-up added!' : 'Note saved!', 'success');
     loadVehicleNotes(selectedVehicle.id);
     if (isFollowUp || isUrgent) loadDashboardFollowUps();
@@ -5796,13 +5864,14 @@ async function loadVehicleNotes(vehicleId) {
       const doneClass = d.done ? ' note-done' : '';
       const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
       const canDelete = (currentUserRole === 'admin');
+      const assignedLine = d.assignedToName ? `<span class="note-assigned-chip">→ ${escapeHtml(d.assignedToName)}</span>` : '';
       html += `
         <div class="note-item${doneClass}">
           <div class="note-content">
             ${urgentBadge}${followUpBadge}
             <div class="note-text">${escapeHtml(d.text)}</div>
             ${d.invoiceUrls && d.invoiceUrls.length > 0 ? `<div class="note-invoice-row">${d.invoiceUrls.map(url => `<img src="${escapeHtml(url)}" class="note-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View invoice/photo">`).join('')}</div>` : ''}
-            <div class="note-meta">👤 ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}</div>
+            <div class="note-meta">✍️ ${escapeHtml(d.createdByName || 'Unknown')} · ${dateStr}${assignedLine ? ' &nbsp;' + assignedLine : ''}</div>
           </div>
           <div class="note-actions">
             ${d.isFollowUp && !d.done && canManage ? `<button class="btn btn-sm btn-outline" onclick="markNoteDone('${doc.id}')">✓ Done</button>` : ''}
@@ -6999,6 +7068,17 @@ window.openNoteEditModal = async function(docId, collection) {
           <label>Due Time <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
           <input type="time" id="ne-due-time" class="form-select" value="${d.dueTime || ''}">
         </div>
+        <div class="form-group">
+          <label>👤 Assign To</label>
+          <div style="position:relative;">
+            <input type="text" id="ne-assignee-search" class="form-select" placeholder="Search user…"
+              value="${escapeHtml(d.assignedToName || '')}"
+              oninput="filterNeAssigneeList(this.value)" onfocus="_loadFabUsers()" autocomplete="off">
+            <div id="ne-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:150px;overflow-y:auto;z-index:9999;"></div>
+            <input type="hidden" id="ne-assignee-id"   value="${escapeHtml(d.assignedTo || '')}">
+            <input type="hidden" id="ne-assignee-name" value="${escapeHtml(d.assignedToName || '')}">
+          </div>
+        </div>
       </div>
       <div class="task-log-section">
         <div class="note-edit-section-label" style="margin-bottom:6px;">📋 Activity Log</div>
@@ -7136,12 +7216,18 @@ window.openNoteEditModal = async function(docId, collection) {
     const taskStatus = isFollowUp ? selectedStatus : null;
     const dueDate = isFollowUp ? overlay.querySelector('#ne-due-date').value : '';
     const dueTime = isFollowUp ? overlay.querySelector('#ne-due-time').value : '';
+    const assignedTo     = overlay.querySelector('#ne-assignee-id')?.value   || '';
+    const assignedToName = overlay.querySelector('#ne-assignee-name')?.value || '';
     const updates = { isFollowUp, urgent };
     if (taskStatus) updates.taskStatus = taskStatus;
     if (dueDate) { updates.dueDate = dueDate; }
     else { updates.dueDate = firebase.firestore.FieldValue.delete(); }
     if (dueTime) { updates.dueTime = dueTime; }
     else { updates.dueTime = firebase.firestore.FieldValue.delete(); }
+    if (assignedTo)     updates.assignedTo     = assignedTo;
+    else                updates.assignedTo     = firebase.firestore.FieldValue.delete();
+    if (assignedToName) updates.assignedToName = assignedToName;
+    else                updates.assignedToName = firebase.firestore.FieldValue.delete();
 
     // --- Handle invoice photo uploads ---
     try {
@@ -7650,6 +7736,64 @@ window.selectFabAssignee = function(id, name) {
   if (idEl) idEl.value = id;
   if (nameEl) nameEl.value = name;
   if (dropdown) dropdown.style.display = 'none';
+};
+
+// ---- Note assignee picker (reuses _fabUserCache) ----
+window.filterNoteAssigneeList = function(query) {
+  const dropdown = $('note-assignee-dropdown');
+  if (!dropdown) return;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { dropdown.style.display = 'none'; return; }
+  const users = _fabUserCache || [];
+  const matches = users.filter(u => u.name.toLowerCase().includes(q));
+  if (!matches.length) { dropdown.style.display = 'none'; return; }
+  dropdown.innerHTML = matches.map(u =>
+    `<div onclick="selectNoteAssignee('${escapeHtml(u.id)}','${escapeHtml(u.name)}')"
+      style="padding:8px 12px;cursor:pointer;font-size:0.9rem;border-bottom:1px solid #f3f4f6;"
+      onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
+      👤 ${escapeHtml(u.name)}
+    </div>`
+  ).join('');
+  dropdown.style.display = '';
+};
+
+window.selectNoteAssignee = function(id, name) {
+  if ($('note-assignee-search'))  $('note-assignee-search').value  = name;
+  if ($('note-assignee-id'))      $('note-assignee-id').value      = id;
+  if ($('note-assignee-name'))    $('note-assignee-name').value    = name;
+  if ($('note-assignee-dropdown')) $('note-assignee-dropdown').style.display = 'none';
+};
+
+// ---- Note edit modal assignee picker ----
+window.filterNeAssigneeList = function(query) {
+  const dropdown = document.querySelector('.note-edit-overlay #ne-assignee-dropdown');
+  if (!dropdown) return;
+  const q = (query || '').trim().toLowerCase();
+  if (!q) { dropdown.style.display = 'none'; return; }
+  const users = _fabUserCache || [];
+  const matches = users.filter(u => u.name.toLowerCase().includes(q));
+  if (!matches.length) { dropdown.style.display = 'none'; return; }
+  dropdown.innerHTML = matches.map(u =>
+    `<div onclick="selectNeAssignee('${escapeHtml(u.id)}','${escapeHtml(u.name)}')"
+      style="padding:8px 12px;cursor:pointer;font-size:0.9rem;border-bottom:1px solid #f3f4f6;"
+      onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background=''">
+      👤 ${escapeHtml(u.name)}
+    </div>`
+  ).join('');
+  dropdown.style.display = '';
+};
+
+window.selectNeAssignee = function(id, name) {
+  const overlay = document.querySelector('.note-edit-overlay');
+  if (!overlay) return;
+  const s = overlay.querySelector('#ne-assignee-search');
+  const i = overlay.querySelector('#ne-assignee-id');
+  const n = overlay.querySelector('#ne-assignee-name');
+  const dd = overlay.querySelector('#ne-assignee-dropdown');
+  if (s) s.value = name;
+  if (i) i.value = id;
+  if (n) n.value = name;
+  if (dd) dd.style.display = 'none';
 };
 
 window.openFabAddTask = function() {

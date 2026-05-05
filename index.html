@@ -426,6 +426,7 @@
           <label for="mileage-prompt-input" class="mileage-prompt-label">Enter current odometer reading</label>
           <div id="mileage-prompt-prev" class="mileage-prompt-prev"></div>
           <input type="number" id="mileage-prompt-input" class="mileage-prompt-input" placeholder="e.g. 45000" min="0" max="999999" inputmode="numeric">
+          <button id="btn-use-same-mileage" class="btn btn-outline btn-block" style="display:none;max-width:260px;margin:0 auto 8px;width:100%;font-size:0.9rem;">&#x21A9; Record Same: <span id="use-same-mileage-label"></span></button>
           <button id="btn-mileage-confirm" class="btn btn-primary btn-block">Confirm Mileage &amp; Continue</button>
         </div>
 
@@ -470,6 +471,7 @@
           <button id="btn-date-today" class="btn btn-sm btn-outline">Today</button>
         </div>
         <div id="mini-calendar" class="mini-calendar"></div>
+        <div id="photo-download-log" class="photo-download-log"></div>
         <div id="recent-photos" class="photo-grid"></div>
       </section>
 
@@ -939,14 +941,27 @@
         </div>
         <div class="note-input-wrap">
           <textarea id="note-text" class="note-textarea" placeholder="Add a note about this vehicle..." maxlength="500" rows="3"></textarea>
-          <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="note-followup" onchange="document.getElementById('note-due-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
-            <div id="note-due-row" class="note-due-row" style="display:none;">
-              <label class="note-due-label">Due:</label>
-              <input type="date" id="note-due-date" class="note-due-input">
+          <div class="note-form-opts">
+            <div class="note-form-check-row">
+              <label class="note-followup-label"><input type="checkbox" id="note-followup"> &#9873; Follow Up</label>
+              <label class="note-urgent-label"><input type="checkbox" id="note-urgent"> 🚨 Urgent</label>
             </div>
-            <label class="note-urgent-label"><input type="checkbox" id="note-urgent"> 🚨 Urgent</label>
-            <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
+            <div class="note-form-field-row">
+              <label class="note-due-label">📅 Due</label>
+              <input type="date" id="note-due-date" class="note-due-input" style="flex:1;">
+            </div>
+            <div class="note-form-field-row">
+              <label class="note-due-label">👤 Assign</label>
+              <div style="position:relative;flex:1;">
+                <input type="text" id="note-assignee-search" class="note-due-input" style="width:100%;box-sizing:border-box;" placeholder="Search user…" oninput="filterNoteAssigneeList(this.value)" onfocus="_loadFabUsers()" autocomplete="off">
+                <div id="note-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:150px;overflow-y:auto;z-index:200;"></div>
+                <input type="hidden" id="note-assignee-id" value="">
+                <input type="hidden" id="note-assignee-name" value="">
+              </div>
+            </div>
+            <div style="text-align:right;margin-top:6px;">
+              <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
+            </div>
           </div>
         </div>
         <div id="notes-list" class="notes-list"></div>

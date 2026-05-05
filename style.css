@@ -711,6 +711,21 @@ body {
   font-size: 10px;
   text-align: center;
 }
+.photo-grid-item .photo-time .photo-uploader-name {
+  display: block;
+  font-size: 9px;
+  opacity: 0.85;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.photo-download-log {
+  font-size: 0.75rem;
+  color: #6b7280;
+  padding: 4px 2px;
+  min-height: 20px;
+  line-height: 1.5;
+}
 
 .selectable .photo-grid-item.selected {
   border-color: var(--danger);
@@ -1942,6 +1957,36 @@ body {
   justify-content: space-between;
   margin-top: 8px;
   gap: 10px;
+}
+
+/* Restructured note form options */
+.note-form-opts {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.note-form-check-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.note-form-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.note-assigned-chip {
+  display: inline-block;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .note-followup-label {
