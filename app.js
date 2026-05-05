@@ -344,20 +344,31 @@ function showDanEasterEgg(forceWatch) {
   const hasSeenKey = 'danEgg_seen_v1';
   const firstTime = forceWatch || !localStorage.getItem(hasSeenKey);
 
-  // Scatter 100 "bitch" words across the screen
+  // Scatter sales motivation phrases
+  const phrases = [
+    'A-B-C', 'ALWAYS BE CLOSING', 'CLOSE THE DEAL', 'PICK UP THE PHONE',
+    'HIT YOUR NUMBERS', 'NO EXCUSES', 'COFFEE IS FOR CLOSERS',
+    'STOP BEING AVERAGE', 'FOLLOW UP', 'CALL THEM BACK',
+    'DON\'T SUCK', 'BE A CLOSER', 'QUOTA OR BUST',
+    'SELL SOMETHING', 'WHAT\'S YOUR CLOSE RATE?', 'HUSTLE',
+    'NO DEAL NO PAY', 'DIAL MORE', 'STOP WASTING LEADS',
+    'ARE YOU CLOSING?', 'GET THE SIGNATURE', 'PIPELINE EMPTY?',
+    'MAKE THE CALL', 'MONEY ON THE TABLE', 'CLOSE IT',
+  ];
   wordsContainer.innerHTML = '';
-  for (let i = 0; i < 100; i++) {
+  for (let i = 0; i < 60; i++) {
     const span = document.createElement('span');
-    span.textContent = 'bitch';
+    span.textContent = phrases[Math.floor(Math.random() * phrases.length)];
     span.style.cssText = `
       position:absolute;
-      left:${Math.random() * 95}%;
+      left:${Math.random() * 90}%;
       top:${Math.random() * 95}%;
-      font-size:${10 + Math.random() * 14}px;
-      font-weight:700;
-      color:rgba(255,255,255,${0.4 + Math.random() * 0.6});
-      transform:rotate(${-45 + Math.random() * 90}deg);
+      font-size:${8 + Math.random() * 11}px;
+      font-weight:800;
+      color:rgba(255,255,255,${0.25 + Math.random() * 0.55});
+      transform:rotate(${-35 + Math.random() * 70}deg);
       pointer-events:none;
+      white-space:nowrap;
       animation:danFlicker ${0.3 + Math.random() * 0.5}s infinite alternate;
       animation-delay:${Math.random() * 0.5}s;
     `;
