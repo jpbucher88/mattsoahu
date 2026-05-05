@@ -2310,6 +2310,29 @@ async function openVehiclePage(vid) {
 // MILEAGE PROMPT — required before photo upload
 // ================================================================
 
+// Creates an urgent management verification task when mileage is recorded lower than previous
+function createMileageDecreaseTask(vehicle, prevMileage, newMileage) {
+  if (!vehicle || !currentUser) return;
+  const plate = vehicle.plate || vehicle.id;
+  db.collection('vehicleNotes').add({
+    vehicleId: vehicle.id,
+    text: `⚠️ Mileage decrease needs verification — was ${prevMileage.toLocaleString()} mi, now recorded as ${newMileage.toLocaleString()} mi. Logged by ${currentUser.displayName || currentUser.email}. Please verify odometer with driver.`,
+    isFollowUp: true,
+    done: false,
+    urgent: true,
+    taskStatus: 'urgent',
+    autoCreated: true,
+    sourceType: 'mileage_decrease',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    createdBy: currentUser.uid,
+    createdByName: currentUser.displayName || currentUser.email,
+  }).then(() => {
+    toast(`⚠️ Verification task created for management.`, 'warning');
+    loadDashboardFollowUps();
+  }).catch(err => console.error('createMileageDecreaseTask error:', err));
+  logUserActivity('mileage_decrease', `${plate}: ${prevMileage.toLocaleString()} → ${newMileage.toLocaleString()} mi`);
+}
+
 let mileageConfirmed = false;
 
 function resetMileagePrompt() {
@@ -2350,6 +2373,8 @@ async function confirmMileage() {
       `The current recorded mileage is ${prev.toLocaleString()} mi. You entered ${val.toLocaleString()} mi, which is lower.\n\nOdometers don't go backwards — are you sure this is correct?`
     );
     if (!ok) { input.focus(); return; }
+    // Create management verification task
+    createMileageDecreaseTask(selectedVehicle, prev, val);
   }
   mileageConfirmed = true;
 
@@ -5481,6 +5506,8 @@ $('btn-save-mileage').addEventListener('click', async () => {
       `The current recorded mileage is ${prev.toLocaleString()} mi. You entered ${val.toLocaleString()} mi, which is lower.\n\nOdometers don't go backwards — are you sure this is correct?`
     );
     if (!ok) return;
+    // Create management verification task
+    createMileageDecreaseTask(selectedVehicle, prev, val);
   }
   try {
     await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val });
