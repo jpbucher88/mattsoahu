@@ -408,7 +408,7 @@ function showDanEasterEgg(forceWatch) {
     }, 400);
   }
 
-  let cdSec = 7;
+  let cdSec = 20;
   cdEl.style.display = '';
   cdEl.textContent = `⏱ ${cdSec}s`;
   const cdInterval = setInterval(() => {
@@ -434,8 +434,8 @@ function showDanEasterEgg(forceWatch) {
     if (flashCount >= 24) clearInterval(flashInterval);
   }, 220);
 
-  // Auto-dismiss after 9 seconds
-  setTimeout(() => { canDismiss = true; dismissEgg(); }, 9000);
+  // Auto-dismiss after 22 seconds
+  setTimeout(() => { canDismiss = true; dismissEgg(); }, 22000);
 }
 
 // ================================================================
