@@ -335,6 +335,107 @@ function showElizabethEasterEgg(forceWatch) {
 // ================================================================
 // DAN EASTER EGG
 // ================================================================
+// ================================================================
+// DAN PUMP-UP MUSIC (Web Audio API synthesized beat)
+// ================================================================
+function playDanPumpUpMusic() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') ctx.resume();
+
+    const master = ctx.createGain();
+    master.gain.value = 0.65;
+    master.connect(ctx.destination);
+
+    const bpm = 135;
+    const beat = 60 / bpm;
+    const now = ctx.currentTime + 0.05;
+
+    function kick(t) {
+      const osc = ctx.createOscillator();
+      const env = ctx.createGain();
+      osc.connect(env); env.connect(master);
+      osc.frequency.setValueAtTime(180, t);
+      osc.frequency.exponentialRampToValueAtTime(40, t + 0.35);
+      env.gain.setValueAtTime(1.3, t);
+      env.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+      osc.start(t); osc.stop(t + 0.5);
+    }
+
+    function snare(t) {
+      const osc = ctx.createOscillator();
+      const oEnv = ctx.createGain();
+      osc.frequency.value = 220;
+      osc.connect(oEnv); oEnv.connect(master);
+      oEnv.gain.setValueAtTime(0.4, t);
+      oEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+      osc.start(t); osc.stop(t + 0.1);
+
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.18, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filt = ctx.createBiquadFilter();
+      filt.type = 'bandpass'; filt.frequency.value = 2500; filt.Q.value = 0.6;
+      const nEnv = ctx.createGain();
+      src.connect(filt); filt.connect(nEnv); nEnv.connect(master);
+      nEnv.gain.setValueAtTime(0.85, t);
+      nEnv.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+      src.start(t); src.stop(t + 0.2);
+    }
+
+    function hihat(t, vol) {
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 0.04, ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      const filt = ctx.createBiquadFilter();
+      filt.type = 'highpass'; filt.frequency.value = 9000;
+      const env = ctx.createGain();
+      src.connect(filt); filt.connect(env); env.connect(master);
+      env.gain.setValueAtTime(vol, t);
+      env.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+      src.start(t); src.stop(t + 0.05);
+    }
+
+    function bass(t, freq, dur) {
+      const osc = ctx.createOscillator();
+      const filt = ctx.createBiquadFilter();
+      const env = ctx.createGain();
+      osc.type = 'sawtooth'; osc.frequency.value = freq;
+      filt.type = 'lowpass'; filt.frequency.value = 500; filt.Q.value = 2;
+      osc.connect(filt); filt.connect(env); env.connect(master);
+      env.gain.setValueAtTime(0.45, t);
+      env.gain.setValueAtTime(0.3, t + dur * 0.6);
+      env.gain.exponentialRampToValueAtTime(0.001, t + dur);
+      osc.start(t); osc.stop(t + dur + 0.01);
+    }
+
+    // Pump-up bass riff: A1 A1 E2 E2 D2 D2 B1 A1
+    const bassPattern = [55, 55, 82.4, 82.4, 73.4, 73.4, 61.7, 55];
+
+    const totalBars = 26; // covers the full 22-second lockout
+    for (let bar = 0; bar < totalBars; bar++) {
+      for (let b = 0; b < 4; b++) {
+        const t = now + (bar * 4 + b) * beat;
+        if (b === 0 || b === 2) kick(t);
+        if (b === 2 && bar % 2 === 0) kick(t + beat * 0.75); // double kick
+        if (b === 1 || b === 3) snare(t);
+        hihat(t, 0.35);
+        hihat(t + beat * 0.5, 0.18);
+        if (bar % 2 === 1) { hihat(t + beat * 0.25, 0.12); hihat(t + beat * 0.75, 0.12); }
+        bass(t, bassPattern[(bar * 4 + b) % bassPattern.length], beat * 0.82);
+      }
+    }
+
+    return { ctx, master };
+  } catch (e) { return null; }
+}
+
 function showDanEasterEgg(forceWatch) {
   const overlay = $('dan-overlay');
   const bg = $('dan-bg');
@@ -378,6 +479,7 @@ function showDanEasterEgg(forceWatch) {
 
   overlay.style.display = 'block';
   overlay.style.pointerEvents = 'auto';
+  const danAudio = playDanPumpUpMusic();
 
   // Countdown badge
   let cdEl = overlay.querySelector('.egg-countdown');
@@ -394,6 +496,13 @@ function showDanEasterEgg(forceWatch) {
     if (dismissed || !canDismiss) return;
     dismissed = true;
     localStorage.setItem(hasSeenKey, '1');
+    // Fade out the music
+    if (danAudio) {
+      try {
+        danAudio.master.gain.setTargetAtTime(0, danAudio.ctx.currentTime, 0.3);
+        setTimeout(() => { try { danAudio.ctx.close(); } catch(e) {} }, 700);
+      } catch(e) {}
+    }
     overlay.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.4s';
