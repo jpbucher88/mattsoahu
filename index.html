@@ -213,15 +213,24 @@
           </div>
           <div id="trip-scheduled-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-            <input type="datetime-local" id="vehicle-trip-scheduled-start" class="vehicle-location-custom" step="1800">
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-scheduled-start-date" class="vehicle-location-custom dt-date-input">
+              <select id="vehicle-trip-scheduled-start-time" class="dt-time-select"></select>
+            </div>
           </div>
           <div id="trip-expected-end-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-expected-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-            <input type="datetime-local" id="vehicle-trip-expected-end" class="vehicle-location-custom" step="1800">
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-expected-end-date" class="vehicle-location-custom dt-date-input">
+              <select id="vehicle-trip-expected-end-time" class="dt-time-select"></select>
+            </div>
           </div>
           <div id="trip-return-row" class="loc-field" style="display:none;">
             <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-            <input type="datetime-local" id="vehicle-trip-return" class="vehicle-location-custom" step="1800">
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-return-date" class="vehicle-location-custom dt-date-input">
+              <select id="vehicle-trip-return-time" class="dt-time-select"></select>
+            </div>
           </div>
           <!-- On-trip revenue (shown only for On Trip status) -->
           <div id="on-trip-revenue-row" class="loc-field" style="display:none;">
@@ -290,7 +299,10 @@
               </div>
               <div class="loc-field">
                 <label for="private-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
-                <input type="datetime-local" id="private-trip-return" class="vehicle-location-custom" step="1800">
+                <div class="dt-split-wrap">
+                  <input type="date" id="private-trip-return-date" class="vehicle-location-custom dt-date-input">
+                  <select id="private-trip-return-time" class="dt-time-select"></select>
+                </div>
               </div>
             </details>
             <details class="priv-section" open>

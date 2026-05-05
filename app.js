@@ -156,13 +156,41 @@ function snapDatetimeToHalfHour(el) {
   if (snappedM === 0 && m >= 45) h = (h + 1) % 24;
   el.value = datePart + 'T' + String(h).padStart(2, '0') + ':' + String(snappedM).padStart(2, '0');
 }
-document.addEventListener('change', function(e) {
-  const el = e.target;
-  if (el.id === 'vehicle-trip-scheduled-start' || el.id === 'vehicle-trip-expected-end' ||
-      el.id === 'vehicle-trip-return'           || el.id === 'private-trip-return') {
-    snapDatetimeToHalfHour(el);
+// Builds a <select> with all 48 half-hour slots (12:00 AM … 11:30 PM)
+function _populateHalfHourSelect(selectId) {
+  const sel = $(selectId);
+  if (!sel || sel.dataset.populated) return;
+  let html = '<option value="">-- time --</option>';
+  for (let h = 0; h < 24; h++) {
+    for (const m of [0, 30]) {
+      const val = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      html += `<option value="${val}">${h12}:${String(m).padStart(2,'0')} ${ampm}</option>`;
+    }
   }
-});
+  sel.innerHTML = html;
+  sel.dataset.populated = '1';
+}
+// Read combined date+select value → 'YYYY-MM-DDTHH:MM' or ''
+function _getHDT(dateId, timeId) {
+  const d = $(dateId)?.value;
+  const t = $(timeId)?.value;
+  return (d && t) ? `${d}T${t}` : '';
+}
+// Write split fields from a 'YYYY-MM-DDTHH:MM' string
+function _setHDT(dateId, timeId, isoStr) {
+  _populateHalfHourSelect(timeId);
+  if (!isoStr) { $(dateId).value = ''; $(timeId).value = ''; return; }
+  const [datePart, timePart] = isoStr.split('T');
+  $(dateId).value = datePart || '';
+  if (timePart) {
+    const [h, m] = timePart.split(':').map(Number);
+    const snappedM = m < 15 ? 0 : m < 45 ? 30 : 0;
+    const snappedH = (snappedM === 0 && m >= 45) ? (h + 1) % 24 : h;
+    $(timeId).value = String(snappedH).padStart(2, '0') + ':' + String(snappedM).padStart(2, '0');
+  } else { $(timeId).value = ''; }
+}
 
 const pages = {
   login: $('page-login'),
@@ -2025,7 +2053,7 @@ async function openVehiclePage(vid) {
   const homeLocSelect = $('vehicle-home-location');
   const tripStatusSelect = $('vehicle-trip-status');
   const tripReturnRow = $('trip-return-row');
-  const tripReturnInput = $('vehicle-trip-return');
+  const tripReturnDateEl = $('vehicle-trip-return-date');
   const repairPartsRow = $('repair-parts-row');
   if (homeLocSelect) {
     homeLocSelect.value = selectedVehicle.homeLocation || '';
@@ -2062,7 +2090,9 @@ async function openVehiclePage(vid) {
       }
       if (selectedVehicle.tripReturnDate) {
         const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
-        $('private-trip-return').value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
+        _setHDT('private-trip-return-date', 'private-trip-return-time', rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T'));
+      } else {
+        _setHDT('private-trip-return-date', 'private-trip-return-time', '');
       }
       // Show contract if already uploaded
       const preview = $('private-contract-preview');
@@ -2072,18 +2102,18 @@ async function openVehiclePage(vid) {
     // Populate scheduled start
     if (selectedVehicle.tripScheduledStart) {
       const _ss = selectedVehicle.tripScheduledStart.toDate ? selectedVehicle.tripScheduledStart.toDate() : new Date(selectedVehicle.tripScheduledStart);
-      $('vehicle-trip-scheduled-start').value = _ss.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
-    } else { $('vehicle-trip-scheduled-start').value = ''; }
+      _setHDT('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time', _ss.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T'));
+    } else { _setHDT('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time', ''); }
     // Populate expected end
     if (selectedVehicle.tripExpectedEnd) {
       const _ee = selectedVehicle.tripExpectedEnd.toDate ? selectedVehicle.tripExpectedEnd.toDate() : new Date(selectedVehicle.tripExpectedEnd);
-      $('vehicle-trip-expected-end').value = _ee.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
-    } else { $('vehicle-trip-expected-end').value = ''; }
+      _setHDT('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time', _ee.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T'));
+    } else { _setHDT('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time', ''); }
     if (selectedVehicle.tripReturnDate) {
       const rd = selectedVehicle.tripReturnDate.toDate ? selectedVehicle.tripReturnDate.toDate() : new Date(selectedVehicle.tripReturnDate);
-      tripReturnInput.value = rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T');
+      _setHDT('vehicle-trip-return-date', 'vehicle-trip-return-time', rd.toLocaleString('sv-SE', { timeZone: APP_TIMEZONE }).slice(0, 16).replace(' ', 'T'));
     } else {
-      tripReturnInput.value = '';
+      _setHDT('vehicle-trip-return-date', 'vehicle-trip-return-time', '');
     }
     // Repair parts fields
     $('repair-shop-name').value = selectedVehicle.repairShopName || '';
@@ -4010,7 +4040,7 @@ $('btn-save-location').addEventListener('click', async () => {
   if (!selectedVehicle) return;
   const homeLocation = $('vehicle-home-location').value;
   const tripStatus = $('vehicle-trip-status').value;
-  const tripReturnVal = $('vehicle-trip-return').value;
+  const tripReturnVal = _getHDT('vehicle-trip-return-date', 'vehicle-trip-return-time');
   const repairShopName = $('repair-shop-name').value.trim();
   const repairOrderNumber = $('repair-order-number').value.trim();
   const repairPartsEta = $('repair-parts-eta').value;
@@ -4034,9 +4064,9 @@ $('btn-save-location').addEventListener('click', async () => {
   // Compute the display location for backward compat
   if (tripStatus === 'scheduled') {
     updateData.location = homeLocation;
-    const schedVal = $('vehicle-trip-scheduled-start').value;
+    const schedVal = _getHDT('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time');
     updateData.tripScheduledStart = schedVal ? firebase.firestore.Timestamp.fromDate(new Date(schedVal.slice(0, 16) + ':00-10:00')) : firebase.firestore.FieldValue.delete();
-    const endVal = $('vehicle-trip-expected-end').value;
+    const endVal = _getHDT('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time');
     updateData.tripExpectedEnd = endVal ? firebase.firestore.Timestamp.fromDate(new Date(endVal.slice(0, 16) + ':00-10:00')) : firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = firebase.firestore.FieldValue.delete();
     updateData.repairShopName = firebase.firestore.FieldValue.delete();
@@ -4058,7 +4088,7 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.location = 'Private Trip';
     const ptStart = getDTValue('private-trip-start-date', 'private-trip-start-time');
     const ptEnd = getDTValue('private-trip-end-date', 'private-trip-end-time');
-    const ptReturn = $('private-trip-return').value;
+    const ptReturn = _getHDT('private-trip-return-date', 'private-trip-return-time');
     updateData.tripScheduledStart = ptStart ? firebase.firestore.Timestamp.fromDate(new Date(ptStart)) : firebase.firestore.FieldValue.delete();
     updateData.tripExpectedEnd = ptEnd ? firebase.firestore.Timestamp.fromDate(new Date(ptEnd)) : firebase.firestore.FieldValue.delete();
     updateData.tripReturnDate = ptReturn ? firebase.firestore.Timestamp.fromDate(new Date(ptReturn + ':00-10:00')) : firebase.firestore.FieldValue.delete();
@@ -4245,10 +4275,10 @@ $('btn-save-location').addEventListener('click', async () => {
     // Log trip to tripLogs for productivity tracking
     if (tripStatus === 'scheduled' || tripStatus === 'private-trip') {
       const logStart = tripStatus === 'scheduled'
-        ? $('vehicle-trip-scheduled-start').value.slice(0, 16)
+        ? _getHDT('vehicle-trip-scheduled-start-date', 'vehicle-trip-scheduled-start-time')
         : getDTValue('private-trip-start-date', 'private-trip-start-time');
       const logEnd = tripStatus === 'scheduled'
-        ? $('vehicle-trip-expected-end').value.slice(0, 16)
+        ? _getHDT('vehicle-trip-expected-end-date', 'vehicle-trip-expected-end-time')
         : getDTValue('private-trip-end-date', 'private-trip-end-time');
       if (logStart && logEnd) {
         const startDate = logStart.slice(0, 10);

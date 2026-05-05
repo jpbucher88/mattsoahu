@@ -5735,6 +5735,7 @@ body {
 .dt-split-wrap { display: flex; gap: 6px; align-items: center; }
 .dt-date-input { flex: 1.6; min-width: 0; }
 .dt-time-input { flex: 0.8; min-width: 68px; max-width: 90px; text-align: center; font-variant-numeric: tabular-nums; }
+.dt-time-select { flex: 1; min-width: 100px; max-width: 140px; }
 
 /* ========== Fleet Productivity Report ========== */
 .productivity-btn { margin-right: 8px; font-size: 0.82rem; padding: 4px 10px; }
