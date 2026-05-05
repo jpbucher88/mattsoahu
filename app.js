@@ -13501,27 +13501,44 @@ window.loadTuroEarnings = async function() {
     const snap = await db.collection('turoTrips').get();
     if (snap.empty) { body.innerHTML = ''; return; }
 
-    // Parse "M/D/YYYY H:MM" to Date
+    // Parse various date formats Turo may use: "M/D/YYYY H:MM", "MM/DD/YYYY", ISO, etc.
     function parseTuroDate(s) {
       if (!s) return null;
-      const [datePart, timePart] = s.split(' ');
-      if (!datePart) return null;
-      const [mo, day, yr] = datePart.split('/').map(Number);
-      const [h, mi] = (timePart || '0:00').split(':').map(Number);
-      return new Date(yr, mo - 1, day, h, mi);
+      // Try native parse first (handles ISO and many locale formats)
+      const d = new Date(s);
+      if (!isNaN(d)) return d;
+      // M/D/YYYY H:MM or M/D/YYYY
+      const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2}))?/);
+      if (m) return new Date(+m[3], +m[1]-1, +m[2], +(m[4]||0), +(m[5]||0));
+      return null;
     }
+    const { start, end, label } = _finMonthRange('fin-rev-month');
     const rangeStart = new Date(start + 'T00:00:00');
     const rangeEnd = new Date(end + 'T23:59:59');
 
     const trips = [];
+    const allTrips = [];
     snap.forEach(doc => {
       const d = doc.data();
+      allTrips.push(d);
       const dt = parseTuroDate(d.tripStart);
       if (!dt || dt < rangeStart || dt > rangeEnd) return;
       trips.push(d);
     });
 
-    if (!trips.length) { body.innerHTML = ''; return; }
+    if (!trips.length) {
+      // Show hint if there ARE trips in DB but none match this month
+      if (allTrips.length > 0) {
+        // Find the date range of stored trips to help user pick the right month
+        const dates = allTrips.map(t => parseTuroDate(t.tripStart)).filter(Boolean).sort((a,b)=>a-b);
+        const earliest = dates[0] ? dates[0].toLocaleDateString('en-US', { month:'short', year:'numeric', timeZone: APP_TIMEZONE }) : '?';
+        const latest = dates[dates.length-1] ? dates[dates.length-1].toLocaleDateString('en-US', { month:'short', year:'numeric', timeZone: APP_TIMEZONE }) : '?';
+        body.innerHTML = `<p class="hint" style="padding:8px;color:#f59e0b;">⚠️ ${allTrips.length} Turo trip(s) in database but none match <strong>${label}</strong>. Try changing the month — trips range from <strong>${earliest}</strong> to <strong>${latest}</strong>.</p>`;
+      } else {
+        body.innerHTML = '';
+      }
+      return;
+    }
 
     // Group by vehicle
     const byVehicle = {};
