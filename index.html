@@ -723,6 +723,34 @@
                 <input type="text" id="em-notes" placeholder="Optional details" maxlength="200">
               </div>
             </div>
+            <!-- Follow-up Interval -->
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-interval">🔁 Repeat Every (Time)</label>
+                <select id="em-interval" class="form-select">
+                  <option value="">No time repeat</option>
+                  <option value="1">1 Month</option>
+                  <option value="3">3 Months</option>
+                  <option value="6">6 Months</option>
+                  <option value="12">1 Year (12 Months)</option>
+                  <option value="24">2 Years (24 Months)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="em-mile-interval">🔁 Repeat Every (Miles)</label>
+                <input type="number" id="em-mile-interval" class="form-select" placeholder="e.g. 7000" min="100" max="999999" inputmode="numeric">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Next Due Date</label>
+                <div id="em-next-due-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+              <div class="form-group">
+                <label>Next Due Mileage</label>
+                <div id="em-next-due-mileage-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+            </div>
             <!-- Invoice section -->
             <div class="form-row m-invoice-row">
               <div class="form-group" style="flex:1;">

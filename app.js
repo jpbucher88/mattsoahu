@@ -6243,6 +6243,12 @@ window.openEditMaintenance = async function(docId) {
     $('em-location').value = d.location || '';
     $('em-notes').value = d.notes || '';
 
+    // Interval / next-due
+    $('em-interval').value = d.intervalMonths ? String(d.intervalMonths) : '';
+    $('em-mile-interval').value = d.intervalMiles || '';
+    $('em-next-due-display').textContent = d.nextDueDate || '—';
+    $('em-next-due-mileage-display').textContent = d.nextDueMileage ? d.nextDueMileage.toLocaleString() + ' mi' : '—';
+
     // Supplier rating stars
     const editForm = $('edit-maint-form');
     clearStarPickers(editForm);
@@ -6274,6 +6280,31 @@ window.openEditMaintenance = async function(docId) {
     hideLoading();
   }
 };
+
+// Live next-due preview for edit modal
+function _updateEmNextDuePreview() {
+  const date = $('em-date').value;
+  const intervalMonths = $('em-interval').value ? parseInt($('em-interval').value) : null;
+  const intervalMiles = $('em-mile-interval').value ? parseInt($('em-mile-interval').value) : null;
+  const mileage = $('em-mileage').value ? parseInt($('em-mileage').value) : (selectedVehicle && selectedVehicle.mileage) || null;
+
+  if (intervalMonths && date) {
+    const [y, mo, d] = date.split('-').map(Number);
+    const next = new Date(y, mo - 1 + intervalMonths, d);
+    $('em-next-due-display').textContent = next.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TIMEZONE });
+  } else {
+    $('em-next-due-display').textContent = '—';
+  }
+  if (intervalMiles && mileage) {
+    $('em-next-due-mileage-display').textContent = (mileage + intervalMiles).toLocaleString() + ' mi';
+  } else {
+    $('em-next-due-mileage-display').textContent = '—';
+  }
+}
+['em-date', 'em-interval', 'em-mile-interval', 'em-mileage'].forEach(id => {
+  $(`${id}`).addEventListener('change', _updateEmNextDuePreview);
+  $(`${id}`).addEventListener('input', _updateEmNextDuePreview);
+});
 
 // Wire new invoice preview in edit modal
 $('em-invoice-input').addEventListener('change', function() {
@@ -6322,6 +6353,19 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
   const cost = $('em-cost').value !== '' ? parseFloat($('em-cost').value) : null;
   const location = $('em-location').value.trim() || null;
   const notes = $('em-notes').value.trim() || null;
+    const intervalMonths = $('em-interval').value ? parseInt($('em-interval').value) : null;
+    const intervalMiles = $('em-mile-interval').value ? parseInt($('em-mile-interval').value) : null;
+
+    // Recalculate next due date
+    let nextDueDate = null;
+    if (intervalMonths && date) {
+      const [y, mo, d] = date.split('-').map(Number);
+      const next = new Date(y, mo - 1 + intervalMonths, d);
+      nextDueDate = next.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+    }
+    // Recalculate next due mileage
+    const svcMileage = mileage || (selectedVehicle && selectedVehicle.mileage) || null;
+    const nextDueMileage = (intervalMiles && svcMileage) ? svcMileage + intervalMiles : null;
 
   showLoading('Saving changes...');
   try {
@@ -6330,10 +6374,10 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
     updateData.cost = cost != null ? cost : firebase.firestore.FieldValue.delete();
     updateData.location = location ?? firebase.firestore.FieldValue.delete();
     updateData.notes = notes ?? firebase.firestore.FieldValue.delete();
-
-    // Supplier rating
-    const eRatComm  = $('em-rat-comm')?.value  ? parseInt($('em-rat-comm').value)  : null;
-    const eRatPrice = $('em-rat-price')?.value ? parseInt($('em-rat-price').value) : null;
+    updateData.intervalMonths = intervalMonths ?? firebase.firestore.FieldValue.delete();
+    updateData.intervalMiles = intervalMiles ?? firebase.firestore.FieldValue.delete();
+    updateData.nextDueDate = nextDueDate ?? firebase.firestore.FieldValue.delete();
+    updateData.nextDueMileage = nextDueMileage ?? firebase.firestore.FieldValue.delete();
     const eRatFixed = $('em-rat-fixed')?.value ? parseInt($('em-rat-fixed').value) : null;
     if (eRatComm || eRatPrice || eRatFixed) {
       updateData.supplierRating = {};
