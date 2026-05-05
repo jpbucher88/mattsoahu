@@ -158,7 +158,8 @@ function snapDatetimeToHalfHour(el) {
 }
 document.addEventListener('change', function(e) {
   const el = e.target;
-  if (el.id === 'vehicle-trip-scheduled-start' || el.id === 'vehicle-trip-expected-end') {
+  if (el.id === 'vehicle-trip-scheduled-start' || el.id === 'vehicle-trip-expected-end' ||
+      el.id === 'vehicle-trip-return'           || el.id === 'private-trip-return') {
     snapDatetimeToHalfHour(el);
   }
 });
@@ -433,6 +434,24 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+// ================================================================
+// USER ACTIVITY LOGGER
+// Logs significant user actions to Firestore 'userActivity' collection.
+// Viewable by Matthew in the Admin panel.
+// ================================================================
+function logUserActivity(action, details = {}) {
+  if (!currentUser) return;
+  const entry = {
+    uid: currentUser.uid,
+    userName: currentUser.displayName || currentUser.email || 'Unknown',
+    action,
+    details,
+    at: firebase.firestore.FieldValue.serverTimestamp(),
+    atDisplay: new Date().toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+  };
+  db.collection('userActivity').add(entry).catch(() => {}); // fire-and-forget
+}
+
 // ---- Star rating picker ----
 // Used by maintenance supplier ratings. Works for any .star-picker element.
 window.pickStar = function(starEl) {
@@ -617,6 +636,11 @@ auth.onAuthStateChanged(async (user) => {
 
       // Run auto-cleanup on any login (not just admin)
       cleanupOldPhotos();
+
+      // One-time migration: TXU495 color → Marshmellow
+      if (user.email && user.email.toLowerCase() === 'matthew.fetterman@gmail.com') {
+        _runOnceColorMigration();
+      }
 
       await loadVehicles();
       // Resume any photos left in IndexedDB from a previous session / backgrounded upload
@@ -1992,6 +2016,10 @@ async function openVehiclePage(vid) {
   $('vehicle-make-model').textContent = `${selectedVehicle.make} ${selectedVehicle.model}` +
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
+
+  // Show color edit button for admins/managers
+  const colorEditBtn = $('btn-edit-vehicle-color');
+  if (colorEditBtn) colorEditBtn.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
 
   // Set location dropdowns
   const homeLocSelect = $('vehicle-home-location');
@@ -3841,6 +3869,9 @@ $('btn-admin').addEventListener('click', () => {
   showPage('admin');
   loadAdminVehicles();
   loadAdminUsers();
+  // Show Matthew-only tabs
+  const isMatthew = currentUser && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com';
+  document.querySelectorAll('.tab-matthew-only').forEach(el => el.style.display = isMatthew ? '' : 'none');
 });
 
 $('btn-admin-from-vehicle').addEventListener('click', () => {
@@ -3848,6 +3879,8 @@ $('btn-admin-from-vehicle').addEventListener('click', () => {
   showPage('admin');
   loadAdminVehicles();
   loadAdminUsers();
+  const isMatthew = currentUser && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com';
+  document.querySelectorAll('.tab-matthew-only').forEach(el => el.style.display = isMatthew ? '' : 'none');
 });
 
 $('btn-back-dashboard').addEventListener('click', () => {
@@ -4326,6 +4359,8 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     this.classList.add('active');
     $(this.dataset.tab).classList.add('active');
+    // Auto-load Matthew-only tabs
+    if (this.dataset.tab === 'tab-deleted') loadDeletedTasks();
   });
 });
 
@@ -4489,6 +4524,70 @@ async function uploadVehicleDefaultImage(vehicleId, file) {
 // ================================================================
 // ADMIN: EDIT VEHICLE
 // ================================================================
+
+// One-time migration: update TXU495 color to Marshmellow
+async function _runOnceColorMigration() {
+  const KEY = 'migrated_txu495_color_v1';
+  if (localStorage.getItem(KEY)) return;
+  try {
+    const snap = await db.collection('vehicles').where('plate', '==', 'TXU495').limit(1).get();
+    if (!snap.empty && snap.docs[0].data().color === 'Silver') {
+      await snap.docs[0].ref.update({ color: 'Marshmellow' });
+      console.log('[Migration] TXU495 color updated to Marshmellow');
+    }
+    localStorage.setItem(KEY, '1');
+  } catch (e) {
+    console.warn('[Migration] TXU495 color migration skipped:', e.message);
+  }
+}
+
+// Quick inline color editor from the vehicle page header
+window.openVehicleColorEdit = function() {
+  if (!selectedVehicle || (currentUserRole !== 'admin' && currentUserRole !== 'manager')) return;
+  const existing = document.getElementById('vehicle-color-edit-popup');
+  if (existing) { existing.remove(); return; }
+
+  const popup = document.createElement('div');
+  popup.id = 'vehicle-color-edit-popup';
+  popup.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border:1px solid #d1d5db;border-radius:12px;padding:20px;z-index:9999;box-shadow:0 8px 32px rgba(0,0,0,0.18);min-width:260px;';
+  popup.innerHTML = `
+    <div style="font-weight:700;font-size:1rem;margin-bottom:12px;">🎨 Edit Vehicle Color</div>
+    <div style="color:#6b7280;font-size:0.83rem;margin-bottom:8px;">${escapeHtml(selectedVehicle.plate)} — current: ${escapeHtml(selectedVehicle.color || 'none')}</div>
+    <input type="text" id="color-edit-input" value="${escapeHtml(selectedVehicle.color || '')}"
+      style="width:100%;box-sizing:border-box;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:1rem;margin-bottom:12px;"
+      maxlength="40" placeholder="e.g. Marshmellow" autocomplete="off">
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('vehicle-color-edit-popup').remove()" class="btn btn-outline btn-sm">Cancel</button>
+      <button onclick="saveVehicleColor()" class="btn btn-primary btn-sm">Save</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+  const inp = popup.querySelector('#color-edit-input');
+  inp.focus();
+  inp.select();
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') saveVehicleColor(); if (e.key === 'Escape') popup.remove(); });
+};
+
+window.saveVehicleColor = async function() {
+  const popup = document.getElementById('vehicle-color-edit-popup');
+  if (!popup || !selectedVehicle) return;
+  const newColor = popup.querySelector('#color-edit-input').value.trim() || null;
+  popup.remove();
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ color: newColor || firebase.firestore.FieldValue.delete() });
+    selectedVehicle.color = newColor;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.color = newColor;
+    $('vehicle-make-model').textContent = `${selectedVehicle.make} ${selectedVehicle.model}` +
+      (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
+      (newColor ? ` - ${newColor}` : '');
+    toast('Color updated!', 'success');
+    logUserActivity('update_vehicle_color', { vehicleId: selectedVehicle.id, plate: selectedVehicle.plate, newColor });
+  } catch (err) {
+    console.error('Color update error:', err);
+    toast('Failed to update color.', 'error');
+  }
+};
 
 window.openEditVehicle = function (vehicleId) {
   const v = vehiclesCache.find(x => x.id === vehicleId);
@@ -4946,6 +5045,107 @@ $('add-user-form').addEventListener('submit', async (e) => {
     hideLoading();
   }
 });
+
+// ================================================================
+// DELETED TASKS VIEW (Matthew only)
+// ================================================================
+window.loadDeletedTasks = async function() {
+  const el = $('deleted-tasks-list');
+  if (!el) return;
+  el.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const [vSnap, gSnap] = await Promise.all([
+      db.collection('vehicleNotes').where('deleted', '==', true).orderBy('deletedAt', 'desc').limit(100).get(),
+      db.collection('generalNotes').where('deleted', '==', true).orderBy('deletedAt', 'desc').limit(100).get()
+    ]);
+    const items = [];
+    vSnap.forEach(doc => items.push({ id: doc.id, col: 'vehicleNotes', ...doc.data() }));
+    gSnap.forEach(doc => items.push({ id: doc.id, col: 'generalNotes', ...doc.data() }));
+    items.sort((a, b) => (b.deletedAt?.seconds || 0) - (a.deletedAt?.seconds || 0));
+    if (!items.length) { el.innerHTML = '<p class="hint">No deleted notes.</p>'; return; }
+    el.innerHTML = items.map(d => {
+      const when = d.deletedAt ? new Date(d.deletedAt.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+      return `<div class="note-item" style="opacity:0.75;">
+        <div class="note-content">
+          <div class="note-text">${escapeHtml(d.text || '')}</div>
+          <div class="note-meta" style="color:#e55;">🗑 Deleted by ${escapeHtml(d.deletedByName || '?')} · ${when} · <em>${d.col === 'vehicleNotes' ? 'Vehicle Note' : 'General Note'}</em></div>
+        </div>
+        <div class="note-actions">
+          <button class="btn btn-sm btn-outline" onclick="restoreDeletedNote('${d.id}','${d.col}')">↩ Restore</button>
+          <button class="btn btn-sm btn-danger" onclick="permanentlyDeleteNote('${d.id}','${d.col}')">☠ Purge</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    el.innerHTML = '<p class="hint">Error loading deleted tasks.</p>';
+    console.error(e);
+  }
+};
+
+window.restoreDeletedNote = async function(docId, col) {
+  try {
+    await db.collection(col).doc(docId).update({ deleted: firebase.firestore.FieldValue.delete(), deletedBy: firebase.firestore.FieldValue.delete(), deletedByName: firebase.firestore.FieldValue.delete(), deletedAt: firebase.firestore.FieldValue.delete() });
+    logUserActivity('restore_note', { docId, collection: col });
+    toast('Restored.', 'success');
+    loadDeletedTasks();
+  } catch (e) { toast('Failed to restore.', 'error'); }
+};
+
+window.permanentlyDeleteNote = async function(docId, col) {
+  if (!(await confirm('Permanently Delete', 'This cannot be undone. Delete forever?'))) return;
+  try {
+    await db.collection(col).doc(docId).delete();
+    logUserActivity('purge_note', { docId, collection: col });
+    toast('Purged.', 'success');
+    loadDeletedTasks();
+  } catch (e) { toast('Failed to purge.', 'error'); }
+};
+
+// ================================================================
+// ACTIVITY LOG VIEWER (Matthew only)
+// ================================================================
+window.loadActivityLog = async function() {
+  const el = $('activity-log-list');
+  if (!el) return;
+  el.innerHTML = '<p class="hint">Loading…</p>';
+  const filterDate = $('activity-filter-date')?.value;
+  const filterAction = $('activity-filter-action')?.value;
+  try {
+    let q = db.collection('userActivity').orderBy('at', 'desc').limit(200);
+    if (filterAction) q = q.where('action', '==', filterAction);
+    const snap = await q.get();
+    let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (filterDate) {
+      items = items.filter(d => {
+        if (!d.at) return false;
+        const localDate = new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }); // YYYY-MM-DD
+        return localDate === filterDate;
+      });
+    }
+    if (!items.length) { el.innerHTML = '<p class="hint">No activity found.</p>'; return; }
+    el.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+      <thead><tr style="border-bottom:1px solid #e5e7eb;">
+        <th style="text-align:left;padding:6px 8px;">Time</th>
+        <th style="text-align:left;padding:6px 8px;">User</th>
+        <th style="text-align:left;padding:6px 8px;">Action</th>
+        <th style="text-align:left;padding:6px 8px;">Details</th>
+      </tr></thead>
+      <tbody>${items.map(d => {
+        const time = d.atDisplay || (d.at ? new Date(d.at.toDate()).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '?');
+        const det = d.details ? Object.entries(d.details).map(([k, v]) => `${k}: ${v}`).join(' · ') : '';
+        return `<tr style="border-bottom:1px solid #f3f4f6;">
+          <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(time)}</td>
+          <td style="padding:5px 8px;">${escapeHtml(d.userName || '?')}</td>
+          <td style="padding:5px 8px;"><code style="font-size:0.8em;">${escapeHtml(d.action || '')}</code></td>
+          <td style="padding:5px 8px;color:#6b7280;font-size:0.8em;">${escapeHtml(det)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch (e) {
+    el.innerHTML = '<p class="hint">Error loading activity.</p>';
+    console.error(e);
+  }
+};
 
 async function loadAdminUsers() {
   if (currentUserRole !== 'admin') return;
@@ -5848,6 +6048,7 @@ async function loadVehicleNotes(vehicleId) {
     let html = '';
     snap.forEach(doc => {
       const d = doc.data();
+      if (d.deleted) return; // skip soft-deleted
       const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
       let followUpBadge = '';
       if (d.isFollowUp) {
@@ -5890,12 +6091,20 @@ async function loadVehicleNotes(vehicleId) {
 
 window.markNoteDone = async function(docId) {
   try {
+    const doneEntry = {
+      text: `Completed by ${currentUser.displayName || currentUser.email}`,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+      type: 'complete'
+    };
     await db.collection('vehicleNotes').doc(docId).update({
       done: true,
       completedBy: currentUser.uid,
       completedByName: currentUser.displayName || currentUser.email,
-      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      taskLog: firebase.firestore.FieldValue.arrayUnion(doneEntry)
     });
+    logUserActivity('complete_task', { docId, collection: 'vehicleNotes' });
     toast('Follow-up marked done.', 'success');
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
@@ -5908,7 +6117,20 @@ window.deleteNote = async function(docId) {
   const ok = await confirm('Delete Note', 'Remove this note?');
   if (!ok) return;
   try {
-    await db.collection('vehicleNotes').doc(docId).delete();
+    const deletedEntry = {
+      text: `Deleted by ${currentUser.displayName || currentUser.email}`,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+      type: 'delete'
+    };
+    await db.collection('vehicleNotes').doc(docId).update({
+      deleted: true,
+      deletedBy: currentUser.uid,
+      deletedByName: currentUser.displayName || currentUser.email,
+      deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      taskLog: firebase.firestore.FieldValue.arrayUnion(deletedEntry)
+    });
+    logUserActivity('delete_note', { docId, collection: 'vehicleNotes' });
     toast('Note deleted.', 'success');
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
@@ -6456,6 +6678,7 @@ async function loadDashboardFollowUps() {
     function addItems(snap, type, collection) {
       snap.forEach(doc => {
         if (seen.has(doc.id)) return;
+        if (doc.data().deleted) return; // skip soft-deleted
         seen.add(doc.id);
         items.push({ id: doc.id, collection, type, ...doc.data() });
       });
@@ -6973,9 +7196,22 @@ async function agendaMarkDoneGeneral(docId) {
 
 // Delete a task note (admin/manager only)
 window.deleteTaskNote = async function(docId, col) {
-  if (!(await confirm('Delete Task', 'Delete this task permanently?'))) return;
+  if (!(await confirm('Delete Task', 'Delete this task?'))) return;
   try {
-    await db.collection(col).doc(docId).delete();
+    const deletedEntry = {
+      text: `Deleted by ${currentUser.displayName || currentUser.email}`,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+      type: 'delete'
+    };
+    await db.collection(col).doc(docId).update({
+      deleted: true,
+      deletedBy: currentUser.uid,
+      deletedByName: currentUser.displayName || currentUser.email,
+      deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      taskLog: firebase.firestore.FieldValue.arrayUnion(deletedEntry)
+    });
+    logUserActivity('delete_task', { docId, collection: col });
     toast('Task deleted.', 'success');
     loadDashboardFollowUps();
     if (col === 'vehicleNotes' && selectedVehicle) loadVehicleNotes(selectedVehicle.id);
@@ -7040,6 +7276,18 @@ window.openNoteEditModal = async function(docId, collection) {
     toast('Could not load note.', 'error');
     return;
   }
+
+  // Log the task open event
+  const openEntry = {
+    text: `Opened by ${currentUser?.displayName || currentUser?.email || 'Unknown'}`,
+    by: currentUser?.displayName || currentUser?.email || 'Unknown',
+    at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+    type: 'open'
+  };
+  db.collection(collection).doc(docId).update({
+    taskLog: firebase.firestore.FieldValue.arrayUnion(openEntry)
+  }).catch(() => {});
+  logUserActivity('open_task', { docId, collection, text: (d.text || '').slice(0, 80) });
 
   const overlay = document.createElement('div');
   overlay.className = 'note-edit-overlay';
@@ -9659,6 +9907,7 @@ async function loadGeneralNotes() {
     let html = '';
     snap.forEach(doc => {
       const d = doc.data();
+      if (d.deleted) return; // skip soft-deleted
       const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
       let followUpBadge = '';
       if (d.isFollowUp) {
@@ -9698,12 +9947,20 @@ async function loadGeneralNotes() {
 
 window.markGeneralNoteDone = async function(docId) {
   try {
+    const doneEntry = {
+      text: `Completed by ${currentUser.displayName || currentUser.email}`,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+      type: 'complete'
+    };
     await db.collection('generalNotes').doc(docId).update({
       done: true,
       completedBy: currentUser.uid,
       completedByName: currentUser.displayName || currentUser.email,
-      completedAt: firebase.firestore.FieldValue.serverTimestamp()
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      taskLog: firebase.firestore.FieldValue.arrayUnion(doneEntry)
     });
+    logUserActivity('complete_task', { docId, collection: 'generalNotes' });
     toast('Follow-up marked done.', 'success');
     loadGeneralNotes();
     loadDashboardFollowUps();
@@ -9717,7 +9974,20 @@ window.deleteGeneralNote = async function(docId) {
   const ok = await confirm('Delete Note', 'Remove this note?');
   if (!ok) return;
   try {
-    await db.collection('generalNotes').doc(docId).delete();
+    const deletedEntry = {
+      text: `Deleted by ${currentUser.displayName || currentUser.email}`,
+      by: currentUser.displayName || currentUser.email,
+      at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+      type: 'delete'
+    };
+    await db.collection('generalNotes').doc(docId).update({
+      deleted: true,
+      deletedBy: currentUser.uid,
+      deletedByName: currentUser.displayName || currentUser.email,
+      deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      taskLog: firebase.firestore.FieldValue.arrayUnion(deletedEntry)
+    });
+    logUserActivity('delete_note', { docId, collection: 'generalNotes' });
     toast('Note deleted.', 'success');
     loadGeneralNotes();
     loadDashboardFollowUps();

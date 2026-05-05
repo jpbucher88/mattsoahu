@@ -188,6 +188,7 @@
       <section class="card">
         <div id="vehicle-info" class="vehicle-info">
           <span id="vehicle-make-model"></span>
+          <button id="btn-edit-vehicle-color" class="btn-color-edit" title="Edit color" style="display:none;" onclick="openVehicleColorEdit()">✏️</button>
           <span id="vehicle-photo-count" class="badge"></span>
         </div>
         <div id="vehicle-location-row" class="vehicle-location-row">
@@ -1315,6 +1316,8 @@
         <button class="tab-btn active" data-tab="tab-vehicles">Vehicles</button>
         <button class="tab-btn" data-tab="tab-photos">Photos</button>
         <button class="tab-btn" data-tab="tab-users">Users</button>
+        <button class="tab-btn tab-matthew-only" id="tab-btn-deleted" data-tab="tab-deleted" style="display:none;">🗑 Deleted</button>
+        <button class="tab-btn tab-matthew-only" id="tab-btn-activity" data-tab="tab-activity" style="display:none;">📋 Activity Log</button>
       </div>
 
       <!-- ====== Vehicles Tab ====== -->
@@ -1485,6 +1488,38 @@
           <div id="users-list" class="data-list"></div>
         </div>
       </div>
+
+      <!-- ====== Deleted Tasks Tab (Matthew only) ====== -->
+      <div id="tab-deleted" class="tab-content">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <h3 style="margin:0;">🗑 Deleted Notes &amp; Tasks</h3>
+            <button class="btn btn-sm btn-outline" onclick="loadDeletedTasks()">Refresh</button>
+          </div>
+          <div id="deleted-tasks-list"><p class="hint">Loading…</p></div>
+        </div>
+      </div>
+
+      <!-- ====== Activity Log Tab (Matthew only) ====== -->
+      <div id="tab-activity" class="tab-content">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+            <h3 style="margin:0;">📋 User Activity Log</h3>
+            <input type="date" id="activity-filter-date" class="form-select" style="width:auto;" placeholder="Filter date">
+            <select id="activity-filter-action" class="form-select" style="width:auto;">
+              <option value="">All Actions</option>
+              <option value="open_task">Open Task</option>
+              <option value="complete_task">Complete Task</option>
+              <option value="delete_task">Delete Task</option>
+              <option value="delete_note">Delete Note</option>
+              <option value="edit_vehicle_color">Edit Color</option>
+            </select>
+            <button class="btn btn-sm btn-primary" onclick="loadActivityLog()">Load</button>
+          </div>
+          <div id="activity-log-list"><p class="hint">Click Load to view activity.</p></div>
+        </div>
+      </div>
+
     </main>
   </div>
 

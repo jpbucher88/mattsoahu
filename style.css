@@ -727,6 +727,19 @@ body {
   line-height: 1.5;
 }
 
+/* Vehicle header inline color edit button */
+.btn-color-edit {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 2px 4px;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+  vertical-align: middle;
+}
+.btn-color-edit:hover { opacity: 1; }
+
 .selectable .photo-grid-item.selected {
   border-color: var(--danger);
 }
