@@ -120,5 +120,12 @@ service cloud.firestore {
       allow create: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
       allow update, delete: if isAdmin();
     }
+
+    // Pending photo upload markers — any registered user can create/read/delete their own
+    match /_pendingPhotoUploads/{markerId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow create: if isRegistered() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
+    }
   }
 }

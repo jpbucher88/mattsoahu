@@ -119,24 +119,31 @@ document.addEventListener('input', function(e) {
   if (el.value !== v) el.value = v;
 });
 
-// Snap text time inputs to :00 or :30 on blur
+// Snap text time inputs to :00 or :30 on blur ONLY if value was chosen from the datalist
+// (users can still type any time manually — we do NOT force snap on blur)
 document.addEventListener('blur', function(e) {
   const el = e.target;
   if (!el.classList || !el.classList.contains('dt-time-input')) return;
+  // Only snap if user hasn't typed something with minutes other than :00/:30
   const raw = el.value.trim();
   if (!raw || !raw.includes(':')) return;
-  let [hStr, mStr] = raw.split(':');
-  let h = parseInt(hStr, 10);
-  let m = parseInt(mStr, 10);
-  if (isNaN(h) || isNaN(m)) return;
-  // Snap minutes to nearest :00 or :30
-  m = m < 15 ? 0 : m < 45 ? 30 : 0;
-  if (m === 0 && parseInt(mStr, 10) >= 45) h += 1; // roll over hour
-  if (h > 12) h = 12; if (h < 1) h = 12;
-  el.value = String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  const [, mStr] = raw.split(':');
+  const m = parseInt(mStr, 10);
+  // If already on :00 or :30 nothing to do
+  if (m === 0 || m === 30) return;
+  // If very close (within 1 minute of a snap point) auto-fix for convenience
+  if (m <= 1) { el.value = raw.replace(/:.*/, ':00'); }
+  else if (m >= 29 && m <= 31) { el.value = raw.replace(/:.*/, ':30'); }
+  else if (m >= 59) {
+    let [hStr] = raw.split(':');
+    let h = (parseInt(hStr, 10) + 1);
+    if (h > 12) h = 12;
+    el.value = String(h).padStart(2, '0') + ':00';
+  }
+  // Otherwise leave the typed value as-is
 }, true);
 
-// Snap datetime-local inputs to :00 or :30
+// Snap datetime-local inputs to :00 or :30 on change
 function snapDatetimeToHalfHour(el) {
   if (!el || !el.value) return;
   const [datePart, timePart] = el.value.split('T');
@@ -569,6 +576,8 @@ auth.onAuthStateChanged(async (user) => {
       await loadVehicles();
       // Resume any photos left in IndexedDB from a previous session / backgrounded upload
       resumeAllPendingUploads();
+      // Check for any photos that were taken in another browser and never uploaded
+      _checkOrphanedPendingUploads();
       showPage('dashboard');
       startMailListener();
       startIncidentListener();
@@ -922,13 +931,13 @@ function renderFleetDashboard() {
     // Determine if photo staleness should be suppressed
     const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
     const isAtRepair = v.tripStatus === 'repair-shop';
-    const stillCleaning = v.needsCleaning;
+    // NOTE: needsCleaning no longer suppresses photos — business continues during cleaning
     let withinGrace = false;
     if (v.cleaningFlaggedAt) {
       const flagTime = v.cleaningFlaggedAt.toDate ? v.cleaningFlaggedAt.toDate().getTime() : new Date(v.cleaningFlaggedAt).getTime();
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
-    const suppressPhoto = isOnTrip || isAtRepair || stillCleaning || withinGrace || !!v.photoExcluded;
+    const suppressPhoto = isOnTrip || isAtRepair || withinGrace || !!v.photoExcluded;
 
     // Photo status
     let photoStatus, photoCls;
@@ -1130,9 +1139,10 @@ function renderLocationsWidget() {
 
   // ── Per-location combined sections ──────────────────────────────
   for (const loc of allLocations) {
+    // needsCleaning vehicles still need photos — show them in photos group too
     const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && !v.photoExcluded && v.homeLocation === loc);
-    const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && v.homeLocation === loc);
-    const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !needsPhotosCheck(v) && v.homeLocation === loc);
+    const photosOnly = vehiclesCache.filter(v => isAtHome(v) && needsPhotosCheck(v) && v.homeLocation === loc);
+    const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !needsPhotosCheck(v) && v.homeLocation === loc);
     const overdueHere = [...overdueTrip, ...overdueRepair].filter(v => (v.homeLocation || '') === loc);
     const total = cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length;
     if (total === 0) continue;
@@ -1472,7 +1482,7 @@ window.checkLocationPhotos = async function(loc) {
   const needsPhotos = vehiclesCache.filter(v => {
     if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip') return false;
     if (v.tripStatus === 'repair-shop') return false;
-    if (v.needsCleaning) return false;
+    // needsCleaning no longer suppresses photos — business continues during cleaning
     if (v.photoExcluded) return false;
     if ((v.homeLocation || '') !== loc) return false;
     return !hasPhotosToday(v);
@@ -1945,7 +1955,8 @@ async function openVehiclePage(vid) {
     $('trip-scheduled-row').style.display = ts === 'scheduled' ? '' : 'none';
     $('trip-expected-end-row').style.display = ts === 'scheduled' ? '' : 'none';
     tripReturnRow.style.display = (ts === 'on-trip' || ts === 'repair-shop') ? '' : 'none';
-    $('on-trip-revenue-row').style.display = (ts === 'on-trip' || ts === 'scheduled') ? '' : 'none';
+    // Admins/managers always see revenue row so they can correct it
+    $('on-trip-revenue-row').style.display = (ts === 'on-trip' || ts === 'scheduled' || currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
     repairPartsRow.style.display = ts === 'repair-shop' ? '' : 'none';
     $('hnl-parking-row').style.display = (homeLocSelect.value === 'HNL') ? '' : 'none';
     $('hnl-parking-row-val').value = selectedVehicle.parkingRow || '';
@@ -2022,7 +2033,16 @@ async function openVehiclePage(vid) {
       tripReturnRow.style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
       $('on-trip-revenue-row').style.display = (v === 'on-trip' || v === 'scheduled') ? '' : 'none';
       repairPartsRow.style.display = v === 'repair-shop' ? '' : 'none';
+      // Admin: always show revenue row so they can correct it regardless of status
+      if (currentUserRole === 'admin' || currentUserRole === 'manager') {
+        $('on-trip-revenue-row').style.display = '';
+      }
     };
+
+    // Admin: always show revenue row for editing regardless of current status
+    if (currentUserRole === 'admin' || currentUserRole === 'manager') {
+      $('on-trip-revenue-row').style.display = '';
+    }
   }
 
   // Show "Needs Cleaning" button if vehicle is home and not already flagged
@@ -2065,15 +2085,15 @@ async function openVehiclePage(vid) {
   const staleAlert = $('stale-alert');
   const isOnTrip = selectedVehicle.tripStatus === 'on-trip' || selectedVehicle.tripStatus === 'private-trip';
   const isAtRepairShop = selectedVehicle.tripStatus === 'repair-shop';
-  const stillNeedsCleaning = selectedVehicle.needsCleaning;
   const isExcluded = !!selectedVehicle.photoExcluded;
   // Grace: 2 hours after cleaning was flagged (vehicle returned)
+  // NOTE: needsCleaning no longer suppresses stale alert — business still needs photos
   let withinGrace = false;
   if (selectedVehicle.cleaningFlaggedAt) {
     const flagTime = selectedVehicle.cleaningFlaggedAt.toDate ? selectedVehicle.cleaningFlaggedAt.toDate().getTime() : new Date(selectedVehicle.cleaningFlaggedAt).getTime();
     withinGrace = (Date.now() - flagTime) < MS_2H;
   }
-  const suppressStale = isOnTrip || isAtRepairShop || stillNeedsCleaning || withinGrace || isExcluded;
+  const suppressStale = isOnTrip || isAtRepairShop || withinGrace || isExcluded;
 
   if (!suppressStale && selectedVehicle.lastPhotoAge != null && selectedVehicle.lastPhotoAge > MS_24H) {
     if (selectedVehicle.lastPhotoAge === Infinity) {
@@ -2831,6 +2851,61 @@ async function resumeAllPendingUploads() {
   } catch(e) { console.warn('resumeAllPendingUploads error:', e); }
 }
 
+/**
+ * Check Firestore for any pending upload markers that belong to the current user
+ * but are NOT in this browser's IDB (meaning they were taken on another browser/device).
+ * Shows an alert so the user knows to go back to that browser to complete the upload.
+ */
+async function _checkOrphanedPendingUploads() {
+  if (!currentUser) return;
+  try {
+    // Get markers from Firestore for this user created more than 2 minutes ago (give normal uploads time to complete)
+    const cutoff = new Date(Date.now() - 2 * 60 * 1000);
+    const snap = await db.collection('_pendingPhotoUploads')
+      .where('userId', '==', currentUser.uid)
+      .get();
+    if (snap.empty) return;
+
+    // Get IDB ids in this browser to identify which ones are truly "orphaned"
+    const localPending = await _idbGetPending(null);
+    const localIdbIds = new Set(localPending.map(p => String(p.idbId)));
+
+    const orphaned = snap.docs.filter(doc => {
+      const data = doc.data();
+      const createdAt = data.createdAt ? (data.createdAt.toDate ? data.createdAt.toDate() : new Date(data.createdAt)) : null;
+      // Only warn about markers older than 2 minutes (in-progress uploads are excluded)
+      if (createdAt && createdAt > cutoff) return false;
+      // Orphaned means: Firestore marker exists but this browser has no matching IDB entry
+      return !localIdbIds.has(String(data.idbId));
+    });
+
+    if (orphaned.length === 0) return;
+
+    // Group by vehicle plate
+    const byPlate = {};
+    orphaned.forEach(doc => {
+      const plate = doc.data().vehiclePlate || doc.data().vehicleId || 'Unknown';
+      byPlate[plate] = (byPlate[plate] || 0) + 1;
+    });
+    const summary = Object.entries(byPlate).map(([p, n]) => `${n}× ${p}`).join(', ');
+
+    // Show a persistent red banner (not a toast) so it's not missed
+    let banner = $('orphaned-uploads-banner');
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'orphaned-uploads-banner';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;padding:10px 16px;font-size:0.92rem;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;';
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '✕';
+      closeBtn.style.cssText = 'background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;margin-left:8px;';
+      closeBtn.onclick = () => banner.remove();
+      banner.appendChild(closeBtn);
+      document.body.prepend(banner);
+    }
+    banner.innerHTML = `⚠️ ${orphaned.length} photo${orphaned.length !== 1 ? 's' : ''} (${summary}) may not have uploaded — they were taken in a different browser. Please reopen the app in that browser to complete the upload, or contact support. <button onclick="document.getElementById('orphaned-uploads-banner').remove()" style="background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:2px 10px;cursor:pointer;margin-left:8px;">Dismiss</button>`;
+  } catch(e) { console.warn('_checkOrphanedPendingUploads error:', e); }
+}
+
 function _updateDashboardPendingBanner(count) {
   const el = $('dashboard-pending-uploads');
   if (!el) return;
@@ -2919,8 +2994,23 @@ async function queueCameraUpload(blob) {
   // 1. Persist to IndexedDB FIRST — survives page reload, iOS backgrounding, camera re-open
   const idbId = await _idbSavePhoto(compressed, capturedVehicle);
 
-  // 2. Add to in-memory queue
-  cameraUploadQueue.push({ blob: compressed, vehicle: capturedVehicle, idbId });
+  // 2. Write a lightweight Firestore marker (no blob) so other browsers can see pending photos
+  let fsMarkerId = null;
+  if (currentUser) {
+    try {
+      const markerRef = await db.collection('_pendingPhotoUploads').add({
+        userId: currentUser.uid,
+        vehicleId: capturedVehicle.id,
+        vehiclePlate: capturedVehicle.plate || '',
+        idbId: idbId,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      fsMarkerId = markerRef.id;
+    } catch(e) { console.warn('Pending Firestore marker write failed:', e); }
+  }
+
+  // 3. Add to in-memory queue (carry fsMarkerId so we can delete it on success)
+  cameraUploadQueue.push({ blob: compressed, vehicle: capturedVehicle, idbId, fsMarkerId });
   cameraTotalQueued++;
   updateCameraUploadBar();
   processCameraQueue();
@@ -2959,6 +3049,10 @@ async function processCameraQueue() {
         cameraUploadedUrls.push(url);
         cameraUploadedCount++;
         _idbDeletePhoto(item.idbId);       // remove from IndexedDB on success
+        // Remove Firestore pending marker on success
+        if (item.fsMarkerId) {
+          db.collection('_pendingPhotoUploads').doc(item.fsMarkerId).delete().catch(() => {});
+        }
         updateCameraUploadBar();
       } catch (uploadErr) {
         console.error('Camera upload error (will retry):', uploadErr);
@@ -7380,21 +7474,101 @@ function closeTaskPanel() {
 window.openTaskPanel = openTaskPanel;
 window.closeTaskPanel = closeTaskPanel;
 
-// ---- Floating Notification Bubble (FAB) ----
+// ---- Floating Action Bubble (FAB) ----
+let _fabOpen = false;
+
+function toggleFabMenu(e) {
+  if (e) { e.stopPropagation(); }
+  _fabOpen ? closeFabMenu() : openFabMenu();
+}
+
+function openFabMenu() {
+  _fabOpen = true;
+  const sheet = $('fab-action-sheet');
+  const backdrop = $('fab-backdrop');
+  if (sheet) sheet.classList.add('open');
+  if (backdrop) backdrop.style.display = '';
+  const icon = $('notif-fab-icon');
+  if (icon) icon.textContent = '✕';
+}
+
+function closeFabMenu() {
+  _fabOpen = false;
+  const sheet = $('fab-action-sheet');
+  const backdrop = $('fab-backdrop');
+  if (sheet) sheet.classList.remove('open');
+  if (backdrop) backdrop.style.display = 'none';
+  const icon = $('notif-fab-icon');
+  if (icon) icon.textContent = '🎯';
+}
+
+window.toggleFabMenu = toggleFabMenu;
+window.openFabMenu = openFabMenu;
+window.closeFabMenu = closeFabMenu;
+
+window.openFabAddTask = function() {
+  const modal = $('fab-task-modal');
+  if (!modal) return;
+  const titleEl = $('fab-task-title');
+  const descEl = $('fab-task-desc');
+  const dueEl = $('fab-task-due');
+  const priEl = $('fab-task-priority');
+  if (titleEl) titleEl.value = '';
+  if (descEl) descEl.value = '';
+  if (dueEl) dueEl.value = '';
+  if (priEl) priEl.value = 'normal';
+  modal.style.display = 'flex';
+  setTimeout(() => { if (titleEl) titleEl.focus(); }, 100);
+};
+
+window.closeFabTaskModal = function() {
+  const modal = $('fab-task-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.submitFabTask = async function() {
+  const title = ($('fab-task-title').value || '').trim();
+  if (!title) { $('fab-task-title').focus(); toast('Please enter a task title.', 'warning'); return; }
+  const desc     = ($('fab-task-desc').value || '').trim();
+  const priority = $('fab-task-priority').value || 'normal';
+  const dueDate  = $('fab-task-due').value || '';
+  const isUrgent = priority === 'urgent';
+
+  try {
+    await db.collection('generalNotes').add({
+      text: title,
+      description: desc,
+      isFollowUp: true,
+      done: false,
+      urgent: isUrgent,
+      taskStatus: isUrgent ? 'urgent' : 'scheduled',
+      dueDate: dueDate,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email,
+    });
+    toast('✅ Task added!', 'success');
+    closeFabTaskModal();
+    loadDashboardFollowUps();
+  } catch(err) {
+    console.error('FAB task error:', err);
+    toast('Failed to save task.', 'error');
+  }
+};
+
 function updateNotifFab(items, badgeCount) {
   const fab = $('notif-fab');
   const fabCount = $('notif-fab-count');
-  const fabPopupBody = $('notif-fab-popup-body');
   if (!fab) return;
 
-  // Show FAB whenever logged in (currentUser is set)
+  // Show FAB whenever logged in
   fab.style.display = 'flex';
 
   const urgentItems = items.filter(i => i.urgent && !i.done);
   const scheduledItems = items.filter(i => !i.urgent && i.isFollowUp && !i.done);
   const hasUrgent = urgentItems.length > 0;
 
-  // Badge
+  // Badge on the main circle
   if (fabCount) {
     if (badgeCount > 0) {
       fabCount.textContent = badgeCount > 99 ? '99+' : badgeCount;
@@ -7405,31 +7579,19 @@ function updateNotifFab(items, badgeCount) {
   }
   fab.classList.toggle('has-urgent', hasUrgent);
 
-  // Mini popup body
-  if (fabPopupBody) {
-    const urgentCount = urgentItems.length;
-    const taskCount = scheduledItems.length;
-    const photosDue = vehiclesCache.filter(v => {
-      if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'repair-shop') return false;
-      if (v.needsCleaning || v.photoExcluded) return false;
-      return !hasPhotosToday(v);
-    }).length;
+  // Status bar inside the action sheet
+  const photosDue = vehiclesCache.filter(v => {
+    if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'repair-shop') return false;
+    if (v.needsCleaning || v.photoExcluded) return false;
+    return !hasPhotosToday(v);
+  }).length;
 
-    let html = '';
-    html += `<div class="fab-popup-row">
-      <span class="fab-popup-label">🚨 Urgent Tasks</span>
-      <span class="fab-popup-badge${urgentCount === 0 ? ' ok' : ''}">${urgentCount === 0 ? '✅ None' : urgentCount}</span>
-    </div>`;
-    html += `<div class="fab-popup-row">
-      <span class="fab-popup-label">📋 Scheduled Tasks</span>
-      <span class="fab-popup-badge${taskCount === 0 ? ' ok' : ' warn'}">${taskCount === 0 ? '✅ None' : taskCount}</span>
-    </div>`;
-    html += `<div class="fab-popup-row">
-      <span class="fab-popup-label">📷 Photos Due Today</span>
-      <span class="fab-popup-badge${photosDue === 0 ? ' ok' : ''}">${photosDue === 0 ? '✅ All Good' : photosDue + ' vehicle' + (photosDue !== 1 ? 's' : '')}</span>
-    </div>`;
-    fabPopupBody.innerHTML = html;
-  }
+  const urgentEl = $('fab-stat-urgent');
+  const tasksEl  = $('fab-stat-tasks');
+  const photosEl = $('fab-stat-photos');
+  if (urgentEl) urgentEl.innerHTML = `🚨 Urgent: <strong>${urgentItems.length}</strong>`;
+  if (tasksEl)  tasksEl.innerHTML  = `📋 Tasks: <strong>${scheduledItems.length}</strong>`;
+  if (photosEl) photosEl.innerHTML = `📷 Photos Due: <strong>${photosDue}</strong>`;
 }
 window.updateNotifFab = updateNotifFab;
 
