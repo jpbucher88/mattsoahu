@@ -13227,97 +13227,151 @@ function _parseDollar(str) {
   return neg ? -n : n;
 }
 
+function _showTuroImportProgress(msg) {
+  let el = $('turo-import-progress');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'turo-import-progress';
+    el.style.cssText = [
+      'position:fixed','top:0','left:0','right:0','bottom:0',
+      'background:rgba(0,0,0,0.55)','z-index:9999',
+      'display:flex','align-items:center','justify-content:center',
+    ].join(';');
+    el.innerHTML = `
+      <div style="background:#1f2937;color:#f9fafb;border-radius:14px;padding:28px 36px;text-align:center;min-width:260px;box-shadow:0 8px 32px rgba(0,0,0,0.5);">
+        <div id="turo-import-spinner" style="font-size:2rem;margin-bottom:12px;animation:spin 1s linear infinite;display:inline-block;">⏳</div>
+        <div style="font-weight:700;font-size:1rem;margin-bottom:6px;">Importing Turo CSV</div>
+        <div id="turo-import-msg" style="font-size:0.85rem;color:#9ca3af;"></div>
+      </div>`;
+    document.body.appendChild(el);
+    // Add spin keyframes if not already present
+    if (!document.getElementById('turo-spin-style')) {
+      const s = document.createElement('style');
+      s.id = 'turo-spin-style';
+      s.textContent = '@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+      document.head.appendChild(s);
+    }
+  }
+  const msgEl = $('turo-import-msg');
+  if (msgEl) msgEl.textContent = msg || '';
+}
+
+function _hideTuroImportProgress() {
+  const el = $('turo-import-progress');
+  if (el) el.remove();
+}
+
 window.importTuroCSV = async function(input) {
   const file = input.files[0];
   if (!file) return;
-  input.value = ''; // reset so same file can be re-imported if needed
-  const text = await file.text();
-  const rows = _parseCSV(text);
-  if (rows.length < 2) { toast('CSV appears empty.', 'error'); return; }
+  input.value = ''; // reset so same file can be re-imported
 
-  const header = rows[0];
-  // Column indices (must match Turo export format)
-  const IDX = {
-    reservationId:  header.findIndex(h => h.toLowerCase().includes('reservation id')),
-    guest:          header.findIndex(h => h.toLowerCase() === 'guest'),
-    vehicleName:    header.findIndex(h => h.toLowerCase() === 'vehicle name'),
-    vin:            header.findIndex(h => h.toLowerCase() === 'vin'),
-    tripStart:      header.findIndex(h => h.toLowerCase() === 'trip start'),
-    tripEnd:        header.findIndex(h => h.toLowerCase() === 'trip end'),
-    status:         header.findIndex(h => h.toLowerCase() === 'trip status'),
-    tripDays:       header.findIndex(h => h.toLowerCase() === 'trip days'),
-    tripPrice:      header.findIndex(h => h.toLowerCase() === 'trip price'),
-    delivery:       header.findIndex(h => h.toLowerCase() === 'delivery'),
-    smoking:        header.findIndex(h => h.toLowerCase() === 'smoking'),
-    cleaning:       header.findIndex(h => h.toLowerCase() === 'cleaning'),
-    totalEarnings:  header.findIndex(h => h.toLowerCase() === 'total earnings'),
-  };
-
-  // Build VIN → vehicle lookup
-  const vinMap = {};
-  vehiclesCache.forEach(v => { if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v; });
-
-  let added = 0, skipped = 0, cancelled = 0, unmatched = 0;
-  const batch = db.batch();
-  const seen = new Set();
-
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    if (r.length < 5) continue;
-    const reservationId = r[IDX.reservationId]?.trim();
-    if (!reservationId || seen.has(reservationId)) continue;
-    seen.add(reservationId);
-
-    const status = r[IDX.status]?.trim() || '';
-    if (!status.toLowerCase().includes('completed')) { cancelled++; continue; }
-
-    const totalEarnings = _parseDollar(r[IDX.totalEarnings]);
-    const tripPrice = _parseDollar(r[IDX.tripPrice]);
-    const delivery = _parseDollar(r[IDX.delivery]);
-    const smoking = _parseDollar(r[IDX.smoking]);
-    const cleaning = _parseDollar(r[IDX.cleaning]);
-
-    // Skip rows where everything is $0 (wasted space)
-    if (totalEarnings === 0 && tripPrice === 0) continue;
-
-    const vin = r[IDX.vin]?.trim().toUpperCase() || '';
-    const vehicle = vinMap[vin];
-    if (!vehicle) { unmatched++; continue; }
-
-    const docRef = db.collection('turoTrips').doc(reservationId);
-    // Check if already exists
-    const existing = await docRef.get().catch(() => null);
-    if (existing && existing.exists) { skipped++; continue; }
-
-    batch.set(docRef, {
-      reservationId,
-      vin,
-      vehicleId: vehicle.id,
-      vehiclePlate: vehicle.plate || '',
-      vehicleName: r[IDX.vehicleName]?.trim() || '',
-      guest: r[IDX.guest]?.trim() || '',
-      tripStart: r[IDX.tripStart]?.trim() || '',
-      tripEnd: r[IDX.tripEnd]?.trim() || '',
-      tripDays: parseInt(r[IDX.tripDays]) || 0,
-      tripPrice,
-      delivery: delivery > 0 ? delivery : 0,
-      smoking: smoking > 0 ? smoking : 0,
-      cleaning: cleaning > 0 ? cleaning : 0,
-      totalEarnings,
-      importedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    added++;
-  }
+  _showTuroImportProgress('Reading file…');
 
   try {
+    const text = await file.text();
+    const rows = _parseCSV(text);
+    if (rows.length < 2) { _hideTuroImportProgress(); toast('CSV appears empty.', 'error'); return; }
+
+    const header = rows[0];
+    const IDX = {
+      reservationId:  header.findIndex(h => h.toLowerCase().includes('reservation id')),
+      guest:          header.findIndex(h => h.toLowerCase() === 'guest'),
+      vehicleName:    header.findIndex(h => h.toLowerCase() === 'vehicle name'),
+      vin:            header.findIndex(h => h.toLowerCase() === 'vin'),
+      tripStart:      header.findIndex(h => h.toLowerCase() === 'trip start'),
+      tripEnd:        header.findIndex(h => h.toLowerCase() === 'trip end'),
+      status:         header.findIndex(h => h.toLowerCase() === 'trip status'),
+      tripDays:       header.findIndex(h => h.toLowerCase() === 'trip days'),
+      tripPrice:      header.findIndex(h => h.toLowerCase() === 'trip price'),
+      delivery:       header.findIndex(h => h.toLowerCase() === 'delivery'),
+      smoking:        header.findIndex(h => h.toLowerCase() === 'smoking'),
+      cleaning:       header.findIndex(h => h.toLowerCase() === 'cleaning'),
+      totalEarnings:  header.findIndex(h => h.toLowerCase() === 'total earnings'),
+    };
+
+    const vinMap = {};
+    vehiclesCache.forEach(v => { if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v; });
+
+    let cancelled = 0, unmatched = 0;
+    const candidates = []; // rows that passed local checks
+    const seen = new Set();
+
+    _showTuroImportProgress(`Parsing ${rows.length - 1} rows…`);
+
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (r.length < 5) continue;
+      const reservationId = r[IDX.reservationId]?.trim();
+      if (!reservationId || seen.has(reservationId)) continue;
+      seen.add(reservationId);
+
+      const status = r[IDX.status]?.trim() || '';
+      if (!status.toLowerCase().includes('completed')) { cancelled++; continue; }
+
+      const totalEarnings = _parseDollar(r[IDX.totalEarnings]);
+      const tripPrice     = _parseDollar(r[IDX.tripPrice]);
+      const delivery      = _parseDollar(r[IDX.delivery]);
+      const smoking       = _parseDollar(r[IDX.smoking]);
+      const cleaning      = _parseDollar(r[IDX.cleaning]);
+
+      if (totalEarnings === 0 && tripPrice === 0) continue;
+
+      const vin = r[IDX.vin]?.trim().toUpperCase() || '';
+      const vehicle = vinMap[vin];
+      if (!vehicle) { unmatched++; continue; }
+
+      candidates.push({
+        reservationId,
+        data: {
+          reservationId,
+          vin,
+          vehicleId: vehicle.id,
+          vehiclePlate: vehicle.plate || '',
+          vehicleName: r[IDX.vehicleName]?.trim() || '',
+          guest: r[IDX.guest]?.trim() || '',
+          tripStart: r[IDX.tripStart]?.trim() || '',
+          tripEnd: r[IDX.tripEnd]?.trim() || '',
+          tripDays: parseInt(r[IDX.tripDays]) || 0,
+          tripPrice,
+          delivery: delivery > 0 ? delivery : 0,
+          smoking: smoking > 0 ? smoking : 0,
+          cleaning: cleaning > 0 ? cleaning : 0,
+          totalEarnings,
+          importedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        },
+      });
+    }
+
+    _showTuroImportProgress(`Checking ${candidates.length} trips for duplicates…`);
+
+    // Parallel dedup check — all Firestore reads fire at once instead of one-by-one
+    const refs = candidates.map(c => db.collection('turoTrips').doc(c.reservationId));
+    const snaps = await Promise.all(refs.map(ref => ref.get().catch(() => null)));
+
+    const batch = db.batch();
+    let added = 0, skipped = 0;
+    candidates.forEach((c, i) => {
+      if (snaps[i] && snaps[i].exists) { skipped++; return; }
+      batch.set(refs[i], c.data);
+      added++;
+    });
+
+    _showTuroImportProgress(`Saving ${added} new trip(s) to Firestore…`);
+
     if (added > 0) await batch.commit();
+
+    _hideTuroImportProgress();
+
     const parts = [`${added} trip(s) imported`];
-    if (skipped) parts.push(`${skipped} already existed`);
-    if (cancelled) parts.push(`${cancelled} cancellations skipped`);
-    if (unmatched) parts.push(`${unmatched} VIN(s) not matched to a vehicle`);
+    if (skipped)    parts.push(`${skipped} already existed`);
+    if (cancelled)  parts.push(`${cancelled} cancellations skipped`);
+    if (unmatched)  parts.push(`${unmatched} VIN(s) not matched`);
     toast(parts.join(' · '), added > 0 ? 'success' : 'info');
     if (added > 0) loadTuroEarnings();
+
   } catch (e) {
+    _hideTuroImportProgress();
     console.error('Turo import error:', e);
     toast('Import failed: ' + e.message, 'error');
   }
