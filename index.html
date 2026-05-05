@@ -1361,6 +1361,7 @@
         <button class="tab-btn" data-tab="tab-users">Users</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-deleted" data-tab="tab-deleted" style="display:none;">🗑 Deleted</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-activity" data-tab="tab-activity" style="display:none;">📋 Activity Log</button>
+        <button class="tab-btn tab-matthew-only" id="tab-btn-eggs" data-tab="tab-eggs" style="display:none;">🥚 Previews</button>
       </div>
 
       <!-- ====== Vehicles Tab ====== -->
@@ -1564,6 +1565,20 @@
             <span style="font-size:0.78rem;color:#6b7280;white-space:nowrap;">Filter by person:</span>
           </div>
           <div id="activity-log-list"><p class="hint">Click Load to view activity.</p></div>
+        </div>
+      </div>
+
+      <!-- ====== Easter Egg Previews Tab (Matthew only) ====== -->
+      <div id="tab-eggs" class="tab-content">
+        <div class="card">
+          <h3 style="margin-bottom:16px;">🥚 Login Easter Egg Previews</h3>
+          <p class="hint" style="margin-bottom:16px;">Preview any staff member's login experience. These are the exact animations they see when they log in.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <button class="btn btn-outline" onclick="showElizabethEasterEgg(true)">🌺 Elizabeth</button>
+            <button class="btn btn-outline" onclick="showAlondraEasterEgg()">💖 Alondra</button>
+            <button class="btn btn-outline" onclick="showDanEasterEgg()">😈 Dan</button>
+            <button class="btn btn-outline" onclick="showJasonEasterEgg()">👶 Jason</button>
+          </div>
         </div>
       </div>
 

@@ -241,11 +241,15 @@ function toast(message, type = 'info') {
 // ================================================================
 // ELIZABETH HAWAII EASTER EGG
 // ================================================================
-function showElizabethEasterEgg() {
+function showElizabethEasterEgg(forceWatch) {
   const overlay = $('elizabeth-overlay');
   const bg = $('elizabeth-bg');
   const emojiContainer = $('elizabeth-emojis');
   if (!overlay) return;
+
+  // First time (or forced preview) = must watch full 10s, then tappable
+  const hasSeenKey = 'elizabethEgg_seen_v1';
+  const firstTime = forceWatch || !localStorage.getItem(hasSeenKey);
 
   const pieces = ['🌺','🌊','🏝️','🤙','🌴','🐠','🐢','✈️','🏄','🌸','🌅','🍹','🦜','🐚','⭐','🌻','🌈'];
   emojiContainer.innerHTML = '';
@@ -267,14 +271,27 @@ function showElizabethEasterEgg() {
   overlay.style.display = 'block';
   overlay.style.pointerEvents = 'auto';
 
+  // Countdown badge
+  let cdEl = overlay.querySelector('.egg-countdown');
+  if (!cdEl) {
+    cdEl = document.createElement('div');
+    cdEl.className = 'egg-countdown';
+    cdEl.style.cssText = 'position:absolute;top:18px;right:22px;z-index:2;font-size:1.1rem;font-weight:800;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.25);border-radius:999px;padding:4px 14px;pointer-events:none;';
+    overlay.appendChild(cdEl);
+  }
+
   let dismissed = false;
+  let canDismiss = !firstTime;
   function dismissEgg() {
-    if (dismissed) return;
+    if (dismissed || !canDismiss) return;
     dismissed = true;
+    localStorage.setItem(hasSeenKey, '1');
     overlay.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.6s';
     clearInterval(flashInterval);
+    clearInterval(cdInterval);
+    cdEl.style.display = 'none';
     setTimeout(() => {
       overlay.style.display = 'none';
       overlay.style.opacity = '1';
@@ -283,8 +300,24 @@ function showElizabethEasterEgg() {
     }, 600);
   }
 
-  overlay.addEventListener('click', dismissEgg, { once: true });
-  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+  // After 10s allow tap-to-dismiss
+  let cdSec = 10;
+  cdEl.style.display = '';
+  cdEl.textContent = `⏱ ${cdSec}s`;
+  const cdInterval = setInterval(() => {
+    cdSec--;
+    if (cdSec <= 0) {
+      clearInterval(cdInterval);
+      canDismiss = true;
+      cdEl.textContent = 'Tap to close';
+      setTimeout(() => { cdEl.style.display = 'none'; }, 1200);
+    } else {
+      cdEl.textContent = `⏱ ${cdSec}s`;
+    }
+  }, 1000);
+
+  overlay.addEventListener('click', dismissEgg);
+  overlay.addEventListener('touchend', dismissEgg, { passive: true });
 
   // Ocean-wave color cycle
   const oceanShades = ['#0077b6','#0096c7','#00b4d8','#48cae4','#0077b6','#023e8a','#0096c7','#00b4d8'];
@@ -292,11 +325,11 @@ function showElizabethEasterEgg() {
   const flashInterval = setInterval(() => {
     flashCount++;
     bg.style.background = oceanShades[flashCount % oceanShades.length];
-    if (flashCount >= 16) clearInterval(flashInterval);
+    if (flashCount >= 32) clearInterval(flashInterval);
   }, 320);
 
-  // Auto-dismiss after 5 seconds
-  setTimeout(dismissEgg, 5000);
+  // Auto-dismiss after 12 seconds
+  setTimeout(() => { canDismiss = true; dismissEgg(); }, 12000);
 }
 
 // ================================================================
