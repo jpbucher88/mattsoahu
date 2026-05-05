@@ -13201,6 +13201,8 @@ window.deleteManualRevenue = async function(docId) {
 // Parse a CSV file respecting quoted fields — simple char loop, no regex
 function _parseCSV(text) {
   const rows = [];
+  // Strip UTF-8 BOM if present (common in Windows CSV exports)
+  text = text.replace(/^\uFEFF/, '');
   // Normalize line endings, split into lines
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
   for (const line of lines) {
@@ -13329,6 +13331,9 @@ window.importTuroCSV = async function(input) {
   if (!file) return;
   input.value = '';
 
+  // Immediate feedback — user knows something is happening before the modal even builds
+  toast('📂 Reading ' + file.name + '…', 'info');
+
   try {
     _buildTuroModal(file.name);
   } catch(e) {
@@ -13353,22 +13358,27 @@ window.importTuroCSV = async function(input) {
       return;
     }
 
-    const header = rows[0];
+    // Normalize header names — strip whitespace, lowercase, collapse internal spaces
+    const header = rows[0].map(h => h.replace(/\s+/g, ' ').trim().toLowerCase());
     const IDX = {
-      reservationId:  header.findIndex(h => h.toLowerCase().includes('reservation id')),
-      guest:          header.findIndex(h => h.toLowerCase() === 'guest'),
-      vehicleName:    header.findIndex(h => h.toLowerCase() === 'vehicle name'),
-      vin:            header.findIndex(h => h.toLowerCase() === 'vin'),
-      tripStart:      header.findIndex(h => h.toLowerCase() === 'trip start'),
-      tripEnd:        header.findIndex(h => h.toLowerCase() === 'trip end'),
-      status:         header.findIndex(h => h.toLowerCase() === 'trip status'),
-      tripDays:       header.findIndex(h => h.toLowerCase() === 'trip days'),
-      tripPrice:      header.findIndex(h => h.toLowerCase() === 'trip price'),
-      delivery:       header.findIndex(h => h.toLowerCase() === 'delivery'),
-      smoking:        header.findIndex(h => h.toLowerCase() === 'smoking'),
-      cleaning:       header.findIndex(h => h.toLowerCase() === 'cleaning'),
-      totalEarnings:  header.findIndex(h => h.toLowerCase() === 'total earnings'),
+      reservationId:  header.findIndex(h => h.includes('reservation')),
+      guest:          header.findIndex(h => h === 'guest' || h.includes('guest')),
+      vehicleName:    header.findIndex(h => h === 'vehicle name' || h.includes('vehicle name')),
+      vin:            header.findIndex(h => h === 'vin' || h.includes('vin')),
+      tripStart:      header.findIndex(h => h === 'trip start' || h.includes('start')),
+      tripEnd:        header.findIndex(h => h === 'trip end' || h.includes('end')),
+      status:         header.findIndex(h => h === 'trip status' || h.includes('status')),
+      tripDays:       header.findIndex(h => h === 'trip days' || h.includes('days')),
+      tripPrice:      header.findIndex(h => h === 'trip price' || h.includes('trip price')),
+      delivery:       header.findIndex(h => h === 'delivery'),
+      smoking:        header.findIndex(h => h === 'smoking'),
+      cleaning:       header.findIndex(h => h === 'cleaning'),
+      totalEarnings:  header.findIndex(h => h === 'total earnings' || h.includes('total earnings')),
     };
+
+    // Log headers for debugging purposes (visible in browser console)
+    console.log('[Turo Import] CSV headers:', rows[0]);
+    console.log('[Turo Import] Column index map:', IDX);
 
     const vinMap = {};
     vehiclesCache.forEach(v => { if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v; });
@@ -13452,6 +13462,17 @@ window.importTuroCSV = async function(input) {
     _turoModalError(e.message || 'Unknown error');
   }
 };
+
+// Wire up file input via addEventListener (more reliable than inline onchange on iOS/Android)
+// The script loads after the HTML is parsed, so the element already exists — attach directly.
+(function() {
+  var csvInput = document.getElementById('turo-csv-input');
+  if (csvInput) {
+    csvInput.addEventListener('change', function() {
+      if (this.files && this.files[0]) importTuroCSV(this);
+    });
+  }
+})();
 
 window.loadTuroEarnings = async function() {
   const body = $('turo-earnings-body');
