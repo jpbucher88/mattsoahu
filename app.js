@@ -239,6 +239,67 @@ function toast(message, type = 'info') {
 }
 
 // ================================================================
+// ELIZABETH HAWAII EASTER EGG
+// ================================================================
+function showElizabethEasterEgg() {
+  const overlay = $('elizabeth-overlay');
+  const bg = $('elizabeth-bg');
+  const emojiContainer = $('elizabeth-emojis');
+  if (!overlay) return;
+
+  const pieces = ['🌺','🌊','🏝️','🤙','🌴','🐠','🐢','✈️','🏄','🌸','🌅','🍹','🦜','🐚','⭐','🌻','🌈'];
+  emojiContainer.innerHTML = '';
+  for (let i = 0; i < 85; i++) {
+    const span = document.createElement('span');
+    span.textContent = pieces[Math.floor(Math.random() * pieces.length)];
+    span.style.cssText = `
+      position:absolute;
+      left:${Math.random() * 95}%;
+      top:${Math.random() * 95}%;
+      font-size:${12 + Math.random() * 22}px;
+      pointer-events:none;
+      animation:elizabethFloat ${1.0 + Math.random() * 1.8}s ease-in-out infinite;
+      animation-delay:${Math.random() * 1.2}s;
+    `;
+    emojiContainer.appendChild(span);
+  }
+
+  overlay.style.display = 'block';
+  overlay.style.pointerEvents = 'auto';
+
+  let dismissed = false;
+  function dismissEgg() {
+    if (dismissed) return;
+    dismissed = true;
+    overlay.style.pointerEvents = 'none';
+    overlay.style.opacity = '0';
+    overlay.style.transition = 'opacity 0.6s';
+    clearInterval(flashInterval);
+    setTimeout(() => {
+      overlay.style.display = 'none';
+      overlay.style.opacity = '1';
+      overlay.style.transition = '';
+      bg.style.background = '#0077b6';
+    }, 600);
+  }
+
+  overlay.addEventListener('click', dismissEgg, { once: true });
+  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+
+  // Ocean-wave color cycle
+  const oceanShades = ['#0077b6','#0096c7','#00b4d8','#48cae4','#0077b6','#023e8a','#0096c7','#00b4d8'];
+  let flashCount = 0;
+  const flashInterval = setInterval(() => {
+    flashCount++;
+    bg.style.background = oceanShades[flashCount % oceanShades.length];
+    if (flashCount >= 16) clearInterval(flashInterval);
+  }, 320);
+
+  // Auto-dismiss after 5 seconds
+  setTimeout(dismissEgg, 5000);
+}
+
+// ================================================================
 // DAN EASTER EGG
 // ================================================================
 function showDanEasterEgg() {
@@ -704,6 +765,9 @@ auth.onAuthStateChanged(async (user) => {
       }
       if (uName.includes('jason')) {
         setTimeout(() => showJasonEasterEgg(), 80);
+      }
+      if (uName.includes('elizabeth')) {
+        setTimeout(() => showElizabethEasterEgg(), 80);
       }
     } catch (err) {
       console.error('Auth state error:', err);
@@ -8022,7 +8086,9 @@ function renderUrgentBanner(items) {
 
   const today = todayDateString();
   // Compliance items belong to the Fleet Compliance widget only — never show here
-  const urgentItems = items.filter(i => i.urgent && i.sourceType !== 'compliance');
+  // mileage_decrease tasks: management-only, hidden in banner, accessible via 🔍 button
+  const urgentItems = items.filter(i => i.urgent && i.sourceType !== 'compliance' && i.sourceType !== 'mileage_decrease');
+  const mileageAlerts = items.filter(i => i.urgent && i.sourceType === 'mileage_decrease');
 
   if (urgentItems.length === 0) {
     banner.style.display = 'none';
@@ -8031,6 +8097,23 @@ function renderUrgentBanner(items) {
 
   banner.style.display = '';
   if (countEl) countEl.textContent = urgentItems.length;
+
+  // Discreet management button for mileage decrease alerts
+  let mileageAlertBtn = banner.querySelector('.mileage-alert-mgmt-btn');
+  if (mileageAlerts.length > 0 && (currentUserRole === 'admin' || currentUserRole === 'manager')) {
+    if (!mileageAlertBtn) {
+      mileageAlertBtn = document.createElement('button');
+      mileageAlertBtn.className = 'btn btn-sm btn-outline mileage-alert-mgmt-btn';
+      mileageAlertBtn.style.cssText = 'font-size:0.72rem;opacity:0.65;margin-left:8px;';
+      mileageAlertBtn.title = 'Mileage decrease verification tasks';
+      mileageAlertBtn.textContent = `🔍 ${mileageAlerts.length} mileage alert${mileageAlerts.length > 1 ? 's' : ''}`;
+      mileageAlertBtn.onclick = () => openNoteEditModal(mileageAlerts[0].id, mileageAlerts[0].collection);
+      const header = banner.querySelector('.urgent-banner-header') || banner;
+      header.appendChild(mileageAlertBtn);
+    }
+  } else if (mileageAlertBtn) {
+    mileageAlertBtn.remove();
+  }
 
   // Sort: overdue first, then today, then upcoming, then no-date
   urgentItems.sort((a, b) => {
@@ -11823,6 +11906,16 @@ function renderTimeClock() {
 
   const isOwnClock = !tcViewingUid || tcViewingUid === currentUser.uid;
   const canEditClock = isOwnClock || currentUserRole === 'admin' || currentUserRole === 'manager';
+
+  // Hawaii theme for Elizabeth
+  const viewedName = (() => {
+    if (!tcViewingUid || tcViewingUid === currentUser.uid) return (currentUser?.displayName || '').toLowerCase();
+    const emp = tcEmployees.find(e => e.uid === tcViewingUid);
+    return (emp?.name || '').toLowerCase();
+  })();
+  const isHawaiiTheme = viewedName.includes('elizabeth');
+  content.closest('.time-clock-content, [id="time-clock-content"]')?.classList.toggle('tc-hawaii', isHawaiiTheme);
+  content.classList.toggle('tc-hawaii', isHawaiiTheme);
   const today = todayDateString();
   const dates = getWeekDates(currentWeekOffset);
   const isCurrentWeek = currentWeekOffset === 0;
