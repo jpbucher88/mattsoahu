@@ -71,6 +71,9 @@
       <button id="btn-finance" class="task-alert-btn" title="Finance" onclick="openFinance()" style="display:none;">
         <span class="task-alert-icon">💵</span>
       </button>
+      <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
+        <span class="task-alert-icon">🔧</span>
+      </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
       </button>
@@ -1537,6 +1540,53 @@
       </div>
 
     </main>
+  </div>
+
+  <!-- ==================== MAINTENANCE DASHBOARD ==================== -->
+  <div id="maint-dash-overlay" class="maint-dash-overlay" style="display:none;" onclick="if(event.target===this)closeMaintenanceDash()">
+    <div class="maint-dash-panel">
+      <div class="maint-dash-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.5rem;">🔧</span>
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700;">Maintenance Dashboard</h3>
+        </div>
+        <button class="maint-dash-close" onclick="closeMaintenanceDash()">&times;</button>
+      </div>
+      <div class="maint-dash-tabs">
+        <button class="maint-tab-btn active" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">📊 Overview</button>
+        <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Fleet Status</button>
+        <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
+      </div>
+      <div class="maint-dash-body">
+
+        <!-- ===== Overview Tab ===== -->
+        <div id="mtab-overview" class="maint-tab-content">
+          <div id="maint-stat-cards" class="maint-stat-cards"></div>
+          <div id="maint-alerts-section" style="margin-top:16px;"></div>
+          <div id="maint-recent-section" style="margin-top:16px;"></div>
+        </div>
+
+        <!-- ===== Fleet Status Tab ===== -->
+        <div id="mtab-fleet" class="maint-tab-content" style="display:none;">
+          <div id="maint-fleet-grid" class="maint-fleet-grid"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
+
+        <!-- ===== History Tab ===== -->
+        <div id="mtab-history" class="maint-tab-content" style="display:none;">
+          <div class="maint-history-filters">
+            <select id="maint-hist-vehicle" class="form-select" style="flex:1;min-width:140px;">
+              <option value="">All Vehicles</option>
+            </select>
+            <input type="text" id="maint-hist-type" class="form-select" placeholder="Service type…" style="flex:1;min-width:120px;">
+            <input type="month" id="maint-hist-month" class="form-select" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadMaintHistory()">Search</button>
+            <button class="btn btn-sm btn-outline" onclick="$('maint-hist-vehicle').value='';$('maint-hist-type').value='';$('maint-hist-month').value='';loadMaintHistory()">Clear</button>
+          </div>
+          <div id="maint-hist-results" style="margin-top:12px;"><p class="hint">Click Search to load records.</p></div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- ==================== LIGHTBOX ==================== -->

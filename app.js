@@ -684,6 +684,8 @@ auth.onAuthStateChanged(async (user) => {
         if (financeBtn) financeBtn.style.display = '';
         const prodBtn = $('productivity-open-btn');
         if (prodBtn) prodBtn.style.display = '';
+        const maintDashBtn = $('btn-maint-dash');
+        if (maintDashBtn) maintDashBtn.style.display = '';
       } else {
         // Non-admin/manager users can still add expenses — show finance button with restricted access
         const financeBtn = $('btn-finance');
@@ -5502,6 +5504,321 @@ $('btn-save-mileage').addEventListener('click', async () => {
     toast('Failed to save mileage.', 'error');
   }
 });
+
+// ================================================================
+// MAINTENANCE DASHBOARD
+// ================================================================
+
+let _maintDashLoaded = false;
+
+window.openMaintenanceDash = function() {
+  const overlay = $('maint-dash-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  // Populate vehicle filter in history tab
+  const vSel = $('maint-hist-vehicle');
+  if (vSel && vSel.options.length <= 1) {
+    vehiclesCache.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = `${v.plate} — ${v.make} ${v.model}`;
+      vSel.appendChild(opt);
+    });
+  }
+  if (!_maintDashLoaded) {
+    _maintDashLoaded = true;
+    _loadMaintOverview();
+  }
+};
+
+window.closeMaintenanceDash = function() {
+  $('maint-dash-overlay').style.display = 'none';
+};
+
+window.switchMaintTab = function(tabId, btn) {
+  document.querySelectorAll('.maint-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.maint-tab-content').forEach(c => { if (c.closest('.maint-dash-panel')) c.style.display = 'none'; });
+  btn.classList.add('active');
+  $(tabId).style.display = 'block';
+  if (tabId === 'mtab-fleet') _loadMaintFleet();
+};
+
+// ── Overview ──────────────────────────────────────────────────────
+async function _loadMaintOverview() {
+  const statsEl = $('maint-stat-cards');
+  const alertsEl = $('maint-alerts-section');
+  const recentEl = $('maint-recent-section');
+  if (!statsEl) return;
+  statsEl.innerHTML = '<p class="hint" style="padding:12px;">Loading…</p>';
+
+  const today = todayDateString();
+  const [yr, mo] = today.split('-');
+  const monthStart = `${yr}-${mo}-01`;
+  const d30 = new Date(); d30.setDate(d30.getDate() + 30);
+  const d30str = d30.toISOString().slice(0, 10);
+
+  try {
+    // 1. This month's records
+    const monthSnap = await db.collection('maintenance')
+      .where('date', '>=', monthStart)
+      .orderBy('date', 'desc')
+      .get();
+    let monthCount = 0, monthCost = 0;
+    monthSnap.forEach(doc => { monthCount++; monthCost += doc.data().cost || 0; });
+
+    // 2. All records with a nextDueDate to find overdue / due-soon
+    const dueSnap = await db.collection('maintenance')
+      .where('nextDueDate', '<=', d30str)
+      .orderBy('nextDueDate', 'asc')
+      .get();
+    // De-dup by vehicleId+serviceType (keep earliest due per combo)
+    const seenDue = new Set();
+    const overdueItems = [], upcomingItems = [];
+    dueSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.nextDueDate) return;
+      const key = `${d.vehicleId}_${d.serviceType}`;
+      if (seenDue.has(key)) return;
+      seenDue.add(key);
+      const v = vehiclesCache.find(x => x.id === d.vehicleId);
+      const vehicleLabel = v ? `${v.plate} ${v.make} ${v.model}` : d.vehicleId;
+      const entry = { vehicleLabel, service: d.serviceType, nextDueDate: d.nextDueDate, vehicleId: d.vehicleId };
+      if (d.nextDueDate <= today) overdueItems.push(entry);
+      else upcomingItems.push(entry);
+    });
+
+    // 3. Stat cards
+    statsEl.innerHTML = `
+      <div class="maint-stat-card">
+        <div class="maint-stat-icon">🔧</div>
+        <div class="maint-stat-val">${monthCount}</div>
+        <div class="maint-stat-label">Services this month</div>
+      </div>
+      <div class="maint-stat-card">
+        <div class="maint-stat-icon">💰</div>
+        <div class="maint-stat-val">$${monthCost.toFixed(0)}</div>
+        <div class="maint-stat-label">Spend this month</div>
+      </div>
+      <div class="maint-stat-card ${overdueItems.length > 0 ? 'maint-stat-danger' : ''}">
+        <div class="maint-stat-icon">🚨</div>
+        <div class="maint-stat-val">${overdueItems.length}</div>
+        <div class="maint-stat-label">Overdue services</div>
+      </div>
+      <div class="maint-stat-card ${upcomingItems.length > 0 ? 'maint-stat-warn' : ''}">
+        <div class="maint-stat-icon">⏰</div>
+        <div class="maint-stat-val">${upcomingItems.length}</div>
+        <div class="maint-stat-label">Due in 30 days</div>
+      </div>`;
+
+    // 4. Alerts section
+    let alertsHtml = '';
+    if (overdueItems.length > 0) {
+      alertsHtml += `<h4 style="margin:0 0 8px;color:#dc2626;">🚨 Overdue (${overdueItems.length})</h4>
+        <div class="maint-alert-list">
+          ${overdueItems.map(x => `
+            <div class="maint-alert-row maint-alert-overdue">
+              <span class="maint-alert-vehicle">${escapeHtml(x.vehicleLabel)}</span>
+              <span class="maint-alert-service">${escapeHtml(x.service)}</span>
+              <span class="maint-alert-date">Was due ${x.nextDueDate}</span>
+            </div>`).join('')}
+        </div>`;
+    }
+    if (upcomingItems.length > 0) {
+      alertsHtml += `<h4 style="margin:${overdueItems.length > 0 ? '16px' : '0'} 0 8px;color:#d97706;">⏰ Due Soon (${upcomingItems.length})</h4>
+        <div class="maint-alert-list">
+          ${upcomingItems.map(x => `
+            <div class="maint-alert-row maint-alert-upcoming">
+              <span class="maint-alert-vehicle">${escapeHtml(x.vehicleLabel)}</span>
+              <span class="maint-alert-service">${escapeHtml(x.service)}</span>
+              <span class="maint-alert-date">Due ${x.nextDueDate}</span>
+            </div>`).join('')}
+        </div>`;
+    }
+    alertsEl.innerHTML = alertsHtml || '<p class="hint" style="color:#16a34a;">✅ No overdue or upcoming services in the next 30 days.</p>';
+
+    // 5. Recent services (most recent 12 across fleet)
+    const recentSnap = await db.collection('maintenance').orderBy('date', 'desc').limit(12).get();
+    if (recentSnap.empty) {
+      recentEl.innerHTML = '';
+    } else {
+      let rows = '';
+      recentSnap.forEach(doc => {
+        const d = doc.data();
+        const v = vehiclesCache.find(x => x.id === d.vehicleId);
+        const vLabel = v ? `${v.plate}` : '?';
+        const costStr = d.cost != null ? `$${d.cost.toFixed(0)}` : '';
+        rows += `<tr>
+          <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(d.date || '')}</td>
+          <td style="padding:5px 8px;font-weight:500;">${escapeHtml(vLabel)}</td>
+          <td style="padding:5px 8px;">${escapeHtml(d.serviceType || '')}</td>
+          <td style="padding:5px 8px;">${escapeHtml(d.location || '')}</td>
+          <td style="padding:5px 8px;text-align:right;">${escapeHtml(costStr)}</td>
+        </tr>`;
+      });
+      recentEl.innerHTML = `<h4 style="margin:0 0 8px;">🕐 Recent Services</h4>
+        <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+          <thead><tr style="border-bottom:2px solid #e5e7eb;text-align:left;">
+            <th style="padding:5px 8px;">Date</th>
+            <th style="padding:5px 8px;">Vehicle</th>
+            <th style="padding:5px 8px;">Service</th>
+            <th style="padding:5px 8px;">Shop</th>
+            <th style="padding:5px 8px;text-align:right;">Cost</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+    }
+  } catch (e) {
+    statsEl.innerHTML = '<p class="hint">Error loading data.</p>';
+    console.error('[MaintDash]', e);
+  }
+}
+
+// ── Fleet Status ──────────────────────────────────────────────────
+async function _loadMaintFleet() {
+  const grid = $('maint-fleet-grid');
+  if (!grid) return;
+  grid.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+
+  const today = todayDateString();
+  const d30 = new Date(); d30.setDate(d30.getDate() + 30);
+  const d30str = d30.toISOString().slice(0, 10);
+
+  try {
+    // Get most recent maintenance record per vehicle (query all, de-dup client-side)
+    const snap = await db.collection('maintenance').orderBy('date', 'desc').limit(500).get();
+    const lastService = {}; // vehicleId → { serviceType, date, cost }
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (!lastService[d.vehicleId]) lastService[d.vehicleId] = d;
+    });
+
+    // Get all nextDueDate items overdue or due in 30 days
+    const dueSnap = await db.collection('maintenance')
+      .where('nextDueDate', '<=', d30str)
+      .orderBy('nextDueDate', 'asc')
+      .get();
+    const vehicleAlerts = {}; // vehicleId → { overdue: [], upcoming: [] }
+    const seenAlert = new Set();
+    dueSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.nextDueDate || !d.vehicleId) return;
+      const key = `${d.vehicleId}_${d.serviceType}`;
+      if (seenAlert.has(key)) return;
+      seenAlert.add(key);
+      if (!vehicleAlerts[d.vehicleId]) vehicleAlerts[d.vehicleId] = { overdue: [], upcoming: [] };
+      if (d.nextDueDate <= today) vehicleAlerts[d.vehicleId].overdue.push(d.serviceType);
+      else vehicleAlerts[d.vehicleId].upcoming.push(d.serviceType);
+    });
+
+    const vehicles = vehiclesCache.filter(v => !v.excluded);
+    if (!vehicles.length) { grid.innerHTML = '<p class="hint" style="padding:24px;">No vehicles found.</p>'; return; }
+
+    grid.innerHTML = vehicles.map(v => {
+      const last = lastService[v.id];
+      const alerts = vehicleAlerts[v.id] || { overdue: [], upcoming: [] };
+      let statusDot = '<span class="maint-status-dot maint-dot-ok" title="All good">✅</span>';
+      let statusLabel = '<span style="color:#16a34a;font-size:0.78rem;">All good</span>';
+      if (alerts.overdue.length > 0) {
+        statusDot = '<span class="maint-status-dot maint-dot-overdue" title="Overdue">🔴</span>';
+        statusLabel = `<span style="color:#dc2626;font-size:0.78rem;font-weight:600;">Overdue: ${alerts.overdue.join(', ')}</span>`;
+      } else if (alerts.upcoming.length > 0) {
+        statusDot = '<span class="maint-status-dot maint-dot-warn" title="Due soon">🟡</span>';
+        statusLabel = `<span style="color:#d97706;font-size:0.78rem;">Due soon: ${alerts.upcoming.join(', ')}</span>`;
+      }
+      const lastSvcHtml = last
+        ? `<div style="font-size:0.8rem;color:#6b7280;margin-top:4px;">Last: <strong>${escapeHtml(last.serviceType)}</strong> · ${escapeHtml(last.date)}${last.cost != null ? ' · $' + last.cost.toFixed(0) : ''}</div>`
+        : `<div style="font-size:0.8rem;color:#9ca3af;margin-top:4px;">No service records yet</div>`;
+      const mileHtml = v.mileage ? `<div style="font-size:0.78rem;color:#6b7280;">${v.mileage.toLocaleString()} mi</div>` : '';
+      return `<div class="maint-fleet-card" onclick="closeMaintenanceDash();openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)">
+        <div class="maint-fleet-card-header">
+          <span class="maint-fleet-plate">${escapeHtml(v.plate)}</span>
+          ${statusDot}
+        </div>
+        <div style="font-size:0.85rem;font-weight:600;color:#374151;">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
+        ${mileHtml}
+        ${statusLabel}
+        ${lastSvcHtml}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    grid.innerHTML = '<p class="hint">Error loading fleet data.</p>';
+    console.error('[MaintFleet]', e);
+  }
+}
+
+// ── History ───────────────────────────────────────────────────────
+window.loadMaintHistory = async function() {
+  const el = $('maint-hist-results');
+  if (!el) return;
+  el.innerHTML = '<p class="hint">Loading…</p>';
+
+  const vehicleId = $('maint-hist-vehicle')?.value;
+  const typeFilter = ($('maint-hist-type')?.value || '').trim().toLowerCase();
+  const monthVal = $('maint-hist-month')?.value; // YYYY-MM
+
+  try {
+    let q = db.collection('maintenance').orderBy('date', 'desc').limit(300);
+    if (vehicleId) q = q.where('vehicleId', '==', vehicleId);
+    if (monthVal) {
+      q = q.where('date', '>=', `${monthVal}-01`).where('date', '<=', `${monthVal}-31`);
+    }
+    const snap = await q.get();
+    let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    if (typeFilter) items = items.filter(d => (d.serviceType || '').toLowerCase().includes(typeFilter));
+
+    if (!items.length) { el.innerHTML = '<p class="hint">No records found.</p>'; return; }
+
+    let totalCost = 0;
+    const rows = items.map((d, i) => {
+      const v = vehiclesCache.find(x => x.id === d.vehicleId);
+      const vLabel = v ? `${v.plate}` : '?';
+      const costStr = d.cost != null ? `$${d.cost.toFixed(2)}` : '—';
+      if (d.cost) totalCost += d.cost;
+      const mileStr = d.mileage ? d.mileage.toLocaleString() : '—';
+      const bg = i % 2 === 0 ? '' : 'background:#f9fafb;';
+      return `<tr style="${bg}border-bottom:1px solid #f3f4f6;">
+        <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(d.date || '')}</td>
+        <td style="padding:5px 8px;font-weight:500;">${escapeHtml(vLabel)}</td>
+        <td style="padding:5px 8px;">${escapeHtml(d.serviceType || '')}</td>
+        <td style="padding:5px 8px;">${escapeHtml(d.location || '')}</td>
+        <td style="padding:5px 8px;">${mileStr}</td>
+        <td style="padding:5px 8px;text-align:right;">${escapeHtml(costStr)}</td>
+        <td style="padding:5px 8px;color:#6b7280;font-size:0.8em;">${escapeHtml(d.notes || '')}</td>
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;">
+        <span style="font-size:0.85rem;color:#6b7280;">${items.length} records</span>
+        <span style="font-size:0.85rem;font-weight:600;">Total: $${totalCost.toFixed(2)}</span>
+      </div>
+      <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:0.84rem;">
+        <thead><tr style="border-bottom:2px solid #e5e7eb;text-align:left;background:#f9fafb;">
+          <th style="padding:6px 8px;">Date</th>
+          <th style="padding:6px 8px;">Vehicle</th>
+          <th style="padding:6px 8px;">Service</th>
+          <th style="padding:6px 8px;">Shop</th>
+          <th style="padding:6px 8px;">Mileage</th>
+          <th style="padding:6px 8px;text-align:right;">Cost</th>
+          <th style="padding:6px 8px;">Notes</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>`;
+  } catch (e) {
+    el.innerHTML = '<p class="hint">Error loading history.</p>';
+    console.error('[MaintHistory]', e);
+  }
+};
+
+// ── reset loaded flag when closed so re-open refreshes data ──────
+// (data refreshes every open)
+const _origCloseMD = window.closeMaintenanceDash;
+window.closeMaintenanceDash = function() {
+  _maintDashLoaded = false;
+  $('maint-dash-overlay').style.display = 'none';
+};
 
 // ================================================================
 // PER-VEHICLE SCHEDULE EDITOR (removed — schedule editor UI was deleted)
