@@ -11509,7 +11509,6 @@ function _todayMonthVal() {
 async function loadExpenseWidget() {
   const overlay = $('finance-overlay');
   if (!overlay) return;
-  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
 
   const dateInput = $('exp-date');
   if (dateInput && !dateInput.value) dateInput.value = todayDateString();
@@ -11517,6 +11516,14 @@ async function loadExpenseWidget() {
   // Set default month filter to current month
   const filterEl = $('exp-month-filter');
   if (filterEl && !filterEl.value) filterEl.value = _todayMonthVal();
+
+  // Non-admin/manager users can add expenses but not view the list
+  const listSection = $('fin-exp-list-section');
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') {
+    if (listSection) listSection.style.display = 'none';
+    return;
+  }
+  if (listSection) listSection.style.display = '';
 
   const { start: monthStart, end: monthEnd } = _finMonthRange('exp-month-filter');
 
@@ -11606,6 +11613,9 @@ window.saveExpense = async function() {
     $('exp-desc-input').value = '';
     $('exp-date').value = todayDateString();
     if ($('exp-vehicle')) $('exp-vehicle').value = '';
+    // Collapse the form after a successful save (mirrors revenue UX)
+    const form = $('fin-exp-add-form');
+    if (form) form.style.display = 'none';
     toast('Expense saved!', 'success');
     loadExpenseWidget();
   } catch (err) {
@@ -11705,6 +11715,19 @@ async function loadFinanceOverview() {
     body.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load overview.</p>';
   }
 }
+
+window.toggleFinExpForm = function() {
+  const form = $('fin-exp-add-form');
+  if (!form) return;
+  const isOpen = form.style.display !== 'none';
+  form.style.display = isOpen ? 'none' : '';
+  if (!isOpen) {
+    populateExpenseVehicleDropdown();
+    const dateEl = $('exp-date');
+    if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+    setTimeout(() => { const a = $('exp-amount'); if (a) a.focus(); }, 80);
+  }
+};
 
 window.toggleFinRevForm = function() {
   const form = $('fin-rev-add-form');

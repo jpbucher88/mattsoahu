@@ -1527,8 +1527,16 @@
 
         <!-- ===== EXPENSES TAB ===== -->
         <div id="finance-tab-expenses" class="finance-tab-content" style="display:none;">
-          <!-- Add Expense Form -->
-          <div class="exp-form">
+          <!-- Controls row -->
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="exp-month-filter" class="form-select exp-input" style="width:auto;" onchange="loadExpenseWidget()">
+            <button class="btn btn-sm btn-primary" onclick="loadExpenseWidget()">Load</button>
+            <button class="btn btn-sm btn-success" onclick="toggleFinExpForm()" id="fin-exp-add-btn">➕ Add Expense</button>
+          </div>
+          <!-- Add Expense Form (collapsed by default) -->
+          <div id="fin-exp-add-form" class="fin-add-rev-form" style="display:none;">
+            <div class="fin-add-rev-title">➕ Add Expense</div>
             <div class="exp-form-row">
               <div class="exp-field">
                 <label class="exp-label">Date</label>
@@ -1564,18 +1572,20 @@
                 <label class="exp-label">Description</label>
                 <input type="text" id="exp-desc-input" class="form-select exp-input" placeholder="e.g. Oil change — 613TXU" maxlength="200">
               </div>
-              <button id="exp-save-btn" class="btn btn-primary exp-save-btn" onclick="saveExpense()">Save</button>
+            </div>
+            <div class="exp-form-actions">
+              <button id="exp-save-btn" class="btn btn-primary" onclick="saveExpense()">Save</button>
+              <button class="btn btn-outline" onclick="toggleFinExpForm()">Cancel</button>
             </div>
           </div>
-          <!-- Month filter -->
-          <div class="exp-filter-row">
-            <label class="exp-label">Month:</label>
-            <input type="month" id="exp-month-filter" class="form-select exp-input" style="width:auto;" onchange="loadExpenseWidget()">
-            <span id="expense-month-total" class="exp-month-total-badge">$0.00</span>
-            <span class="exp-month-label">total</span>
+          <!-- Month total + Expense List (admins/managers only) -->
+          <div id="fin-exp-list-section">
+            <div class="exp-filter-row" style="margin-top:8px;">
+              <span id="expense-month-total" class="exp-month-total-badge">$0.00</span>
+              <span class="exp-month-label">total this month</span>
+            </div>
+            <div id="expense-list" class="exp-list"></div>
           </div>
-          <!-- Expense List -->
-          <div id="expense-list" class="exp-list"></div>
         </div>
 
         <!-- ===== P&L TAB ===== -->
