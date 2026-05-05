@@ -335,11 +335,14 @@ function showElizabethEasterEgg(forceWatch) {
 // ================================================================
 // DAN EASTER EGG
 // ================================================================
-function showDanEasterEgg() {
+function showDanEasterEgg(forceWatch) {
   const overlay = $('dan-overlay');
   const bg = $('dan-bg');
   const wordsContainer = $('dan-words');
   if (!overlay) return;
+
+  const hasSeenKey = 'danEgg_seen_v1';
+  const firstTime = forceWatch || !localStorage.getItem(hasSeenKey);
 
   // Scatter 100 "bitch" words across the screen
   wordsContainer.innerHTML = '';
@@ -364,15 +367,27 @@ function showDanEasterEgg() {
   overlay.style.display = 'block';
   overlay.style.pointerEvents = 'auto';
 
-  // Dismiss function (used by both auto-timer and tap)
+  // Countdown badge
+  let cdEl = overlay.querySelector('.egg-countdown');
+  if (!cdEl) {
+    cdEl = document.createElement('div');
+    cdEl.className = 'egg-countdown';
+    cdEl.style.cssText = 'position:absolute;top:18px;right:22px;z-index:2;font-size:1.1rem;font-weight:800;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.25);border-radius:999px;padding:4px 14px;pointer-events:none;';
+    overlay.appendChild(cdEl);
+  }
+
   let dismissed = false;
+  let canDismiss = !firstTime;
   function dismissEgg() {
-    if (dismissed) return;
+    if (dismissed || !canDismiss) return;
     dismissed = true;
-    overlay.style.pointerEvents = 'none'; // stop eating taps immediately
+    localStorage.setItem(hasSeenKey, '1');
+    overlay.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.4s';
     clearInterval(flashInterval);
+    clearInterval(cdInterval);
+    cdEl.style.display = 'none';
     setTimeout(() => {
       overlay.style.display = 'none';
       overlay.style.opacity = '1';
@@ -381,33 +396,50 @@ function showDanEasterEgg() {
     }, 400);
   }
 
-  // Tap/click anywhere to dismiss early
-  overlay.addEventListener('click', dismissEgg, { once: true });
-  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+  let cdSec = 7;
+  cdEl.style.display = '';
+  cdEl.textContent = `⏱ ${cdSec}s`;
+  const cdInterval = setInterval(() => {
+    cdSec--;
+    if (cdSec <= 0) {
+      clearInterval(cdInterval);
+      canDismiss = true;
+      cdEl.textContent = 'Tap to close';
+      setTimeout(() => { cdEl.style.display = 'none'; }, 1200);
+    } else {
+      cdEl.textContent = `⏱ ${cdSec}s`;
+    }
+  }, 1000);
+
+  overlay.addEventListener('click', dismissEgg);
+  overlay.addEventListener('touchend', dismissEgg, { passive: true });
 
   // Flash the background
   let flashCount = 0;
   const flashInterval = setInterval(() => {
     flashCount++;
     bg.style.background = flashCount % 2 === 0 ? '#ff0040' : '#1a0010';
-    if (flashCount >= 12) clearInterval(flashInterval);
+    if (flashCount >= 24) clearInterval(flashInterval);
   }, 220);
 
-  // Auto-dismiss after 3 seconds
-  setTimeout(dismissEgg, 3000);
+  // Auto-dismiss after 9 seconds
+  setTimeout(() => { canDismiss = true; dismissEgg(); }, 9000);
 }
 
 // ================================================================
 // ALONDRA EASTER EGG
 // ================================================================
-function showAlondraEasterEgg() {
+function showAlondraEasterEgg(forceWatch) {
   const overlay = $('alondra-overlay');
   const bg = $('alondra-bg');
   const heartsContainer = $('alondra-hearts');
   if (!overlay) return;
 
+  const hasSeenKey = 'alondraEgg_seen_v1';
+  const firstTime = forceWatch || !localStorage.getItem(hasSeenKey);
+
   // Scatter 80 heart emojis across the screen
-  const hearts = ['❤️', '💕', '💖', '💗', '💓', '💝', '💞', '🌸', '✨', '🩷'];
+  const hearts = ['❤️', '💕', '💖', '💗', '💓', '💝', '💞', '🌸', '✨', '🪷'];
   heartsContainer.innerHTML = '';
   for (let i = 0; i < 80; i++) {
     const span = document.createElement('span');
@@ -428,14 +460,27 @@ function showAlondraEasterEgg() {
   overlay.style.display = 'block';
   overlay.style.pointerEvents = 'auto';
 
+  // Countdown badge
+  let cdEl = overlay.querySelector('.egg-countdown');
+  if (!cdEl) {
+    cdEl = document.createElement('div');
+    cdEl.className = 'egg-countdown';
+    cdEl.style.cssText = 'position:absolute;top:18px;right:22px;z-index:2;font-size:1.1rem;font-weight:800;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.18);border-radius:999px;padding:4px 14px;pointer-events:none;';
+    overlay.appendChild(cdEl);
+  }
+
   let dismissed = false;
+  let canDismiss = !firstTime;
   function dismissEgg() {
-    if (dismissed) return;
+    if (dismissed || !canDismiss) return;
     dismissed = true;
+    localStorage.setItem(hasSeenKey, '1');
     overlay.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.5s';
     clearInterval(flashInterval);
+    clearInterval(cdInterval);
+    cdEl.style.display = 'none';
     setTimeout(() => {
       overlay.style.display = 'none';
       overlay.style.opacity = '1';
@@ -444,8 +489,23 @@ function showAlondraEasterEgg() {
     }, 500);
   }
 
-  overlay.addEventListener('click', dismissEgg, { once: true });
-  overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
+  let cdSec = 7;
+  cdEl.style.display = '';
+  cdEl.textContent = `⏱ ${cdSec}s`;
+  const cdInterval = setInterval(() => {
+    cdSec--;
+    if (cdSec <= 0) {
+      clearInterval(cdInterval);
+      canDismiss = true;
+      cdEl.textContent = 'Tap to close';
+      setTimeout(() => { cdEl.style.display = 'none'; }, 1200);
+    } else {
+      cdEl.textContent = `⏱ ${cdSec}s`;
+    }
+  }, 1000);
+
+  overlay.addEventListener('click', dismissEgg);
+  overlay.addEventListener('touchend', dismissEgg, { passive: true });
 
   // Gentle pink flash cycle
   const pinkShades = ['#ff69b4', '#ff1493', '#e91e8c', '#f06292', '#ff69b4', '#c2185b', '#ff69b4'];
@@ -453,28 +513,27 @@ function showAlondraEasterEgg() {
   const flashInterval = setInterval(() => {
     flashCount++;
     bg.style.background = pinkShades[flashCount % pinkShades.length];
-    if (flashCount >= 14) clearInterval(flashInterval);
+    if (flashCount >= 24) clearInterval(flashInterval);
   }, 230);
 
-  // Auto-dismiss after 3.5 seconds
-  setTimeout(dismissEgg, 3500);
+  // Auto-dismiss after 9 seconds
+  setTimeout(() => { canDismiss = true; dismissEgg(); }, 9000);
 }
 
 // ================================================================
 // JASON BABY #2 EASTER EGG
 // ================================================================
-function showJasonEasterEgg() {
+function showJasonEasterEgg(forceWatch) {
   const overlay = $('jason-overlay');
   const bg = $('jason-bg');
   const confettiContainer = $('jason-confetti');
   if (!overlay) return;
 
-  // First time ever = must watch the whole thing. After that, tappable.
   const hasSeenKey = 'jasonEgg_seen_v1';
-  const firstTime = !localStorage.getItem(hasSeenKey);
+  const firstTime = forceWatch || !localStorage.getItem(hasSeenKey);
 
   // Baby + celebration emojis floating around
-  const pieces = ['👶', '🍼', '🎉', '🎊', '🎈', '💙', '⭐', '🌟', '🥳', '👼', '🎀', '🤍', '✨', '🏆'];
+  const pieces = ['👶', '🍼', '🎉', '🎊', '🎈', '💙', '⭐', '🌟', '🥳', '👼', '🎠', '🤍', '✨', '🏆'];
   confettiContainer.innerHTML = '';
   for (let i = 0; i < 90; i++) {
     const span = document.createElement('span');
@@ -494,15 +553,27 @@ function showJasonEasterEgg() {
   overlay.style.display = 'block';
   overlay.style.pointerEvents = 'auto';
 
+  // Countdown badge
+  let cdEl = overlay.querySelector('.egg-countdown');
+  if (!cdEl) {
+    cdEl = document.createElement('div');
+    cdEl.className = 'egg-countdown';
+    cdEl.style.cssText = 'position:absolute;top:18px;right:22px;z-index:2;font-size:1.1rem;font-weight:800;color:rgba(255,255,255,0.85);background:rgba(0,0,0,0.18);border-radius:999px;padding:4px 14px;pointer-events:none;';
+    overlay.appendChild(cdEl);
+  }
+
   let dismissed = false;
+  let canDismiss = !firstTime;
   function dismissEgg() {
-    if (dismissed) return;
+    if (dismissed || !canDismiss) return;
     dismissed = true;
     localStorage.setItem(hasSeenKey, '1');
     overlay.style.pointerEvents = 'none';
     overlay.style.opacity = '0';
     overlay.style.transition = 'opacity 0.5s';
     clearInterval(flashInterval);
+    clearInterval(cdInterval);
+    cdEl.style.display = 'none';
     setTimeout(() => {
       overlay.style.display = 'none';
       overlay.style.opacity = '1';
@@ -511,11 +582,23 @@ function showJasonEasterEgg() {
     }, 500);
   }
 
-  // First time: no tap-to-dismiss — he watches the full thing
-  if (!firstTime) {
-    overlay.addEventListener('click', dismissEgg, { once: true });
-    overlay.addEventListener('touchend', dismissEgg, { once: true, passive: true });
-  }
+  let cdSec = 7;
+  cdEl.style.display = '';
+  cdEl.textContent = `⏱ ${cdSec}s`;
+  const cdInterval = setInterval(() => {
+    cdSec--;
+    if (cdSec <= 0) {
+      clearInterval(cdInterval);
+      canDismiss = true;
+      cdEl.textContent = 'Tap to close';
+      setTimeout(() => { cdEl.style.display = 'none'; }, 1200);
+    } else {
+      cdEl.textContent = `⏱ ${cdSec}s`;
+    }
+  }, 1000);
+
+  overlay.addEventListener('click', dismissEgg);
+  overlay.addEventListener('touchend', dismissEgg, { passive: true });
 
   // Gentle blue-to-sky cycle
   const blueShades = ['#a8d8f0', '#7ec8e3', '#5bb8d4', '#90caf9', '#a8d8f0', '#64b5f6', '#bbdefb', '#a8d8f0'];
@@ -523,11 +606,11 @@ function showJasonEasterEgg() {
   const flashInterval = setInterval(() => {
     flashCount++;
     bg.style.background = blueShades[flashCount % blueShades.length];
-    if (flashCount >= 16) clearInterval(flashInterval);
+    if (flashCount >= 24) clearInterval(flashInterval);
   }, 240);
 
-  // Auto-dismiss after 5 seconds
-  setTimeout(dismissEgg, 5000);
+  // Auto-dismiss after 9 seconds
+  setTimeout(() => { canDismiss = true; dismissEgg(); }, 9000);
 }
 
 function confirm(title, message) {
