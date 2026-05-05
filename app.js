@@ -13198,23 +13198,31 @@ window.deleteManualRevenue = async function(docId) {
 // TURO CSV IMPORT + EARNINGS DISPLAY
 // ================================================================
 
-// Parse a CSV file respecting quoted fields
+// Parse a CSV file respecting quoted fields — simple char loop, no regex
 function _parseCSV(text) {
   const rows = [];
-  const re = /("(?:[^"]|"")*"|[^,\r\n]*)(?:,|\r?\n|$)/g;
-  let row = [];
-  let match;
-  while ((match = re.exec(text)) !== null) {
-    let val = match[1];
-    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1).replace(/""/g, '"');
-    row.push(val.trim());
-    const full = match[0];
-    if (full.endsWith('\n') || full.endsWith('\r\n') || full === '') {
-      if (row.length > 1 || row[0] !== '') rows.push(row);
-      row = [];
+  // Normalize line endings, split into lines
+  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    const row = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQ) {
+        if (ch === '"') {
+          if (i + 1 < line.length && line[i + 1] === '"') { cur += '"'; i++; } // escaped ""
+          else inQ = false;
+        } else cur += ch;
+      } else {
+        if (ch === '"') inQ = true;
+        else if (ch === ',') { row.push(cur.trim()); cur = ''; }
+        else cur += ch;
+      }
     }
+    row.push(cur.trim());
+    rows.push(row);
   }
-  if (row.length > 1 || row[0] !== '') rows.push(row);
   return rows;
 }
 
@@ -13234,7 +13242,9 @@ function _parseDollar(str) {
 function _turoModalEl() { return $('turo-import-modal'); }
 
 function _buildTuroModal(fileName) {
-  if (_turoModalEl()) return; // already open
+  // Always remove any stale modal before building a fresh one
+  const existing = _turoModalEl();
+  if (existing) existing.remove();
   if (!document.getElementById('turo-spin-style')) {
     const s = document.createElement('style');
     s.id = 'turo-spin-style';
@@ -13311,16 +13321,22 @@ function _turoModalError(msg) {
   if (footerEl) footerEl.style.display = 'block';
 }
 
-// yield to browser so modal renders before sync parsing begins
-function _paint() { return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); }
+// yield to browser so modal renders before sync work begins
+function _paint() { return new Promise(r => setTimeout(r, 30)); }
 
 window.importTuroCSV = async function(input) {
   const file = input.files[0];
   if (!file) return;
   input.value = '';
 
-  _buildTuroModal(file.name);
-  _turoStep('read',  '📄', 'Reading file…',           'running');
+  try {
+    _buildTuroModal(file.name);
+  } catch(e) {
+    alert('Could not open import dialog: ' + e.message);
+    return;
+  }
+
+  _turoStep('read', '📄', 'Reading file…', 'running');
   await _paint();
 
   try {
