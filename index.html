@@ -1709,6 +1709,8 @@
             <input type="month" id="fin-rev-month" class="form-select exp-input" style="width:auto;">
             <button class="btn btn-sm btn-primary" onclick="loadFinanceRevenue()">Load</button>
             <button class="btn btn-sm btn-success" onclick="toggleFinRevForm()" id="fin-rev-add-btn">➕ Add Revenue</button>
+            <button class="btn btn-sm btn-outline" onclick="$('turo-csv-input').click()" title="Import Turo earnings CSV">📤 Import Turo CSV</button>
+            <input type="file" id="turo-csv-input" accept=".csv" style="display:none;" onchange="importTuroCSV(this)">
           </div>
           <!-- Add Revenue Form -->
           <div id="fin-rev-add-form" class="fin-add-rev-form" style="display:none;">
@@ -1764,6 +1766,7 @@
             </div>
           </div>
           <div id="finance-revenue-body"></div>
+          <div id="turo-earnings-body" style="margin-top:16px;"></div>
         </div>
 
         <!-- ===== EXPENSES TAB ===== -->

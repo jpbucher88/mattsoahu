@@ -836,6 +836,24 @@ function hasPhotosToday(v) {
   return d === todayDateString();
 }
 
+// 15-minute interval time select helper
+function _timeSelect(id, currentVal) {
+  const opts = ['<option value="">— No time —</option>'];
+  for (let h = 0; h < 24; h++) {
+    for (let m = 0; m < 60; m += 15) {
+      const hh = String(h).padStart(2,'0');
+      const mm = String(m).padStart(2,'0');
+      const val = `${hh}:${mm}`;
+      const ampm = h < 12 ? 'AM' : 'PM';
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      const label = `${h12}:${mm} ${ampm}`;
+      const sel = currentVal === val ? ' selected' : '';
+      opts.push(`<option value="${val}"${sel}>${label}</option>`);
+    }
+  }
+  return `<select id="${id}" class="form-select">${opts.join('')}</select>`;
+}
+
 // Render a task activity log array as HTML
 function renderTaskLogEntries(log) {
   if (!log || log.length === 0) return '<p class="task-log-empty">No log entries yet.</p>';
@@ -8098,7 +8116,7 @@ window.openNoteEditModal = async function(docId, collection) {
         </div>
         <div class="form-group">
           <label>Due Time <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
-          <input type="time" id="ne-due-time" class="form-select" value="${d.dueTime || ''}">
+          ${_timeSelect('ne-due-time', d.dueTime || '')}
         </div>
         <div class="form-group">
           <label>👤 Assign To</label>
@@ -10400,7 +10418,7 @@ window.openFullEditTaskModal = function(docId, col, d) {
         </div>
         <div class="form-group">
           <label>Due Time <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
-          <input type="time" id="tfe-due-time" class="form-select" value="${d.dueTime || ''}">
+          ${_timeSelect('tfe-due-time', d.dueTime || '')}
         </div>
         <div class="form-group">
           <label>Assign To <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
@@ -13176,6 +13194,239 @@ window.deleteManualRevenue = async function(docId) {
   }
 };
 
+// ================================================================
+// TURO CSV IMPORT + EARNINGS DISPLAY
+// ================================================================
+
+// Parse a CSV file respecting quoted fields
+function _parseCSV(text) {
+  const rows = [];
+  const re = /("(?:[^"]|"")*"|[^,\r\n]*)(?:,|\r?\n|$)/g;
+  let row = [];
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    let val = match[1];
+    if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1).replace(/""/g, '"');
+    row.push(val.trim());
+    const full = match[0];
+    if (full.endsWith('\n') || full.endsWith('\r\n') || full === '') {
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    }
+  }
+  if (row.length > 1 || row[0] !== '') rows.push(row);
+  return rows;
+}
+
+// Parse a dollar string like "$1,234.56 " or "($140.00)" → number
+function _parseDollar(str) {
+  if (!str) return 0;
+  const s = str.toString().replace(/\s/g, '');
+  const neg = s.startsWith('(') && s.endsWith(')');
+  const n = parseFloat(s.replace(/[$,()]/g, '')) || 0;
+  return neg ? -n : n;
+}
+
+window.importTuroCSV = async function(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = ''; // reset so same file can be re-imported if needed
+  const text = await file.text();
+  const rows = _parseCSV(text);
+  if (rows.length < 2) { toast('CSV appears empty.', 'error'); return; }
+
+  const header = rows[0];
+  // Column indices (must match Turo export format)
+  const IDX = {
+    reservationId:  header.findIndex(h => h.toLowerCase().includes('reservation id')),
+    guest:          header.findIndex(h => h.toLowerCase() === 'guest'),
+    vehicleName:    header.findIndex(h => h.toLowerCase() === 'vehicle name'),
+    vin:            header.findIndex(h => h.toLowerCase() === 'vin'),
+    tripStart:      header.findIndex(h => h.toLowerCase() === 'trip start'),
+    tripEnd:        header.findIndex(h => h.toLowerCase() === 'trip end'),
+    status:         header.findIndex(h => h.toLowerCase() === 'trip status'),
+    tripDays:       header.findIndex(h => h.toLowerCase() === 'trip days'),
+    tripPrice:      header.findIndex(h => h.toLowerCase() === 'trip price'),
+    delivery:       header.findIndex(h => h.toLowerCase() === 'delivery'),
+    smoking:        header.findIndex(h => h.toLowerCase() === 'smoking'),
+    cleaning:       header.findIndex(h => h.toLowerCase() === 'cleaning'),
+    totalEarnings:  header.findIndex(h => h.toLowerCase() === 'total earnings'),
+  };
+
+  // Build VIN → vehicle lookup
+  const vinMap = {};
+  vehiclesCache.forEach(v => { if (v.vin) vinMap[v.vin.toUpperCase().trim()] = v; });
+
+  let added = 0, skipped = 0, cancelled = 0, unmatched = 0;
+  const batch = db.batch();
+  const seen = new Set();
+
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    if (r.length < 5) continue;
+    const reservationId = r[IDX.reservationId]?.trim();
+    if (!reservationId || seen.has(reservationId)) continue;
+    seen.add(reservationId);
+
+    const status = r[IDX.status]?.trim() || '';
+    if (!status.toLowerCase().includes('completed')) { cancelled++; continue; }
+
+    const totalEarnings = _parseDollar(r[IDX.totalEarnings]);
+    const tripPrice = _parseDollar(r[IDX.tripPrice]);
+    const delivery = _parseDollar(r[IDX.delivery]);
+    const smoking = _parseDollar(r[IDX.smoking]);
+    const cleaning = _parseDollar(r[IDX.cleaning]);
+
+    // Skip rows where everything is $0 (wasted space)
+    if (totalEarnings === 0 && tripPrice === 0) continue;
+
+    const vin = r[IDX.vin]?.trim().toUpperCase() || '';
+    const vehicle = vinMap[vin];
+    if (!vehicle) { unmatched++; continue; }
+
+    const docRef = db.collection('turoTrips').doc(reservationId);
+    // Check if already exists
+    const existing = await docRef.get().catch(() => null);
+    if (existing && existing.exists) { skipped++; continue; }
+
+    batch.set(docRef, {
+      reservationId,
+      vin,
+      vehicleId: vehicle.id,
+      vehiclePlate: vehicle.plate || '',
+      vehicleName: r[IDX.vehicleName]?.trim() || '',
+      guest: r[IDX.guest]?.trim() || '',
+      tripStart: r[IDX.tripStart]?.trim() || '',
+      tripEnd: r[IDX.tripEnd]?.trim() || '',
+      tripDays: parseInt(r[IDX.tripDays]) || 0,
+      tripPrice,
+      delivery: delivery > 0 ? delivery : 0,
+      smoking: smoking > 0 ? smoking : 0,
+      cleaning: cleaning > 0 ? cleaning : 0,
+      totalEarnings,
+      importedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    added++;
+  }
+
+  try {
+    if (added > 0) await batch.commit();
+    const parts = [`${added} trip(s) imported`];
+    if (skipped) parts.push(`${skipped} already existed`);
+    if (cancelled) parts.push(`${cancelled} cancellations skipped`);
+    if (unmatched) parts.push(`${unmatched} VIN(s) not matched to a vehicle`);
+    toast(parts.join(' · '), added > 0 ? 'success' : 'info');
+    if (added > 0) loadTuroEarnings();
+  } catch (e) {
+    console.error('Turo import error:', e);
+    toast('Import failed: ' + e.message, 'error');
+  }
+};
+
+window.loadTuroEarnings = async function() {
+  const body = $('turo-earnings-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:8px;">Loading Turo trips…</p>';
+
+  const { start, end, label } = _finMonthRange('fin-rev-month');
+
+  // Turo trip start dates are like "1/8/2026 12:30" — convert range to comparable strings
+  // We fetch all and filter client-side since dates are stored as display strings
+  try {
+    const snap = await db.collection('turoTrips').get();
+    if (snap.empty) { body.innerHTML = ''; return; }
+
+    // Parse "M/D/YYYY H:MM" to Date
+    function parseTuroDate(s) {
+      if (!s) return null;
+      const [datePart, timePart] = s.split(' ');
+      if (!datePart) return null;
+      const [mo, day, yr] = datePart.split('/').map(Number);
+      const [h, mi] = (timePart || '0:00').split(':').map(Number);
+      return new Date(yr, mo - 1, day, h, mi);
+    }
+    const rangeStart = new Date(start + 'T00:00:00');
+    const rangeEnd = new Date(end + 'T23:59:59');
+
+    const trips = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const dt = parseTuroDate(d.tripStart);
+      if (!dt || dt < rangeStart || dt > rangeEnd) return;
+      trips.push(d);
+    });
+
+    if (!trips.length) { body.innerHTML = ''; return; }
+
+    // Group by vehicle
+    const byVehicle = {};
+    trips.forEach(t => {
+      const vid = t.vehicleId;
+      if (!byVehicle[vid]) byVehicle[vid] = { plate: t.vehiclePlate, trips: [] };
+      byVehicle[vid].trips.push(t);
+    });
+
+    // Summaries
+    const totalBase = trips.reduce((s, t) => s + (t.tripPrice || 0), 0);
+    const totalDelivery = trips.reduce((s, t) => s + (t.delivery || 0), 0);
+    const totalSmoking = trips.reduce((s, t) => s + (t.smoking || 0), 0);
+    const totalCleaning = trips.reduce((s, t) => s + (t.cleaning || 0), 0);
+    const totalNet = trips.reduce((s, t) => s + (t.totalEarnings || 0), 0);
+
+    const fmt = n => n ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+
+    const vehicleBlocks = Object.values(byVehicle).sort((a, b) => {
+      const aT = a.trips.reduce((s, t) => s + t.totalEarnings, 0);
+      const bT = b.trips.reduce((s, t) => s + t.totalEarnings, 0);
+      return bT - aT;
+    }).map(({ plate, trips: vTrips }) => {
+      const vNet = vTrips.reduce((s, t) => s + t.totalEarnings, 0);
+      const vDel = vTrips.reduce((s, t) => s + t.delivery, 0);
+      const vSmk = vTrips.reduce((s, t) => s + t.smoking, 0);
+      const vCln = vTrips.reduce((s, t) => s + t.cleaning, 0);
+      const rows = vTrips.sort((a, b) => (a.tripStart || '').localeCompare(b.tripStart || '')).map(t => `
+        <tr>
+          <td style="font-size:0.8rem;">${escapeHtml(t.tripStart || '')}</td>
+          <td style="font-size:0.8rem;">${escapeHtml(t.guest || '')}</td>
+          <td style="text-align:center;">${t.tripDays || '—'}</td>
+          <td class="fin-td-rev">${fmt(t.tripPrice)}</td>
+          <td class="fin-td-rev">${t.delivery > 0 ? fmt(t.delivery) : '—'}</td>
+          <td class="fin-td-rev">${t.smoking > 0 ? fmt(t.smoking) : '—'}</td>
+          <td class="fin-td-rev">${t.cleaning > 0 ? fmt(t.cleaning) : '—'}</td>
+          <td><strong>${fmt(t.totalEarnings)}</strong></td>
+        </tr>`).join('');
+      return `
+        <div style="margin-bottom:18px;">
+          <div style="font-weight:700;font-size:0.92rem;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">
+            <span>🚗 ${escapeHtml(plate)}</span>
+            <span style="font-size:0.82rem;color:#6b7280;">${vTrips.length} trip(s) · Net <strong style="color:#16a34a;">${fmt(vNet)}</strong>${vDel > 0 ? ` · Delivery <strong>${fmt(vDel)}</strong>` : ''}${vSmk > 0 ? ` · Smoking <strong style="color:#ef4444;">${fmt(vSmk)}</strong>` : ''}${vCln > 0 ? ` · Cleaning <strong style="color:#f59e0b;">${fmt(vCln)}</strong>` : ''}</span>
+          </div>
+          <table class="fin-table" style="font-size:0.82rem;">
+            <thead><tr><th>Trip Start</th><th>Guest</th><th>Days</th><th>Base Price</th><th>Delivery</th><th>Smoking</th><th>Cleaning</th><th>Net Payout</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `
+      <div style="border-top:2px solid #e5e7eb;padding-top:14px;margin-top:4px;">
+        <div style="font-weight:700;font-size:1rem;margin-bottom:10px;">📊 Turo Trip Breakdown — ${escapeHtml(label)}</div>
+        <div class="fin-rev-totals" style="margin-bottom:12px;">
+          <span class="prod-rev-badge turo">🚗 Trips: <strong>${trips.length}</strong></span>
+          <span class="prod-rev-badge turo">Base: <strong>${fmt(totalBase)}</strong></span>
+          ${totalDelivery > 0 ? `<span class="prod-rev-badge extras">🚗 Delivery: <strong>${fmt(totalDelivery)}</strong></span>` : ''}
+          ${totalSmoking > 0 ? `<span class="prod-rev-badge" style="background:#fee2e2;color:#991b1b;">🚬 Smoking: <strong>${fmt(totalSmoking)}</strong></span>` : ''}
+          ${totalCleaning > 0 ? `<span class="prod-rev-badge" style="background:#fef3c7;color:#92400e;">🧹 Cleaning: <strong>${fmt(totalCleaning)}</strong></span>` : ''}
+          <span class="prod-rev-badge total">Net Payout: <strong>${fmt(totalNet)}</strong></span>
+        </div>
+        ${vehicleBlocks}
+      </div>`;
+  } catch (e) {
+    console.error('Turo earnings error:', e);
+    body.innerHTML = '<p class="hint" style="color:#ef4444;padding:8px;">Failed to load Turo trips.</p>';
+  }
+};
+
 window.loadFinanceRevenue = async function() {
   const body = $('finance-revenue-body');
   if (!body) return;
@@ -13209,6 +13460,7 @@ window.loadFinanceRevenue = async function() {
     const rows = Object.values(byVehicle).sort((a,b) => (b.turo+b.priv) - (a.turo+a.priv));
     if (!rows.length) {
       body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No trips or revenue found for this period. Use <strong>➕ Add Revenue</strong> above to log a payout.</p>';
+      loadTuroEarnings();
       return;
     }
     const fmtR = n => n > 0 ? '$' + n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}) : '—';
@@ -13272,6 +13524,7 @@ window.loadFinanceRevenue = async function() {
       ${manualHtml}
       <p class="hint" style="font-size:0.78rem;margin-top:8px;">Trips showing "no $" have no revenue yet. Add via ➕ above or 📊 Productivity → 📋 Trips.</p>
     `;
+    loadTuroEarnings();
   } catch(e) {
     console.error('Finance revenue error:', e);
     body.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load revenue.</p>';
