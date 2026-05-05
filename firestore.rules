@@ -127,5 +127,12 @@ service cloud.firestore {
       allow create: if isRegistered() && request.resource.data.userId == request.auth.uid;
       allow delete: if isAuth() && resource.data.userId == request.auth.uid;
     }
+
+    // Turo trip earnings imports — managers/admins can read and write
+    match /turoTrips/{tripId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create, update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow delete: if isAdmin();
+    }
   }
 }
