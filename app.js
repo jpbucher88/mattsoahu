@@ -3375,18 +3375,40 @@ async function _checkOrphanedPendingUploads() {
     if (!banner) {
       banner = document.createElement('div');
       banner.id = 'orphaned-uploads-banner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;padding:10px 16px;font-size:0.92rem;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;';
-      const closeBtn = document.createElement('button');
-      closeBtn.textContent = '✕';
-      closeBtn.style.cssText = 'background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;margin-left:8px;';
-      closeBtn.onclick = () => banner.remove();
-      banner.appendChild(closeBtn);
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;padding:10px 16px;font-size:0.92rem;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;';
       document.body.prepend(banner);
     }
-    const orphanedIds = orphaned.map(doc => doc.id);
-    banner.innerHTML = `⚠️ ${orphaned.length} photo${orphaned.length !== 1 ? 's' : ''} (${summary}) may not have uploaded from a previous session.
-      <button onclick="(async()=>{try{const db=firebase.firestore();await Promise.all(${JSON.stringify(orphanedIds)}.map(id=>db.collection('_pendingPhotoUploads').doc(id).delete()));document.getElementById('orphaned-uploads-banner').remove();window._showToast&&window._showToast('Stale markers cleared — you can upload normally now.','success');}catch(e){document.getElementById('orphaned-uploads-banner').remove();}})()" style="background:#fff;color:#dc2626;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700;margin-left:10px;">Clear & Continue</button>
-      <button onclick="document.getElementById('orphaned-uploads-banner').remove()" style="background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;margin-left:6px;">Dismiss</button>`;
+
+    banner.innerHTML = '';
+
+    const msg = document.createElement('span');
+    msg.textContent = `⚠️ ${orphaned.length} photo${orphaned.length !== 1 ? 's' : ''} (${summary}) may not have uploaded from a previous session.`;
+    banner.appendChild(msg);
+
+    const clearBtn = document.createElement('button');
+    clearBtn.textContent = 'Clear & Continue';
+    clearBtn.style.cssText = 'background:#fff;color:#dc2626;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700;margin-left:10px;';
+    clearBtn.onclick = async () => {
+      clearBtn.disabled = true;
+      clearBtn.textContent = 'Clearing…';
+      try {
+        await Promise.all(orphaned.map(doc =>
+          db.collection('_pendingPhotoUploads').doc(doc.id).delete()
+        ));
+        banner.remove();
+        toast('Stale upload markers cleared — you can upload normally now.', 'success');
+      } catch(err) {
+        banner.remove();
+        console.warn('Clear orphaned error:', err);
+      }
+    };
+    banner.appendChild(clearBtn);
+
+    const dismissBtn = document.createElement('button');
+    dismissBtn.textContent = 'Dismiss';
+    dismissBtn.style.cssText = 'background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;margin-left:6px;';
+    dismissBtn.onclick = () => banner.remove();
+    banner.appendChild(dismissBtn);
   } catch(e) { console.warn('_checkOrphanedPendingUploads error:', e); }
 }
 
