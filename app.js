@@ -1076,10 +1076,20 @@ function friendlyAuthError(code) {
   return map[code] || 'Login failed. Please try again.';
 }
 
-// Logout
-$('btn-logout').addEventListener('click', () => auth.signOut());
-$('btn-logout-vehicle').addEventListener('click', () => auth.signOut());
-$('btn-admin-logout').addEventListener('click', () => auth.signOut());
+// Logout — warn if photos are still pending upload
+async function _safeLogout() {
+  const pending = await _idbGetPending(null).catch(() => []);
+  if (pending.length > 0 || cameraUploading || cameraUploadQueue.length > 0) {
+    const total = pending.length || cameraUploadQueue.length;
+    const go = await confirm('Photos Still Uploading',
+      `${total} photo${total !== 1 ? 's are' : ' is'} still uploading. If you log out now they may not be saved. Log out anyway?`);
+    if (!go) return;
+  }
+  auth.signOut();
+}
+$('btn-logout').addEventListener('click', _safeLogout);
+$('btn-logout-vehicle').addEventListener('click', _safeLogout);
+$('btn-admin-logout').addEventListener('click', _safeLogout);
 
 // Task panel button
 $('btn-tasks').addEventListener('click', () => openTaskPanel());
@@ -3370,25 +3380,52 @@ async function _checkOrphanedPendingUploads() {
     });
     const summary = Object.entries(byPlate).map(([p, n]) => `${n}× ${p}`).join(', ');
 
-    // Show a persistent red banner (not a toast) so it's not missed
+    // Show a persistent amber banner so it's not missed
     let banner = $('orphaned-uploads-banner');
     if (!banner) {
       banner = document.createElement('div');
       banner.id = 'orphaned-uploads-banner';
-      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#dc2626;color:#fff;padding:10px 16px;font-size:0.92rem;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap;';
+      banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#b45309;color:#fff;padding:10px 16px;font-size:0.88rem;font-weight:600;text-align:center;display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;';
       document.body.prepend(banner);
     }
 
     banner.innerHTML = '';
 
     const msg = document.createElement('span');
-    msg.textContent = `⚠️ ${orphaned.length} photo${orphaned.length !== 1 ? 's' : ''} (${summary}) may not have uploaded from a previous session.`;
+    msg.textContent = `📸 ${orphaned.length} photo${orphaned.length !== 1 ? 's' : ''} (${summary}) didn't finish uploading. Try Retry first — only Clear if retry doesn't work.`;
     banner.appendChild(msg);
 
+    // Retry: attempt to resume any IDB data still present, then re-check
+    const retryBtn = document.createElement('button');
+    retryBtn.textContent = '🔄 Retry Upload';
+    retryBtn.style.cssText = 'background:#fff;color:#b45309;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700;margin-left:8px;';
+    retryBtn.onclick = async () => {
+      retryBtn.disabled = true;
+      retryBtn.textContent = 'Retrying…';
+      await resumeAllPendingUploads();
+      // Give uploads 5s to start, then re-check if markers are now cleared
+      setTimeout(async () => {
+        const recheckSnap = await db.collection('_pendingPhotoUploads')
+          .where('userId', '==', currentUser.uid).get().catch(() => null);
+        if (!recheckSnap || recheckSnap.empty) {
+          banner.remove();
+          toast('Photos are uploading!', 'success');
+        } else {
+          retryBtn.disabled = false;
+          retryBtn.textContent = '🔄 Retry Upload';
+          toast('Photos not found in this browser — they may have been lost when the browser closed. Use Clear to dismiss.', 'warning');
+        }
+      }, 5000);
+    };
+    banner.appendChild(retryBtn);
+
+    // Clear: delete the stale Firestore markers (photos are unrecoverable)
     const clearBtn = document.createElement('button');
-    clearBtn.textContent = 'Clear & Continue';
-    clearBtn.style.cssText = 'background:#fff;color:#dc2626;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-weight:700;margin-left:10px;';
+    clearBtn.textContent = 'Clear';
+    clearBtn.style.cssText = 'background:rgba(255,255,255,0.2);color:#fff;border:1px solid #fff;border-radius:4px;padding:4px 10px;cursor:pointer;font-weight:600;margin-left:4px;';
     clearBtn.onclick = async () => {
+      const confirmed = await confirm('Clear Upload Markers', `This will permanently remove the ${orphaned.length} pending upload notification(s). Only do this if the retry didn't work. The original photos cannot be recovered — you'll need to retake them.`);
+      if (!confirmed) return;
       clearBtn.disabled = true;
       clearBtn.textContent = 'Clearing…';
       try {
@@ -3396,7 +3433,7 @@ async function _checkOrphanedPendingUploads() {
           db.collection('_pendingPhotoUploads').doc(doc.id).delete()
         ));
         banner.remove();
-        toast('Stale upload markers cleared — you can upload normally now.', 'success');
+        toast('Upload notifications cleared. Please retake the photos.', 'info');
       } catch(err) {
         banner.remove();
         console.warn('Clear orphaned error:', err);
@@ -3406,7 +3443,7 @@ async function _checkOrphanedPendingUploads() {
 
     const dismissBtn = document.createElement('button');
     dismissBtn.textContent = 'Dismiss';
-    dismissBtn.style.cssText = 'background:none;border:1px solid #fff;color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;margin-left:6px;';
+    dismissBtn.style.cssText = 'background:none;border:1px solid rgba(255,255,255,0.5);color:#fff;border-radius:4px;padding:4px 10px;cursor:pointer;margin-left:4px;';
     dismissBtn.onclick = () => banner.remove();
     banner.appendChild(dismissBtn);
   } catch(e) { console.warn('_checkOrphanedPendingUploads error:', e); }
