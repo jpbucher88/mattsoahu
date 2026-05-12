@@ -2924,9 +2924,9 @@ function bgUploadTick(success) {
 async function handlePhotoFiles(e) {
   const files = Array.from(e.target.files);
   if (!files.length || !selectedVehicle) return;
-  // Capture vehicle reference immediately — user may navigate away before uploads finish
+  // Capture vehicle reference and date immediately — user may navigate away before uploads finish
   const capturedVehicle = selectedVehicle;
-  const capturedDate = selectedDate;
+  const capturedDate = selectedDate || todayDateString();
 
   if (!getStorage()) {
     toast('Photo uploads not available — Firebase Storage is not enabled yet. Contact your admin.', 'error');
@@ -2956,28 +2956,60 @@ async function handlePhotoFiles(e) {
   });
 
   // Upload all files in parallel (background)
+  // Each file is saved to IndexedDB BEFORE upload so no photo is permanently lost
+  // if the network drops or iOS backgrounds the app mid-upload.
   const uploadPromises = files.map(async file => {
     const { item, statusIcon } = thumbMap.get(file);
+    let idbId = null;
+    let fsMarkerId = null;
     try {
       const compressed = await compressImage(file);
-      await uploadPhoto(compressed, capturedVehicle);
+
+      // ── Safety net ─────────────────────────────────────────────
+      // Persist to IDB first. If the upload below fails for any reason,
+      // the photo stays in IDB and resumeAllPendingUploads() will retry
+      // automatically the next time the app comes to the foreground.
+      idbId = await _idbSavePhoto(compressed, capturedVehicle, capturedDate);
+      if (currentUser) {
+        try {
+          const markerRef = await db.collection('_pendingPhotoUploads').add({
+            userId: currentUser.uid,
+            vehicleId: capturedVehicle.id,
+            vehiclePlate: capturedVehicle.plate || '',
+            idbId: idbId,
+            capturedDate: capturedDate,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          fsMarkerId = markerRef.id;
+        } catch(markerErr) { console.warn('Pending marker write failed:', markerErr); }
+      }
+      // ────────────────────────────────────────────────────────────
+
+      await uploadPhoto(compressed, capturedVehicle, capturedDate);
+
+      // Upload succeeded — remove safety net
+      _idbDeletePhoto(idbId);
+      if (fsMarkerId) {
+        db.collection('_pendingPhotoUploads').doc(fsMarkerId).delete().catch(() => {});
+      }
+
       statusIcon.className = 'status-icon status-done';
       statusIcon.textContent = '✓';
       bgUploadTick(true);
     } catch (err) {
-      console.error('Upload error:', err);
+      console.error('File picker upload error (IDB safety net active — will retry automatically):', err);
       statusIcon.className = 'status-icon status-error';
       statusIcon.textContent = '✗';
       bgUploadTick(false);
+      // Photo stays in IDB. Next visibilitychange → resumeAllPendingUploads() will retry.
     }
   });
 
   // Refresh photos for the current date when all uploads finish
-  // Also schedule a second refresh after 2s to catch any Firestore indexing delay
+  // Also schedule a second refresh after 2.5s to catch any Firestore indexing delay
   Promise.all(uploadPromises).then(async () => {
     if (capturedVehicle && selectedVehicle && capturedVehicle.id === selectedVehicle.id) {
       await loadPhotosForDate(capturedVehicle.id, capturedDate);
-      // Second pass for Firestore eventual consistency
       setTimeout(async () => {
         if (selectedVehicle && capturedVehicle.id === selectedVehicle.id) {
           await loadPhotosForDate(capturedVehicle.id, todayDateString());
@@ -2989,21 +3021,34 @@ async function handlePhotoFiles(e) {
 }
 
 // Core upload function — used by both file picker and camera
-async function uploadPhoto(blobOrFile, vehicleOverride) {
+// capturedDate: the date string when the photo was TAKEN (not when it's uploaded)
+async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
   const st = getStorage();
   if (!st) {
     throw new Error('Firebase Storage is not enabled yet. Contact your admin to enable billing.');
   }
   const v = vehicleOverride || selectedVehicle;
   const plate = sanitizePlate(v.plate);
-  const date = todayDateString();
+  // Always use the date the photo was CAPTURED, never the upload time
+  const date = capturedDate || todayDateString();
   const timestamp = Date.now();
   const fileName = `${timestamp}_${Math.random().toString(36).substring(2, 8)}.jpg`;
   const storagePath = `vehicles/${plate}/${date}/${fileName}`;
 
   const ref = st.ref(storagePath);
   await ref.put(blobOrFile, { contentType: 'image/jpeg' });
-  const downloadURL = await ref.getDownloadURL();
+
+  // getDownloadURL can transiently fail even after a successful put — retry up to 3x
+  let downloadURL = null;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      downloadURL = await ref.getDownloadURL();
+      break;
+    } catch (urlErr) {
+      if (attempt === 3) throw urlErr;
+      await new Promise(r => setTimeout(r, attempt * 1500));
+    }
+  }
 
   await db.collection('photos').add({
     vehicleId: v.id,
@@ -3052,7 +3097,7 @@ function _openPhotoDB() {
   });
 }
 
-async function _idbSavePhoto(blob, vehicle) {
+async function _idbSavePhoto(blob, vehicle, capturedDate) {
   try {
     const db = await _openPhotoDB();
     return await new Promise((resolve, reject) => {
@@ -3061,6 +3106,7 @@ async function _idbSavePhoto(blob, vehicle) {
         vehicleId: vehicle.id,
         vehiclePlate: vehicle.plate || '',
         blob,
+        capturedDate: capturedDate || null,
         createdAt: Date.now(),
       });
       req.onsuccess = () => resolve(req.result);  // auto-incremented idbId
@@ -3332,7 +3378,7 @@ async function resumePendingUploads(vehicle) {
 
     toast(`📤 Resuming ${toResume.length} unfinished upload${toResume.length !== 1 ? 's' : ''} for ${vehicle.plate}…`, 'info');
     toResume.forEach(p => {
-      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId });
+      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, retries: 0 });
       cameraTotalQueued++;
     });
     updateCameraUploadBar();
@@ -3361,11 +3407,15 @@ async function resumeAllPendingUploads() {
     const summary = Object.entries(byVehicle).map(([k, n]) => `${n} for ${k}`).join(', ');
     toast(`📤 Resuming ${toResume.length} unfinished photo upload${toResume.length !== 1 ? 's' : ''}: ${summary}`, 'info');
 
+    // Reset display counters so the bar reflects only the resumed batch
+    cameraUploadedCount = 0;
+    cameraTotalQueued = 0;
+
     toResume.forEach(p => {
       // Find the vehicle object from cache; fall back to a minimal stub so upload still works
       const vehicle = vehiclesCache.find(v => v.id === p.vehicleId)
         || { id: p.vehicleId, plate: p.vehiclePlate || p.vehicleId };
-      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId });
+      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, retries: 0 });
       cameraTotalQueued++;
     });
     updateCameraUploadBar();
@@ -3563,20 +3613,27 @@ $('camera-shutter').addEventListener('click', () => {
 
 async function queueCameraUpload(blob) {
   const capturedVehicle = selectedVehicle; // snapshot before any async gap
+  const capturedDate = todayDateString();  // snapshot WHEN the photo was taken
   const compressed = await compressBlob(blob, 1920, 0.82);
+  await _queuePhotoForUpload(compressed, capturedVehicle, capturedDate);
+}
 
+// Shared queue entry-point used by BOTH the in-browser camera and the file picker.
+// Saves to IndexedDB first so no photo is ever lost to a network failure.
+async function _queuePhotoForUpload(compressedBlob, vehicle, capturedDate) {
   // 1. Persist to IndexedDB FIRST — survives page reload, iOS backgrounding, camera re-open
-  const idbId = await _idbSavePhoto(compressed, capturedVehicle);
+  const idbId = await _idbSavePhoto(compressedBlob, vehicle, capturedDate);
 
-  // 2. Write a lightweight Firestore marker (no blob) so other browsers can see pending photos
+  // 2. Write a lightweight Firestore marker so other browsers can see pending photos
   let fsMarkerId = null;
   if (currentUser) {
     try {
       const markerRef = await db.collection('_pendingPhotoUploads').add({
         userId: currentUser.uid,
-        vehicleId: capturedVehicle.id,
-        vehiclePlate: capturedVehicle.plate || '',
+        vehicleId: vehicle.id,
+        vehiclePlate: vehicle.plate || '',
         idbId: idbId,
+        capturedDate: capturedDate,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
       fsMarkerId = markerRef.id;
@@ -3584,7 +3641,7 @@ async function queueCameraUpload(blob) {
   }
 
   // 3. Add to in-memory queue (carry fsMarkerId so we can delete it on success)
-  cameraUploadQueue.push({ blob: compressed, vehicle: capturedVehicle, idbId, fsMarkerId });
+  cameraUploadQueue.push({ blob: compressedBlob, vehicle, idbId, fsMarkerId, capturedDate, retries: 0 });
   cameraTotalQueued++;
   updateCameraUploadBar();
   processCameraQueue();
@@ -3608,17 +3665,31 @@ function updateCameraUploadBar() {
 }
 
 let storageWarningShown = false;
+let _uploadingStartedAt = 0;  // timestamp when cameraUploading was set true
+
+// Stall guard: if cameraUploading has been true for > 90s, something is permanently stuck — force-release
+setInterval(() => {
+  if (cameraUploading && _uploadingStartedAt > 0 && Date.now() - _uploadingStartedAt > 90000) {
+    console.warn('Photo upload stall detected — force-releasing upload lock');
+    cameraUploading = false;
+    _uploadingStartedAt = 0;
+  }
+}, 15000);
+
+const MAX_UPLOAD_RETRIES = 3;
 
 async function processCameraQueue() {
   if (cameraUploading || cameraUploadQueue.length === 0) return;
   cameraUploading = true;
+  _uploadingStartedAt = Date.now();
 
   try {
     while (cameraUploadQueue.length > 0) {
       // Peek — don't shift yet; only remove after confirmed upload
       const item = cameraUploadQueue[0];
+      _uploadingStartedAt = Date.now(); // reset stall timer per-item
       try {
-        const url = await uploadPhoto(item.blob, item.vehicle);
+        const url = await uploadPhoto(item.blob, item.vehicle, item.capturedDate);
         cameraUploadQueue.shift();          // remove only on success
         cameraUploadedUrls.push(url);
         cameraUploadedCount++;
@@ -3627,19 +3698,31 @@ async function processCameraQueue() {
         if (item.fsMarkerId) {
           db.collection('_pendingPhotoUploads').doc(item.fsMarkerId).delete().catch(() => {});
         }
+        item.retries = 0; // reset for next item
+        storageWarningShown = false; // allow warning again next session
         updateCameraUploadBar();
       } catch (uploadErr) {
-        console.error('Camera upload error (will retry):', uploadErr);
-        cameraUploadQueue.shift();          // remove from queue but LEAVE in IndexedDB
-        // Item stays in IndexedDB — resumePendingUploads will re-queue it later
-        if (!storageWarningShown) {
-          storageWarningShown = true;
-          toast('Upload failed — photos saved locally and will retry automatically.', 'warning');
+        console.error('Camera upload error:', uploadErr);
+        item.retries = (item.retries || 0) + 1;
+        if (item.retries < MAX_UPLOAD_RETRIES) {
+          // Exponential backoff: 3s, 6s before giving up to IDB
+          const delay = item.retries * 3000;
+          console.warn(`Retrying upload (attempt ${item.retries + 1}/${MAX_UPLOAD_RETRIES}) in ${delay}ms…`);
+          await new Promise(r => setTimeout(r, delay));
+          // Leave item at front of queue for retry — don't shift
+        } else {
+          // All retries exhausted — leave in IDB, remove from in-memory queue
+          cameraUploadQueue.shift();
+          if (!storageWarningShown) {
+            storageWarningShown = true;
+            toast('⚠️ Photo upload failed after retries — saved locally, will retry when connection improves.', 'warning');
+          }
         }
       }
     }
   } finally {
     cameraUploading = false;              // ALWAYS release the lock
+    _uploadingStartedAt = 0;
     // Update pending banner after queue drains
     if (selectedVehicle) {
       _idbGetPending(selectedVehicle.id).then(p => _updatePendingBanner(p.length, selectedVehicle.plate)).catch(() => {});
