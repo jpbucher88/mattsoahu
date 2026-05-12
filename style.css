@@ -4927,14 +4927,15 @@ body {
   position: fixed;
   bottom: 20px;
   right: 20px;
-  width: 240px;
+  width: 280px;
   background: #1e293b;
   color: #f1f5f9;
   border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  z-index: 9999;
+  box-shadow: 0 6px 28px rgba(0,0,0,0.45);
+  z-index: 99998; /* below modals, above everything else */
   overflow: hidden;
   transition: height 0.2s ease;
+  border: 1.5px solid #334155;
 }
 .bg-upload-header {
   display: flex;

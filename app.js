@@ -3488,6 +3488,7 @@ async function resumePendingUploads(vehicle) {
     toResume.forEach(p => {
       cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, raw: p.raw || false, retries: 0 });
       cameraTotalQueued++;
+      _uploadAdd(vehicle.id, 1); // register resumed photos with global toast
     });
     updateCameraUploadBar();
     processCameraQueue();
@@ -3528,6 +3529,7 @@ async function resumeAllPendingUploads() {
         || { id: p.vehicleId, plate: p.vehiclePlate || p.vehicleId };
       cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, raw: p.raw || false, retries: 0 });
       cameraTotalQueued++;
+      _uploadAdd(p.vehicleId, 1); // register resumed photos with global toast
     });
     updateCameraUploadBar();
     processCameraQueue();
@@ -3754,6 +3756,7 @@ async function _queuePhotoForUpload(compressedBlob, vehicle, capturedDate) {
   // 3. Add to in-memory queue (carry fsMarkerId so we can delete it on success)
   cameraUploadQueue.push({ blob: compressedBlob, vehicle, idbId, fsMarkerId, capturedDate, retries: 0 });
   cameraTotalQueued++;
+  _uploadAdd(vehicle.id, 1); // register with global progress tracker → keeps floating toast alive
   updateCameraUploadBar();
   processCameraQueue();
 }
@@ -3816,7 +3819,7 @@ async function processCameraQueue() {
             console.error('Could not compress raw IDB photo, discarding:', compressErr);
             _idbDeletePhoto(item.idbId);
             cameraUploadQueue.shift();
-            bgUploadTick(false);
+            _uploadTick(item.vehicle.id, false);
             continue;
           }
         }
@@ -3833,6 +3836,7 @@ async function processCameraQueue() {
         item.retries = 0; // reset for next item
         storageWarningShown = false; // allow warning again next session
         updateCameraUploadBar();
+        _uploadTick(item.vehicle.id, true); // update global floating toast
       } catch (uploadErr) {
         console.error('Camera upload error:', uploadErr);
         item.retries = (item.retries || 0) + 1;
@@ -3845,6 +3849,7 @@ async function processCameraQueue() {
         } else {
           // All retries exhausted — leave in IDB, remove from in-memory queue
           cameraUploadQueue.shift();
+          _uploadTick(item.vehicle.id, false); // mark failed in global toast
           if (!storageWarningShown) {
             storageWarningShown = true;
             toast('⚠️ Photo upload failed after retries — saved locally, will retry when connection improves.', 'warning');
