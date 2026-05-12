@@ -2957,19 +2957,44 @@ function _uploadTick(vehicleId, success) {
 }
 
 // Update the floating global toast bar (shows combined progress across all vehicles).
+let _cameraToastBadgeMode = false;
+
+// While the camera is open, collapse the floating toast to a compact pill badge
+// so it never obscures the viewfinder or shutter button.
+// Pass true when camera opens, false when it closes.
+function _setCameraToastBadge(enable) {
+  _cameraToastBadgeMode = enable;
+  const toast = $('bg-upload-toast');
+  if (!toast) return;
+  if (enable) {
+    toast.classList.add('bg-upload-badge-mode');
+  } else {
+    toast.classList.remove('bg-upload-badge-mode');
+    _refreshGlobalToast(); // re-render full toast with current progress
+  }
+}
+
 function _refreshGlobalToast() {
   if (_gTotal === 0 || _gDone >= _gTotal) return; // completion handled in _uploadTick
   const toast = $('bg-upload-toast');
   if (!toast) return;
   toast.style.display = '';
-  toast.classList.remove('bg-upload-minimized');
   const pct = Math.round((_gDone / _gTotal) * 100);
   const titleEl = $('bg-upload-title');
   const textEl  = $('bg-upload-text');
   const fillEl  = $('bg-upload-fill');
-  if (titleEl) titleEl.textContent = `⬆️ Uploading photos… ${pct}%`;
-  if (textEl)  textEl.textContent  = `${_gDone} / ${_gTotal}`;
-  if (fillEl)  fillEl.style.width  = pct + '%';
+  if (_cameraToastBadgeMode) {
+    toast.classList.add('bg-upload-badge-mode');
+    if (titleEl) titleEl.textContent = `📷 ${_gDone}/${_gTotal}`;
+    if (textEl)  textEl.textContent  = '';
+    if (fillEl)  fillEl.style.width  = pct + '%';
+  } else {
+    toast.classList.remove('bg-upload-minimized');
+    toast.classList.remove('bg-upload-badge-mode');
+    if (titleEl) titleEl.textContent = `⬆️ Uploading photos… ${pct}%`;
+    if (textEl)  textEl.textContent  = `${_gDone} / ${_gTotal}`;
+    if (fillEl)  fillEl.style.width  = pct + '%';
+  }
 }
 
 // Update the inline per-vehicle progress banner on the vehicle page.
@@ -3372,7 +3397,7 @@ async function openCamera() {
   cameraFlashOn = false;
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
-  $('camera-upload-bar').style.display = 'none';
+  _setCameraToastBadge(true); // collapse global toast to compact badge while camera is open
   updateFlashButton();
   $('camera-overlay').style.display = 'flex';
 
@@ -3762,20 +3787,9 @@ async function _queuePhotoForUpload(compressedBlob, vehicle, capturedDate) {
 }
 
 function updateCameraUploadBar() {
-  const bar = $('camera-upload-bar');
-  if (cameraTotalQueued === 0) {
-    bar.style.display = 'none';
-    return;
-  }
-  bar.style.display = 'flex';
-  const pending = cameraTotalQueued - cameraUploadedCount;
-  if (pending > 0) {
-    $('camera-upload-text').textContent = `Uploading... ${cameraUploadedCount}/${cameraTotalQueued}`;
-  } else {
-    $('camera-upload-text').textContent = `All ${cameraTotalQueued} uploaded ✓`;
-  }
-  const pct = cameraTotalQueued > 0 ? (cameraUploadedCount / cameraTotalQueued) * 100 : 0;
-  $('camera-upload-fill').style.width = pct + '%';
+  // Camera no longer has its own upload bar — the global toast handles all progress.
+  // Refresh the badge count shown on the toast while the camera overlay is open.
+  _refreshGlobalToast();
 }
 
 let storageWarningShown = false;
@@ -3930,6 +3944,7 @@ $('camera-close').addEventListener('click', async () => {
   }
   $('camera-video').srcObject = null;
   $('camera-overlay').style.display = 'none';
+  _setCameraToastBadge(false); // restore full toast now that camera is closed
 
   // Wait for any remaining uploads
   if (cameraUploadQueue.length > 0 || cameraUploading) {
