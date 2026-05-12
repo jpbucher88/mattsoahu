@@ -6412,6 +6412,96 @@ body {
 .tc-hawaii .tc-label { color: #00695c; font-weight: 700; }
 .tc-hawaii .tc-week-grid-header { color: #0077b6; }
 
+/* ── Elizabeth Hawaii Countdown Widget ── */
+.eliz-cd-card {
+  background: linear-gradient(135deg, rgba(0,18,55,0.6) 0%, rgba(0,80,160,0.55) 100%);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1.5px solid rgba(255,255,255,0.28);
+  border-radius: 20px;
+  padding: 16px 24px 14px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,40,140,0.4), 0 0 48px rgba(0,180,255,0.1);
+  max-width: 340px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.eliz-cd-title {
+  font-size: 0.72rem;
+  font-weight: 800;
+  color: rgba(255,255,255,0.88);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+.eliz-cd-units {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.eliz-cd-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 54px;
+}
+.eliz-cd-num {
+  font-size: clamp(1.9rem, 7vw, 2.7rem);
+  font-weight: 900;
+  color: #fff;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  text-shadow: 0 0 22px rgba(0,210,255,0.75), 0 2px 8px rgba(0,0,0,0.5);
+  animation: elizCdPulse 2s ease-in-out infinite;
+}
+.eliz-cd-name {
+  font-size: 0.58rem;
+  font-weight: 700;
+  color: rgba(255,255,255,0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-top: 3px;
+}
+.eliz-cd-sep {
+  font-size: clamp(1.4rem, 5vw, 2rem);
+  font-weight: 900;
+  color: rgba(255,255,255,0.4);
+  padding-bottom: 16px;
+  animation: elizCdBlink 1s step-end infinite;
+  min-width: 16px;
+  text-align: center;
+}
+.eliz-cd-subtitle {
+  font-size: 0.68rem;
+  color: rgba(255,220,80,0.92);
+  font-weight: 700;
+  margin-top: 10px;
+  letter-spacing: 0.05em;
+}
+@keyframes elizCdPulse {
+  0%, 100% { text-shadow: 0 0 22px rgba(0,210,255,0.75), 0 2px 8px rgba(0,0,0,0.5); }
+  50%       { text-shadow: 0 0 40px rgba(0,230,255,1.0), 0 2px 8px rgba(0,0,0,0.5); }
+}
+@keyframes elizCdBlink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
+}
+/* Timeclock version — slightly different layout since it sits on a light card */
+.tc-hawaii-cd {
+  margin: 0 0 14px;
+  max-width: 100%;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #005f8e 0%, #0096c7 60%, #0077b6 100%);
+  border-color: rgba(255,255,255,0.2);
+  box-shadow: 0 4px 20px rgba(0,100,180,0.3);
+}
+.tc-hawaii-cd .eliz-cd-num {
+  font-size: clamp(1.6rem, 5vw, 2.2rem);
+  text-shadow: 0 0 16px rgba(0,210,255,0.7), 0 1px 4px rgba(0,0,0,0.4);
+}
+
 /* Vehicle nav prev/next arrows */
 .vehicle-nav-wrap {
   display: flex;

@@ -239,6 +239,48 @@ function toast(message, type = 'info') {
 }
 
 // ================================================================
+// ELIZABETH HAWAII COUNTDOWN — Jun 14 2026 @ 6:00 AM EST (= 11:00 UTC)
+// ================================================================
+const _ELIZABETH_DEPARTURE = new Date('2026-06-14T11:00:00.000Z');
+let _elizabethCdInterval = null;
+
+function _elizabethCountdownTick(el) {
+  const diff = _ELIZABETH_DEPARTURE - Date.now();
+  if (diff <= 0) {
+    el.innerHTML = '<div class="eliz-cd-title">🌺 She\'s in Hawaii! Aloha! 🌴</div>';
+    return false;
+  }
+  const days  = Math.floor(diff / 86400000);
+  const hours = Math.floor((diff % 86400000) / 3600000);
+  const mins  = Math.floor((diff % 3600000) / 60000);
+  const secs  = Math.floor((diff % 60000) / 1000);
+  const pad   = n => String(n).padStart(2, '0');
+  el.innerHTML = `
+    <div class="eliz-cd-title">✈️ Hawaii Departure Countdown</div>
+    <div class="eliz-cd-units">
+      <div class="eliz-cd-unit"><span class="eliz-cd-num">${pad(days)}</span><span class="eliz-cd-name">days</span></div>
+      <div class="eliz-cd-sep">:</div>
+      <div class="eliz-cd-unit"><span class="eliz-cd-num">${pad(hours)}</span><span class="eliz-cd-name">hrs</span></div>
+      <div class="eliz-cd-sep">:</div>
+      <div class="eliz-cd-unit"><span class="eliz-cd-num">${pad(mins)}</span><span class="eliz-cd-name">min</span></div>
+      <div class="eliz-cd-sep">:</div>
+      <div class="eliz-cd-unit"><span class="eliz-cd-num">${pad(secs)}</span><span class="eliz-cd-name">sec</span></div>
+    </div>
+    <div class="eliz-cd-subtitle">Jun 14, 2026 · 6:00 AM EST · Departing for Oahu 🏝️</div>
+  `;
+  return true;
+}
+
+function _startElizabethCountdown(el) {
+  if (_elizabethCdInterval) { clearInterval(_elizabethCdInterval); _elizabethCdInterval = null; }
+  _elizabethCountdownTick(el);
+  _elizabethCdInterval = setInterval(() => {
+    if (!document.contains(el)) { clearInterval(_elizabethCdInterval); _elizabethCdInterval = null; return; }
+    _elizabethCountdownTick(el);
+  }, 1000);
+}
+
+// ================================================================
 // ELIZABETH HAWAII EASTER EGG
 // ================================================================
 function showElizabethEasterEgg(forceWatch) {
@@ -271,7 +313,17 @@ function showElizabethEasterEgg(forceWatch) {
   overlay.style.display = 'block';
   overlay.style.pointerEvents = 'auto';
 
-  // Countdown badge
+  // Hawaii departure countdown card — injected once into the overlay, ticks every second
+  let cdCard = overlay.querySelector('.eliz-cd-card');
+  if (!cdCard) {
+    cdCard = document.createElement('div');
+    cdCard.className = 'eliz-cd-card';
+    cdCard.style.cssText = 'position:relative;z-index:2;margin-top:20px;';
+    bg.appendChild(cdCard);
+  }
+  _startElizabethCountdown(cdCard);
+
+  // Tap-to-dismiss countdown badge (top-right corner)
   let cdEl = overlay.querySelector('.egg-countdown');
   if (!cdEl) {
     cdEl = document.createElement('div');
@@ -12831,6 +12883,7 @@ function renderTimeClock() {
   content.innerHTML = `
     ${selectorHTML}
     ${viewingBanner}
+    ${isHawaiiTheme ? '<div class="eliz-cd-card tc-hawaii-cd" id="tc-eliz-countdown"></div>' : ''}
     <div class="tc-week-nav">
       <button class="tc-nav-btn" onclick="tcPrevWeek()">‹ Prev</button>
       <span class="tc-week-label">${weekLabel}</span>
@@ -12847,6 +12900,12 @@ function renderTimeClock() {
     </div>
     ${todaySectionHTML}
   `;
+
+  // Start the live countdown after the HTML is injected
+  if (isHawaiiTheme) {
+    const cdEl = $('tc-eliz-countdown');
+    if (cdEl) _startElizabethCountdown(cdEl);
+  }
 }
 
 
