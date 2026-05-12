@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260513b">
+  <link rel="stylesheet" href="style.css?v=20260513d">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -479,6 +479,17 @@
             <div id="progress-fill" class="progress-fill"></div>
           </div>
           <span id="progress-text">0 / 0 uploaded</span>
+        </div>
+
+        <!-- Inline upload progress — visible when navigating back to this vehicle mid-upload -->
+        <div id="vehicle-upload-progress" class="vehicle-upload-progress" style="display:none;">
+          <div class="vup-header">
+            <span id="vup-title">⬆️ Uploading photos…</span>
+            <span id="vup-count" class="vup-count">0 / 0</span>
+          </div>
+          <div class="progress-bar vup-bar">
+            <div id="vup-fill" class="progress-fill"></div>
+          </div>
         </div>
 
         <div id="photo-queue" class="photo-queue"></div>
@@ -2163,7 +2174,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260513b"></script>
+  <script src="app.js?v=20260513d"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

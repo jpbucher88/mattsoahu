@@ -4882,6 +4882,46 @@ body {
 .tc-user-select { border: 1px solid #d1d5db; border-radius: 6px; padding: 4px 8px; font-size: 0.82rem; background: #f8fafc; cursor: pointer; }
 .tc-viewing-banner { background: #fef3c7; border: 1px solid #fbbf24; border-radius: 6px; padding: 6px 10px; font-size: 0.78rem; color: #92400e; margin-bottom: 10px; text-align: center; font-weight: 600; }
 
+/* ============ INLINE VEHICLE UPLOAD PROGRESS ============ */
+.vehicle-upload-progress {
+  background: #f0f9ff;
+  border: 1.5px solid #38bdf8;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  animation: vupPulse 2s ease-in-out infinite;
+}
+.vup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #0369a1;
+  margin-bottom: 7px;
+}
+.vup-count {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #0284c7;
+}
+.vup-bar {
+  height: 7px;
+  border-radius: 4px;
+  background: #bae6fd;
+  overflow: hidden;
+}
+.vup-bar .progress-fill {
+  background: #0284c7;
+  transition: width 0.3s ease;
+  height: 100%;
+  border-radius: 4px;
+}
+@keyframes vupPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(56,189,248,0.25); }
+  50%       { box-shadow: 0 0 0 5px rgba(56,189,248,0); }
+}
+
 /* ============ BACKGROUND UPLOAD TOAST ============ */
 .bg-upload-toast {
   position: fixed;

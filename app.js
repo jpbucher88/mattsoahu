@@ -2626,6 +2626,7 @@ async function openVehiclePage(vid) {
 
   // Navigate to vehicle page
   showPage('vehicle');
+  refreshVehicleUploadBanner();
 
   // Load photos for selected date
   selectedDate = todayDateString();
@@ -2872,12 +2873,27 @@ $('btn-mileage-edit').addEventListener('click', () => {
 
 $('file-input').addEventListener('change', handlePhotoFiles);
 
+// Concurrency limiter — runs `limit` async tasks in parallel, sequentially draining the list.
+// Prevents memory exhaustion when compressing/uploading 50-100 photos at once.
+async function _runWithConcurrency(tasks, limit) {
+  let i = 0;
+  async function worker() {
+    while (i < tasks.length) {
+      const fn = tasks[i++];
+      await fn().catch(() => {}); // each task handles its own errors
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
+}
+
 let bgUploadTotal = 0;
 let bgUploadDone = 0;
 let bgUploadFailed = 0;
 let bgUploadActive = false;
+let bgUploadVehicleId = null;
 
-function bgUploadShow(total) {
+function bgUploadShow(total, vehicleId) {
+  bgUploadVehicleId = vehicleId || null;
   bgUploadTotal = total;
   bgUploadDone = 0;
   bgUploadFailed = 0;
@@ -2890,6 +2906,21 @@ function bgUploadShow(total) {
     $('bg-upload-text').textContent = `0 / ${total}`;
     $('bg-upload-fill').style.width = '0%';
   }
+  refreshVehicleUploadBanner();
+}
+
+function refreshVehicleUploadBanner() {
+  const banner = $('vehicle-upload-progress');
+  if (!banner) return;
+  const isActive = bgUploadActive && bgUploadVehicleId && selectedVehicle && bgUploadVehicleId === selectedVehicle.id;
+  if (!isActive) { banner.style.display = 'none'; return; }
+  banner.style.display = '';
+  const pct = bgUploadTotal > 0 ? Math.round((bgUploadDone / bgUploadTotal) * 100) : 0;
+  $('vup-fill').style.width = pct + '%';
+  $('vup-count').textContent = `${bgUploadDone} / ${bgUploadTotal}`;
+  $('vup-title').textContent = bgUploadFailed > 0
+    ? `⚠️ ${bgUploadFailed} photo${bgUploadFailed > 1 ? 's' : ''} failed — please retake`
+    : `⬆️ Uploading photos… ${pct}%`;
 }
 
 function bgUploadTick(success) {
@@ -2900,8 +2931,12 @@ function bgUploadTick(success) {
   const textEl = $('bg-upload-text');
   if (fillEl) fillEl.style.width = pct + '%';
   if (textEl) textEl.textContent = `${bgUploadDone} / ${bgUploadTotal}`;
+  refreshVehicleUploadBanner();
   if (bgUploadDone >= bgUploadTotal) {
     bgUploadActive = false;
+    // Hide the inline vehicle banner after a short delay
+    const hideDelay = bgUploadFailed > 0 ? 7000 : 3000;
+    setTimeout(() => refreshVehicleUploadBanner(), hideDelay);
     const succeeded = bgUploadDone - bgUploadFailed;
     if (bgUploadFailed > 0) {
       $('bg-upload-title').textContent = `⚠️ ${bgUploadFailed} failed — please retake`;
@@ -2935,7 +2970,7 @@ async function handlePhotoFiles(e) {
   }
 
   const total = files.length;
-  bgUploadShow(total);
+  bgUploadShow(total, capturedVehicle.id);
   e.target.value = '';
 
   // ── STEP 1: Save raw files to IDB immediately ───────────────────────────────
@@ -2954,7 +2989,10 @@ async function handlePhotoFiles(e) {
     const item = document.createElement('div');
     item.className = 'photo-queue-item';
     const thumb = document.createElement('img');
-    thumb.src = URL.createObjectURL(file);
+    const objectUrl = URL.createObjectURL(file);
+    thumb.src = objectUrl;
+    // Revoke the object URL once loaded to prevent memory leak
+    thumb.onload = () => URL.revokeObjectURL(objectUrl);
     item.appendChild(thumb);
     const statusIcon = document.createElement('div');
     statusIcon.className = 'status-icon status-uploading';
@@ -2964,13 +3002,16 @@ async function handlePhotoFiles(e) {
     thumbMap.set(file, { item, statusIcon });
   });
 
-  // Upload all files in parallel (background)
-  const uploadPromises = files.map(async (file, fileIndex) => {
+  // Upload files with a concurrency limit of 4 workers.
+  // Compressing all N photos simultaneously can exhaust device RAM on large batches (50-100 photos).
+  // Each worker processes one photo at a time: compress → IDB swap → upload → cleanup.
+  const tasks = files.map((file, fileIndex) => async () => {
     const { item, statusIcon } = thumbMap.get(file);
     let idbId = rawIdbIds[fileIndex]; // start with raw IDB entry
     let fsMarkerId = null;
     try {
-      const compressed = await compressImage(file);
+      // Compress at 1920px / 85% — matches camera quality, ~40% smaller than old 2560@92%
+      const compressed = await compressImage(file, 1920, 0.85);
 
       // Replace the raw IDB entry with the compressed blob:
       // save compressed FIRST so we're never without a backup, then delete raw.
@@ -2993,7 +3034,19 @@ async function handlePhotoFiles(e) {
         } catch(markerErr) { console.warn('Pending marker write failed:', markerErr); }
       }
 
-      await uploadPhoto(compressed, capturedVehicle, capturedDate);
+      // Upload with 1 retry on transient network failure
+      let uploadErr = null;
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          await uploadPhoto(compressed, capturedVehicle, capturedDate);
+          uploadErr = null;
+          break;
+        } catch (err) {
+          uploadErr = err;
+          if (attempt < 2) await new Promise(r => setTimeout(r, 3000));
+        }
+      }
+      if (uploadErr) throw uploadErr;
 
       // Upload succeeded — remove safety net
       _idbDeletePhoto(idbId);
@@ -3013,9 +3066,11 @@ async function handlePhotoFiles(e) {
     }
   });
 
+  const allDone = _runWithConcurrency(tasks, 4);
+
   // Refresh photos for the current date when all uploads finish
   // Also schedule a second refresh after 2.5s to catch any Firestore indexing delay
-  Promise.all(uploadPromises).then(async () => {
+  allDone.then(async () => {
     if (capturedVehicle && selectedVehicle && capturedVehicle.id === selectedVehicle.id) {
       await loadPhotosForDate(capturedVehicle.id, capturedDate);
       setTimeout(async () => {
@@ -3266,12 +3321,15 @@ function _initCameraPinchZoom() {
 }
 
 async function openCamera() {
-  // Reset session display counters — but do NOT clear cameraUploadQueue.
-  // Any uploads still running from a previous session must continue uninterrupted.
+  // Reset session display counters — but ONLY if no uploads are in flight.
+  // If the user closes and reopens the camera while photos are uploading,
+  // resetting the counters would break the progress bar mid-upload.
   cameraShotCount = 0;
-  cameraUploadedCount = 0;
-  cameraTotalQueued = 0;
-  cameraUploadedUrls = [];
+  if (cameraUploadQueue.length === 0) {
+    cameraUploadedCount = 0;
+    cameraTotalQueued = 0;
+    cameraUploadedUrls = [];
+  }
   cameraFlashOn = false;
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
@@ -3418,9 +3476,12 @@ async function resumeAllPendingUploads() {
     const summary = Object.entries(byVehicle).map(([k, n]) => `${n} for ${k}`).join(', ');
     toast(`📤 Resuming ${toResume.length} unfinished photo upload${toResume.length !== 1 ? 's' : ''}: ${summary}`, 'info');
 
-    // Reset display counters so the bar reflects only the resumed batch
-    cameraUploadedCount = 0;
-    cameraTotalQueued = 0;
+    // Only reset display counters if no uploads are currently in flight.
+    // Resetting mid-upload would make the progress bar jump backward.
+    if (!cameraUploading) {
+      cameraUploadedCount = 0;
+      cameraTotalQueued = 0;
+    }
 
     toResume.forEach(p => {
       // Find the vehicle object from cache; fall back to a minimal stub so upload still works
