@@ -2892,69 +2892,108 @@ let bgUploadFailed = 0;
 let bgUploadActive = false;
 let bgUploadVehicleId = null;
 
-function bgUploadShow(total, vehicleId) {
-  bgUploadVehicleId = vehicleId || null;
-  bgUploadTotal = total;
-  bgUploadDone = 0;
-  bgUploadFailed = 0;
-  bgUploadActive = true;
-  const toast = $('bg-upload-toast');
-  if (toast) {
-    toast.style.display = '';
-    toast.classList.remove('bg-upload-minimized');
-    $('bg-upload-title').textContent = `⬆️ Uploading ${total} photo${total > 1 ? 's' : ''}…`;
-    $('bg-upload-text').textContent = `0 / ${total}`;
-    $('bg-upload-fill').style.width = '0%';
+// ── Global upload tracker — accumulates across all vehicles so switching
+//    vehicles never resets the progress bar. Resets only when fully done.
+let _gTotal     = 0;   // total photos added across all batches in this session
+let _gDone      = 0;   // photos completed (success + fail)
+let _gFailed    = 0;   // failed count this session
+let _gHideTimer = null;// pending hide-toast timer
+
+// Per-vehicle tracker: Map<vehicleId, {total, done, failed, hideTimer}>
+const _vUpload = new Map();
+
+// Called when a new batch of photos starts uploading (may be called multiple times
+// across different vehicles simultaneously — we ADD to existing totals, never reset).
+function _uploadAdd(vehicleId, n) {
+  // Cancel any pending "all-done" hide timer — more photos are arriving
+  if (_gHideTimer) { clearTimeout(_gHideTimer); _gHideTimer = null; }
+  _gTotal += n;
+  // Per-vehicle
+  const cur = _vUpload.get(vehicleId) || { total: 0, done: 0, failed: 0, hideTimer: null };
+  if (cur.hideTimer) { clearTimeout(cur.hideTimer); cur.hideTimer = null; }
+  cur.total += n;
+  _vUpload.set(vehicleId, cur);
+  _refreshGlobalToast();
+  refreshVehicleUploadBanner();
+}
+
+// Called once per photo as it finishes (success or fail).
+function _uploadTick(vehicleId, success) {
+  _gDone++;
+  if (!success) _gFailed++;
+  const vd = _vUpload.get(vehicleId);
+  if (vd) { vd.done++; if (!success) vd.failed++; }
+
+  _refreshGlobalToast();
+  refreshVehicleUploadBanner();
+
+  // Check if this vehicle's batch is done
+  if (vd && vd.done >= vd.total && !vd.hideTimer) {
+    const vDelay = vd.failed > 0 ? 7000 : 3000;
+    vd.hideTimer = setTimeout(() => { _vUpload.delete(vehicleId); refreshVehicleUploadBanner(); }, vDelay);
   }
-  refreshVehicleUploadBanner();
-}
 
-function refreshVehicleUploadBanner() {
-  const banner = $('vehicle-upload-progress');
-  if (!banner) return;
-  const isActive = bgUploadActive && bgUploadVehicleId && selectedVehicle && bgUploadVehicleId === selectedVehicle.id;
-  if (!isActive) { banner.style.display = 'none'; return; }
-  banner.style.display = '';
-  const pct = bgUploadTotal > 0 ? Math.round((bgUploadDone / bgUploadTotal) * 100) : 0;
-  $('vup-fill').style.width = pct + '%';
-  $('vup-count').textContent = `${bgUploadDone} / ${bgUploadTotal}`;
-  $('vup-title').textContent = bgUploadFailed > 0
-    ? `⚠️ ${bgUploadFailed} photo${bgUploadFailed > 1 ? 's' : ''} failed — please retake`
-    : `⬆️ Uploading photos… ${pct}%`;
-}
-
-function bgUploadTick(success) {
-  bgUploadDone++;
-  if (!success) bgUploadFailed++;
-  const pct = Math.round((bgUploadDone / bgUploadTotal) * 100);
-  const fillEl = $('bg-upload-fill');
-  const textEl = $('bg-upload-text');
-  if (fillEl) fillEl.style.width = pct + '%';
-  if (textEl) textEl.textContent = `${bgUploadDone} / ${bgUploadTotal}`;
-  refreshVehicleUploadBanner();
-  if (bgUploadDone >= bgUploadTotal) {
-    bgUploadActive = false;
-    // Hide the inline vehicle banner after a short delay
-    const hideDelay = bgUploadFailed > 0 ? 7000 : 3000;
-    setTimeout(() => refreshVehicleUploadBanner(), hideDelay);
-    const succeeded = bgUploadDone - bgUploadFailed;
-    if (bgUploadFailed > 0) {
-      $('bg-upload-title').textContent = `⚠️ ${bgUploadFailed} failed — please retake`;
-      $('bg-upload-fill').style.background = '#f59e0b';
-      setTimeout(() => {
-        const t = $('bg-upload-toast');
-        if (t) t.style.display = 'none';
-        if ($('bg-upload-fill')) $('bg-upload-fill').style.background = '';
+  // Check if ALL photos across all vehicles are done
+  if (_gDone >= _gTotal) {
+    const failed = _gFailed;
+    const titleEl = $('bg-upload-title');
+    const fillEl  = $('bg-upload-fill');
+    if (failed > 0) {
+      if (titleEl) titleEl.textContent = `⚠️ ${failed} photo${failed > 1 ? 's' : ''} failed — please retake`;
+      if (fillEl)  fillEl.style.background = '#f59e0b';
+      _gHideTimer = setTimeout(() => {
+        const t = $('bg-upload-toast'); if (t) t.style.display = 'none';
+        const fe = $('bg-upload-fill'); if (fe) fe.style.background = '';
+        _gTotal = _gDone = _gFailed = 0;
       }, 7000);
     } else {
-      $('bg-upload-title').textContent = `✅ Upload complete`;
-      setTimeout(() => {
-        const t = $('bg-upload-toast');
-        if (t) t.style.display = 'none';
+      if (titleEl) titleEl.textContent = '✅ All photos uploaded';
+      _gHideTimer = setTimeout(() => {
+        const t = $('bg-upload-toast'); if (t) t.style.display = 'none';
+        _gTotal = _gDone = _gFailed = 0;
       }, 3000);
     }
   }
 }
+
+// Update the floating global toast bar (shows combined progress across all vehicles).
+function _refreshGlobalToast() {
+  if (_gTotal === 0 || _gDone >= _gTotal) return; // completion handled in _uploadTick
+  const toast = $('bg-upload-toast');
+  if (!toast) return;
+  toast.style.display = '';
+  toast.classList.remove('bg-upload-minimized');
+  const pct = Math.round((_gDone / _gTotal) * 100);
+  const titleEl = $('bg-upload-title');
+  const textEl  = $('bg-upload-text');
+  const fillEl  = $('bg-upload-fill');
+  if (titleEl) titleEl.textContent = `⬆️ Uploading photos… ${pct}%`;
+  if (textEl)  textEl.textContent  = `${_gDone} / ${_gTotal}`;
+  if (fillEl)  fillEl.style.width  = pct + '%';
+}
+
+// Update the inline per-vehicle progress banner on the vehicle page.
+function refreshVehicleUploadBanner() {
+  const banner = $('vehicle-upload-progress');
+  if (!banner) return;
+  if (!selectedVehicle) { banner.style.display = 'none'; return; }
+  const vd = _vUpload.get(selectedVehicle.id);
+  if (!vd || vd.done >= vd.total) { banner.style.display = 'none'; return; }
+  banner.style.display = '';
+  const pct = vd.total > 0 ? Math.round((vd.done / vd.total) * 100) : 0;
+  const fillEl  = $('vup-fill');
+  const countEl = $('vup-count');
+  const titleEl = $('vup-title');
+  if (fillEl)  fillEl.style.width   = pct + '%';
+  if (countEl) countEl.textContent  = `${vd.done} / ${vd.total}`;
+  if (titleEl) titleEl.textContent  = vd.failed > 0
+    ? `⚠️ ${vd.failed} photo${vd.failed > 1 ? 's' : ''} failed — please retake`
+    : `⬆️ Uploading photos… ${pct}%`;
+}
+
+// Legacy compat shims — kept so any camera-path code that still calls them works.
+function bgUploadShow(total, vehicleId) { _uploadAdd(vehicleId, total); }
+function bgUploadTick(success) { /* no-op — file picker now calls _uploadTick directly */ }
 
 async function handlePhotoFiles(e) {
   const files = Array.from(e.target.files);
@@ -2970,7 +3009,7 @@ async function handlePhotoFiles(e) {
   }
 
   const total = files.length;
-  bgUploadShow(total, capturedVehicle.id);
+  _uploadAdd(capturedVehicle.id, total);
   e.target.value = '';
 
   // ── STEP 1: Save raw files to IDB immediately ───────────────────────────────
@@ -3056,12 +3095,12 @@ async function handlePhotoFiles(e) {
 
       statusIcon.className = 'status-icon status-done';
       statusIcon.textContent = '✓';
-      bgUploadTick(true);
+      _uploadTick(capturedVehicle.id, true);
     } catch (err) {
       console.error('File picker upload error (IDB safety net active — will retry automatically):', err);
       statusIcon.className = 'status-icon status-error';
       statusIcon.textContent = '✗';
-      bgUploadTick(false);
+      _uploadTick(capturedVehicle.id, false);
       // Photo stays in IDB (raw or compressed). resumeAllPendingUploads() will retry on next open.
     }
   });
