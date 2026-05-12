@@ -6542,6 +6542,32 @@ body {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0.2; }
 }
+/* Easter egg overlay — larger countdown numbers */
+.eliz-cd-card--egg {
+  max-width: 500px;
+}
+.eliz-cd-card--egg .eliz-cd-num {
+  font-size: clamp(3.5rem, 11vw, 5.5rem);
+}
+.eliz-cd-card--egg .eliz-cd-sep {
+  font-size: clamp(2.5rem, 8vw, 4rem);
+  padding-bottom: 36px;
+}
+.eliz-cd-card--egg .eliz-cd-name {
+  font-size: 0.85rem;
+  margin-top: 6px;
+}
+.eliz-cd-card--egg .eliz-cd-title {
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+}
+.eliz-cd-card--egg .eliz-cd-subtitle {
+  font-size: 0.85rem;
+  margin-top: 12px;
+}
+.eliz-cd-card--egg .eliz-cd-unit {
+  min-width: 80px;
+}
 /* Timeclock version — big readable numbers, full-width card */
 .tc-hawaii-cd {
   margin: 0 0 14px;

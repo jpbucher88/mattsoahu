@@ -317,8 +317,8 @@ function showElizabethEasterEgg(forceWatch) {
   let cdCard = overlay.querySelector('.eliz-cd-card');
   if (!cdCard) {
     cdCard = document.createElement('div');
-    cdCard.className = 'eliz-cd-card';
-    cdCard.style.cssText = 'position:relative;z-index:2;margin-top:20px;';
+    cdCard.className = 'eliz-cd-card eliz-cd-card--egg';
+    cdCard.style.cssText = 'position:relative;z-index:2;';
     bg.appendChild(cdCard);
   }
   _startElizabethCountdown(cdCard);
