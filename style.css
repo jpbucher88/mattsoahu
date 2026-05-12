@@ -3086,7 +3086,7 @@ body {
 /* ============ VEHICLE LOCATION ============ */
 .vehicle-location-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-top: 8px;
   flex-wrap: wrap;
@@ -3599,6 +3599,60 @@ body {
   border-radius: 6px;
   font-size: 0.85rem;
   width: 160px;
+}
+
+/* ── Mobile: vehicle status/location fields stack vertically ── */
+@media (max-width: 600px) {
+  .vehicle-location-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+  /* Every direct loc-field child stacks label above input */
+  .vehicle-location-row > .loc-field {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    width: 100%;
+  }
+  .vehicle-location-row > .loc-field label {
+    white-space: normal;
+  }
+  /* Full-width selects and inputs inside the location row */
+  .vehicle-location-row .vehicle-location-select,
+  .vehicle-location-row .vehicle-location-custom {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  /* HNL parking row — side-by-side is fine at full width */
+  .vehicle-location-row .loc-parts-row {
+    width: 100%;
+  }
+  .vehicle-location-row .loc-parts-row .loc-field {
+    flex: 1;
+    min-width: 120px;
+  }
+  .vehicle-location-row .loc-parts-row .vehicle-location-custom {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  /* Trip Revenue + Extras — stack naturally */
+  .vehicle-location-row .loc-extras-section {
+    width: 100%;
+  }
+  /* Date-time picker rows — allow wrap on very small screens */
+  .vehicle-location-row .dt-split-wrap {
+    flex-wrap: wrap;
+  }
+  .vehicle-location-row .dt-date-input {
+    flex: 1 1 140px;
+    min-width: 0;
+  }
+  /* Save / action buttons — full width on mobile */
+  .vehicle-location-row > .btn {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 /* ============ LOCATIONS WIDGET ============ */
