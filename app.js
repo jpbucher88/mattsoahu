@@ -3061,7 +3061,7 @@ async function handlePhotoFiles(e) {
     thumbMap.set(file, { item, statusIcon });
   });
 
-  // Upload files with a concurrency limit of 4 workers.
+  // Upload files with a concurrency limit of 6 workers.
   // Compressing all N photos simultaneously can exhaust device RAM on large batches (50-100 photos).
   // Each worker processes one photo at a time: compress → IDB swap → upload → cleanup.
   const tasks = files.map((file, fileIndex) => async () => {
@@ -3078,22 +3078,20 @@ async function handlePhotoFiles(e) {
       _idbDeletePhoto(idbId);
       idbId = compressedIdbId;
 
-      // Write Firestore pending marker
-      if (currentUser) {
-        try {
-          const markerRef = await db.collection('_pendingPhotoUploads').add({
+      // Write Firestore pending marker AND run the upload CONCURRENTLY.
+      // The marker is a safety net only — it does NOT need to finish before the upload starts.
+      const markerPromise = currentUser
+        ? db.collection('_pendingPhotoUploads').add({
             userId: currentUser.uid,
             vehicleId: capturedVehicle.id,
             vehiclePlate: capturedVehicle.plate || '',
             idbId: idbId,
             capturedDate: capturedDate,
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-          fsMarkerId = markerRef.id;
-        } catch(markerErr) { console.warn('Pending marker write failed:', markerErr); }
-      }
+          }).then(ref => { fsMarkerId = ref.id; }).catch(e => console.warn('Pending marker write failed:', e))
+        : Promise.resolve();
 
-      // Upload with 1 retry on transient network failure
+      // Upload with 1 retry on transient network failure (runs in parallel with marker write)
       let uploadErr = null;
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
@@ -3105,6 +3103,8 @@ async function handlePhotoFiles(e) {
           if (attempt < 2) await new Promise(r => setTimeout(r, 3000));
         }
       }
+      // Ensure marker write has settled before we try to delete it
+      await markerPromise;
       if (uploadErr) throw uploadErr;
 
       // Upload succeeded — remove safety net
@@ -3125,7 +3125,7 @@ async function handlePhotoFiles(e) {
     }
   });
 
-  const allDone = _runWithConcurrency(tasks, 4);
+  const allDone = _runWithConcurrency(tasks, 6);
 
   // Refresh photos for the current date when all uploads finish
   // Also schedule a second refresh after 2.5s to catch any Firestore indexing delay
@@ -3791,7 +3791,7 @@ function updateCameraUploadBar() {
 let storageWarningShown = false;
 
 // Stall guard: if any worker has been running > 90s, reset the active-worker counter
-const MAX_CAMERA_WORKERS = 3; // upload 3 photos simultaneously from camera/resumed queue
+const MAX_CAMERA_WORKERS = 4; // upload 4 photos simultaneously from camera/resumed queue
 let _cameraActiveWorkers = 0;
 let _cameraWorkerStartedAt = 0;
 
