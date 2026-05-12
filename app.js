@@ -2938,6 +2938,15 @@ async function handlePhotoFiles(e) {
   bgUploadShow(total);
   e.target.value = '';
 
+  // ── STEP 1: Save raw files to IDB immediately ───────────────────────────────
+  // This happens BEFORE compression and BEFORE any network activity.
+  // If the browser is closed or crashes right after the file picker closes,
+  // every photo is already safe in IndexedDB and will be retried next session.
+  const rawIdbIds = await Promise.all(
+    files.map(file => _idbSavePhoto(file, capturedVehicle, capturedDate, /*raw=*/true))
+  );
+  // ────────────────────────────────────────────────────────────────────────────
+
   // Add thumbnail previews immediately (UI feedback before upload completes)
   const queue = $('photo-queue');
   const thumbMap = new Map();
@@ -2956,20 +2965,20 @@ async function handlePhotoFiles(e) {
   });
 
   // Upload all files in parallel (background)
-  // Each file is saved to IndexedDB BEFORE upload so no photo is permanently lost
-  // if the network drops or iOS backgrounds the app mid-upload.
-  const uploadPromises = files.map(async file => {
+  const uploadPromises = files.map(async (file, fileIndex) => {
     const { item, statusIcon } = thumbMap.get(file);
-    let idbId = null;
+    let idbId = rawIdbIds[fileIndex]; // start with raw IDB entry
     let fsMarkerId = null;
     try {
       const compressed = await compressImage(file);
 
-      // ── Safety net ─────────────────────────────────────────────
-      // Persist to IDB first. If the upload below fails for any reason,
-      // the photo stays in IDB and resumeAllPendingUploads() will retry
-      // automatically the next time the app comes to the foreground.
-      idbId = await _idbSavePhoto(compressed, capturedVehicle, capturedDate);
+      // Replace the raw IDB entry with the compressed blob:
+      // save compressed FIRST so we're never without a backup, then delete raw.
+      const compressedIdbId = await _idbSavePhoto(compressed, capturedVehicle, capturedDate, /*raw=*/false);
+      _idbDeletePhoto(idbId);
+      idbId = compressedIdbId;
+
+      // Write Firestore pending marker
       if (currentUser) {
         try {
           const markerRef = await db.collection('_pendingPhotoUploads').add({
@@ -2983,7 +2992,6 @@ async function handlePhotoFiles(e) {
           fsMarkerId = markerRef.id;
         } catch(markerErr) { console.warn('Pending marker write failed:', markerErr); }
       }
-      // ────────────────────────────────────────────────────────────
 
       await uploadPhoto(compressed, capturedVehicle, capturedDate);
 
@@ -3001,7 +3009,7 @@ async function handlePhotoFiles(e) {
       statusIcon.className = 'status-icon status-error';
       statusIcon.textContent = '✗';
       bgUploadTick(false);
-      // Photo stays in IDB. Next visibilitychange → resumeAllPendingUploads() will retry.
+      // Photo stays in IDB (raw or compressed). resumeAllPendingUploads() will retry on next open.
     }
   });
 
@@ -3097,7 +3105,9 @@ function _openPhotoDB() {
   });
 }
 
-async function _idbSavePhoto(blob, vehicle, capturedDate) {
+// raw=true means the blob has NOT been compressed yet (e.g. raw file-picker file saved
+// before compression starts). On resume, processCameraQueue will compress it first.
+async function _idbSavePhoto(blob, vehicle, capturedDate, raw = false) {
   try {
     const db = await _openPhotoDB();
     return await new Promise((resolve, reject) => {
@@ -3107,6 +3117,7 @@ async function _idbSavePhoto(blob, vehicle, capturedDate) {
         vehiclePlate: vehicle.plate || '',
         blob,
         capturedDate: capturedDate || null,
+        raw: raw,
         createdAt: Date.now(),
       });
       req.onsuccess = () => resolve(req.result);  // auto-incremented idbId
@@ -3378,7 +3389,7 @@ async function resumePendingUploads(vehicle) {
 
     toast(`📤 Resuming ${toResume.length} unfinished upload${toResume.length !== 1 ? 's' : ''} for ${vehicle.plate}…`, 'info');
     toResume.forEach(p => {
-      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, retries: 0 });
+      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, raw: p.raw || false, retries: 0 });
       cameraTotalQueued++;
     });
     updateCameraUploadBar();
@@ -3415,7 +3426,7 @@ async function resumeAllPendingUploads() {
       // Find the vehicle object from cache; fall back to a minimal stub so upload still works
       const vehicle = vehiclesCache.find(v => v.id === p.vehicleId)
         || { id: p.vehicleId, plate: p.vehiclePlate || p.vehicleId };
-      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, retries: 0 });
+      cameraUploadQueue.push({ blob: p.blob, vehicle, idbId: p.idbId, capturedDate: p.capturedDate || null, raw: p.raw || false, retries: 0 });
       cameraTotalQueued++;
     });
     updateCameraUploadBar();
@@ -3689,6 +3700,27 @@ async function processCameraQueue() {
       const item = cameraUploadQueue[0];
       _uploadingStartedAt = Date.now(); // reset stall timer per-item
       try {
+        // If this is a raw (uncompressed) file-picker entry from a previous session,
+        // compress it now before uploading. Swap the IDB entry to the compressed blob
+        // so future retries don't re-compress.
+        if (item.raw) {
+          try {
+            const compressed = await compressBlob(item.blob, 1920, 0.82);
+            const newIdbId = await _idbSavePhoto(compressed, item.vehicle, item.capturedDate, false);
+            _idbDeletePhoto(item.idbId); // delete raw entry after compressed is safely saved
+            item.blob = compressed;
+            item.idbId = newIdbId;
+            item.raw = false;
+          } catch (compressErr) {
+            // Can't compress — discard and move on; nothing else we can do
+            console.error('Could not compress raw IDB photo, discarding:', compressErr);
+            _idbDeletePhoto(item.idbId);
+            cameraUploadQueue.shift();
+            bgUploadTick(false);
+            continue;
+          }
+        }
+
         const url = await uploadPhoto(item.blob, item.vehicle, item.capturedDate);
         cameraUploadQueue.shift();          // remove only on success
         cameraUploadedUrls.push(url);
