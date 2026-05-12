@@ -2602,6 +2602,14 @@ async function openVehiclePage(vid) {
   $('btn-add-maintenance').style.display = canMaintain ? '' : 'none';
   $('mileage-edit-row').style.display = canMaintain ? '' : 'none';
 
+  // Ownership row — admin/manager only
+  const ownershipRow = $('vehicle-ownership-row');
+  if (ownershipRow) {
+    ownershipRow.style.display = canMaintain ? '' : 'none';
+    const ownerSel = $('vehicle-ownership-select');
+    if (ownerSel) ownerSel.value = selectedVehicle.ownershipType || '';
+  }
+
   // Show notes section
   $('notes-section').style.display = 'block';
 
@@ -2632,6 +2640,7 @@ async function openVehiclePage(vid) {
   // Load maintenance data
   loadMileage(vid);
   loadMaintenanceHistory(vid);
+  loadProviderScoreboard();
   loadVehicleNotes(vid);
 
   // Load compliance data
@@ -2865,11 +2874,13 @@ $('file-input').addEventListener('change', handlePhotoFiles);
 
 let bgUploadTotal = 0;
 let bgUploadDone = 0;
+let bgUploadFailed = 0;
 let bgUploadActive = false;
 
 function bgUploadShow(total) {
   bgUploadTotal = total;
   bgUploadDone = 0;
+  bgUploadFailed = 0;
   bgUploadActive = true;
   const toast = $('bg-upload-toast');
   if (toast) {
@@ -2883,6 +2894,7 @@ function bgUploadShow(total) {
 
 function bgUploadTick(success) {
   bgUploadDone++;
+  if (!success) bgUploadFailed++;
   const pct = Math.round((bgUploadDone / bgUploadTotal) * 100);
   const fillEl = $('bg-upload-fill');
   const textEl = $('bg-upload-text');
@@ -2890,11 +2902,22 @@ function bgUploadTick(success) {
   if (textEl) textEl.textContent = `${bgUploadDone} / ${bgUploadTotal}`;
   if (bgUploadDone >= bgUploadTotal) {
     bgUploadActive = false;
-    $('bg-upload-title').textContent = `✅ Upload complete`;
-    setTimeout(() => {
-      const t = $('bg-upload-toast');
-      if (t) t.style.display = 'none';
-    }, 3000);
+    const succeeded = bgUploadDone - bgUploadFailed;
+    if (bgUploadFailed > 0) {
+      $('bg-upload-title').textContent = `⚠️ ${bgUploadFailed} failed — please retake`;
+      $('bg-upload-fill').style.background = '#f59e0b';
+      setTimeout(() => {
+        const t = $('bg-upload-toast');
+        if (t) t.style.display = 'none';
+        if ($('bg-upload-fill')) $('bg-upload-fill').style.background = '';
+      }, 7000);
+    } else {
+      $('bg-upload-title').textContent = `✅ Upload complete`;
+      setTimeout(() => {
+        const t = $('bg-upload-toast');
+        if (t) t.style.display = 'none';
+      }, 3000);
+    }
   }
 }
 
@@ -2950,9 +2973,17 @@ async function handlePhotoFiles(e) {
   });
 
   // Refresh photos for the current date when all uploads finish
+  // Also schedule a second refresh after 2s to catch any Firestore indexing delay
   Promise.all(uploadPromises).then(async () => {
     if (capturedVehicle && selectedVehicle && capturedVehicle.id === selectedVehicle.id) {
       await loadPhotosForDate(capturedVehicle.id, capturedDate);
+      // Second pass for Firestore eventual consistency
+      setTimeout(async () => {
+        if (selectedVehicle && capturedVehicle.id === selectedVehicle.id) {
+          await loadPhotosForDate(capturedVehicle.id, todayDateString());
+          loadPhotoDates(capturedVehicle.id, todayDateString());
+        }
+      }, 2500);
     }
   });
 }
@@ -4608,6 +4639,11 @@ $('btn-save-location').addEventListener('click', async () => {
   // If vehicle was on-trip, private-trip, or repair-shop and now returning home, flag for cleaning
   // (but NEVER set cleaning/damage flags on excluded vehicles)
   const wasAtRepair = selectedVehicle.tripStatus === 'repair-shop';
+
+  // Save ownership type
+  const ownershipVal = $('vehicle-ownership-select') ? $('vehicle-ownership-select').value : '';
+  if (ownershipVal) updateData.ownershipType = ownershipVal;
+  else updateData.ownershipType = firebase.firestore.FieldValue.delete();
   const wasOnTrip = ['on-trip', 'private-trip'].includes(selectedVehicle.tripStatus);
   const nowHome = tripStatus === 'home';
   const nowReturnFromRepair = wasAtRepair && tripStatus !== 'repair-shop';
@@ -4632,6 +4668,8 @@ $('btn-save-location').addEventListener('click', async () => {
     await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
     // Update local cache
     Object.assign(selectedVehicle, { homeLocation, tripStatus, location: updateData.location });
+    if (ownershipVal) selectedVehicle.ownershipType = ownershipVal;
+    else delete selectedVehicle.ownershipType;
     if (tripReturnVal && (tripStatus === 'on-trip' || tripStatus === 'repair-shop')) {
       selectedVehicle.tripReturnDate = firebase.firestore.Timestamp.fromDate(new Date(tripReturnVal + ':00-10:00'));
     } else {
@@ -6268,6 +6306,7 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-invoice-filename').textContent = 'No file chosen';
   $('m-invoice-preview-wrap').style.display = 'none';
   $('m-invoice-preview').src = '';
+  loadProviderSuggestions();
   setTimeout(() => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
 });
 
@@ -6540,6 +6579,12 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     }
 
     toast('Maintenance record saved!', 'success');
+
+    // Update service provider aggregate in Firestore
+    if (location) {
+      _updateServiceProvider(location, date, cost, record.supplierRating || null).catch(() => {});
+    }
+
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
     clearStarPickers($('maintenance-form'));
@@ -6550,6 +6595,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     $('m-invoice-preview-wrap').style.display = 'none';
     $('m-invoice-preview').src = '';
     loadMaintenanceHistory(selectedVehicle.id);
+    loadProviderScoreboard();
     updateRecommendedServices(selectedVehicle.id);
   } catch (err) {
     console.error('Save maintenance error:', err);
@@ -6646,6 +6692,99 @@ window.deleteMaintenanceRecord = async function(docId) {
     toast('Failed to delete record.', 'error');
   }
 };
+
+// ================================================================
+// SERVICE PROVIDER MEMORY & SCOREBOARD
+// ================================================================
+
+// Normalize a provider name to use as a Firestore doc key
+function _providerKey(name) {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').substring(0, 80);
+}
+
+// Update (or create) a serviceProviders aggregate doc after saving a record
+async function _updateServiceProvider(name, date, cost, supplierRating) {
+  if (!name) return;
+  const key = _providerKey(name);
+  if (!key) return;
+  const ref = db.collection('serviceProviders').doc(key);
+  const inc = firebase.firestore.FieldValue.increment;
+  const update = {
+    name: name.trim(),
+    serviceCount: inc(1),
+    lastUsed: date,
+  };
+  if (cost && cost > 0) update.totalCost = inc(cost);
+  if (supplierRating) {
+    if (supplierRating.communication)  { update['ratComm_sum']   = inc(supplierRating.communication);   update['ratComm_cnt']   = inc(1); }
+    if (supplierRating.price)          { update['ratPrice_sum']  = inc(supplierRating.price);            update['ratPrice_cnt']  = inc(1); }
+    if (supplierRating.fixedCorrectly) { update['ratFixed_sum']  = inc(supplierRating.fixedCorrectly);   update['ratFixed_cnt']  = inc(1); }
+  }
+  try {
+    await ref.set(update, { merge: true });
+  } catch(e) { console.warn('Provider update failed:', e); }
+}
+
+// Populate the datalist with known provider names
+async function loadProviderSuggestions() {
+  try {
+    const dl = $('provider-suggestions');
+    if (!dl) return;
+    const snap = await db.collection('serviceProviders').orderBy('serviceCount', 'desc').limit(50).get();
+    dl.innerHTML = '';
+    snap.forEach(doc => {
+      const d = doc.data();
+      const opt = document.createElement('option');
+      opt.value = d.name || doc.id;
+      dl.appendChild(opt);
+    });
+  } catch(e) { /* non-critical */ }
+}
+
+// Render the provider scoreboard below maintenance history
+async function loadProviderScoreboard() {
+  const wrap = $('provider-scoreboard-wrap');
+  const list = $('provider-scoreboard-list');
+  if (!wrap || !list) return;
+  try {
+    const snap = await db.collection('serviceProviders').orderBy('serviceCount', 'desc').limit(100).get();
+    if (snap.empty) { wrap.style.display = 'none'; return; }
+    wrap.style.display = '';
+    const fmtStar = (sum, cnt) => cnt > 0 ? (sum / cnt).toFixed(1) : null;
+    const rows = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      const comm  = fmtStar(d.ratComm_sum  || 0, d.ratComm_cnt  || 0);
+      const price = fmtStar(d.ratPrice_sum || 0, d.ratPrice_cnt || 0);
+      const fixed = fmtStar(d.ratFixed_sum || 0, d.ratFixed_cnt || 0);
+      const rated = [comm, price, fixed].filter(Boolean);
+      const overall = rated.length ? (rated.reduce((s, v) => s + parseFloat(v), 0) / rated.length).toFixed(1) : null;
+      rows.push({ name: d.name || doc.id, serviceCount: d.serviceCount || 0, totalCost: d.totalCost || 0, lastUsed: d.lastUsed || '', comm, price, fixed, overall });
+    });
+    const starBar = v => {
+      if (!v) return '<span style="color:#d1d5db;">No rating</span>';
+      const full = Math.round(parseFloat(v));
+      const stars = '★'.repeat(full) + '☆'.repeat(5 - full);
+      return `<span class="provider-stars">${stars}</span> <span class="provider-score">${v}</span>`;
+    };
+    list.innerHTML = `
+      <div class="provider-sb-grid">
+        ${rows.map(r => `
+          <div class="provider-sb-card ${r.overall && parseFloat(r.overall) >= 4 ? 'provider-sb-top' : ''}">
+            <div class="provider-sb-name">${escapeHtml(r.name)}</div>
+            <div class="provider-sb-meta">${r.serviceCount} service${r.serviceCount !== 1 ? 's' : ''} · Last: ${r.lastUsed || '—'}${r.totalCost > 0 ? ' · $' + r.totalCost.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2}) + ' total spent' : ''}</div>
+            ${r.overall ? `<div class="provider-sb-overall">Overall: ${starBar(r.overall)}</div>` : ''}
+            <div class="provider-sb-ratings">
+              ${r.comm  ? `<span class="provider-sb-cat"><span class="provider-sb-cat-label">📞 Comm</span>${starBar(r.comm)}</span>` : ''}
+              ${r.price ? `<span class="provider-sb-cat"><span class="provider-sb-cat-label">💰 Price</span>${starBar(r.price)}</span>` : ''}
+              ${r.fixed ? `<span class="provider-sb-cat"><span class="provider-sb-cat-label">✅ Fixed</span>${starBar(r.fixed)}</span>` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch(e) { console.warn('Provider scoreboard error:', e); wrap.style.display = 'none'; }
+}
 
 // ================================================================
 // EDIT MAINTENANCE RECORD MODAL
@@ -6839,10 +6978,13 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
     await db.collection('maintenance').doc(_editMaintDocId).update(updateData);
     // Reset removal sentinel
     $('em-invoice-existing-img').dataset.removed = '';
+    // Update provider aggregate if location provided
+    if (location) _updateServiceProvider(location, date, cost, updateData.supplierRating || null).catch(() => {});
     toast('Record updated!', 'success');
     $('edit-maint-overlay').style.display = 'none';
     if (selectedVehicle) {
       loadMaintenanceHistory(selectedVehicle.id);
+      loadProviderScoreboard();
       updateRecommendedServices(selectedVehicle.id);
     }
   } catch(err) {
@@ -13073,7 +13215,7 @@ window.deleteExpense = async function(docId) {
 // FINANCE TABS
 // ================================================================
 window.switchFinanceTab = function(tab) {
-  ['overview','revenue','expenses','pl'].forEach(t => {
+  ['overview','revenue','expenses','pl','ownercut'].forEach(t => {
     const btn = $('ftab-' + t);
     const content = $('finance-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
@@ -13083,6 +13225,7 @@ window.switchFinanceTab = function(tab) {
   if (tab === 'revenue') { const el = $('fin-rev-month'); if (el && !el.value) el.value = _todayMonthVal(); loadFinanceRevenue(); }
   if (tab === 'expenses') loadExpenseWidget();
   if (tab === 'pl') { const el = $('fin-pl-month'); if (el && !el.value) el.value = _todayMonthVal(); loadFinancePL(); }
+  if (tab === 'ownercut') { const el = $('fin-ownercut-month'); if (el && !el.value) el.value = _todayMonthVal(); }
 };
 
 async function loadFinanceOverview() {
@@ -13459,6 +13602,144 @@ window.loadFinancePL = async function() {
   }
 };
 
+// ================================================================
+// OWNER CUT REPORT
+// ================================================================
+
+// Label map for ownershipType codes
+const OWNER_LABELS = {
+  'matt-100':            { owners: [{ name: 'Matt', pct: 1.0 }] },
+  'matt-alondra-50-50':  { owners: [{ name: 'Matt', pct: 0.5 }, { name: 'Alondra', pct: 0.5 }] },
+};
+const DEFAULT_OWNERSHIP = 'matt-100'; // if not set on a vehicle, default to Matt 100%
+
+window.loadOwnerCutReport = async function() {
+  const body = $('finance-ownercut-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  const { start, end, label } = _finMonthRange('fin-ownercut-month');
+  try {
+    // Revenue by vehicle (same queries as P&L)
+    let revSnap = { forEach: () => {} };
+    try { revSnap = await db.collection('tripLogs').where('startDate','>=',start).where('startDate','<=',end).get(); } catch(e) {}
+    const revByV = {};
+    revSnap.forEach(doc => {
+      const d = doc.data();
+      if (d.cancelled) return;
+      if (!revByV[d.vehicleId]) revByV[d.vehicleId] = { plate: d.vehiclePlate, turo: 0, priv: 0, extras: 0 };
+      const rev = Number(d.revenue) || 0;
+      if (d.tripType === 'private-trip') revByV[d.vehicleId].priv += rev; else revByV[d.vehicleId].turo += rev;
+      const extArr = Array.isArray(d.extras) ? d.extras
+        : (d.extrasType && d.extrasAmount ? [{ type: d.extrasType, amount: Number(d.extrasAmount) }] : []);
+      revByV[d.vehicleId].extras += extArr.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+    });
+
+    const expSnap = await db.collection('expenses').where('date','>=',start).where('date','<=',end).get();
+    const expByV = {}; let generalExp = 0;
+    expSnap.forEach(doc => {
+      const d = doc.data();
+      const amt = Number(d.amount) || 0;
+      if (d.vehicleId) expByV[d.vehicleId] = (expByV[d.vehicleId]||0) + amt;
+      else generalExp += amt;
+    });
+
+    const maintSnap = await db.collection('maintenance').where('date','>=',start).where('date','<=',end).get();
+    const maintByV = {};
+    maintSnap.forEach(doc => {
+      const d = doc.data();
+      const cost = Number(d.cost) || 0;
+      if (cost && d.vehicleId) maintByV[d.vehicleId] = (maintByV[d.vehicleId]||0) + cost;
+    });
+
+    // Aggregate per owner
+    const ownerTotals = {}; // { 'Matt': { revenue, expenses, maint, net } }
+    const addOwner = (name, rev, exp, maint) => {
+      if (!ownerTotals[name]) ownerTotals[name] = { revenue: 0, expenses: 0, maint: 0 };
+      ownerTotals[name].revenue  += rev;
+      ownerTotals[name].expenses += exp;
+      ownerTotals[name].maint    += maint;
+    };
+
+    // Per-vehicle rows for the detail table
+    const vehicleRows = [];
+    const allIds = new Set([...Object.keys(revByV),...Object.keys(expByV),...Object.keys(maintByV)]);
+    allIds.forEach(vid => {
+      const rv = revByV[vid] || { plate: '', turo: 0, priv: 0, extras: 0 };
+      const v = vehiclesCache.find(x => x.id === vid);
+      const plate = rv.plate || v?.plate || vid;
+      const ownershipKey = (v && v.ownershipType) || DEFAULT_OWNERSHIP;
+      const ownerCfg = OWNER_LABELS[ownershipKey] || OWNER_LABELS[DEFAULT_OWNERSHIP];
+      const totalRev = rv.turo + rv.priv + (rv.extras || 0);
+      const expenses  = expByV[vid] || 0;
+      const maint     = maintByV[vid] || 0;
+      const net       = totalRev - expenses - maint;
+      ownerCfg.owners.forEach(o => {
+        addOwner(o.name, totalRev * o.pct, expenses * o.pct, maint * o.pct);
+      });
+      const ownerLabel = ownerCfg.owners.map(o => `${Math.round(o.pct*100)}% ${o.name}`).join(' / ');
+      vehicleRows.push({ plate, totalRev, expenses, maint, net, ownerLabel, ownerCfg });
+    });
+
+    // Split general expenses across owners proportional to vehicle count
+    const totalVehicles = vehicleRows.length || 1;
+    const mattVehicles  = vehicleRows.filter(r => r.ownerLabel.includes('Matt')).length;
+    if (generalExp > 0) {
+      // Simple split: proportional to # of vehicles each owner has
+      const allOwnerNames = [...new Set(vehicleRows.flatMap(r => r.ownerCfg.owners.map(o => o.name)))];
+      allOwnerNames.forEach(name => {
+        const myVehicles = vehicleRows.filter(r => r.ownerCfg.owners.some(o => o.name === name)).length;
+        const share = totalVehicles > 0 ? (myVehicles / totalVehicles) * generalExp : 0;
+        if (!ownerTotals[name]) ownerTotals[name] = { revenue: 0, expenses: 0, maint: 0 };
+        ownerTotals[name].expenses += share;
+      });
+    }
+
+    vehicleRows.sort((a,b) => b.net - a.net);
+    const fmtR = n => '$' + Math.abs(n).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const fmtNet = n => `<span class="${n >= 0 ? 'fin-td-net profit' : 'fin-td-net loss'}">${n >= 0 ? '+' : '−'}${fmtR(n)}</span>`;
+
+    // Owner summary cards
+    const ownerCards = Object.entries(ownerTotals).map(([name, t]) => {
+      const net = t.revenue - t.expenses - t.maint;
+      return `
+        <div class="owner-cut-card ${net >= 0 ? 'owner-cut-profit' : 'owner-cut-loss'}">
+          <div class="owner-cut-name">👤 ${escapeHtml(name)}</div>
+          <div class="owner-cut-kpi">
+            <div><span class="owner-cut-label">Revenue</span><span class="owner-cut-val">${fmtR(t.revenue)}</span></div>
+            <div><span class="owner-cut-label">Expenses</span><span class="owner-cut-val">−${fmtR(t.expenses)}</span></div>
+            <div><span class="owner-cut-label">Maintenance</span><span class="owner-cut-val">−${fmtR(t.maint)}</span></div>
+            <div class="owner-cut-net-row"><span class="owner-cut-label">NET</span>${fmtNet(net)}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `
+      <div class="owner-cut-header">${label}</div>
+      <div class="owner-cut-cards">${ownerCards}</div>
+      ${generalExp > 0 ? `<p class="hint" style="margin:0 0 12px;font-size:0.8rem;">* General/fleet expenses ($${fmtR(generalExp)}) split proportionally by vehicle count.</p>` : ''}
+      <details class="owner-cut-detail-toggle">
+        <summary style="cursor:pointer;font-size:0.85rem;font-weight:600;color:#6b7280;margin-bottom:8px;">▶ Vehicle Detail Breakdown</summary>
+        <table class="fin-table" style="margin-top:6px;">
+          <thead><tr><th>Vehicle</th><th>Ownership</th><th>Revenue</th><th>Expenses</th><th>Maint.</th><th>Net P&amp;L</th></tr></thead>
+          <tbody>
+            ${vehicleRows.map(r => `<tr>
+              <td><strong>${escapeHtml(r.plate)}</strong></td>
+              <td style="font-size:0.82rem;color:#6b7280;">${escapeHtml(r.ownerLabel)}</td>
+              <td class="fin-td-rev">${r.totalRev > 0 ? fmtR(r.totalRev) : '—'}</td>
+              <td class="fin-td-exp">${r.expenses > 0 ? fmtR(r.expenses) : '—'}</td>
+              <td class="fin-td-maint">${r.maint > 0 ? fmtR(r.maint) : '—'}</td>
+              <td>${fmtNet(r.net)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </details>
+    `;
+  } catch(e) {
+    console.error('Owner cut error:', e);
+    body.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load owner cut report.</p>';
+  }
+};
+
 // ── Multi-extras helpers ─────────────────────────────────────────────────────
 const EXTRAS_OPTIONS_HTML = `
   <option value="">-- None --</option>
@@ -13505,7 +13786,7 @@ window.openFinance = function() {
 
   const isAdminOrManager = currentUserRole === 'admin' || currentUserRole === 'manager';
   // Show/hide data tabs based on role
-  ['ftab-overview', 'ftab-revenue', 'ftab-pl'].forEach(id => {
+  ['ftab-overview', 'ftab-revenue', 'ftab-pl', 'ftab-ownercut'].forEach(id => {
     const el = $(id);
     if (el) el.style.display = isAdminOrManager ? '' : 'none';
   });

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260504a">
+  <link rel="stylesheet" href="style.css?v=20260512a">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -364,6 +364,16 @@
           </div>
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
           <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>
+
+          <!-- Ownership row (admin/manager only) -->
+          <div id="vehicle-ownership-row" class="loc-field" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid #e5e7eb;">
+            <label for="vehicle-ownership-select" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;">👥 Ownership</label>
+            <select id="vehicle-ownership-select" class="vehicle-location-select" style="max-width:260px;">
+              <option value="">— Not set —</option>
+              <option value="matt-100">100% Matt</option>
+              <option value="matt-alondra-50-50">50% Matt / 50% Alondra</option>
+            </select>
+          </div>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
         <div id="stale-alert" class="stale-alert" style="display:none;"></div>
@@ -584,7 +594,8 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="m-location">Where Serviced</label>
-                <input type="text" id="m-location" placeholder="e.g. Jiffy Lube Kailua" maxlength="100">
+                <input type="text" id="m-location" placeholder="e.g. Jiffy Lube Kailua" maxlength="100" list="provider-suggestions" autocomplete="off">
+                <datalist id="provider-suggestions"></datalist>
               </div>
               <div class="form-group">
                 <label for="m-notes">Notes</label>
@@ -682,6 +693,17 @@
 
         <!-- Maintenance history -->
         <div id="maintenance-history" class="data-list"></div>
+
+        <!-- Provider Scoreboard -->
+        <div id="provider-scoreboard-wrap" style="display:none; margin-top:16px;">
+          <div class="collapsible-header" onclick="toggleSection('provider-scoreboard-body','provider-scoreboard-toggle')" style="cursor:pointer;">
+            <div class="collapsible-title"><h4 style="margin:0;">🏆 Provider Scoreboard</h4></div>
+            <button class="collapse-btn" id="provider-scoreboard-toggle">&#8722;</button>
+          </div>
+          <div id="provider-scoreboard-body">
+            <div id="provider-scoreboard-list" class="provider-scoreboard-list"></div>
+          </div>
+        </div>
       </section>
 
       <!-- ====== Edit Maintenance Modal ====== -->
@@ -716,7 +738,7 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="em-location">Where Serviced</label>
-                <input type="text" id="em-location" placeholder="e.g. Jiffy Lube" maxlength="100">
+                <input type="text" id="em-location" placeholder="e.g. Jiffy Lube" maxlength="100" list="provider-suggestions" autocomplete="off">
               </div>
               <div class="form-group">
                 <label for="em-notes">Notes</label>
@@ -1694,6 +1716,7 @@
         <button class="finance-tab" id="ftab-revenue" onclick="switchFinanceTab('revenue')">💰 Revenue</button>
         <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
         <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
+        <button class="finance-tab" id="ftab-ownercut" onclick="switchFinanceTab('ownercut')">👥 Owner Cut</button>
       </div>
       <div class="finance-body">
 
@@ -1837,6 +1860,16 @@
             <button class="btn btn-sm btn-primary" onclick="loadFinancePL()">Load</button>
           </div>
           <div id="finance-pl-body"></div>
+        </div>
+
+        <!-- ===== OWNER CUT TAB ===== -->
+        <div id="finance-tab-ownercut" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="fin-ownercut-month" class="form-select exp-input" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadOwnerCutReport()">Load</button>
+          </div>
+          <div id="finance-ownercut-body"><p class="hint" style="padding:24px;text-align:center;">Select a month and click Load.</p></div>
         </div>
 
       </div><!-- finance-body -->

@@ -4448,6 +4448,31 @@ body {
 .fin-pl-net { font-size: 1rem; font-weight: 800; padding: 3px 12px; border-radius: 99px; }
 .fin-pl-net.profit { background: #f0fdf4; color: #166534; }
 .fin-pl-net.loss   { background: #fef2f2; color: #991b1b; }
+/* Owner Cut Report */
+.owner-cut-header { font-weight: 700; font-size: 0.95rem; margin-bottom: 12px; color: #374151; }
+.owner-cut-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.owner-cut-card { flex: 1; min-width: 200px; border-radius: 10px; padding: 14px 16px; border: 1.5px solid #e5e7eb; background: #fff; }
+.owner-cut-card.owner-cut-profit { border-color: #86efac; background: #f0fdf4; }
+.owner-cut-card.owner-cut-loss   { border-color: #fca5a5; background: #fef2f2; }
+.owner-cut-name { font-weight: 700; font-size: 1rem; margin-bottom: 10px; color: #1f2937; }
+.owner-cut-kpi { display: flex; flex-direction: column; gap: 4px; font-size: 0.88rem; }
+.owner-cut-kpi > div { display: flex; justify-content: space-between; align-items: center; }
+.owner-cut-label { color: #6b7280; }
+.owner-cut-val { font-weight: 600; color: #374151; }
+.owner-cut-net-row { padding-top: 6px; border-top: 1px solid #e5e7eb; margin-top: 4px; font-weight: 700; }
+.owner-cut-detail-toggle { margin-top: 8px; }
+/* Provider Scoreboard */
+.provider-sb-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.provider-sb-card { flex: 1; min-width: 200px; max-width: 320px; border: 1.5px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; background: #fff; }
+.provider-sb-card.provider-sb-top { border-color: #fcd34d; background: #fffbeb; }
+.provider-sb-name { font-weight: 700; font-size: 0.95rem; color: #1f2937; margin-bottom: 4px; }
+.provider-sb-meta { font-size: 0.78rem; color: #6b7280; margin-bottom: 6px; }
+.provider-sb-overall { font-size: 0.85rem; font-weight: 600; color: #374151; margin-bottom: 6px; }
+.provider-sb-ratings { display: flex; flex-wrap: wrap; gap: 6px; }
+.provider-sb-cat { display: flex; align-items: center; gap: 4px; font-size: 0.78rem; background: #f3f4f6; border-radius: 6px; padding: 2px 7px; }
+.provider-sb-cat-label { color: #6b7280; font-size: 0.72rem; }
+.provider-stars { color: #f59e0b; font-size: 0.82rem; letter-spacing: 1px; }
+.provider-score { font-weight: 700; color: #374151; font-size: 0.78rem; }
 /* Expense filter row */
 .exp-filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .exp-vehicle-tag { display: inline-block; background: #eff6ff; color: #1d4ed8; border-radius: 99px; font-size: 0.72rem; font-weight: 700; padding: 1px 7px; margin-right: 5px; vertical-align: middle; }
