@@ -3443,29 +3443,32 @@ async function startCameraStream() {
 
   cameraStream = stream;
 
-  // Detect hardware zoom support (Android Chrome) and reset zoom to minimum.
-  // On iOS Safari, getCapabilities() won't include 'zoom' — we rely on software zoom instead.
+  // Reset zoom state before reading capabilities — ensures no stale values from previous stream.
+  // cameraZoomMin is intentionally NEVER updated from hardware caps: the user must always be able
+  // to return to 1× (unzoomed), regardless of what the hardware reports as its minimum.
   _cameraHwZoom = false;
+  cameraZoomMin = 1.0;
+  cameraZoomLevel = 1.0;
+
   const [track] = cameraStream.getVideoTracks();
   if (track && track.getCapabilities) {
     try {
       const caps = track.getCapabilities();
       if (caps.zoom) {
         _cameraHwZoom = true;
-        cameraZoomMin = caps.zoom.min;
         cameraZoomMax = caps.zoom.max;
       }
-      // Apply torch state if supported
+      // Apply zoom=1 and torch state together
       const constraintUpdates = {};
-      if (caps.zoom) constraintUpdates.zoom = caps.zoom.min;
+      if (caps.zoom) constraintUpdates.zoom = 1;  // always force 1× — never auto-zoom
       if (caps.torch) constraintUpdates.torch = cameraFlashOn;
       if (Object.keys(constraintUpdates).length) {
         await track.applyConstraints({ advanced: [constraintUpdates] });
       }
     } catch (e) { /* zoom/torch not supported — ok */ }
   }
-  // Always reset to 1× when starting a new stream (flip, or first open)
-  cameraZoomLevel = 1.0;
+
+  // Apply both software zoom reset and update UI — cameraZoomMin is 1.0 so this is always reachable
   _applySwZoom(1.0);
   _updateZoomUI();
   updateFlashButton();
