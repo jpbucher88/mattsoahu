@@ -878,8 +878,8 @@ function sanitizePlate(plate) {
 }
 
 // Compress image before upload
-// 2560px wide at 92% quality = ~500KB-1.2MB per photo (high detail for damage docs)
-function compressImage(file, maxWidth = 2560, quality = 0.92) {
+// 1920px wide at 85% quality — good detail for damage docs, ~40% smaller than the old 2560@92% defaults
+function compressImage(file, maxWidth = 1920, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Image processing timed out — the file format may not be supported by this browser.')), 15000);
     const reader = new FileReader();
@@ -911,8 +911,9 @@ function compressImage(file, maxWidth = 2560, quality = 0.92) {
   });
 }
 
-// Compress a blob directly (used by the in-browser camera)
-function compressBlob(blob, maxWidth = 2560, quality = 0.92) {
+// Compress a blob directly (used by the in-browser camera and queue resume)
+// Defaults match the file-picker: 1920px / 85% quality
+function compressBlob(blob, maxWidth = 1920, quality = 0.85) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Image processing timed out.')), 15000);
     const url = URL.createObjectURL(blob);
@@ -2886,12 +2887,6 @@ async function _runWithConcurrency(tasks, limit) {
   await Promise.all(Array.from({ length: Math.min(limit, tasks.length) }, worker));
 }
 
-let bgUploadTotal = 0;
-let bgUploadDone = 0;
-let bgUploadFailed = 0;
-let bgUploadActive = false;
-let bgUploadVehicleId = null;
-
 // ── Global upload tracker — accumulates across all vehicles so switching
 //    vehicles never resets the progress bar. Resets only when fully done.
 let _gTotal     = 0;   // total photos added across all batches in this session
@@ -3738,9 +3733,10 @@ $('camera-shutter').addEventListener('click', () => {
     cameraShotCount++;
     $('camera-count').textContent = `${cameraShotCount} photo${cameraShotCount !== 1 ? 's' : ''}`;
 
-    // Add thumbnail
+    // Add thumbnail — revoke URL after load to prevent memory leak
     const thumbUrl = URL.createObjectURL(blob);
     const thumbImg = document.createElement('img');
+    thumbImg.onload = () => URL.revokeObjectURL(thumbUrl);
     thumbImg.src = thumbUrl;
     $('camera-thumbs').prepend(thumbImg);
 
@@ -3752,7 +3748,7 @@ $('camera-shutter').addEventListener('click', () => {
 async function queueCameraUpload(blob) {
   const capturedVehicle = selectedVehicle; // snapshot before any async gap
   const capturedDate = todayDateString();  // snapshot WHEN the photo was taken
-  const compressed = await compressBlob(blob, 1920, 0.82);
+  const compressed = await compressBlob(blob); // uses 1920px/85% defaults
   await _queuePhotoForUpload(compressed, capturedVehicle, capturedDate);
 }
 
@@ -3793,93 +3789,113 @@ function updateCameraUploadBar() {
 }
 
 let storageWarningShown = false;
-let _uploadingStartedAt = 0;  // timestamp when cameraUploading was set true
 
-// Stall guard: if cameraUploading has been true for > 90s, something is permanently stuck — force-release
+// Stall guard: if any worker has been running > 90s, reset the active-worker counter
+const MAX_CAMERA_WORKERS = 3; // upload 3 photos simultaneously from camera/resumed queue
+let _cameraActiveWorkers = 0;
+let _cameraWorkerStartedAt = 0;
+
 setInterval(() => {
-  if (cameraUploading && _uploadingStartedAt > 0 && Date.now() - _uploadingStartedAt > 90000) {
-    console.warn('Photo upload stall detected — force-releasing upload lock');
+  if (_cameraActiveWorkers > 0 && _cameraWorkerStartedAt > 0 && Date.now() - _cameraWorkerStartedAt > 90000) {
+    console.warn('Photo upload stall detected — resetting worker count');
+    _cameraActiveWorkers = 0;
     cameraUploading = false;
-    _uploadingStartedAt = 0;
+    _cameraWorkerStartedAt = 0;
+    processCameraQueue(); // attempt restart
   }
 }, 15000);
 
 const MAX_UPLOAD_RETRIES = 3;
 
-async function processCameraQueue() {
-  if (cameraUploading || cameraUploadQueue.length === 0) return;
-  cameraUploading = true;
-  _uploadingStartedAt = Date.now();
-
-  try {
-    while (cameraUploadQueue.length > 0) {
-      // Peek — don't shift yet; only remove after confirmed upload
-      const item = cameraUploadQueue[0];
-      _uploadingStartedAt = Date.now(); // reset stall timer per-item
-      try {
-        // If this is a raw (uncompressed) file-picker entry from a previous session,
-        // compress it now before uploading. Swap the IDB entry to the compressed blob
-        // so future retries don't re-compress.
-        if (item.raw) {
-          try {
-            const compressed = await compressBlob(item.blob, 1920, 0.82);
-            const newIdbId = await _idbSavePhoto(compressed, item.vehicle, item.capturedDate, false);
-            _idbDeletePhoto(item.idbId); // delete raw entry after compressed is safely saved
-            item.blob = compressed;
-            item.idbId = newIdbId;
-            item.raw = false;
-          } catch (compressErr) {
-            // Can't compress — discard and move on; nothing else we can do
-            console.error('Could not compress raw IDB photo, discarding:', compressErr);
-            _idbDeletePhoto(item.idbId);
-            cameraUploadQueue.shift();
-            _uploadTick(item.vehicle.id, false);
-            continue;
-          }
+// Drain the camera upload queue using up to MAX_CAMERA_WORKERS concurrent workers.
+// Each worker picks the next unprocessed item, uploads it, then loops.
+// Items that are currently being retried stay at the front of the queue (they have item.locked=true).
+function processCameraQueue() {
+  if (_cameraActiveWorkers >= MAX_CAMERA_WORKERS || cameraUploadQueue.length === 0) return;
+  // Spawn as many workers as we can fill up to the limit
+  const slots = MAX_CAMERA_WORKERS - _cameraActiveWorkers;
+  const available = cameraUploadQueue.filter(i => !i.locked).length;
+  const toSpawn = Math.min(slots, available);
+  for (let s = 0; s < toSpawn; s++) {
+    _cameraActiveWorkers++;
+    cameraUploading = true;
+    if (_cameraWorkerStartedAt === 0) _cameraWorkerStartedAt = Date.now();
+    _runCameraWorker().finally(() => {
+      _cameraActiveWorkers = Math.max(0, _cameraActiveWorkers - 1);
+      cameraUploading = _cameraActiveWorkers > 0;
+      if (_cameraActiveWorkers === 0) {
+        _cameraWorkerStartedAt = 0;
+        // Queue fully drained — update pending banners
+        if (selectedVehicle) {
+          _idbGetPending(selectedVehicle.id).then(p => _updatePendingBanner(p.length, selectedVehicle.plate)).catch(() => {});
         }
+        _idbGetPending(null).then(all => _updateDashboardPendingBanner(all.length)).catch(() => {});
+      }
+    });
+  }
+}
 
-        const url = await uploadPhoto(item.blob, item.vehicle, item.capturedDate);
-        cameraUploadQueue.shift();          // remove only on success
-        cameraUploadedUrls.push(url);
-        cameraUploadedCount++;
-        _idbDeletePhoto(item.idbId);       // remove from IndexedDB on success
-        // Remove Firestore pending marker on success
-        if (item.fsMarkerId) {
-          db.collection('_pendingPhotoUploads').doc(item.fsMarkerId).delete().catch(() => {});
+async function _runCameraWorker() {
+  while (true) {
+    // Pick next unlocked item
+    const item = cameraUploadQueue.find(i => !i.locked);
+    if (!item) break; // nothing left for this worker
+    item.locked = true;
+    _cameraWorkerStartedAt = Date.now();
+
+    try {
+      // If this is a raw (uncompressed) entry from a previous session, compress first.
+      if (item.raw) {
+        try {
+          const compressed = await compressBlob(item.blob);
+          const newIdbId = await _idbSavePhoto(compressed, item.vehicle, item.capturedDate, false);
+          _idbDeletePhoto(item.idbId);
+          item.blob = compressed;
+          item.idbId = newIdbId;
+          item.raw = false;
+        } catch (compressErr) {
+          console.error('Could not compress raw IDB photo, discarding:', compressErr);
+          _idbDeletePhoto(item.idbId);
+          const idx = cameraUploadQueue.indexOf(item);
+          if (idx !== -1) cameraUploadQueue.splice(idx, 1);
+          _uploadTick(item.vehicle.id, false);
+          continue; // pick next item
         }
-        item.retries = 0; // reset for next item
-        storageWarningShown = false; // allow warning again next session
-        updateCameraUploadBar();
-        _uploadTick(item.vehicle.id, true); // update global floating toast
-      } catch (uploadErr) {
-        console.error('Camera upload error:', uploadErr);
-        item.retries = (item.retries || 0) + 1;
-        if (item.retries < MAX_UPLOAD_RETRIES) {
-          // Exponential backoff: 3s, 6s before giving up to IDB
-          const delay = item.retries * 3000;
-          console.warn(`Retrying upload (attempt ${item.retries + 1}/${MAX_UPLOAD_RETRIES}) in ${delay}ms…`);
-          await new Promise(r => setTimeout(r, delay));
-          // Leave item at front of queue for retry — don't shift
-        } else {
-          // All retries exhausted — leave in IDB, remove from in-memory queue
-          cameraUploadQueue.shift();
-          _uploadTick(item.vehicle.id, false); // mark failed in global toast
-          if (!storageWarningShown) {
-            storageWarningShown = true;
-            toast('⚠️ Photo upload failed after retries — saved locally, will retry when connection improves.', 'warning');
-          }
+      }
+
+      const url = await uploadPhoto(item.blob, item.vehicle, item.capturedDate);
+      // Success — remove from queue
+      const idx = cameraUploadQueue.indexOf(item);
+      if (idx !== -1) cameraUploadQueue.splice(idx, 1);
+      cameraUploadedUrls.push(url);
+      cameraUploadedCount++;
+      _idbDeletePhoto(item.idbId);
+      if (item.fsMarkerId) {
+        db.collection('_pendingPhotoUploads').doc(item.fsMarkerId).delete().catch(() => {});
+      }
+      storageWarningShown = false;
+      updateCameraUploadBar();
+      _uploadTick(item.vehicle.id, true);
+    } catch (uploadErr) {
+      console.error('Camera upload error:', uploadErr);
+      item.retries = (item.retries || 0) + 1;
+      if (item.retries < MAX_UPLOAD_RETRIES) {
+        const delay = item.retries * 3000;
+        console.warn(`Retrying upload (attempt ${item.retries + 1}/${MAX_UPLOAD_RETRIES}) in ${delay}ms…`);
+        item.locked = false; // allow another worker to pick it up after delay
+        await new Promise(r => setTimeout(r, delay));
+        item.locked = true; // re-lock for this worker's retry
+      } else {
+        // All retries exhausted — leave in IDB, remove from queue
+        const idx = cameraUploadQueue.indexOf(item);
+        if (idx !== -1) cameraUploadQueue.splice(idx, 1);
+        _uploadTick(item.vehicle.id, false);
+        if (!storageWarningShown) {
+          storageWarningShown = true;
+          toast('⚠️ Photo upload failed after retries — saved locally, will retry when connection improves.', 'warning');
         }
       }
     }
-  } finally {
-    cameraUploading = false;              // ALWAYS release the lock
-    _uploadingStartedAt = 0;
-    // Update pending banner after queue drains
-    if (selectedVehicle) {
-      _idbGetPending(selectedVehicle.id).then(p => _updatePendingBanner(p.length, selectedVehicle.plate)).catch(() => {});
-    }
-    // Update dashboard global pending indicator
-    _idbGetPending(null).then(all => _updateDashboardPendingBanner(all.length)).catch(() => {});
   }
 }
 
