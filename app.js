@@ -3467,16 +3467,20 @@ async function startCameraStream() {
     cameraStream.getTracks().forEach(t => t.stop());
   }
 
-  // Use 'exact' facingMode to force the wide-angle (1x) lens on multi-camera iPhones
-  // Request specific resolution to avoid telephoto lens selection
-  // Fall back step by step if the device doesn't support it
+  // On iPhones with multiple rear cameras (11+), 'exact' facingMode can accidentally select
+  // the telephoto lens, making the preview appear permanently zoomed in.
+  // Fix: prefer non-exact facingMode with a 4:3 resolution hint — iOS then defaults to the
+  // main wide-angle camera. Fall back progressively. zoom is applied via applyConstraints
+  // AFTER the stream starts (non-standard in getUserMedia, causes failures if included there).
   let stream = null;
   const attempts = [
-    // Note: zoom is NOT included in getUserMedia constraints (non-standard, causes failures)
-    // It is applied via applyConstraints AFTER the stream starts
-    { video: { facingMode: { exact: cameraFacingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false },
-    { video: { facingMode: { exact: cameraFacingMode } }, audio: false },
+    // Best: non-exact + 4:3 resolution hint → iOS picks main wide-angle camera
+    { video: { facingMode: cameraFacingMode, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false },
+    // Fallback: non-exact, no resolution hint
     { video: { facingMode: cameraFacingMode }, audio: false },
+    // Fallback: exact (may still pick telephoto on some iPhones, but better than nothing)
+    { video: { facingMode: { exact: cameraFacingMode } }, audio: false },
+    // Emergency: any camera
     { video: true, audio: false },
   ];
 
