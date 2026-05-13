@@ -1,6 +1,16 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    match /vehicles/{plate}/documents/{fileName} {
+      // Allow reading any compliance/insurance documents
+      allow read: if request.auth != null;
+      // Allow PDF and image uploads up to 20 MB
+      allow write: if request.auth != null
+        && request.resource.size < 20 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*')
+            || request.resource.contentType == 'application/pdf');
+      allow delete: if request.auth != null;
+    }
     match /vehicles/{allPaths=**} {
       // Any authenticated user can read photos
       allow read: if request.auth != null;
@@ -9,6 +19,28 @@ service firebase.storage {
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
       // Any authenticated user can delete (admin check done in app layer)
+      allow delete: if request.auth != null;
+    }
+    match /messages/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.auth.uid == userId
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null && request.auth.uid == userId;
+    }
+    match /noteAttachments/{docId}/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if request.auth != null;
+    }
+    match /incidents/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
       allow delete: if request.auth != null;
     }
   }

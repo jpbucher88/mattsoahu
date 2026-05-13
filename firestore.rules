@@ -7,6 +7,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Helper: check if user can view all timeclock records
+    function canViewAllTimeclocks() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('canViewAllTimeclocks', false) == true;
+    }
+
     // Helper: get user role from users collection
     function getUserRole() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
@@ -58,6 +63,69 @@ service cloud.firestore {
     match /generalNotes/{noteId} {
       allow read: if isRegistered();
       allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+    }
+
+    // Messages (internal mailbox) - any registered user can send/read own messages
+    match /messages/{msgId} {
+      allow read: if isRegistered() && (
+        resource.data.to == request.auth.uid || resource.data.from == request.auth.uid
+      );
+      allow create: if isRegistered();
+      allow update: if isRegistered() && resource.data.to == request.auth.uid; // mark read
+      allow delete: if isRegistered() && resource.data.to == request.auth.uid;
+    }
+
+    // Time clock - any registered user can read/write their own records
+    match /timeclock/{recordId} {
+      allow read: if isAuth() && (
+        resource == null ||
+        resource.data.uid == request.auth.uid ||
+        isAdmin() ||
+        canViewAllTimeclocks()
+      );
+      allow update, delete: if isAuth() && resource.data.uid == request.auth.uid;
+      allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+    }
+
+    // Learning items - any registered user can read all; own items writable; admins can write shared
+    // Incidents - all registered can report, managers/admins can update, admins can delete
+    match /incidents/{incidentId} {
+      allow read: if isRegistered();
+      allow create: if isRegistered();
+      allow update: if isAuth() && (
+        getUserRole() == 'admin' || getUserRole() == 'manager' ||
+        resource.data.reportedBy == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /learningItems/{itemId} {
+      allow read: if isRegistered();
+      allow create: if isRegistered() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if isRegistered() && (
+        resource.data.uid == request.auth.uid || isAdmin()
+      );
+    }
+
+    // Trip logs for productivity reporting - managers/admins can read/write
+    match /tripLogs/{logId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create, update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow delete: if isAdmin();
+    }
+
+    // Expenses - managers/admins can read and write; auto-logged from maintenance
+    match /expenses/{expenseId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow update, delete: if isAdmin();
+    }
+
+    // Pending photo upload markers — any registered user can create/read/delete their own
+    match /_pendingPhotoUploads/{markerId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow create: if isRegistered() && request.resource.data.userId == request.auth.uid;
+      allow delete: if isAuth() && resource.data.userId == request.auth.uid;
     }
   }
 }

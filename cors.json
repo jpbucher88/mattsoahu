@@ -1,7 +1,8 @@
 [
   {
     "origin": ["https://mattsoahu.web.app", "http://localhost:5000"],
-    "method": ["GET"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Disposition", "Content-Range", "Accept-Ranges"],
     "maxAgeSeconds": 3600
   }
 ]

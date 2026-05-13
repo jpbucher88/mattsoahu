@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260513o">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -56,9 +56,26 @@
   <div id="page-dashboard" class="page">
     <header class="app-header">
       <div class="header-brand" id="brand-home" style="cursor:pointer;"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Aloha Fleet</h2></div>
-      <button id="btn-tasks" class="task-alert-btn" style="display:none;" title="Open Tasks">
-        <span class="task-alert-icon">📋</span>
-        <span id="task-alert-count" class="task-alert-count">0</span>
+      <button id="btn-tasks" class="task-alert-btn ops-hub-btn" style="display:none;" title="Operations Hub" onclick="openTaskPanel()">
+        <span class="task-alert-icon ops-hub-dart-icon">🎯</span>
+        <span id="task-alert-count" class="task-alert-count count-zero">0</span>
+      </button>
+      <button id="btn-mailbox" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
+        <span class="task-alert-icon">📬</span>
+        <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
+      </button>
+
+      <button id="btn-learning" class="task-alert-btn" title="Learning Center" onclick="openLearningPage()">
+        <span class="task-alert-icon">🎓</span>
+      </button>
+      <button id="btn-finance" class="task-alert-btn" title="Finance" onclick="openFinance()" style="display:none;">
+        <span class="task-alert-icon">💵</span>
+      </button>
+      <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
+        <span class="task-alert-icon">🔧</span>
+      </button>
+      <button id="btn-locations" class="task-alert-btn" title="Locations">
+        <span class="task-alert-icon">📍</span>
       </button>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
@@ -68,10 +85,73 @@
       </div>
     </header>
     <main class="dashboard-main">
-      <section id="fleet-overview" class="card">
-        <h3>Fleet Overview</h3>
-        <div id="fleet-dashboard" class="fleet-dashboard"></div>
+      <!-- Pending photo uploads indicator (shown when photos are stuck in IDB from a backgrounded session) -->
+      <div id="dashboard-pending-uploads" class="dashboard-pending-uploads" style="display:none;"></div>
+
+      <!-- Urgent Notifications Banner -->
+      <section id="urgent-banner" class="card urgent-banner" style="display:none;">
+        <div class="urgent-banner-header collapsible-header" onclick="toggleSection('urgent-banner-body', 'urgent-banner-toggle')">
+          <div class="collapsible-title">
+            <h3>🚨 Urgent Notifications</h3>
+            <span id="urgent-banner-count" class="badge urgent-badge">0</span>
+          </div>
+          <button class="collapse-btn" id="urgent-banner-toggle">&#8722;</button>
+        </div>
+        <div id="urgent-banner-body" class="collapsible-body">
+          <div id="urgent-banner-list" class="urgent-banner-list"></div>
+        </div>
       </section>
+
+      <!-- Fleet Compliance Widget (hidden — access via top bar ✅ button) -->
+      <section id="compliance-widget" class="card compliance-widget-section" style="display:none !important;
+        pointer-events:none;">
+        <div class="collapsible-header" onclick="toggleSection('compliance-widget-body', 'compliance-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>📋 Fleet Compliance</h3>
+            <span id="compliance-widget-badge" class="badge compliance-fleet-badge">0</span>
+          </div>
+          <div class="collapsible-header-right">
+            <button class="btn btn-sm btn-outline compliance-view-tasks-btn" onclick="event.stopPropagation(); openComplianceView()">View Tasks →</button>
+            <button class="collapse-btn" id="compliance-widget-toggle">&#8722;</button>
+          </div>
+        </div>
+        <div id="compliance-widget-body" class="collapsible-body">
+          <div id="compliance-widget-list"></div>
+        </div>
+      </section>
+
+      <!-- Locations & Fleet Status Widget -->
+      <section id="locations-widget" class="card">
+        <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>🚗 Fleet Status</h3>
+          </div>
+          <button class="collapse-btn" id="locations-widget-toggle">&#8722;</button>
+        </div>
+        <div id="locations-widget-body" class="collapsible-body">
+          <div id="locations-grid" class="locations-grid"></div>
+        </div>
+      </section>
+
+      <section id="fleet-overview" class="card">
+        <div class="collapsible-header" onclick="toggleSection('fleet-overview-body', 'fleet-overview-toggle')">
+          <div class="collapsible-title">
+            <h3>Fleet Overview</h3>
+          </div>
+          <button class="btn btn-sm btn-outline productivity-btn" id="productivity-open-btn" onclick="event.stopPropagation();openProductivityReport()" style="display:none;">📊 Productivity</button>
+          <button class="collapse-btn" id="fleet-overview-toggle">&#8722;</button>
+        </div>
+        <div id="fleet-overview-body" class="collapsible-body">
+          <div class="fleet-jump-row">
+            <label class="fleet-jump-label" for="fleet-jump-select">Jump to:</label>
+            <select id="fleet-jump-select" class="fleet-jump-select">
+              <option value="">— Select vehicle —</option>
+            </select>
+          </div>
+          <div id="fleet-dashboard" class="fleet-dashboard"></div>
+        </div>
+      </section>
+
     </main>
   </div>
 
@@ -79,10 +159,24 @@
   <div id="page-vehicle" class="page">
     <header class="app-header">
       <div class="header-left">
-        <button id="btn-back-fleet" class="btn btn-sm btn-outline">&larr; Fleet</button>
+        <button id="btn-back-fleet" type="button" class="btn btn-sm btn-outline">&larr; Fleet</button>
+        <div class="vehicle-nav-wrap">
+          <button id="btn-prev-vehicle" type="button" class="btn btn-sm btn-outline vehicle-nav-btn" title="Previous vehicle">&#8249;</button>
+          <select id="vehicle-fleet-select" class="vehicle-fleet-select" title="Switch vehicle"></select>
+          <button id="btn-next-vehicle" type="button" class="btn btn-sm btn-outline vehicle-nav-btn" title="Next vehicle">&#8250;</button>
+        </div>
         <div class="header-brand" id="brand-home-vehicle" style="cursor:pointer;"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2 id="vehicle-page-title">Vehicle</h2></div>
       </div>
       <div class="header-actions">
+        <button id="btn-tasks-vehicle" class="task-alert-btn" style="display:none;" title="Open Tasks">
+          <span class="task-alert-icon">📋</span>
+          <span id="task-alert-count-vehicle" class="task-alert-count">0</span>
+        </button>
+        <button id="btn-mailbox-vehicle" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
+          <span class="task-alert-icon">📬</span>
+          <span id="mail-unread-count-vehicle" class="task-alert-count count-zero">0</span>
+        </button>
+
         <button id="btn-admin-from-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
         <button id="btn-logout-vehicle" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
       </div>
@@ -97,15 +191,260 @@
       <section class="card">
         <div id="vehicle-info" class="vehicle-info">
           <span id="vehicle-make-model"></span>
+          <button id="btn-edit-vehicle-color" class="btn-color-edit" title="Edit color" style="display:none;" onclick="openVehicleColorEdit()">✏️</button>
           <span id="vehicle-photo-count" class="badge"></span>
+        </div>
+        <div id="vehicle-location-row" class="vehicle-location-row">
+          <div class="loc-field">
+            <label for="vehicle-home-location">🏠 Home Location:</label>
+            <select id="vehicle-home-location" class="vehicle-location-select">
+              <option value="">— Select —</option>
+              <option value="1585 Kapiolani">1585 Kapiolani</option>
+              <option value="HNL">HNL</option>
+              <option value="94-530 Lumiauau">94-530 Lumiauau</option>
+            </select>
+          </div>
+          <div class="loc-field">
+            <label for="vehicle-trip-status">📍 Status:</label>
+            <select id="vehicle-trip-status" class="vehicle-location-select">
+              <option value="home">At Home</option>
+              <option value="scheduled">⏰ Scheduled Trip</option>
+              <option value="private-trip">🔒 Private Trip</option>
+              <option value="on-trip">On Trip</option>
+              <option value="repair-shop">Repair Shop</option>
+            </select>
+          </div>
+          <div id="trip-scheduled-row" class="loc-field" style="display:none;">
+            <label for="vehicle-trip-scheduled-start">⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-scheduled-start-date" class="vehicle-location-custom dt-date-input">
+              <select id="vehicle-trip-scheduled-start-time" class="dt-time-select"></select>
+            </div>
+          </div>
+          <div id="trip-expected-end-row" class="loc-field" style="display:none;">
+            <label for="vehicle-trip-expected-end">🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-expected-end-date" class="vehicle-location-custom dt-date-input">
+              <select id="vehicle-trip-expected-end-time" class="dt-time-select"></select>
+            </div>
+          </div>
+          <div id="trip-return-row" class="loc-field" style="display:none;">
+            <label for="vehicle-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+            <div class="dt-split-wrap">
+              <input type="date" id="vehicle-trip-return-date" class="vehicle-location-custom dt-date-input">
+              <select id="vehicle-trip-return-time" class="dt-time-select"></select>
+            </div>
+          </div>
+          <!-- On-trip revenue (shown only for On Trip status) -->
+          <div id="on-trip-revenue-row" class="loc-field" style="display:none;">
+            <label for="on-trip-revenue">💰 Trip Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(Turo payout — add when received)</span></label>
+            <input type="number" id="on-trip-revenue" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+            <div class="loc-extras-section">
+              <div class="loc-extras-header">
+                <span class="loc-extras-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></span>
+                <button type="button" class="btn btn-xs btn-outline" onclick="addExtraRow('on-trip-extras-list')">+ Add Extra</button>
+              </div>
+              <div id="on-trip-extras-list" class="loc-extras-list"></div>
+            </div>
+          </div>
+          <div id="repair-parts-row" class="loc-parts-row" style="display:none;">
+            <div class="loc-field">
+              <label for="repair-shop-name">🏥 Shop Name:</label>
+              <input type="text" id="repair-shop-name" class="vehicle-location-custom" placeholder="Where is it being repaired?">
+            </div>
+            <div class="loc-field">
+              <label for="repair-order-number">📦 Order / Tracking #:</label>
+              <input type="text" id="repair-order-number" class="vehicle-location-custom" placeholder="Order or tracking number">
+            </div>
+            <div class="loc-field">
+              <label for="repair-parts-eta">📅 Parts ETA:</label>
+              <input type="date" id="repair-parts-eta" class="vehicle-location-custom">
+            </div>
+            <div class="loc-field">
+              <label for="repair-cost">💰 Repair Cost ($):</label>
+              <input type="number" id="repair-cost" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+            </div>
+            <div class="loc-field">
+              <label for="repair-description">🔧 Repair / Work Needed:</label>
+              <input type="text" id="repair-description" class="vehicle-location-custom" placeholder="e.g. Oil change, brake pads, engine work..." maxlength="200">
+            </div>
+          </div>
+          <!-- HNL parking row (shown when HNL selected as home location) -->
+          <div id="hnl-parking-row" class="loc-parts-row" style="display:none;">
+            <div class="loc-field">
+              <label for="hnl-parking-row-val">🏗️ Row:</label>
+              <input type="text" id="hnl-parking-row-val" class="vehicle-location-custom" placeholder="e.g. A, B, C" maxlength="10">
+            </div>
+            <div class="loc-field">
+              <label for="hnl-parking-level">🏛️ Level:</label>
+              <input type="text" id="hnl-parking-level" class="vehicle-location-custom" placeholder="e.g. 1, 2, 3" maxlength="10">
+            </div>
+          </div>
+          <!-- Private Trip fields (shown when private-trip selected) -->
+          <div id="private-trip-row" class="loc-parts-row" style="display:none;">
+            <details class="priv-section" open>
+              <summary class="priv-section-title">⏰ Trip Dates</summary>
+              <div class="loc-field">
+                <label>⏰ Trip Starts: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+                <div class="dt-split-wrap">
+                  <input type="date" id="private-trip-start-date" class="vehicle-location-custom dt-date-input">
+                  <input type="text" id="private-trip-start-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off" list="half-hour-times">
+                  <select id="private-trip-start-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
+                </div>
+              </div>
+              <div class="loc-field">
+                <label>🏁 Expected End: <span style="font-size:0.78rem;font-weight:700;color:#7c3aed;background:#ede9fe;padding:1px 6px;border-radius:4px;margin-left:4px;">Local Time</span></label>
+                <div class="dt-split-wrap">
+                  <input type="date" id="private-trip-end-date" class="vehicle-location-custom dt-date-input">
+                  <input type="text" id="private-trip-end-time" class="vehicle-location-custom dt-time-input" inputmode="numeric" placeholder="12:00" maxlength="5" autocomplete="off" list="half-hour-times">
+                  <select id="private-trip-end-time-ampm" class="dt-ampm-select"><option value="AM">AM</option><option value="PM">PM</option></select>
+                </div>
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-return">🔄 Expected Return: <span style="font-size:0.78rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;margin-left:4px;">HST</span></label>
+                <div class="dt-split-wrap">
+                  <input type="date" id="private-trip-return-date" class="vehicle-location-custom dt-date-input">
+                  <select id="private-trip-return-time" class="dt-time-select"></select>
+                </div>
+              </div>
+            </details>
+            <details class="priv-section" open>
+              <summary class="priv-section-title">👤 Customer Info</summary>
+              <div class="loc-field">
+                <label for="private-customer-name">👤 Customer Name:</label>
+                <input type="text" id="private-customer-name" class="vehicle-location-custom" placeholder="Full name" maxlength="100">
+              </div>
+              <div class="loc-field">
+                <label for="private-customer-phone">📞 Phone:</label>
+                <input type="tel" id="private-customer-phone" class="vehicle-location-custom" placeholder="(808) 555-0000" maxlength="30">
+              </div>
+              <div class="loc-field">
+                <label for="private-customer-email">📧 Email:</label>
+                <input type="email" id="private-customer-email" class="vehicle-location-custom" placeholder="customer@email.com" maxlength="100">
+              </div>
+            </details>
+            <details class="priv-section" open>
+              <summary class="priv-section-title">💰 Revenue &amp; Extras</summary>
+              <div class="loc-field">
+                <label for="private-trip-cost">💵 Daily Rate ($):</label>
+                <input type="number" id="private-trip-cost" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-get">💰 GET Tax (%):</label>
+                <input type="number" id="private-trip-get" class="vehicle-location-custom" placeholder="4.712" min="0" step="0.001" value="4.712">
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-daily-tax">💰 Daily Vehicle Tax ($):</label>
+                <input type="number" id="private-trip-daily-tax" class="vehicle-location-custom" placeholder="0.00" min="0" step="0.01">
+              </div>
+              <div class="loc-field">
+                <label>Estimated Revenue:</label>
+                <div id="private-trip-rev-display" class="private-rev-calc-box">— (enter dates &amp; rate to calculate)</div>
+              </div>
+              <div class="loc-field">
+                <label for="private-trip-revenue-override">💵 Actual Revenue ($): <span style="color:#6b7280;font-size:0.78rem;">(override if different from calculated)</span></label>
+                <input type="number" id="private-trip-revenue-override" class="vehicle-location-custom" placeholder="Leave blank to use calculated" min="0" step="0.01">
+              </div>
+              <div class="loc-field">
+                <div class="loc-extras-section">
+                  <div class="loc-extras-header">
+                    <span class="loc-extras-label">🎒 Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></span>
+                    <button type="button" class="btn btn-xs btn-outline" onclick="addExtraRow('private-trip-extras-list')">+ Add Extra</button>
+                  </div>
+                  <div id="private-trip-extras-list" class="loc-extras-list"></div>
+                </div>
+              </div>
+            </details>
+            <div class="loc-field">
+              <label>📄 Customer Contract:</label>
+              <button type="button" class="btn btn-sm btn-outline" onclick="document.getElementById('private-contract-upload').click()" style="cursor:pointer;">📤 Upload Contract</button>
+              <input type="file" id="private-contract-upload" accept="image/*,application/pdf" style="display:none;">
+              <div id="private-contract-preview" class="private-contract-preview"></div>
+            </div>
+          </div>
+          <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
+          <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>
+
+          <!-- Ownership row (admin/manager only) -->
+          <div id="vehicle-ownership-row" class="loc-field" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid #e5e7eb;">
+            <label for="vehicle-ownership-select" style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;">👥 Ownership</label>
+            <select id="vehicle-ownership-select" class="vehicle-location-select" style="max-width:260px;">
+              <option value="">— Not set —</option>
+              <option value="matt-100">100% Matt</option>
+              <option value="matt-alondra-50-50">50% Matt / 50% Alondra</option>
+            </select>
+          </div>
         </div>
         <div id="last-photo-time" class="last-photo-time" style="display:none;"></div>
         <div id="stale-alert" class="stale-alert" style="display:none;"></div>
+        <div id="pending-uploads-banner" class="pending-uploads-banner" style="display:none;"></div>
+        <div id="photo-override-wrap" style="display:none;">
+          <button id="btn-photo-override" class="btn btn-sm btn-outline">📷 Mark Photos Up to Date</button>
+        </div>
+        <div id="photo-exclude-wrap" style="display:none;">
+          <button id="btn-photo-exclude" class="btn btn-sm btn-exclude">🚫 Exclude from Photos &amp; Cleaning</button>
+        </div>
+
+        <!-- Compliance — inline collapsible baked into vehicle card -->
+        <div id="compliance-bar-wrap" style="display:none; margin-top:12px;">
+          <div id="compliance-bar" class="compliance-bar compliance-bar-green" onclick="toggleComplianceInline()">
+            <span class="compliance-bar-title">📋 Compliance &amp; Info</span>
+            <span id="compliance-bar-pills" class="compliance-bar-pills"></span>
+            <span id="compliance-bar-chevron" class="compliance-bar-chevron">&#9660;</span>
+          </div>
+          <div id="compliance-inline-body" class="compliance-inline-body" style="display:none;">
+            <button id="btn-save-compliance" class="btn btn-sm btn-primary" style="display:none;">Save</button>
+            <div class="compliance-grid">
+              <div class="compliance-field">
+                <label class="compliance-label">🔍 Safety Inspection</label>
+                <div id="safety-status" class="compliance-status"></div>
+                <input type="month" id="compliance-safety" class="compliance-input" placeholder="MM/YYYY">
+                <div id="safety-next-due" class="compliance-next-due"></div>
+                <div id="safety-doc-link" class="compliance-doc-row"></div>
+                <label class="compliance-upload-btn" title="Upload safety inspection certificate PDF or image">
+                  📎 Upload Certificate
+                  <input type="file" id="compliance-safety-upload" accept=".pdf,image/*" style="display:none;">
+                </label>
+              </div>
+              <div class="compliance-field">
+                <label class="compliance-label">📝 Registration</label>
+                <div id="registration-status" class="compliance-status"></div>
+                <input type="month" id="compliance-registration" class="compliance-input" placeholder="MM/YYYY">
+                <div id="registration-next-due" class="compliance-next-due"></div>
+                <div id="registration-doc-link" class="compliance-doc-row"></div>
+                <label class="compliance-upload-btn" title="Upload registration document PDF or image">
+                  📎 Upload Document
+                  <input type="file" id="compliance-registration-upload" accept=".pdf,image/*" style="display:none;">
+                </label>
+              </div>
+              <div class="compliance-field">
+                <label class="compliance-label">🛡️ Insurance</label>
+                <div id="insurance-status" class="compliance-status"></div>
+                <input type="month" id="compliance-insurance" class="compliance-input" placeholder="MM/YYYY">
+                <div id="insurance-doc-link" class="compliance-doc-row"></div>
+                <label class="compliance-upload-btn" title="Upload insurance policy PDF or image">
+                  📎 Upload Policy
+                  <input type="file" id="compliance-insurance-upload" accept=".pdf,image/*" style="display:none;">
+                </label>
+              </div>
+              <div class="compliance-field">
+                <label class="compliance-label">🔢 VIN</label>
+                <div class="compliance-status" style="visibility:hidden;">—</div>
+                <input type="text" id="compliance-vin" class="compliance-input" placeholder="Vehicle Identification Number" maxlength="17" style="text-transform:uppercase;">
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Camera / Upload Section -->
       <section id="upload-section" class="card" style="display:none;">
-        <h3>Take / Upload Photos</h3>
+        <div class="upload-section-header">
+          <h3>Take / Upload Photos</h3>
+          <div id="upload-override-wrap" style="display:none;">
+            <button id="btn-upload-override" class="btn btn-sm btn-outline">📷 Mark Photos Up to Date</button>
+          </div>
+        </div>
 
         <!-- Mileage prompt — required before uploading -->
         <div id="mileage-prompt" class="mileage-prompt">
@@ -113,6 +452,7 @@
           <label for="mileage-prompt-input" class="mileage-prompt-label">Enter current odometer reading</label>
           <div id="mileage-prompt-prev" class="mileage-prompt-prev"></div>
           <input type="number" id="mileage-prompt-input" class="mileage-prompt-input" placeholder="e.g. 45000" min="0" max="999999" inputmode="numeric">
+          <button id="btn-use-same-mileage" class="btn btn-outline btn-block" style="display:none;max-width:260px;margin:0 auto 8px;width:100%;font-size:0.9rem;">&#x21A9; Record Same: <span id="use-same-mileage-label"></span></button>
           <button id="btn-mileage-confirm" class="btn btn-primary btn-block">Confirm Mileage &amp; Continue</button>
         </div>
 
@@ -141,6 +481,17 @@
           <span id="progress-text">0 / 0 uploaded</span>
         </div>
 
+        <!-- Inline upload progress — visible when navigating back to this vehicle mid-upload -->
+        <div id="vehicle-upload-progress" class="vehicle-upload-progress" style="display:none;">
+          <div class="vup-header">
+            <span id="vup-title">⬆️ Uploading photos…</span>
+            <span id="vup-count" class="vup-count">0 / 0</span>
+          </div>
+          <div class="progress-bar vup-bar">
+            <div id="vup-fill" class="progress-fill"></div>
+          </div>
+        </div>
+
         <div id="photo-queue" class="photo-queue"></div>
       </section>
 
@@ -157,6 +508,7 @@
           <button id="btn-date-today" class="btn btn-sm btn-outline">Today</button>
         </div>
         <div id="mini-calendar" class="mini-calendar"></div>
+        <div id="photo-download-log" class="photo-download-log"></div>
         <div id="recent-photos" class="photo-grid"></div>
       </section>
 
@@ -181,51 +533,59 @@
 
         <div id="recommended-services" class="recommended-services" style="display:none;">
           <div class="rec-header">
-            <h4>&#128736; Recommended Services</h4>
-            <button id="btn-edit-schedule" class="btn btn-sm btn-outline">&#9881; Edit Schedule</button>
+            <h4>&#128736; Service Reminders</h4>
           </div>
+          <p class="hint" style="margin:0 0 8px;">Reminders are set automatically when you log a service with a mileage or time interval. Current mileage is updated from photo check-ins.</p>
           <div id="recommended-list"></div>
-        </div>
-
-        <!-- Per-vehicle schedule editor (hidden by default) -->
-        <div id="schedule-editor" class="schedule-editor" style="display:none;">
-          <div class="rec-header">
-            <h4>&#9881; Maintenance Intervals</h4>
-            <button id="btn-close-schedule" class="btn btn-sm btn-outline">Done</button>
-          </div>
-          <p class="hint">Set custom mileage intervals for this vehicle. Leave blank to use the default.</p>
-          <div id="schedule-items" class="schedule-items"></div>
-          <button id="btn-save-schedule" class="btn btn-primary" style="margin-top:10px;">Save Schedule</button>
-          <button id="btn-reset-schedule" class="btn btn-outline btn-sm" style="margin-top:6px;">Reset All to Defaults</button>
         </div>
 
         <!-- Maintenance log form (hidden by default) -->
         <div id="maintenance-form-wrap" style="display:none;">
           <h4>Log Maintenance</h4>
           <form id="maintenance-form">
+            <!-- Quick-fill templates row -->
+            <div class="form-row" style="margin-bottom:8px;">
+              <div class="form-group" style="flex:1;">
+                <label for="m-template-select" style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;">⚡ Quick Fill Template</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <select id="m-template-select" class="form-select" style="flex:1;">
+                    <option value="">— Pick a template to pre-fill —</option>
+                    <option value="oil">Oil Change (3 mo / 3,000 mi)</option>
+                    <option value="tire-rotation">Tire Rotation (6 mo / 6,000 mi)</option>
+                    <option value="air-filter">Air Filter (12 mo / 15,000 mi)</option>
+                    <option value="cabin-filter">Cabin Filter (12 mo / 15,000 mi)</option>
+                    <option value="brakes">Brake Pads/Rotors (2 yr)</option>
+                    <option value="trans">Transmission Fluid (2 yr)</option>
+                    <option value="coolant">Coolant Flush (2 yr)</option>
+                    <option value="spark-plugs">Spark Plugs (3 yr)</option>
+                    <option value="battery">Battery (4 yr)</option>
+                    <option value="tires">Tires (New) (4 yr)</option>
+                    <option value="ac">A/C Service (1 yr)</option>
+                    <option value="inspection">Inspection / Safety (1 yr)</option>
+                    <option value="detail">Detail (3 mo)</option>
+                    <option value="roach">Roach Treatment (6 mo)</option>
+                    <option value="wash">Wash</option>
+                    <option value="wiper">Wiper Blades (1 yr)</option>
+                    <option value="alignment">Alignment (1 yr)</option>
+                    <option value="other">Other (no repeat)</option>
+                  </select>
+                  <button type="button" id="btn-apply-template" class="btn btn-sm btn-outline" style="white-space:nowrap;">Apply</button>
+                </div>
+              </div>
+            </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="m-type">Service Type</label>
-                <select id="m-type" class="form-select">
-                  <option value="">-- Select --</option>
-                  <option value="Oil Change">Oil Change</option>
-                  <option value="Tire Rotation">Tire Rotation</option>
-                  <option value="Brake Inspection">Brake Inspection</option>
-                  <option value="Brake Pads/Rotors">Brake Pads/Rotors</option>
-                  <option value="Air Filter">Air Filter</option>
-                  <option value="Cabin Filter">Cabin Filter</option>
-                  <option value="Transmission Fluid">Transmission Fluid</option>
-                  <option value="Coolant Flush">Coolant Flush</option>
-                  <option value="Spark Plugs">Spark Plugs</option>
-                  <option value="Battery">Battery</option>
-                  <option value="Tires (New)">Tires (New)</option>
-                  <option value="Alignment">Alignment</option>
-                  <option value="Wiper Blades">Wiper Blades</option>
-                  <option value="Belts/Hoses">Belts/Hoses</option>
-                  <option value="A/C Service">A/C Service</option>
-                  <option value="Inspection/Safety">Inspection/Safety</option>
-                  <option value="Other">Other</option>
-                </select>
+                <label for="m-type">Service Type <span style="color:#9ca3af;font-size:0.77rem;">(or type anything)</span></label>
+                <input type="text" id="m-type" class="form-select" placeholder="e.g. Oil Change, Tire Rotation, Other…" list="service-type-suggestions" maxlength="100" autocomplete="off">
+                <datalist id="service-type-suggestions">
+                  <option value="Oil Change"><option value="Tire Rotation"><option value="Brake Inspection">
+                  <option value="Brake Pads/Rotors"><option value="Air Filter"><option value="Cabin Filter">
+                  <option value="Transmission Fluid"><option value="Coolant Flush"><option value="Spark Plugs">
+                  <option value="Battery"><option value="Tires (New)"><option value="Alignment">
+                  <option value="Wiper Blades"><option value="Belts/Hoses"><option value="A/C Service">
+                  <option value="Inspection/Safety"><option value="Roach Treatment"><option value="Detail">
+                  <option value="Window Tint"><option value="Wash"><option value="Other">
+                </datalist>
               </div>
               <div class="form-group">
                 <label for="m-date">Date</label>
@@ -245,7 +605,8 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="m-location">Where Serviced</label>
-                <input type="text" id="m-location" placeholder="e.g. Jiffy Lube Kailua" maxlength="100">
+                <input type="text" id="m-location" placeholder="e.g. Jiffy Lube Kailua" maxlength="100" list="provider-suggestions" autocomplete="off">
+                <datalist id="provider-suggestions"></datalist>
               </div>
               <div class="form-group">
                 <label for="m-notes">Notes</label>
@@ -253,14 +614,401 @@
               </div>
             </div>
             <div class="form-row">
+              <div class="form-group">
+                <label for="m-interval">Repeat Every (Time)</label>
+                <select id="m-interval" class="form-select">
+                  <option value="">No time repeat</option>
+                  <option value="1">1 Month</option>
+                  <option value="3">3 Months</option>
+                  <option value="6">6 Months</option>
+                  <option value="12">1 Year (12 Months)</option>
+                  <option value="24">2 Years (24 Months)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="m-mile-interval">Repeat Every (Miles)</label>
+                <input type="number" id="m-mile-interval" class="form-select" placeholder="e.g. 7000" min="100" max="999999" inputmode="numeric">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Next Due Date</label>
+                <div id="m-next-due-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+              <div class="form-group">
+                <label>Next Due Mileage</label>
+                <div id="m-next-due-mileage-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+            </div>
+            <!-- Supplier Rating -->
+            <div class="form-row" id="m-supplier-rating-row">
+              <div class="form-group" style="flex:1;">
+                <label>⭐ Supplier Rating <span style="color:#9ca3af;font-size:0.77rem;">(optional — rate the shop)</span></label>
+                <div class="supplier-rating-grid">
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">📞 Communication</span>
+                    <div class="star-picker" data-hidden="m-rat-comm">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="m-rat-comm" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">💰 Price / Value</span>
+                    <div class="star-picker" data-hidden="m-rat-price">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="m-rat-price" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">✅ Fixed Correctly</span>
+                    <div class="star-picker" data-hidden="m-rat-fixed">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="m-rat-fixed" value="">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="form-row">
               <button type="submit" class="btn btn-primary">Save Record</button>
               <button type="button" id="btn-cancel-maintenance" class="btn btn-outline">Cancel</button>
+            </div>
+            <div class="form-row m-invoice-row">
+              <div class="form-group" style="flex:1;">
+                <label>📎 Invoice / Receipt <span style="color:#9ca3af;font-size:0.78rem;">(optional — compressed for storage)</span></label>
+                <div class="m-invoice-input-wrap">
+                  <label class="m-invoice-upload-label" for="m-invoice-input">📎 Attach Invoice</label>
+                  <input type="file" id="m-invoice-input" accept="image/*" style="display:none;">
+                  <span id="m-invoice-filename" class="m-invoice-filename">No file chosen</span>
+                </div>
+                <div id="m-invoice-preview-wrap" class="m-invoice-preview-wrap" style="display:none;">
+                  <img id="m-invoice-preview" class="m-invoice-preview-img" src="" alt="Invoice preview">
+                  <button type="button" id="m-invoice-clear" class="m-invoice-clear-btn" title="Remove">✕ Remove</button>
+                </div>
+              </div>
             </div>
           </form>
         </div>
 
         <!-- Maintenance history -->
         <div id="maintenance-history" class="data-list"></div>
+
+        <!-- Provider Scoreboard -->
+        <div id="provider-scoreboard-wrap" style="display:none; margin-top:16px;">
+          <div class="collapsible-header" onclick="toggleSection('provider-scoreboard-body','provider-scoreboard-toggle')" style="cursor:pointer;">
+            <div class="collapsible-title"><h4 style="margin:0;">🏆 Provider Scoreboard</h4></div>
+            <button class="collapse-btn" id="provider-scoreboard-toggle">&#8722;</button>
+          </div>
+          <div id="provider-scoreboard-body">
+            <div id="provider-scoreboard-list" class="provider-scoreboard-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ====== Edit Maintenance Modal ====== -->
+      <div id="edit-maint-overlay" class="edit-vehicle-overlay" style="display:none;">
+        <div class="edit-vehicle-modal">
+          <div class="edit-vehicle-header">
+            <h3>✏️ Edit Maintenance Record</h3>
+            <button id="btn-edit-maint-close" class="btn-close">&times;</button>
+          </div>
+          <form id="edit-maint-form">
+            <input type="hidden" id="em-id">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-type">Service Type</label>
+                <input type="text" id="em-type" class="form-select" placeholder="e.g. Oil Change, Tire Rotation…" list="service-type-suggestions" maxlength="100" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="em-date">Date</label>
+                <input type="date" id="em-date" required>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-mileage">Mileage at Service</label>
+                <input type="number" id="em-mileage" placeholder="e.g. 45000" min="0" max="999999">
+              </div>
+              <div class="form-group">
+                <label for="em-cost">Cost ($)</label>
+                <input type="number" id="em-cost" placeholder="0.00" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-location">Where Serviced</label>
+                <input type="text" id="em-location" placeholder="e.g. Jiffy Lube" maxlength="100" list="provider-suggestions" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label for="em-notes">Notes</label>
+                <input type="text" id="em-notes" placeholder="Optional details" maxlength="200">
+              </div>
+            </div>
+            <!-- Follow-up Interval -->
+            <div class="form-row">
+              <div class="form-group">
+                <label for="em-interval">🔁 Repeat Every (Time)</label>
+                <select id="em-interval" class="form-select">
+                  <option value="">No time repeat</option>
+                  <option value="1">1 Month</option>
+                  <option value="3">3 Months</option>
+                  <option value="6">6 Months</option>
+                  <option value="12">1 Year (12 Months)</option>
+                  <option value="24">2 Years (24 Months)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="em-mile-interval">🔁 Repeat Every (Miles)</label>
+                <input type="number" id="em-mile-interval" class="form-select" placeholder="e.g. 7000" min="100" max="999999" inputmode="numeric">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label>Next Due Date</label>
+                <div id="em-next-due-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+              <div class="form-group">
+                <label>Next Due Mileage</label>
+                <div id="em-next-due-mileage-display" style="padding-top:6px;font-size:0.9rem;color:#4b5563;">—</div>
+              </div>
+            </div>
+            <!-- Invoice section -->
+            <div class="form-row m-invoice-row">
+              <div class="form-group" style="flex:1;">
+                <label>📎 Invoice / Receipt</label>
+                <div id="em-invoice-existing-wrap" style="display:none; margin-bottom:8px;">
+                  <a id="em-invoice-existing-link" href="#" target="_blank">
+                    <img id="em-invoice-existing-img" class="m-invoice-preview-img" src="" alt="Current invoice">
+                  </a>
+                  <button type="button" id="em-invoice-remove" class="m-invoice-clear-btn" style="margin-top:6px;">✕ Remove invoice</button>
+                </div>
+                <div class="m-invoice-input-wrap">
+                  <label class="m-invoice-upload-label" for="em-invoice-input">📎 Replace / Add Invoice</label>
+                  <input type="file" id="em-invoice-input" accept="image/*" style="display:none;">
+                  <span id="em-invoice-filename" class="m-invoice-filename">No file chosen</span>
+                </div>
+                <div id="em-invoice-preview-wrap" class="m-invoice-preview-wrap" style="display:none;">
+                  <img id="em-invoice-preview" class="m-invoice-preview-img" src="" alt="New invoice preview">
+                  <button type="button" id="em-invoice-clear" class="m-invoice-clear-btn">✕ Cancel new</button>
+                </div>
+              </div>
+            </div>
+            <!-- Supplier Rating -->
+            <div class="form-row">
+              <div class="form-group" style="flex:1;">
+                <label>⭐ Supplier Rating <span style="color:#9ca3af;font-size:0.77rem;">(optional)</span></label>
+                <div class="supplier-rating-grid">
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">📞 Communication</span>
+                    <div class="star-picker" data-hidden="em-rat-comm">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="em-rat-comm" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">💰 Price / Value</span>
+                    <div class="star-picker" data-hidden="em-rat-price">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="em-rat-price" value="">
+                  </div>
+                  <div class="supplier-rating-item">
+                    <span class="rating-label">✅ Fixed Correctly</span>
+                    <div class="star-picker" data-hidden="em-rat-fixed">
+                      <span class="star" data-val="1" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="2" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="3" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="4" onclick="pickStar(this)">★</span>
+                      <span class="star" data-val="5" onclick="pickStar(this)">★</span>
+                    </div>
+                    <input type="hidden" id="em-rat-fixed" value="">
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="edit-vehicle-actions">
+              <button type="submit" class="btn btn-primary">Save Changes</button>
+              <button type="button" id="btn-edit-maint-cancel" class="btn btn-outline">Cancel</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Vehicle Information Section (key photo, videos, customer info) -->
+      <section id="vehicle-info-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>🔑 Vehicle Information</h3>
+          <button id="btn-save-vehicle-info" class="btn btn-sm btn-primary">Save</button>
+        </div>
+        <div class="vehicle-info-tabs">
+          <button class="vinfo-tab active" data-vtab="keys" onclick="switchVInfoTab('keys')">Key &amp; Access</button>
+          <button class="vinfo-tab" data-vtab="cheatsheet" onclick="switchVInfoTab('cheatsheet')">📋 Cheat Sheet</button>
+          <button class="vinfo-tab" data-vtab="videos" onclick="switchVInfoTab('videos')">Videos</button>
+          <button class="vinfo-tab" data-vtab="notes" onclick="switchVInfoTab('notes')">Customer Notes</button>
+        </div>
+        <!-- Key placement tab -->
+        <div id="vinfo-tab-keys" class="vinfo-panel">
+          <p class="hint">Upload a photo showing where the keys are stored / key box location.</p>
+          <div id="vinfo-key-img-wrap" class="vinfo-key-img-wrap" style="display:none;">
+            <img id="vinfo-key-img" class="vinfo-key-img" alt="Key placement">
+            <button class="btn btn-sm btn-outline" onclick="document.getElementById('vinfo-key-upload').click()">Replace Photo</button>
+          </div>
+          <label id="vinfo-key-upload-label" class="btn btn-outline vinfo-upload-label" for="vinfo-key-upload">📸 Upload Key Photo</label>
+          <input type="file" id="vinfo-key-upload" accept="image/*" hidden>
+          <div id="vinfo-key-uploading" style="display:none;font-size:0.85rem;color:#6b7280;">Uploading…</div>
+        </div>
+        <!-- Cheat Sheet tab -->
+        <div id="vinfo-tab-cheatsheet" class="vinfo-panel" style="display:none;">
+          <div class="cheat-grid">
+
+            <!-- Tires -->
+            <div class="cheat-group">
+              <div class="cheat-group-header">
+                <span class="cheat-icon">🛞</span>
+                <span class="cheat-group-label">Tire Size</span>
+                <label class="cheat-dual-toggle">
+                  <input type="checkbox" id="cheat-tire-dual" onchange="toggleDualTire(this.checked)">
+                  <span>Different front/rear</span>
+                </label>
+              </div>
+              <div class="cheat-fields" id="cheat-tire-single-row">
+                <input type="text" id="cheat-tire-all" class="cheat-input" placeholder="e.g. 225/55R17">
+              </div>
+              <div class="cheat-fields cheat-tire-dual-row" id="cheat-tire-dual-row" style="display:none;">
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Front</label>
+                  <input type="text" id="cheat-tire-front" class="cheat-input" placeholder="e.g. 225/45R18">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Rear</label>
+                  <input type="text" id="cheat-tire-rear" class="cheat-input" placeholder="e.g. 255/40R18">
+                </div>
+              </div>
+            </div>
+
+            <!-- Wipers -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🌧️</span><span class="cheat-group-label">Wiper Blades</span></div>
+              <div class="cheat-fields">
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Driver</label>
+                  <input type="text" id="cheat-wiper-driver" class="cheat-input" placeholder="e.g. 26&quot;">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Passenger</label>
+                  <input type="text" id="cheat-wiper-pass" class="cheat-input" placeholder="e.g. 18&quot;">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Rear (if any)</label>
+                  <input type="text" id="cheat-wiper-rear" class="cheat-input" placeholder="e.g. 14&quot;">
+                </div>
+              </div>
+            </div>
+
+            <!-- Oil -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🛢️</span><span class="cheat-group-label">Oil Type</span></div>
+              <div class="cheat-fields">
+                <input type="text" id="cheat-oil" class="cheat-input" placeholder="e.g. 0W-20 Full Synthetic">
+              </div>
+            </div>
+
+            <!-- Gas -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">⛽</span><span class="cheat-group-label">Gas Type</span></div>
+              <div class="cheat-fields">
+                <div class="cheat-gas-btns" id="cheat-gas-btns">
+                  <button class="cheat-gas-btn" data-gas="Regular (87)">Regular (87)</button>
+                  <button class="cheat-gas-btn" data-gas="Mid-Grade (89)">Mid-Grade (89)</button>
+                  <button class="cheat-gas-btn" data-gas="Premium (91+)">Premium (91+)</button>
+                  <button class="cheat-gas-btn" data-gas="Diesel">Diesel</button>
+                </div>
+                <input type="hidden" id="cheat-gas">
+              </div>
+            </div>
+
+            <!-- Battery -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🔋</span><span class="cheat-group-label">Battery Type</span></div>
+              <div class="cheat-fields">
+                <input type="text" id="cheat-battery" class="cheat-input" placeholder="e.g. Group 35 / 550 CCA">
+              </div>
+            </div>
+
+            <!-- Coolant -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">🌡️</span><span class="cheat-group-label">Coolant Type</span></div>
+              <div class="cheat-fields">
+                <input type="text" id="cheat-coolant" class="cheat-input" placeholder="e.g. OAT / Green / Pink">
+              </div>
+            </div>
+
+            <!-- Lights -->
+            <div class="cheat-group">
+              <div class="cheat-group-header"><span class="cheat-icon">💡</span><span class="cheat-group-label">Lights</span></div>
+              <div class="cheat-fields">
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Headlight</label>
+                  <input type="text" id="cheat-light-head" class="cheat-input" placeholder="e.g. H11 LED">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Tail Light</label>
+                  <input type="text" id="cheat-light-tail" class="cheat-input" placeholder="e.g. 3157">
+                </div>
+                <div class="cheat-field-pair">
+                  <label class="cheat-sub-label">Turn Signal</label>
+                  <input type="text" id="cheat-light-turn" class="cheat-input" placeholder="e.g. 7440A">
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Videos tab -->
+        <div id="vinfo-tab-videos" class="vinfo-panel" style="display:none;">
+          <p class="hint">Paste YouTube links to help customers understand the vehicle (how to start, features, etc.).</p>
+          <div id="vinfo-videos-list" class="vinfo-videos-list"></div>
+          <div class="vinfo-add-video-row">
+            <input type="text" id="vinfo-video-label" class="vehicle-location-custom" placeholder="Label (e.g. Convertible top)" style="flex:0 0 200px; min-width:120px;">
+            <input type="url" id="vinfo-video-url" class="vehicle-location-custom" placeholder="https://youtube.com/watch?v=..." style="flex:1;">
+            <button class="btn btn-sm btn-primary" onclick="addVInfoVideo()">+ Add</button>
+          </div>
+        </div>
+        <!-- Customer notes tab -->
+        <div id="vinfo-tab-notes" class="vinfo-panel" style="display:none;">
+          <p class="hint">Notes visible to customers — vehicle quirks, instructions, pickup info, etc.</p>
+          <textarea id="vinfo-customer-notes" class="note-textarea" rows="6" placeholder="e.g. Press brake firmly before starting. Trunk release is inside the glovebox..."></textarea>
+        </div>
+      </section>
+
+      <!-- Incident Reports Section -->
+      <section id="incidents-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>🚨 Incident Reports</h3>
+          <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+        </div>
+        <div id="incidents-list" class="incidents-list"></div>
       </section>
 
       <!-- Vehicle Notes Section -->
@@ -270,19 +1018,363 @@
         </div>
         <div class="note-input-wrap">
           <textarea id="note-text" class="note-textarea" placeholder="Add a note about this vehicle..." maxlength="500" rows="3"></textarea>
-          <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="note-followup" onchange="document.getElementById('note-due-row').style.display=this.checked?'':'none'; document.getElementById('note-urgent-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
-            <div id="note-due-row" class="note-due-row" style="display:none;">
-              <label class="note-due-label">Due:</label>
-              <input type="date" id="note-due-date" class="note-due-input">
+          <div class="note-form-opts">
+            <div class="note-form-check-row">
+              <label class="note-followup-label"><input type="checkbox" id="note-followup"> &#9873; Follow Up</label>
+              <label class="note-urgent-label"><input type="checkbox" id="note-urgent"> 🚨 Urgent</label>
             </div>
-            <label id="note-urgent-row" class="note-urgent-label" style="display:none;"><input type="checkbox" id="note-urgent"> 🚨 Urgent</label>
-            <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
+            <div class="note-form-field-row">
+              <label class="note-due-label">📅 Due</label>
+              <input type="date" id="note-due-date" class="note-due-input" style="flex:1;">
+            </div>
+            <div class="note-form-field-row">
+              <label class="note-due-label">👤 Assign</label>
+              <div style="position:relative;flex:1;">
+                <input type="text" id="note-assignee-search" class="note-due-input" style="width:100%;box-sizing:border-box;" placeholder="Search user…" oninput="filterNoteAssigneeList(this.value)" onfocus="_loadFabUsers()" autocomplete="off">
+                <div id="note-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:150px;overflow-y:auto;z-index:200;"></div>
+                <input type="hidden" id="note-assignee-id" value="">
+                <input type="hidden" id="note-assignee-name" value="">
+              </div>
+            </div>
+            <div style="text-align:right;margin-top:6px;">
+              <button id="btn-save-note" class="btn btn-sm btn-primary">Save Note</button>
+            </div>
           </div>
         </div>
         <div id="notes-list" class="notes-list"></div>
       </section>
     </main>
+  </div>
+
+  <!-- ==================== LEARNING PAGE ==================== -->
+  <div id="page-learning" class="page">
+    <header class="app-header">
+      <button class="btn btn-sm btn-outline" onclick="closeLearningPage()">&larr; Back</button>
+      <div class="header-brand"><img src="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png" alt="Logo" class="header-logo"><h2>Learning Center</h2></div>
+      <div class="header-actions"><span id="learning-user-display" class="user-badge"></span></div>
+    </header>
+    <main class="dashboard-main">
+      <!-- Diploma / achievement banner -->
+      <div class="learning-diploma">
+        <div class="diploma-seal">🎓</div>
+        <div class="diploma-text">
+          <div class="diploma-title">Aloha Fleet Training &amp; Resources</div>
+          <div class="diploma-subtitle" id="learning-diploma-name">Welcome</div>
+        </div>
+      </div>
+
+      <!-- Want to Learn (personal wishlist) -->
+      <section class="card want-to-learn-card">
+        <div class="section-header">
+          <h3>💡 Things I Want to Learn</h3>
+        </div>
+        <div class="wl-add-row">
+          <input type="text" id="wl-new-item" class="vehicle-location-custom" placeholder="e.g. How to read a maintenance invoice..." maxlength="120" style="flex:1;" onkeydown="if(event.key==='Enter')addWantToLearn()">
+          <button class="btn btn-sm btn-primary" onclick="addWantToLearn()">+ Add Goal</button>
+        </div>
+        <div id="want-to-learn-list" class="wl-list"></div>
+      </section>
+
+      <!-- My Learning Items -->
+      <section class="card">
+        <div class="section-header">
+          <h3>📚 My Learning Items</h3>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <select id="learning-user-filter" class="form-select" style="display:none;min-width:140px;font-size:0.82rem;" onchange="loadLearningItems()"></select>
+            <button class="btn btn-sm btn-primary" onclick="openAddLearningItem()">+ Add Item</button>
+          </div>
+        </div>
+        <div id="learning-items-list" class="learning-items-list"></div>
+      </section>
+
+      <!-- Shared Resources (admin-editable) -->
+      <section class="card">
+        <div class="section-header">
+          <h3>🌍 Shared Resources</h3>
+          <button id="btn-add-shared-resource" class="btn btn-sm btn-outline" style="display:none;" onclick="openAddLearningItem('shared')">+ Add</button>
+        </div>
+        <div id="shared-resources-list" class="learning-items-list"></div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Add Learning Item modal -->
+  <div id="learning-item-overlay" class="overlay" style="display:none;">
+    <div class="learning-item-modal card">
+      <h4 id="learning-modal-title">➕ Add Learning Item</h4>
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" id="li-title" class="vehicle-location-custom" placeholder="e.g. How to drive a Prius" maxlength="120" style="width:100%;">
+      </div>
+      <div class="form-group">
+        <label>Type</label>
+        <select id="li-type" class="form-select" onchange="onLearningTypeChange()">
+          <option value="note">📝 Note / Text</option>
+          <option value="video">🎥 Video (YouTube)</option>
+          <option value="link">🔗 Link</option>
+        </select>
+      </div>
+      <div id="li-content-note" class="form-group">
+        <label>Content</label>
+        <textarea id="li-content-text" class="note-textarea" rows="5" placeholder="Write your notes here..."></textarea>
+      </div>
+      <div id="li-content-video" class="form-group" style="display:none;">
+        <label>YouTube URL</label>
+        <input type="url" id="li-video-url" class="vehicle-location-custom" placeholder="https://youtube.com/watch?v=..." style="width:100%;">
+        <div id="li-video-preview" style="margin-top:8px;"></div>
+      </div>
+      <div id="li-content-link" class="form-group" style="display:none;">
+        <label>URL</label>
+        <input type="url" id="li-link-url" class="vehicle-location-custom" placeholder="https://..." style="width:100%;">
+      </div>
+      <input type="hidden" id="li-scope" value="personal">
+      <input type="hidden" id="li-edit-id" value="">
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary" onclick="saveLearningItem()">Save</button>
+        <button class="btn btn-outline" onclick="closeLearningItemModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PRODUCTIVITY REPORT MODAL ==================== -->
+  <div id="productivity-modal" class="prod-modal-overlay" style="display:none;" onclick="if(event.target===this)closeProductivityReport()">
+    <div class="prod-modal">
+      <div class="prod-modal-header">
+        <h4>📊 Fleet Productivity Report</h4>
+        <div class="prod-header-controls">
+          <label class="prod-range-label">From</label>
+          <input type="date" id="prod-range-start" class="prod-date-input">
+          <label class="prod-range-label">To</label>
+          <input type="date" id="prod-range-end" class="prod-date-input">
+          <button class="btn btn-sm btn-primary" onclick="runProductivityReport()">Run</button>
+          <button class="prod-close-btn" onclick="closeProductivityReport()">✕</button>
+        </div>
+      </div>
+      <div id="prod-alert-banner" class="prod-alert-banner" style="display:none;"></div>
+      <div id="prod-results" class="prod-results">
+        <p class="hint" style="padding:24px;text-align:center;">Select a date range and click Run to generate the report.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== INCIDENT REPORT MODAL ==================== -->
+  <div id="incident-overlay" class="overlay" style="display:none;">
+    <div class="incident-modal card">
+      <h4 id="incident-modal-title">🚨 Report Incident</h4>
+      <input type="hidden" id="incident-edit-id">
+      <div class="form-row">
+        <div class="form-group" style="flex:1;">
+          <label>Type</label>
+          <select id="incident-type" class="form-select" onchange="toggleIncidentTypeFields()">
+            <option value="damage">🛠️ Vehicle Damage</option>
+            <option value="accident">💥 Accident / Collision</option>
+            <option value="maintenance">🔧 Maintenance Issue</option>
+            <option value="key_lost">🔑 Key Lost</option>
+            <option value="theft">🚔 Theft / Break-in</option>
+            <option value="smoking">🚬 Smoking Violation</option>
+            <option value="cleaning">🧹 Cleaning Violation</option>
+            <option value="citation">🎫 Citation / Ticket</option>
+            <option value="complaint">📢 Customer Complaint</option>
+            <option value="other">📝 Other</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:0 0 auto;justify-content:flex-end;align-items:flex-end;">
+          <label class="note-urgent-label" style="margin-top:28px;">
+            <input type="checkbox" id="incident-urgent"> 🚨 Urgent
+          </label>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Title / Summary <span style="color:#ef4444;">*</span></label>
+        <input type="text" id="incident-title" class="vehicle-location-custom" placeholder="e.g. Dent on rear bumper, Key missing from lockbox" maxlength="120" style="width:100%;">
+      </div>
+      <div class="form-group">
+        <label>Details</label>
+        <textarea id="incident-description" class="note-textarea" rows="3" placeholder="Describe what happened, when, and any other relevant info..." maxlength="1000"></textarea>
+      </div>
+
+      <!-- Damage / Accident fields — Turo claim + reimbursement -->
+      <div id="damage-fields" class="damage-fields-panel" style="display:none;">
+        <div class="damage-fields-header">🛡️ Claim &amp; Reimbursement</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Claim Opened with Turo?</label>
+            <select id="damage-turo-claim" class="form-select">
+              <option value="no">❌ No</option>
+              <option value="yes">✅ Yes — Claim Filed</option>
+              <option value="pending">🕐 Considering / Pending</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Turo Claim # <span class="hint">(if filed)</span></label>
+            <input type="text" id="damage-turo-claim-num" class="form-select" placeholder="e.g. TC-2026-XXXXX">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Reimbursement Status</label>
+            <select id="damage-reimb-status" class="form-select">
+              <option value="na">🚫 N/A — Not Pursuing</option>
+              <option value="pending">⏳ Pending</option>
+              <option value="paid">💵 Paid / Reimbursed ✅</option>
+              <option value="partial">🔁 Partial Reimbursement</option>
+              <option value="denied">❌ Denied</option>
+              <option value="escalated">⚠️ Escalated / Disputed</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Amount Claimed ($)</label>
+            <input type="number" id="damage-amount-claimed" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Amount Received ($)</label>
+            <input type="number" id="damage-amount-received" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Claim Notes</label>
+            <input type="text" id="damage-claim-notes" class="form-select" placeholder="e.g. Awaiting adjuster review" maxlength="200">
+          </div>
+        </div>
+      </div>
+
+      <!-- Citation-specific fields (shown only when type = citation) -->
+      <div id="citation-fields" class="citation-fields-panel" style="display:none;">
+        <div class="citation-fields-header">🎫 Citation Details</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Ticket / Citation #</label>
+            <input type="text" id="citation-number" class="form-select" placeholder="e.g. HNL-20260423">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Violation Type</label>
+            <select id="citation-violation-type" class="form-select">
+              <option value="parking">🅿️ Parking</option>
+              <option value="red_light">🚦 Red Light</option>
+              <option value="speeding">💨 Speeding</option>
+              <option value="toll">🛣️ Toll Violation</option>
+              <option value="other">📝 Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Amount Due ($)</label>
+            <input type="number" id="citation-amount" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Payment Due Date</label>
+            <input type="date" id="citation-due-date" class="form-select">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Customer / Renter Name</label>
+            <input type="text" id="citation-customer" class="form-select" placeholder="Name of renter responsible">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Reimbursement Status</label>
+            <select id="citation-reimb-status" class="form-select">
+              <option value="pending">⏳ Pending — Not Yet Paid</option>
+              <option value="paid_by_company">💳 Paid by Company</option>
+              <option value="reimbursed">✅ Reimbursed by Customer</option>
+              <option value="escalated">⚠️ Escalated / Disputed</option>
+              <option value="written_off">🗑️ Written Off</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cost & Recovery fields — shown for key_lost, theft, maintenance, complaint, other -->
+      <div id="recovery-fields" class="recovery-fields-panel" style="display:none;">
+        <div class="recovery-fields-header">💰 Cost &amp; Recovery</div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Cost to Company ($)</label>
+            <input type="number" id="recovery-cost" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Amount Billed to Customer ($)</label>
+            <input type="number" id="recovery-billed" class="form-select" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group" style="flex:1;">
+            <label>Collection Status</label>
+            <select id="recovery-status" class="form-select">
+              <option value="na">🚫 N/A — Not Applicable</option>
+              <option value="pending">⏳ Pending — Not Yet Collected</option>
+              <option value="collected">✅ Collected</option>
+              <option value="partial">🔁 Partial Recovery</option>
+              <option value="written_off">🗑️ Written Off</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Collection Notes</label>
+            <input type="text" id="recovery-notes" class="form-select" placeholder="e.g. Customer paid via Venmo, charged on Turo" maxlength="200">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group" id="incident-vehicle-row">
+        <label>Vehicle</label>
+        <select id="incident-vehicle-select" class="form-select"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group" style="flex:1;">
+          <label>Status</label>
+          <select id="incident-status-select" class="form-select">
+            <option value="open">🔴 Open</option>
+            <option value="in_progress">🔄 In Progress</option>
+            <option value="resolved">✅ Resolved</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;">
+          <label>📅 Follow-Up Date <span class="hint">(adds to calendar)</span></label>
+          <input type="date" id="incident-followup-date" class="form-select">
+        </div>
+      </div>
+      <div class="form-group" id="incident-resolution-row" style="display:none;">
+        <label>Resolution Notes</label>
+        <textarea id="incident-resolution-inline" class="note-textarea" rows="2" placeholder="What was done to resolve this?" maxlength="500"></textarea>
+      </div>
+      <div class="form-group">
+        <label>📎 Photos <span class="hint">(optional)</span></label>
+        <label class="btn btn-sm btn-outline" for="incident-photo-input" style="cursor:pointer;display:inline-block;">📷 Add Photos</label>
+        <input type="file" id="incident-photo-input" accept="image/*" multiple hidden>
+        <div id="incident-photo-previews" class="inc-photo-previews"></div>
+        <div id="incident-upload-status" style="font-size:0.8rem;color:#6b7280;margin-top:4px;"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-danger" onclick="saveIncident()">Submit Report</button>
+        <button class="btn btn-outline" onclick="closeIncidentModal()">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule Training Task modal -->
+  <div id="learning-task-overlay" class="overlay" style="display:none;">
+    <div class="learning-item-modal card">
+      <h4>📅 Schedule Training Task</h4>
+      <p class="hint" style="margin-bottom:10px;">Topic: <strong id="lt-title-display"></strong></p>
+      <div class="form-group">
+        <label>Assign To</label>
+        <select id="lt-assignee" class="form-select"></select>
+      </div>
+      <div class="form-group">
+        <label>Due Date <span class="hint">(optional)</span></label>
+        <input type="date" id="lt-due-date" class="form-select">
+      </div>
+      <div class="form-group">
+        <label>Notes <span class="hint">(optional)</span></label>
+        <input type="text" id="lt-notes" class="vehicle-location-custom" placeholder="e.g. Review with manager after" maxlength="150" style="width:100%;">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:12px;">
+        <button class="btn btn-primary" onclick="saveTrainingTask()">Schedule Task</button>
+        <button class="btn btn-outline" onclick="closeLearningTaskModal()">Cancel</button>
+      </div>
+    </div>
   </div>
 
   <!-- ==================== ADMIN PAGE ==================== -->
@@ -300,6 +1392,9 @@
         <button class="tab-btn active" data-tab="tab-vehicles">Vehicles</button>
         <button class="tab-btn" data-tab="tab-photos">Photos</button>
         <button class="tab-btn" data-tab="tab-users">Users</button>
+        <button class="tab-btn tab-matthew-only" id="tab-btn-deleted" data-tab="tab-deleted" style="display:none;">🗑 Deleted</button>
+        <button class="tab-btn tab-matthew-only" id="tab-btn-activity" data-tab="tab-activity" style="display:none;">📋 Activity Log</button>
+        <button class="tab-btn tab-matthew-only" id="tab-btn-eggs" data-tab="tab-eggs" style="display:none;">🥚 Previews</button>
       </div>
 
       <!-- ====== Vehicles Tab ====== -->
@@ -344,6 +1439,11 @@
         <div class="card">
           <h3>All Vehicles <span id="vehicle-count" class="badge">0</span></h3>
           <div id="vehicles-list" class="data-list"></div>
+        </div>
+        <div class="card">
+          <h3>🚫 Excluded Vehicles <span class="hint" style="font-size:0.8rem;">(no photo / cleaning prompts)</span></h3>
+          <p class="hint">Vehicles below are excluded from all photo staleness alerts and cleaning/damage check flags. Toggle via the Edit button above.</p>
+          <div id="excluded-vehicles-list" class="data-list"><p class="hint">No excluded vehicles.</p></div>
         </div>
       </div>
 
@@ -390,6 +1490,12 @@
             </div>
             <div id="ev-photo-preview" style="display:none; margin-bottom:10px;">
               <img id="ev-photo-preview-img" style="max-width:200px; border-radius:8px;">
+            </div>
+            <div class="form-group" style="background:#fff7ed;border:1.5px solid #fed7aa;border-radius:8px;padding:10px 14px;">
+              <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;">
+                <input type="checkbox" id="ev-photo-excluded" style="width:18px;height:18px;cursor:pointer;">
+                <span><strong>🚫 Exclude from photo &amp; cleaning prompts</strong><br><span style="font-size:0.8rem;color:#9a3412;">Vehicle won't appear in photo alerts, cleaning flags, or damage checks.</span></span>
+              </label>
             </div>
             <div class="edit-vehicle-actions">
               <button type="submit" class="btn btn-primary">Save Changes</button>
@@ -445,6 +1551,7 @@
             <div class="form-group">
               <label for="u-role">Role</label>
               <select id="u-role" class="form-select">
+                <option value="viewer">Viewer (Browse only — no edits or downloads)</option>
                 <option value="user">User (View &amp; download photos only)</option>
                 <option value="manager">Manager (Upload &amp; view photos)</option>
                 <option value="admin">Admin (Full access)</option>
@@ -458,7 +1565,104 @@
           <div id="users-list" class="data-list"></div>
         </div>
       </div>
+
+      <!-- ====== Deleted Tasks Tab (Matthew only) ====== -->
+      <div id="tab-deleted" class="tab-content">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+            <h3 style="margin:0;">🗑 Deleted Notes &amp; Tasks</h3>
+            <button class="btn btn-sm btn-outline" onclick="loadDeletedTasks()">Refresh</button>
+          </div>
+          <div id="deleted-tasks-list"><p class="hint">Loading…</p></div>
+        </div>
+      </div>
+
+      <!-- ====== Activity Log Tab (Matthew only) ====== -->
+      <div id="tab-activity" class="tab-content">
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+            <h3 style="margin:0;">📋 User Activity Log</h3>
+            <input type="date" id="activity-filter-date" class="form-select" style="width:auto;">
+            <select id="activity-filter-action" class="form-select" style="width:auto;">
+              <option value="">All Actions</option>
+              <option value="open_task">Open Task</option>
+              <option value="complete_task">Complete Task</option>
+              <option value="delete_task">Delete Task</option>
+              <option value="delete_note">Delete Note</option>
+              <option value="edit_vehicle_color">Edit Color</option>
+            </select>
+            <button class="btn btn-sm btn-primary" onclick="loadActivityLog()">Load</button>
+          </div>
+          <!-- User pills — populated by loadActivityLog -->
+          <div id="activity-user-pills" style="display:none;margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+            <span style="font-size:0.78rem;color:#6b7280;white-space:nowrap;">Filter by person:</span>
+          </div>
+          <div id="activity-log-list"><p class="hint">Click Load to view activity.</p></div>
+        </div>
+      </div>
+
+      <!-- ====== Easter Egg Previews Tab (Matthew only) ====== -->
+      <div id="tab-eggs" class="tab-content">
+        <div class="card">
+          <h3 style="margin-bottom:16px;">🥚 Login Easter Egg Previews</h3>
+          <p class="hint" style="margin-bottom:16px;">Preview any staff member's login experience. These are the exact animations they see when they log in.</p>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;">
+            <button class="btn btn-outline" onclick="showElizabethEasterEgg(true)">🌺 Elizabeth</button>
+            <button class="btn btn-outline" onclick="showAlondraEasterEgg(true)">💖 Alondra</button>
+            <button class="btn btn-outline" onclick="showDanEasterEgg(true)">😈 Dan</button>
+            <button class="btn btn-outline" onclick="showJasonEasterEgg(true)">👶 Jason</button>
+          </div>
+        </div>
+      </div>
+
     </main>
+  </div>
+
+  <!-- ==================== MAINTENANCE DASHBOARD ==================== -->
+  <div id="maint-dash-overlay" class="maint-dash-overlay" style="display:none;" onclick="if(event.target===this)closeMaintenanceDash()">
+    <div class="maint-dash-panel">
+      <div class="maint-dash-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.5rem;">🔧</span>
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700;">Maintenance Dashboard</h3>
+        </div>
+        <button class="maint-dash-close" onclick="closeMaintenanceDash()">&times;</button>
+      </div>
+      <div class="maint-dash-tabs">
+        <button class="maint-tab-btn active" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">📊 Overview</button>
+        <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Fleet Status</button>
+        <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
+      </div>
+      <div class="maint-dash-body">
+
+        <!-- ===== Overview Tab ===== -->
+        <div id="mtab-overview" class="maint-tab-content">
+          <div id="maint-stat-cards" class="maint-stat-cards"></div>
+          <div id="maint-alerts-section" style="margin-top:16px;"></div>
+          <div id="maint-recent-section" style="margin-top:16px;"></div>
+        </div>
+
+        <!-- ===== Fleet Status Tab ===== -->
+        <div id="mtab-fleet" class="maint-tab-content" style="display:none;">
+          <div id="maint-fleet-grid" class="maint-fleet-grid"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
+
+        <!-- ===== History Tab ===== -->
+        <div id="mtab-history" class="maint-tab-content" style="display:none;">
+          <div class="maint-history-filters">
+            <select id="maint-hist-vehicle" class="form-select" style="flex:1;min-width:140px;">
+              <option value="">All Vehicles</option>
+            </select>
+            <input type="text" id="maint-hist-type" class="form-select" placeholder="Service type…" style="flex:1;min-width:120px;">
+            <input type="month" id="maint-hist-month" class="form-select" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadMaintHistory()">Search</button>
+            <button class="btn btn-sm btn-outline" onclick="$('maint-hist-vehicle').value='';$('maint-hist-type').value='';$('maint-hist-month').value='';loadMaintHistory()">Clear</button>
+          </div>
+          <div id="maint-hist-results" style="margin-top:12px;"><p class="hint">Click Search to load records.</p></div>
+        </div>
+
+      </div>
+    </div>
   </div>
 
   <!-- ==================== LIGHTBOX ==================== -->
@@ -473,19 +1677,21 @@
 
   <!-- ==================== FULLSCREEN CAMERA ==================== -->
   <div id="camera-overlay" class="camera-overlay" style="display:none;">
-    <video id="camera-video" autoplay playsinline muted></video>
+    <div class="camera-video-wrap">
+      <video id="camera-video" autoplay playsinline muted></video>
+    </div>
     <div class="camera-hud">
       <div class="camera-top-bar">
         <button id="camera-close" class="camera-btn-close">&times;</button>
-        <span id="camera-count" class="camera-count-badge">0 photos</span>
-        <button id="camera-flip" class="camera-btn-flip">&#128260;</button>
-      </div>
-      <div id="camera-upload-bar" class="camera-upload-bar" style="display:none;">
-        <div class="camera-upload-bar-inner">
-          <span id="camera-upload-text">Uploading...</span>
-          <div class="camera-upload-progress">
-            <div id="camera-upload-fill" class="camera-upload-fill"></div>
-          </div>
+        <div class="camera-zoom-row">
+          <button id="camera-zoom-out" class="camera-zoom-btn">&#8722;</button>
+          <span id="camera-zoom-label" class="camera-zoom-label">1.0&times;</span>
+          <button id="camera-zoom-in" class="camera-zoom-btn">+</button>
+        </div>
+        <div class="camera-top-right">
+          <span id="camera-count" class="camera-count-badge">0 photos</span>
+          <button id="camera-flash" class="camera-btn-flash" title="Toggle flash">⚡ Off</button>
+          <button id="camera-flip" class="camera-btn-flip">&#128260;</button>
         </div>
       </div>
       <div class="camera-bottom-bar">
@@ -497,42 +1703,447 @@
   </div>
 
   <!-- ==================== TOAST NOTIFICATION ==================== -->
+
+  <!-- ==================== FINANCE PANEL ==================== -->
+  <div id="finance-overlay" class="finance-overlay" style="display:none;" onclick="if(event.target===this)closeFinance()">
+    <div class="finance-panel">
+      <div class="finance-header">
+        <div class="finance-header-left">
+          <h3>💵 Finance</h3>
+        </div>
+        <button class="finance-close" onclick="closeFinance()">&times;</button>
+      </div>
+      <!-- Finance Tabs -->
+      <div class="finance-tabs">
+        <button class="finance-tab active" id="ftab-overview" onclick="switchFinanceTab('overview')">📊 Overview</button>
+        <button class="finance-tab" id="ftab-revenue" onclick="switchFinanceTab('revenue')">💰 Revenue</button>
+        <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
+        <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
+        <button class="finance-tab" id="ftab-ownercut" onclick="switchFinanceTab('ownercut')">👥 Owner Cut</button>
+      </div>
+      <div class="finance-body">
+
+        <!-- ===== OVERVIEW TAB ===== -->
+        <div id="finance-tab-overview" class="finance-tab-content">
+          <div id="finance-overview-body"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
+
+        <!-- ===== REVENUE TAB ===== -->
+        <div id="finance-tab-revenue" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="fin-rev-month" class="form-select exp-input" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadFinanceRevenue()">Load</button>
+            <button class="btn btn-sm btn-success" onclick="toggleFinRevForm()" id="fin-rev-add-btn">➕ Add Revenue</button>
+          </div>
+          <!-- Add Revenue Form -->
+          <div id="fin-rev-add-form" class="fin-add-rev-form" style="display:none;">
+            <div class="fin-add-rev-title">➕ Add Revenue Entry</div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Vehicle</label>
+                <select id="fin-rev-vehicle" class="form-select exp-input"></select>
+              </div>
+              <div class="exp-field">
+                <label class="exp-label">Type</label>
+                <select id="fin-rev-type" class="form-select exp-input">
+                  <option value="on-trip">📅 Turo</option>
+                  <option value="private-trip">🔒 Private</option>
+                </select>
+              </div>
+            </div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Date</label>
+                <input type="date" id="fin-rev-date" class="form-select exp-input">
+              </div>
+              <div class="exp-field exp-field-amount">
+                <label class="exp-label">Amount ($)</label>
+                <input type="number" id="fin-rev-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
+              </div>
+            </div>
+            <div class="exp-field" style="margin-bottom:10px;">
+              <label class="exp-label">Note <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+              <input type="text" id="fin-rev-note" class="form-select exp-input" placeholder="e.g. April Turo payout" maxlength="120">
+            </div>
+            <div class="exp-form-row" style="margin-bottom:10px;">
+              <div class="exp-field">
+                <label class="exp-label">Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
+                <select id="fin-rev-extras-type" class="form-select exp-input">
+                  <option value="">-- None --</option>
+                  <option value="beach-gear">🏖️ Beach Gear</option>
+                  <option value="parking">🅿️ Parking</option>
+                  <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
+                  <option value="beach-tent">⛺ Beach Tent</option>
+                  <option value="car-seat">🪑 Car Seat</option>
+                  <option value="other">✏️ Other</option>
+                </select>
+              </div>
+              <div class="exp-field exp-field-amount">
+                <label class="exp-label">Extras Amount ($)</label>
+                <input type="number" id="fin-rev-extras-amount" class="form-select exp-input" placeholder="0.00" min="0" step="0.01">
+              </div>
+            </div>
+            <div class="exp-form-actions">
+              <button class="btn btn-primary" id="fin-rev-save-btn" onclick="saveFinanceRevenue()">Save</button>
+              <button class="btn btn-outline" onclick="toggleFinRevForm()">Cancel</button>
+            </div>
+          </div>
+          <div id="finance-revenue-body"></div>
+        </div>
+
+        <!-- ===== EXPENSES TAB ===== -->
+        <div id="finance-tab-expenses" class="finance-tab-content" style="display:none;">
+          <!-- Controls row -->
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="exp-month-filter" class="form-select exp-input" style="width:auto;" onchange="loadExpenseWidget()">
+            <button class="btn btn-sm btn-primary" onclick="loadExpenseWidget()">Load</button>
+            <button class="btn btn-sm btn-success" onclick="toggleFinExpForm()" id="fin-exp-add-btn">➕ Add Expense</button>
+          </div>
+          <!-- Add Expense Form (collapsed by default) -->
+          <div id="fin-exp-add-form" class="fin-add-rev-form" style="display:none;">
+            <div class="fin-add-rev-title">➕ Add Expense</div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Date</label>
+                <input type="date" id="exp-date" class="form-select exp-input">
+              </div>
+              <div class="exp-field exp-field-amount">
+                <label class="exp-label">Amount ($)</label>
+                <input type="number" id="exp-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
+              </div>
+              <div class="exp-field">
+                <label class="exp-label">Category</label>
+                <select id="exp-category" class="form-select exp-input">
+                  <option>Venmo Payment</option>
+                  <option>Vendor Payment</option>
+                  <option>Fuel</option>
+                  <option>Supplies</option>
+                  <option>Maintenance</option>
+                  <option>Insurance</option>
+                  <option>Registration</option>
+                  <option>Cleaning</option>
+                  <option>Other</option>
+                </select>
+              </div>
+            </div>
+            <div class="exp-form-row">
+              <div class="exp-field">
+                <label class="exp-label">Vehicle <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+                <select id="exp-vehicle" class="form-select exp-input">
+                  <option value="">Fleet / General</option>
+                </select>
+              </div>
+              <div class="exp-field exp-field-desc">
+                <label class="exp-label">Description</label>
+                <input type="text" id="exp-desc-input" class="form-select exp-input" placeholder="e.g. Oil change — 613TXU" maxlength="200">
+              </div>
+            </div>
+            <div class="exp-form-actions">
+              <button id="exp-save-btn" class="btn btn-primary" onclick="saveExpense()">Save</button>
+              <button class="btn btn-outline" onclick="toggleFinExpForm()">Cancel</button>
+            </div>
+          </div>
+          <!-- Month total + Expense List (admins/managers only) -->
+          <div id="fin-exp-list-section">
+            <div class="exp-filter-row" style="margin-top:8px;">
+              <span id="expense-month-total" class="exp-month-total-badge">$0.00</span>
+              <span class="exp-month-label">total this month</span>
+            </div>
+            <div id="expense-list" class="exp-list"></div>
+          </div>
+        </div>
+
+        <!-- ===== P&L TAB ===== -->
+        <div id="finance-tab-pl" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="fin-pl-month" class="form-select exp-input" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadFinancePL()">Load</button>
+          </div>
+          <div id="finance-pl-body"></div>
+        </div>
+
+        <!-- ===== OWNER CUT TAB ===== -->
+        <div id="finance-tab-ownercut" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Month</label>
+            <input type="month" id="fin-ownercut-month" class="form-select exp-input" style="width:auto;">
+            <button class="btn btn-sm btn-primary" onclick="loadOwnerCutReport()">Load</button>
+          </div>
+          <div id="finance-ownercut-body"><p class="hint" style="padding:24px;text-align:center;">Select a month and click Load.</p></div>
+        </div>
+
+      </div><!-- finance-body -->
+    </div><!-- finance-panel -->
+  </div>
+
+  <!-- ==================== MAILBOX PANEL ==================== -->
+  <div id="mailbox-overlay" class="mailbox-overlay" style="display:none;" onclick="if(event.target===this)closeMailbox()">
+    <div class="mailbox-panel">
+      <div class="mailbox-header">
+        <h3>📬 Mailbox</h3>
+        <button class="mailbox-close" onclick="closeMailbox()">&times;</button>
+      </div>
+      <div class="mailbox-tabs">
+        <button class="mailbox-tab active" id="mb-tab-inbox" onclick="switchMailTab('inbox')">📥 Inbox <span id="mb-inbox-count" class="mb-count"></span></button>
+        <button class="mailbox-tab" id="mb-tab-sent" onclick="switchMailTab('sent')">📤 Sent</button>
+        <button class="mailbox-tab" id="mb-tab-compose" onclick="switchMailTab('compose')">✉️ Compose</button>
+        <button class="mailbox-tab" id="mb-tab-timeclock" onclick="switchMailTab('timeclock')" style="display:none;">⏱️ Time Clock</button>
+      </div>
+      <div class="mailbox-body">
+        <!-- Inbox -->
+        <div id="mb-inbox" class="mb-tab-content">
+          <div id="mb-inbox-list" class="mb-message-list"></div>
+        </div>
+        <!-- Sent -->
+        <div id="mb-sent" class="mb-tab-content" style="display:none;">
+          <div id="mb-sent-list" class="mb-message-list"></div>
+        </div>
+        <!-- Compose -->
+        <div id="mb-compose" class="mb-tab-content" style="display:none;">
+          <div class="mb-compose-form">
+            <div class="mb-field">
+              <label class="mb-field-label">To:</label>
+              <select id="mb-to-user" class="mb-select"><option value="">— Select recipient —</option></select>
+            </div>
+            <div class="mb-field">
+              <label class="mb-field-label">Message:</label>
+              <textarea id="mb-message-body" class="mb-textarea" placeholder="Type your message..." maxlength="1000" rows="5"></textarea>
+            </div>
+            <div class="mb-field">
+              <label class="mb-field-label">📎 Photos:</label>
+              <div class="mb-attach-row">
+                <label class="btn btn-sm btn-outline mb-attach-btn">
+                  📁 Attach Photos
+                  <input type="file" id="mb-attach-input" accept="image/*" multiple style="display:none;">
+                </label>
+                <span id="mb-attach-count" class="mb-attach-count"></span>
+              </div>
+              <div id="mb-attach-previews" class="mb-attach-previews"></div>
+            </div>
+            <button class="btn btn-primary" onclick="sendMailMessage()">✉️ Send Message</button>
+          </div>
+        </div>
+        <!-- Time Clock -->
+        <div id="mb-timeclock" class="mb-tab-content" style="display:none;">
+          <div id="tc-view-banner" style="display:none;"></div>
+          <div id="time-clock-content" class="time-clock-content"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== FLOATING ACTION BUBBLE ==================== -->
+  <div id="fab-backdrop" class="fab-backdrop" style="display:none;" onclick="closeFabMenu()"></div>
+
+  <div id="notif-fab" class="notif-fab" style="display:none;" title="Quick Actions">
+    <button class="notif-fab-main" id="notif-fab-btn" onclick="toggleFabMenu(event)" aria-label="Quick Actions">
+      <span class="notif-fab-icon" id="notif-fab-icon">🎯</span>
+      <span id="notif-fab-count" class="notif-fab-count" style="display:none;">0</span>
+    </button>
+    <div class="fab-action-sheet" id="fab-action-sheet">
+      <div class="fab-sheet-header">
+        <span class="fab-sheet-title">⚡ Quick Actions</span>
+        <button class="fab-sheet-close" onclick="closeFabMenu()">&times;</button>
+      </div>
+      <div class="fab-status-bar" id="fab-status-bar">
+        <div class="fab-stat" id="fab-stat-urgent">🚨 Urgent: <strong>0</strong></div>
+        <div class="fab-stat" id="fab-stat-tasks">📋 Tasks: <strong>0</strong></div>
+        <div class="fab-stat" id="fab-stat-photos">📷 Photos Due: <strong>0</strong></div>
+      </div>
+      <div class="fab-actions-grid">
+        <button class="fab-action-btn" onclick="closeFabMenu(); openTaskPanel();">
+          <span class="fab-action-icon">🎯</span>
+          <span class="fab-action-label">Operations Hub</span>
+        </button>
+        <button class="fab-action-btn" onclick="closeFabMenu(); openMailbox();">
+          <span class="fab-action-icon">📬</span>
+          <span class="fab-action-label">Send Message</span>
+        </button>
+        <button class="fab-action-btn" onclick="closeFabMenu(); openFabAddTask();">
+          <span class="fab-action-icon">➕</span>
+          <span class="fab-action-label">Add Task</span>
+        </button>
+        <button class="fab-action-btn" onclick="closeFabMenu(); openTaskPanel(); setTimeout(()=>switchTaskTab('urgent'),100);">
+          <span class="fab-action-icon">🚨</span>
+          <span class="fab-action-label">Urgent Tasks</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAB Quick Add Task Modal -->
+  <div id="fab-task-modal" class="fab-task-modal-overlay" style="display:none;" onclick="if(event.target===this){closeFabTaskModal();}else{const dd=$('fab-task-assignee-dropdown');if(dd&&!event.target.closest('#fab-task-assignee-search')&&!event.target.closest('#fab-task-assignee-dropdown'))dd.style.display='none';}">
+    <div class="fab-task-modal-box">
+      <div class="fab-task-modal-header">
+        <span>➕ Quick Add Task</span>
+        <button onclick="closeFabTaskModal()">&times;</button>
+      </div>
+      <div class="fab-task-modal-body">
+        <input type="text" id="fab-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200" style="width:100%;margin-bottom:8px;">
+        <textarea id="fab-task-desc" class="note-textarea" placeholder="Description (optional)" rows="2" maxlength="500" style="width:100%;margin-bottom:8px;"></textarea>
+        <!-- Assign To row with name search -->
+        <div style="position:relative;margin-bottom:8px;">
+          <input type="text" id="fab-task-assignee-search" class="vehicle-location-custom" placeholder="👤 Assign to… (start typing name)" autocomplete="off" style="width:100%;" oninput="filterFabAssigneeList(this.value)">
+          <div id="fab-task-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.12);max-height:160px;overflow-y:auto;z-index:9200;"></div>
+          <input type="hidden" id="fab-task-assignee-id">
+          <input type="hidden" id="fab-task-assignee-name">
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+          <select id="fab-task-priority" class="note-assignee-select" style="flex:1;min-width:100px;">
+            <option value="normal">🔵 Normal</option>
+            <option value="urgent">🚨 Urgent</option>
+          </select>
+          <input type="date" id="fab-task-due" class="vehicle-location-custom" style="flex:1;min-width:110px;">
+          <input type="time" id="fab-task-due-time" class="vehicle-location-custom" style="flex:1;min-width:90px;">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn btn-sm btn-outline" onclick="closeFabTaskModal()">Cancel</button>
+          <button class="btn btn-sm btn-primary" onclick="submitFabTask()">Save Task</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== TASK PANEL OVERLAY ==================== -->
   <div id="task-panel-overlay" class="task-panel-overlay" style="display:none;" onclick="if(event.target===this)closeTaskPanel()">
     <div class="task-panel">
       <div class="task-panel-header">
-        <h3>📋 Tasks &amp; Follow-Ups</h3>
+        <h3>🚀 Operations Hub</h3>
         <button class="task-panel-close" onclick="closeTaskPanel()">&times;</button>
       </div>
       <div class="task-panel-body">
-        <!-- Add General Note -->
+        <!-- Action Board with Status Tabs — shown first -->
         <div class="task-panel-section">
-          <h4>📝 Add General Note</h4>
-          <textarea id="general-note-text" class="note-textarea" placeholder="Add a general note..." maxlength="500" rows="2"></textarea>
-          <div class="note-controls">
-            <label class="note-followup-label"><input type="checkbox" id="general-note-followup" onchange="document.getElementById('general-note-due-row').style.display=this.checked?'':'none'; document.getElementById('general-note-urgent-row').style.display=this.checked?'':'none'"> &#9873; Follow Up</label>
-            <div id="general-note-due-row" class="note-due-row" style="display:none;">
-              <label class="note-due-label">Due:</label>
-              <input type="date" id="general-note-due-date" class="note-due-input">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <h4 style="margin:0;">🎯 Action Board</h4>
+            <button class="btn btn-sm btn-primary" onclick="openFabAddTask()" title="Add a new task or follow-up reminder" style="padding:4px 12px;font-size:0.82rem;">➕ Add Task</button>
+          </div>
+
+          <!-- Overdue banner — always visible when tasks are late -->
+          <div id="task-overdue-banner" class="task-overdue-banner" style="display:none;">
+            <div class="task-overdue-banner-hdr">
+              <span>⏰ Overdue &amp; Not Completed</span>
+              <span id="task-overdue-count" class="task-overdue-count-badge">0</span>
             </div>
-            <label id="general-note-urgent-row" class="note-urgent-label" style="display:none;"><input type="checkbox" id="general-note-urgent"> 🚨 Urgent</label>
-            <button id="btn-save-general-note" class="btn btn-sm btn-primary">Save Note</button>
+            <div id="task-overdue-banner-list" class="followup-list"></div>
+          </div>
+
+          <!-- Admin user filter (hidden for non-admins via JS) -->
+          <div id="task-user-filter-row" class="task-user-filter-row" style="display:none;">
+            <label class="task-user-filter-label">👁 View:</label>
+            <select id="task-user-filter" class="note-assignee-select" onchange="applyTaskUserFilter(this.value)">
+              <option value="all">All Users</option>
+            </select>
+          </div>
+          <!-- Status tabs -->
+          <div class="task-status-tabs">
+            <button class="task-tab active" data-tab="all" onclick="switchTaskTab('all')">All Active</button>
+            <button class="task-tab" data-tab="urgent" onclick="switchTaskTab('urgent')">🚨 Urgent</button>
+            <button class="task-tab" data-tab="scheduled" onclick="switchTaskTab('scheduled')">🔵 Scheduled</button>
+            <button class="task-tab" data-tab="monitoring" onclick="switchTaskTab('monitoring')">🟢 Monitoring</button>
+            <button class="task-tab" data-tab="compliance" onclick="switchTaskTab('compliance')">📋 Compliance</button>
+            <button class="task-tab" data-tab="mine" onclick="switchTaskTab('mine')">👤 My Tasks</button>
+            <button class="task-tab" id="incidents-tab-btn" data-tab="incidents" onclick="switchTaskTab('incidents')" style="display:none;">🚨 Incidents <span id="incidents-tab-badge" class="task-tab-badge" style="display:none;"></span></button>
+          </div>
+          <!-- Active task lists (filtered by tab) -->
+          <div id="task-tab-content">
+            <div id="followup-overdue" class="agenda-group" style="display:none;"></div>
+            <div id="followup-today" class="agenda-group" style="display:none;"></div>
+            <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
+            <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
+            <div id="compliance-grouped-view" class="compliance-grouped-view" style="display:none;"></div>
+            <div id="incidents-tab-content" class="incidents-tab-panel" style="display:none;">
+              <div class="incidents-sub-header" style="margin-bottom:8px;">
+                <span class="incidents-sub-title">🚨 Incident Reports</span>
+                <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+              </div>
+              <!-- Turo 24h deadline banner -->
+              <div id="turo-claims-banner" style="display:none;margin-bottom:10px;"></div>
+              <!-- Filter tabs -->
+              <div class="inc-filter-row">
+                <button class="inc-filter-btn active" data-filter="all" onclick="setIncidentFilter('all')">All</button>
+                <button class="inc-filter-btn" data-filter="open" onclick="setIncidentFilter('open')">🔴 Open</button>
+                <button class="inc-filter-btn" data-filter="turo" onclick="setIncidentFilter('turo')">🛡️ Turo Claims</button>
+              </div>
+              <div id="incidents-dashboard-list" class="incidents-list"></div>
+            </div>
+            <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No tasks in this view. ✅</p></div>
+          </div>
+          <!-- Completed tasks bucket (collapsible) -->
+          <div id="completed-tasks-bucket" class="completed-bucket" style="margin-top:12px;">
+            <button class="completed-bucket-toggle" onclick="toggleCompletedBucket()">
+              <span class="completed-bucket-icon">✅</span>
+              <span>Completed Tasks</span>
+              <span id="completed-count-badge" class="completed-count-badge">0</span>
+              <span id="completed-bucket-arrow" class="completed-bucket-arrow">▶</span>
+            </button>
+            <div id="completed-bucket-list" class="completed-bucket-list" style="display:none;"></div>
           </div>
         </div>
 
-        <!-- Follow-Up Agenda -->
-        <div class="task-panel-section">
-          <h4>📅 Follow-Up Agenda</h4>
-          <div id="followup-overdue" class="agenda-group" style="display:none;"></div>
-          <div id="followup-today" class="agenda-group" style="display:none;"></div>
-          <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
-          <div id="followup-no-date" class="agenda-group" style="display:none;"></div>
-          <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No follow-ups. You're all caught up! ✅</p></div>
+        <!-- Calendar -->
+        <div class="task-panel-section task-panel-cal-section">
+          <div class="task-panel-cal-header">
+            <h4>📅 Calendar</h4>
+            <div class="task-panel-cal-nav">
+              <button id="cal-prev" class="btn btn-sm btn-outline">&lsaquo;</button>
+              <span id="cal-month-label" class="cal-month-label"></span>
+              <button id="cal-next" class="btn btn-sm btn-outline">&rsaquo;</button>
+            </div>
+          </div>
+          <div id="task-calendar-grid" class="task-calendar-grid"></div>
+          <div id="task-calendar-detail" class="task-calendar-detail" style="display:none;">
+            <div class="task-calendar-detail-header">
+              <h4 id="cal-detail-date"></h4>
+              <button id="cal-detail-close" class="btn btn-sm btn-outline">&times;</button>
+            </div>
+            <div id="cal-detail-list" class="cal-detail-list"></div>
+          </div>
+        </div>
+        <!-- Create Task -->
+        <div id="create-task-section" class="task-panel-section">
+          <h4>📝 Create Task</h4>
+          <input type="text" id="new-task-title" class="task-title-input" placeholder="Task title (required)" maxlength="200">
+          <textarea id="new-task-desc" class="note-textarea" placeholder="Description (optional)" maxlength="500" rows="2" style="margin-top:8px;"></textarea>
+          <div class="task-form-grid">
+            <div class="task-form-field">
+              <label class="task-form-label">⚡ Priority</label>
+              <select id="new-task-priority" class="task-form-select">
+                <option value="low">🟢 Low</option>
+                <option value="normal" selected>🔵 Normal</option>
+                <option value="high">🟠 High</option>
+                <option value="critical">🔴 Critical</option>
+              </select>
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">📅 Due Date</label>
+              <input type="date" id="new-task-due" class="task-form-select">
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">👤 Assign To</label>
+              <select id="new-task-assignee" class="task-form-select">
+                <option value="">— Team (everyone) —</option>
+              </select>
+            </div>
+            <div class="task-form-field">
+              <label class="task-form-label">📎 Photo / File</label>
+              <input type="file" id="new-task-photo" accept="image/*" class="task-photo-input">
+            </div>
+          </div>
+          <div id="new-task-photo-wrap" style="display:none;margin:6px 0 2px;">
+            <img id="new-task-photo-preview" class="inc-thumb-preview" alt="preview" style="width:80px;height:80px;object-fit:cover;border-radius:8px;">
+          </div>
+          <div style="text-align:right;margin-top:10px;">
+            <button id="btn-save-task" class="btn btn-primary" style="padding:8px 22px;">💾 Save Task</button>
+          </div>
         </div>
 
-        <!-- General Notes List -->
+        <!-- Log Activity -->
         <div class="task-panel-section">
-          <h4>📝 General Notes</h4>
+          <h4>📋 Log Activity</h4>
           <div id="general-notes-list" class="notes-list"></div>
         </div>
       </div>
@@ -555,6 +2166,79 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=20260513o"></script>
+
+  <!-- Floating background upload progress -->
+  <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">
+    <div class="bg-upload-header">
+      <span id="bg-upload-title">⬆️ Uploading photos…</span>
+      <button class="bg-upload-minimize" onclick="$('bg-upload-toast').classList.toggle('bg-upload-minimized')">—</button>
+    </div>
+    <div class="bg-upload-body">
+      <div class="progress-bar"><div id="bg-upload-fill" class="progress-fill"></div></div>
+      <span id="bg-upload-text">0 / 0</span>
+    </div>
+  </div>
+
+  <!-- DAN EASTER EGG OVERLAY -->
+  <div id="dan-overlay" style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;cursor:default;user-select:none;" aria-hidden="true">
+    <div id="dan-bg" style="position:absolute;inset:0;background:#ff0040;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+      <div id="dan-title" style="font-size:clamp(2.5rem,8vw,5rem);font-weight:900;color:#fff;text-shadow:0 0 30px rgba(0,0,0,0.5);text-align:center;letter-spacing:0.05em;line-height:1.1;z-index:1;padding:0 20px;">
+        ALWAYS. BE. CLOSING, BITCH. 😈<br>
+        <span style="font-size:0.42em;font-weight:800;line-height:1.7;display:block;margin-top:10px;">You're not here to be average, Dan.<br>Hit your numbers or go home. 📞💰</span>
+      </div>
+      <div id="dan-words" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <!-- ELIZABETH HAWAII EASTER EGG OVERLAY -->
+  <div id="elizabeth-overlay" style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;cursor:default;user-select:none;" aria-hidden="true">
+    <div id="elizabeth-bg" style="position:absolute;inset:0;background:#0077b6;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;overflow-y:auto;padding:28px 0;">
+      <div id="elizabeth-title" style="font-size:clamp(2rem,5vw,3.5rem);font-weight:900;color:#fff;text-shadow:0 2px 24px rgba(0,50,120,0.4);text-align:center;letter-spacing:0.03em;line-height:1.35;z-index:1;padding:0 24px;">
+        🌺 ALOHA, ELIZABETH! 🌺<br>
+        <span style="font-size:0.68em;font-weight:800;">HAWAII IS WAITING FOR YOU ✈️🏝️</span><br>
+        <span style="font-size:0.42em;font-weight:700;opacity:0.95;line-height:1.7;">But first — clock in, show up, get after it! 💪<br>Every shift gets you one step closer to the beach 🌊<br>No work, no Waikiki. You got this! 🤙</span>
+      </div>
+      <div id="elizabeth-emojis" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <!-- ALONDRA EASTER EGG OVERLAY -->
+  <div id="alondra-overlay" style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;cursor:default;user-select:none;" aria-hidden="true">
+    <div id="alondra-bg" style="position:absolute;inset:0;background:#ff69b4;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+      <div id="alondra-title" style="font-size:clamp(2.2rem,7vw,4.5rem);font-weight:900;color:#fff;text-shadow:0 0 40px rgba(255,100,180,0.9);text-align:center;letter-spacing:0.04em;line-height:1.3;z-index:1;">
+        I LOVE YOU 💖<br><span style="font-size:0.6em;font-weight:800;letter-spacing:0.08em;">ALONDRA ✨</span>
+      </div>
+      <div id="alondra-hearts" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <!-- JASON BABY EASTER EGG OVERLAY -->
+  <div id="jason-overlay" style="display:none;position:fixed;inset:0;z-index:99999;overflow:hidden;cursor:default;user-select:none;" aria-hidden="true">
+    <div id="jason-bg" style="position:absolute;inset:0;background:#a8d8f0;display:flex;align-items:center;justify-content:center;flex-direction:column;">
+      <div id="jason-title" style="font-size:clamp(1.6rem,5.5vw,3.4rem);font-weight:900;color:#fff;text-shadow:0 2px 24px rgba(30,100,180,0.5);text-align:center;letter-spacing:0.03em;line-height:1.35;z-index:1;padding:0 20px;">
+        🎉 CONGRATS JASON! 🎉<br>
+        <span style="font-size:0.72em;font-weight:800;">BABY #2 IS ON THE WAY!</span><br>
+        <span style="font-size:0.48em;font-weight:700;opacity:0.92;line-height:1.6;">Your family just leveled up 👶👶<br>Double the chaos, double the love 💙<br>We are SO happy for you &amp; your family! 🥹</span>
+      </div>
+      <div id="jason-confetti" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
+    </div>
+  </div>
+
+  <!-- Datalist for :00/:30 time snapping (private trip time inputs) -->
+  <datalist id="half-hour-times">
+    <option value="12:00"><option value="12:30">
+    <option value="1:00"><option value="1:30">
+    <option value="2:00"><option value="2:30">
+    <option value="3:00"><option value="3:30">
+    <option value="4:00"><option value="4:30">
+    <option value="5:00"><option value="5:30">
+    <option value="6:00"><option value="6:30">
+    <option value="7:00"><option value="7:30">
+    <option value="8:00"><option value="8:30">
+    <option value="9:00"><option value="9:30">
+    <option value="10:00"><option value="10:30">
+    <option value="11:00"><option value="11:30">
+  </datalist>
 </body>
 </html>
