@@ -3355,10 +3355,10 @@ function _setCameraZoom(level) {
 
   if (_cameraHwZoom && cameraStream) {
     const [t] = cameraStream.getVideoTracks();
-    if (t) t.applyConstraints({ advanced: [{ zoom: level }] }).catch(() => _applySwZoom(level));
+    if (t) t.applyConstraints({ advanced: [{ zoom: level }] }).catch(() => _applySwZoom(Math.max(1.0, level)));
   }
-  // Always apply software zoom — ensures the video display reflects the zoom on iOS
-  _applySwZoom(level);
+  // Software zoom only scales UP — never downscale below native resolution
+  _applySwZoom(Math.max(1.0, level));
   _updateZoomUI();
 }
 
@@ -3500,8 +3500,6 @@ async function startCameraStream() {
   cameraStream = stream;
 
   // Reset zoom state before reading capabilities — ensures no stale values from previous stream.
-  // cameraZoomMin is intentionally NEVER updated from hardware caps: the user must always be able
-  // to return to 1× (unzoomed), regardless of what the hardware reports as its minimum.
   _cameraHwZoom = false;
   cameraZoomMin = 1.0;
   cameraZoomLevel = 1.0;
@@ -3512,11 +3510,14 @@ async function startCameraStream() {
       const caps = track.getCapabilities();
       if (caps.zoom) {
         _cameraHwZoom = true;
+        // Use the hardware's actual minimum as the default — wide-angle phones report min < 1
+        cameraZoomMin = caps.zoom.min;
+        cameraZoomLevel = caps.zoom.min;
         cameraZoomMax = caps.zoom.max;
       }
-      // Apply zoom=1 and torch state together
+      // Apply minimum zoom and torch state together — prevents auto-zoom on stream open
       const constraintUpdates = {};
-      if (caps.zoom) constraintUpdates.zoom = 1;  // always force 1× — never auto-zoom
+      if (caps.zoom) constraintUpdates.zoom = caps.zoom.min;
       if (caps.torch) constraintUpdates.torch = cameraFlashOn;
       if (Object.keys(constraintUpdates).length) {
         await track.applyConstraints({ advanced: [constraintUpdates] });
@@ -3524,8 +3525,8 @@ async function startCameraStream() {
     } catch (e) { /* zoom/torch not supported — ok */ }
   }
 
-  // Apply both software zoom reset and update UI — cameraZoomMin is 1.0 so this is always reachable
-  _applySwZoom(1.0);
+  // Apply software zoom reset (software zoom stays at 1.0 minimum — we never downscale)
+  _applySwZoom(Math.max(1.0, cameraZoomLevel));
   _updateZoomUI();
   updateFlashButton();
 
