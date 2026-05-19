@@ -3467,6 +3467,75 @@ body {
 .cwg-tag-warn    { background: #ecfdf5; color: #059669; }
 
 /* ============ COMPLIANCE GROUPED TAB VIEW ============ */
+/* ============ MAINTENANCE GROUPED TAB VIEW ============ */
+.maintenance-grouped-view { display: flex; flex-direction: column; gap: 10px; }
+
+.maint-tab-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 32px 16px;
+  color: #22c55e;
+  font-size: 0.95rem;
+  font-weight: 600;
+  gap: 8px;
+}
+.maint-tab-empty span { font-size: 2rem; }
+
+.maint-vehicle-group {
+  border: 1.5px solid #bfdbfe;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.maint-vehicle-group.maint-group-overdue { border-color: #fca5a5; }
+
+.maint-vehicle-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: #eff6ff;
+  flex-wrap: wrap;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.maint-vehicle-group.maint-group-overdue .maint-vehicle-header { background: #fff1f2; }
+.maint-vehicle-header:hover { background: #dbeafe; }
+.maint-vehicle-plate { font-weight: 700; font-size: 0.92rem; color: #1e3a5f; }
+.maint-vehicle-model { font-size: 0.8rem; color: #64748b; }
+.maint-vehicle-mileage { font-size: 0.78rem; color: #2563eb; font-weight: 600; background: #dbeafe; border-radius: 99px; padding: 1px 8px; }
+.maint-vehicle-link { margin-left: auto; font-size: 0.75rem; color: #2563eb; font-weight: 600; white-space: nowrap; }
+
+.maint-vehicle-items { display: flex; flex-direction: column; gap: 0; }
+
+.maint-item-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-top: 1px solid #f1f5f9;
+}
+.maint-item-row.maint-item-overdue { background: #fff5f5; }
+.maint-item-row.maint-item-soon    { background: #fffbeb; }
+.maint-item-row.maint-item-ok      { background: #fff; }
+
+.maint-item-info { flex: 1; min-width: 0; }
+.maint-item-name { font-size: 0.9rem; font-weight: 600; color: #1e3a5f; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.maint-item-context { font-size: 0.78rem; color: #6b7280; margin-top: 2px; }
+
+/* Status badges */
+.maint-status-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.maint-badge-overdue { background: #fee2e2; color: #dc2626; }
+.maint-badge-soon    { background: #fef3c7; color: #b45309; }
+.maint-badge-ok      { background: #dcfce7; color: #15803d; }
+
 .compliance-grouped-view { display: flex; flex-direction: column; gap: 10px; }
 .compliance-group-card {
   border: 1px solid #bae6fd;

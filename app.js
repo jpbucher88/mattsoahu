@@ -6882,10 +6882,13 @@ $('maintenance-form').addEventListener('submit', async (e) => {
           done: false,
           urgent: false,
           dueDate: nextDueDate,
+          sourceType: 'maintenance',
+          taskStatus: 'maintenance',
           maintenanceService: serviceType,
           maintenanceRecordId: maintenanceRef.id,
           autoCreated: true,
           intervalType: 'time',
+          intervalMonths,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           createdBy: currentUser.uid,
           createdByName: currentUser.displayName || currentUser.email,
@@ -6903,6 +6906,8 @@ $('maintenance-form').addEventListener('submit', async (e) => {
           urgent: false,
           nextDueMileage,
           intervalMiles,
+          sourceType: 'maintenance',
+          taskStatus: 'maintenance',
           maintenanceService: serviceType,
           maintenanceRecordId: maintenanceRef.id,
           autoCreated: true,
@@ -7986,7 +7991,7 @@ window.switchTaskTab = function(tab) {
   const userFilterRow = $('task-user-filter-row');
   if (tab === 'incidents') {
     if (incPanel) incPanel.style.display = '';
-    ['followup-overdue','followup-today','followup-upcoming','followup-no-date','followup-empty','compliance-grouped-view'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
+    ['followup-overdue','followup-today','followup-upcoming','followup-no-date','followup-empty','compliance-grouped-view','maintenance-grouped-view'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
     if (userFilterRow) userFilterRow.style.display = 'none';
   } else {
     if (incPanel) incPanel.style.display = 'none';
@@ -8180,9 +8185,11 @@ function renderTaskAgenda(allItems) {
   if (currentTaskTab === 'urgent') {
     items = allItems.filter(i => i.urgent);
   } else if (currentTaskTab === 'scheduled') {
-    items = allItems.filter(i => !i.urgent && i.taskStatus !== 'monitoring' && i.dueDate);
+    items = allItems.filter(i => !i.urgent && i.taskStatus !== 'monitoring' && i.taskStatus !== 'maintenance' && i.dueDate);
   } else if (currentTaskTab === 'monitoring') {
     items = allItems.filter(i => i.taskStatus === 'monitoring');
+  } else if (currentTaskTab === 'maintenance') {
+    items = allItems.filter(i => i.sourceType === 'maintenance');
   } else if (currentTaskTab === 'compliance') {
     items = allItems.filter(i => i.sourceType === 'compliance');
   } else if (currentTaskTab === 'mine') {
@@ -8339,6 +8346,112 @@ function renderTaskAgenda(allItems) {
 
   // Compliance tab: month browser at top + task cards below
   const compGroupEl = $('compliance-grouped-view');
+
+  // Maintenance tab: grouped by vehicle, showing mileage/time context
+  const maintGroupEl = $('maintenance-grouped-view');
+  if (currentTaskTab === 'maintenance') {
+    [overdueEl, todayEl, upcomingEl, noDateEl].forEach(el => { if (el) el.style.display = 'none'; });
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (compGroupEl) compGroupEl.style.display = 'none';
+    if (maintGroupEl) {
+      maintGroupEl.style.display = '';
+      if (items.length === 0) {
+        maintGroupEl.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>All maintenance is up to date!</p></div>';
+      } else {
+        // Group by vehicle
+        const byVehicle = new Map();
+        for (const item of items) {
+          const key = item.vehicleId || '__general';
+          if (!byVehicle.has(key)) byVehicle.set(key, []);
+          byVehicle.get(key).push(item);
+        }
+        // Sort: overdue/urgent first
+        const sortedGroups = [...byVehicle.entries()].sort(([, a], [, b]) => {
+          const aUrgent = a.some(i => i.urgent);
+          const bUrgent = b.some(i => i.urgent);
+          return (bUrgent ? 1 : 0) - (aUrgent ? 1 : 0);
+        });
+        let html = '';
+        for (const [vehicleId, vItems] of sortedGroups) {
+          const v = vehicleId !== '__general' ? vehiclesCache.find(x => x.id === vehicleId) : null;
+          const plate = v ? v.plate : 'General';
+          const makeModel = v ? (v.make ? v.make + (v.model ? ' ' + v.model : '') : '') : '';
+          const currentMileage = v ? v.mileage : null;
+          const hasOverdue = vItems.some(i => i.urgent || (i.dueDate && i.dueDate < today));
+          html += `<div class="maint-vehicle-group${hasOverdue ? ' maint-group-overdue' : ''}">
+            <div class="maint-vehicle-header" onclick="closeTaskPanel();openVehiclePage('${vehicleId}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)">
+              <span class="maint-vehicle-plate">🚗 ${escapeHtml(plate)}</span>
+              ${makeModel ? `<span class="maint-vehicle-model">${escapeHtml(makeModel)}</span>` : ''}
+              ${currentMileage ? `<span class="maint-vehicle-mileage">📍 ${currentMileage.toLocaleString()} mi</span>` : ''}
+              <span class="maint-vehicle-link">Open ↗</span>
+            </div>
+            <div class="maint-vehicle-items">`;
+          // Sort: overdue/urgent → mileage (closest due) → time (soonest date)
+          vItems.sort((a, b) => {
+            if (a.urgent !== b.urgent) return b.urgent ? 1 : -1;
+            if (a.intervalType === 'mileage' && b.intervalType === 'mileage') {
+              const aLeft = a.nextDueMileage - (currentMileage || 0);
+              const bLeft = b.nextDueMileage - (currentMileage || 0);
+              return aLeft - bLeft;
+            }
+            if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+            return 0;
+          });
+          for (const item of vItems) {
+            let statusClass = '';
+            let statusBadge = '';
+            let contextLine = '';
+            if (item.intervalType === 'mileage' && item.nextDueMileage) {
+              const milesLeft = item.nextDueMileage - (currentMileage || 0);
+              if (milesLeft <= 0) {
+                statusClass = 'maint-item-overdue';
+                statusBadge = `<span class="maint-status-badge maint-badge-overdue">Overdue by ${Math.abs(milesLeft).toLocaleString()} mi</span>`;
+              } else if (milesLeft <= 500) {
+                statusClass = 'maint-item-soon';
+                statusBadge = `<span class="maint-status-badge maint-badge-soon">${milesLeft.toLocaleString()} mi left</span>`;
+              } else {
+                statusClass = 'maint-item-ok';
+                statusBadge = `<span class="maint-status-badge maint-badge-ok">${milesLeft.toLocaleString()} mi left</span>`;
+              }
+              contextLine = `Due at ${item.nextDueMileage.toLocaleString()} mi${item.intervalMiles ? ` · Every ${item.intervalMiles.toLocaleString()} mi` : ''}${currentMileage ? ` · Now: ${currentMileage.toLocaleString()} mi` : ''}`;
+            } else if (item.intervalType === 'time' && item.dueDate) {
+              const [dy, dm, dd2] = item.dueDate.split('-').map(Number);
+              const due = new Date(dy, dm - 1, dd2);
+              const todayD = new Date();
+              const daysLeft = Math.round((due - todayD) / (1000 * 60 * 60 * 24));
+              if (daysLeft < 0) {
+                statusClass = 'maint-item-overdue';
+                statusBadge = `<span class="maint-status-badge maint-badge-overdue">Overdue ${Math.abs(daysLeft)}d</span>`;
+              } else if (daysLeft <= 30) {
+                statusClass = 'maint-item-soon';
+                statusBadge = `<span class="maint-status-badge maint-badge-soon">Due in ${daysLeft}d</span>`;
+              } else {
+                statusClass = 'maint-item-ok';
+                statusBadge = `<span class="maint-status-badge maint-badge-ok">Due ${item.dueDate}</span>`;
+              }
+              contextLine = `Due ${item.dueDate}${item.intervalMonths ? ` · Every ${item.intervalMonths === 1 ? '1 Month' : item.intervalMonths === 12 ? '1 Year' : item.intervalMonths + ' Months'}` : ''}`;
+            }
+            if (item.urgent) { statusClass = 'maint-item-overdue'; }
+            const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
+            const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','vehicleNotes')" title="Mark Complete">✓ Done</button>`;
+            const deleteBtn = canManage ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','vehicleNotes')" title="Delete">🗑</button>` : '';
+            html += `<div class="maint-item-row ${statusClass}">
+              <div class="maint-item-info">
+                <div class="maint-item-name">${escapeHtml(item.text)}${statusBadge}</div>
+                ${contextLine ? `<div class="maint-item-context">${contextLine}</div>` : ''}
+              </div>
+              <div class="task-item-actions">${completeBtn}${deleteBtn}</div>
+            </div>`;
+          }
+          html += `</div></div>`;
+        }
+        maintGroupEl.innerHTML = html;
+      }
+    }
+    return;
+  }
+  if (maintGroupEl) maintGroupEl.style.display = 'none';
+
   if (currentTaskTab === 'compliance') {
     [overdueEl, todayEl, upcomingEl, noDateEl].forEach(el => { if (el) el.style.display = 'none'; });
     if (emptyEl) emptyEl.style.display = 'none';
