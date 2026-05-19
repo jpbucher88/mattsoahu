@@ -1690,6 +1690,7 @@
         </div>
         <div class="camera-top-right">
           <span id="camera-count" class="camera-count-badge">0 photos</span>
+          <button id="camera-note-btn" class="camera-btn-note" title="Add note for this vehicle">&#128221;</button>
           <button id="camera-flash" class="camera-btn-flash" title="Toggle flash">⚡ Off</button>
           <button id="camera-flip" class="camera-btn-flip">&#128260;</button>
         </div>
@@ -1700,6 +1701,19 @@
       </div>
     </div>
     <canvas id="camera-canvas" style="display:none;"></canvas>
+
+    <!-- Quick note sheet — slides up over camera without closing it -->
+    <div id="camera-note-sheet" class="camera-note-sheet" style="display:none;">
+      <div class="camera-note-sheet-header">
+        <span id="camera-note-vehicle-label" class="camera-note-vehicle-label">📝 Note</span>
+        <button id="camera-note-cancel" class="camera-note-cancel-btn">&times;</button>
+      </div>
+      <textarea id="camera-note-text" class="camera-note-textarea" placeholder="Add a note about this vehicle..." maxlength="500" rows="3"></textarea>
+      <div class="camera-note-actions">
+        <label class="camera-note-check-label"><input type="checkbox" id="camera-note-followup"> &#9873; Follow Up</label>
+        <button id="camera-note-save" class="btn btn-sm btn-primary">Save Note</button>
+      </div>
+    </div>
   </div>
 
   <!-- ==================== TOAST NOTIFICATION ==================== -->

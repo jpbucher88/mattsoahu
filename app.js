@@ -1933,6 +1933,9 @@ function renderLocationsWidget() {
 }
 
 // "At Location" check — shows vehicles at this location that are ready but missing today's photos
+// Tracks the location for the active photo queue so we can repopulate on return from vehicle page
+let _locPhotoQueueActive = null;
+
 window.checkLocationPhotos = async function(loc) {
   // Refresh photo timestamps for vehicles at this location before checking
   toast('🔄 Refreshing photo status...', 'info');
@@ -1980,9 +1983,13 @@ window.checkLocationPhotos = async function(loc) {
   });
 
   if (needsPhotos.length === 0) {
+    _locPhotoQueueActive = null;
     toast(`✅ All vehicles at ${loc} have today's photos!`, 'success');
     return;
   }
+
+  // Keep the queue active so returning from vehicle page re-opens this overlay
+  _locPhotoQueueActive = loc;
 
   let overlay = $('loc-photos-overlay');
   if (!overlay) {
@@ -2003,14 +2010,15 @@ window.checkLocationPhotos = async function(loc) {
     </div>`;
   }).join('');
 
+  const remaining = needsPhotos.length;
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:440px;">
       <div class="modal-header">
         <h3>📍 At Location: ${escapeHtml(loc)}</h3>
-        <button class="modal-close" onclick="$('loc-photos-overlay').style.display='none'">&times;</button>
+        <button class="modal-close" onclick="$('loc-photos-overlay').style.display='none'; _locPhotoQueueActive=null;">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="color:#d97706;font-weight:600;margin-bottom:12px;">⚠️ ${needsPhotos.length} vehicle${needsPhotos.length !== 1 ? 's' : ''} need${needsPhotos.length === 1 ? 's' : ''} today's photos:</p>
+        <p style="color:#d97706;font-weight:600;margin-bottom:12px;">⚠️ ${remaining} vehicle${remaining !== 1 ? 's' : ''} still need${remaining === 1 ? 's' : ''} today's photos:</p>
         <div class="loc-photo-check-list">${rows}</div>
       </div>
     </div>`;
@@ -4020,6 +4028,7 @@ $('camera-close').addEventListener('click', async () => {
   }
   $('camera-video').srcObject = null;
   $('camera-overlay').style.display = 'none';
+  $('camera-note-sheet').style.display = 'none';
   _setCameraToastBadge(false); // restore full toast now that camera is closed
 
   // Wait for any remaining uploads
@@ -4031,6 +4040,55 @@ $('camera-close').addEventListener('click', async () => {
     toast(`${cameraShotCount} photo(s) taken!`, 'success');
     await loadPhotosForDate(selectedVehicle.id, selectedDate);
     loadPhotoDates(selectedVehicle.id, selectedDate);
+  }
+});
+
+// Camera quick note — opens/closes the note sheet inside the camera overlay
+$('camera-note-btn').addEventListener('click', () => {
+  if (!selectedVehicle) { toast('No vehicle selected.', 'warning'); return; }
+  const sheet = $('camera-note-sheet');
+  if (sheet.style.display !== 'none') {
+    sheet.style.display = 'none';
+    return;
+  }
+  $('camera-note-vehicle-label').innerHTML = `📝 Note for <strong>${escapeHtml(selectedVehicle.plate)}</strong>`;
+  $('camera-note-text').value = '';
+  $('camera-note-followup').checked = false;
+  sheet.style.display = '';
+  setTimeout(() => $('camera-note-text').focus(), 80);
+});
+
+$('camera-note-cancel').addEventListener('click', () => {
+  $('camera-note-sheet').style.display = 'none';
+});
+
+$('camera-note-save').addEventListener('click', async () => {
+  const text = $('camera-note-text').value.trim();
+  if (!text) { toast('Enter a note first.', 'warning'); return; }
+  if (!selectedVehicle) return;
+  const isFollowUp = $('camera-note-followup').checked;
+  const btn = $('camera-note-save');
+  btn.disabled = true;
+  try {
+    await db.collection('vehicleNotes').add({
+      vehicleId: selectedVehicle.id,
+      text,
+      isFollowUp,
+      done: false,
+      urgent: false,
+      taskStatus: 'scheduled',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email
+    });
+    $('camera-note-sheet').style.display = 'none';
+    toast(`📝 Note saved for ${escapeHtml(selectedVehicle.plate)}`, 'success');
+    if (isFollowUp) loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Camera note save error:', err);
+    toast('Failed to save note.', 'error');
+  } finally {
+    btn.disabled = false;
   }
 });
 
@@ -4681,6 +4739,10 @@ $('btn-back-dashboard').addEventListener('click', () => {
 $('btn-back-fleet').addEventListener('click', () => {
   selectedVehicle = null;
   showPage('dashboard');
+  // If user came from an At Location photo queue, re-open it so they can continue
+  if (_locPhotoQueueActive) {
+    setTimeout(() => checkLocationPhotos(_locPhotoQueueActive), 450);
+  }
 });
 
 $('btn-prev-vehicle').addEventListener('click', () => {
