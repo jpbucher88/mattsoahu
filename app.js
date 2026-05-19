@@ -6425,6 +6425,69 @@ window.switchMaintTab = function(tabId, btn) {
   if (tabId === 'mtab-fleet') _loadMaintFleet();
 };
 
+// ── Recent Services helpers ───────────────────────────────────────
+let _recentSvcAllData = [];
+
+const _RSVC_CATS = {
+  oil:     ['oil change'],
+  tires:   ['tire rotation', 'tire', 'tires', 'new tire'],
+  brakes:  ['brake', 'rotor'],
+  filters: ['air filter', 'cabin filter', 'filter'],
+  wipers:  ['wiper'],
+  repair:  ['shop repair', 'repair'],
+};
+
+function _buildRecentSvcTable(items) {
+  if (!items.length) return '<p class="hint" style="padding:8px 0;">No records match.</p>';
+  let rows = '';
+  items.forEach(d => {
+    const v = vehiclesCache.find(x => x.id === d.vehicleId);
+    const vLabel = v ? escapeHtml(v.plate) : '?';
+    const costStr = d.cost != null ? `$${d.cost.toFixed(0)}` : '';
+    rows += `<tr>
+      <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(d.date || '')}</td>
+      <td style="padding:5px 8px;font-weight:600;">${vLabel}</td>
+      <td style="padding:5px 8px;">${escapeHtml(d.serviceType || '')}</td>
+      <td style="padding:5px 8px;color:#6b7280;">${escapeHtml(d.location || '')}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:600;">${escapeHtml(costStr)}</td>
+    </tr>`;
+  });
+  return `<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+    <thead><tr style="border-bottom:2px solid #e5e7eb;text-align:left;background:#f9fafb;">
+      <th style="padding:5px 8px;">Date</th>
+      <th style="padding:5px 8px;">Vehicle</th>
+      <th style="padding:5px 8px;">Service</th>
+      <th style="padding:5px 8px;">Shop</th>
+      <th style="padding:5px 8px;text-align:right;">Cost</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+window._filterRecentSvc = function(cat, btn) {
+  document.querySelectorAll('.rsvc-tab').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  const wrap = $('rsvc-table-wrap');
+  if (!wrap) return;
+  let items = _recentSvcAllData;
+  if (cat !== 'all') {
+    const terms = _RSVC_CATS[cat];
+    if (cat === 'other') {
+      const allTerms = Object.values(_RSVC_CATS).flat();
+      items = items.filter(d => {
+        const type = (d.serviceType || '').toLowerCase();
+        return !allTerms.some(t => type.includes(t));
+      });
+    } else if (terms) {
+      items = items.filter(d => {
+        const type = (d.serviceType || '').toLowerCase();
+        return terms.some(t => type.includes(t));
+      });
+    }
+  }
+  wrap.innerHTML = _buildRecentSvcTable(items);
+};
+
 // ── Overview ──────────────────────────────────────────────────────
 async function _loadMaintOverview() {
   const statsEl = $('maint-stat-cards');
@@ -6518,37 +6581,26 @@ async function _loadMaintOverview() {
     }
     alertsEl.innerHTML = alertsHtml || '<p class="hint" style="color:#16a34a;">✅ No overdue or upcoming services in the next 30 days.</p>';
 
-    // 5. Recent services (most recent 12 across fleet)
-    const recentSnap = await db.collection('maintenance').orderBy('date', 'desc').limit(12).get();
+    // 5. Recent services (most recent 50 across fleet) with filter tabs
+    const recentSnap = await db.collection('maintenance').orderBy('date', 'desc').limit(50).get();
     if (recentSnap.empty) {
       recentEl.innerHTML = '';
     } else {
-      let rows = '';
-      recentSnap.forEach(doc => {
-        const d = doc.data();
-        const v = vehiclesCache.find(x => x.id === d.vehicleId);
-        const vLabel = v ? `${v.plate}` : '?';
-        const costStr = d.cost != null ? `$${d.cost.toFixed(0)}` : '';
-        rows += `<tr>
-          <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(d.date || '')}</td>
-          <td style="padding:5px 8px;font-weight:500;">${escapeHtml(vLabel)}</td>
-          <td style="padding:5px 8px;">${escapeHtml(d.serviceType || '')}</td>
-          <td style="padding:5px 8px;">${escapeHtml(d.location || '')}</td>
-          <td style="padding:5px 8px;text-align:right;">${escapeHtml(costStr)}</td>
-        </tr>`;
-      });
+      _recentSvcAllData = recentSnap.docs.map(doc => doc.data());
+      const filterTabs = `
+        <div class="rsvc-filter-tabs">
+          <button class="rsvc-tab active" data-cat="all" onclick="_filterRecentSvc('all',this)">All</button>
+          <button class="rsvc-tab" data-cat="oil" onclick="_filterRecentSvc('oil',this)">🛢 Oil</button>
+          <button class="rsvc-tab" data-cat="tires" onclick="_filterRecentSvc('tires',this)">🛞 Tires</button>
+          <button class="rsvc-tab" data-cat="brakes" onclick="_filterRecentSvc('brakes',this)">🛑 Brakes</button>
+          <button class="rsvc-tab" data-cat="filters" onclick="_filterRecentSvc('filters',this)">🌬 Filters</button>
+          <button class="rsvc-tab" data-cat="wipers" onclick="_filterRecentSvc('wipers',this)">🌧 Wipers</button>
+          <button class="rsvc-tab" data-cat="repair" onclick="_filterRecentSvc('repair',this)">🔧 Repair</button>
+          <button class="rsvc-tab" data-cat="other" onclick="_filterRecentSvc('other',this)">Other</button>
+        </div>`;
       recentEl.innerHTML = `<h4 style="margin:0 0 8px;">🕐 Recent Services</h4>
-        <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
-          <thead><tr style="border-bottom:2px solid #e5e7eb;text-align:left;">
-            <th style="padding:5px 8px;">Date</th>
-            <th style="padding:5px 8px;">Vehicle</th>
-            <th style="padding:5px 8px;">Service</th>
-            <th style="padding:5px 8px;">Shop</th>
-            <th style="padding:5px 8px;text-align:right;">Cost</th>
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table></div>`;
+        ${filterTabs}
+        <div id="rsvc-table-wrap" style="overflow-x:auto;">${_buildRecentSvcTable(_recentSvcAllData)}</div>`;
     }
   } catch (e) {
     statsEl.innerHTML = '<p class="hint">Error loading data.</p>';
@@ -6718,6 +6770,7 @@ $('btn-add-maintenance').addEventListener('click', () => {
   $('m-next-due-display').textContent = '—';
   $('m-next-due-mileage-display').textContent = '—';
   $('m-type').value = '';
+  resetServiceChips();
   // Clear invoice
   $('m-invoice-input').value = '';
   $('m-invoice-filename').textContent = 'No file chosen';
@@ -6777,23 +6830,77 @@ const MAINT_TEMPLATES = {
   'other':        { type: 'Other',                 months: null,miles: null  },
 };
 
-$('btn-apply-template').addEventListener('click', () => {
-  const key = $('m-template-select').value;
-  if (!key) return;
-  const tpl = MAINT_TEMPLATES[key];
-  if (!tpl) return;
-  $('m-type').value = tpl.type;
-  $('m-interval').value = tpl.months ? String(tpl.months) : '';
-  $('m-mile-interval').value = tpl.miles ? String(tpl.miles) : '';
-  $('m-template-select').value = '';
-  updateNextDueDisplay();
-  $('m-type').focus();
+// ── Service chip & provider chip handlers ──────────────────────
+function applyServiceChip(key) {
+  const grid = $('service-chips');
+  if (!grid) return;
+  grid.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+  const btn = grid.querySelector(`[data-key="${key}"]`);
+  if (btn) btn.classList.add('active');
+  if (key === 'other') {
+    $('m-type').value = '';
+    $('m-type').style.display = '';
+    $('m-interval').value = '';
+    $('m-mile-interval').value = '';
+    updateNextDueDisplay();
+    setTimeout(() => $('m-type').focus(), 50);
+  } else {
+    const tpl = MAINT_TEMPLATES[key];
+    if (tpl) {
+      $('m-type').value = tpl.type;
+      $('m-type').style.display = 'none';
+      $('m-interval').value = tpl.months ? String(tpl.months) : '';
+      $('m-mile-interval').value = tpl.miles ? String(tpl.miles) : '';
+      updateNextDueDisplay();
+    }
+  }
+}
+
+function resetServiceChips() {
+  const grid = $('service-chips');
+  if (grid) grid.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+  const mType = $('m-type');
+  if (mType) { mType.value = ''; mType.style.display = 'none'; }
+  const pChips = $('provider-chips');
+  if (pChips) pChips.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+}
+
+(function() {
+  const grid = $('service-chips');
+  if (grid) {
+    grid.addEventListener('click', function(e) {
+      const chip = e.target.closest('.maint-chip');
+      if (!chip) return;
+      const key = chip.dataset.key;
+      if (chip.classList.contains('active') && key !== 'other') {
+        chip.classList.remove('active');
+        $('m-type').value = '';
+        $('m-type').style.display = 'none';
+        $('m-interval').value = '';
+        $('m-mile-interval').value = '';
+        updateNextDueDisplay();
+      } else {
+        applyServiceChip(key);
+      }
+    });
+  }
+})();
+
+// Provider chip click delegation
+document.addEventListener('click', function(e) {
+  const pChip = e.target.closest('.maint-chip-provider');
+  if (!pChip) return;
+  document.querySelectorAll('.maint-chip-provider').forEach(c => c.classList.remove('active'));
+  pChip.classList.add('active');
+  const loc = $('m-location');
+  if (loc) loc.value = pChip.dataset.provider;
 });
 
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
   clearStarPickers($('maintenance-form'));
+  resetServiceChips();
   $('m-next-due-display').textContent = '—';
   $('m-next-due-mileage-display').textContent = '—';
   // Clear invoice preview
@@ -7011,6 +7118,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     $('maintenance-form-wrap').style.display = 'none';
     $('maintenance-form').reset();
     clearStarPickers($('maintenance-form'));
+    resetServiceChips();
     $('m-next-due-display').textContent = '—';
     $('m-next-due-mileage-display').textContent = '—';
     $('m-invoice-input').value = '';
@@ -7152,15 +7260,29 @@ async function _updateServiceProvider(name, date, cost, supplierRating) {
 async function loadProviderSuggestions() {
   try {
     const dl = $('provider-suggestions');
+    const chipsEl = $('provider-chips');
     if (!dl) return;
-    const snap = await db.collection('serviceProviders').orderBy('serviceCount', 'desc').limit(50).get();
+    const snap = await db.collection('serviceProviders').orderBy('serviceCount', 'desc').limit(20).get();
     dl.innerHTML = '';
+    const providers = [];
     snap.forEach(doc => {
       const d = doc.data();
+      const name = d.name || doc.id;
+      providers.push(name);
       const opt = document.createElement('option');
-      opt.value = d.name || doc.id;
+      opt.value = name;
       dl.appendChild(opt);
     });
+    if (chipsEl) {
+      if (providers.length === 0) {
+        chipsEl.innerHTML = '<span class="provider-no-chips">No shops saved yet — type below</span>';
+      } else {
+        chipsEl.innerHTML = providers.map(name =>
+          `<button type="button" class="maint-chip maint-chip-provider" data-provider="${escapeHtml(name)}">${escapeHtml(name)}</button>`
+        ).join('') +
+        `<button type="button" class="maint-chip maint-chip-other" onclick="const ml=$('m-location');if(ml){ml.value='';ml.focus();document.querySelectorAll('.maint-chip-provider').forEach(c=>c.classList.remove('active'));}">✏️ New…</button>`;
+      }
+    }
   } catch(e) { /* non-critical */ }
 }
 

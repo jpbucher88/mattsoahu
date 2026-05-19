@@ -543,56 +543,46 @@
         <div id="maintenance-form-wrap" style="display:none;">
           <h4>Log Maintenance</h4>
           <form id="maintenance-form">
-            <!-- Quick-fill templates row -->
-            <div class="form-row" style="margin-bottom:8px;">
-              <div class="form-group" style="flex:1;">
-                <label for="m-template-select" style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;">⚡ Quick Fill Template</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <select id="m-template-select" class="form-select" style="flex:1;">
-                    <option value="">— Pick a template to pre-fill —</option>
-                    <option value="oil">Oil Change (3 mo / 3,000 mi)</option>
-                    <option value="tire-rotation">Tire Rotation (6 mo / 6,000 mi)</option>
-                    <option value="air-filter">Air Filter (12 mo / 15,000 mi)</option>
-                    <option value="cabin-filter">Cabin Filter (12 mo / 15,000 mi)</option>
-                    <option value="brakes">Brake Pads/Rotors (2 yr)</option>
-                    <option value="trans">Transmission Fluid (2 yr)</option>
-                    <option value="coolant">Coolant Flush (2 yr)</option>
-                    <option value="spark-plugs">Spark Plugs (3 yr)</option>
-                    <option value="battery">Battery (4 yr)</option>
-                    <option value="tires">Tires (New) (4 yr)</option>
-                    <option value="ac">A/C Service (1 yr)</option>
-                    <option value="inspection">Inspection / Safety (1 yr)</option>
-                    <option value="detail">Detail (3 mo)</option>
-                    <option value="roach">Roach Treatment (6 mo)</option>
-                    <option value="wash">Wash</option>
-                    <option value="wiper">Wiper Blades (1 yr)</option>
-                    <option value="alignment">Alignment (1 yr)</option>
-                    <option value="other">Other (no repeat)</option>
-                  </select>
-                  <button type="button" id="btn-apply-template" class="btn btn-sm btn-outline" style="white-space:nowrap;">Apply</button>
-                </div>
+            <!-- ── Service Type Chips ── -->
+            <div class="maint-form-section">
+              <label class="maint-quick-label">⚡ Service Type — tap to select</label>
+              <div id="service-chips" class="maint-chip-grid">
+                <button type="button" class="maint-chip" data-key="oil">🛢 Oil Change</button>
+                <button type="button" class="maint-chip" data-key="tire-rotation">🔄 Tire Rotation</button>
+                <button type="button" class="maint-chip" data-key="tires">🛞 New Tires</button>
+                <button type="button" class="maint-chip" data-key="brakes">🛑 Brakes</button>
+                <button type="button" class="maint-chip" data-key="battery">🔋 Battery</button>
+                <button type="button" class="maint-chip" data-key="air-filter">🌬 Air Filter</button>
+                <button type="button" class="maint-chip" data-key="cabin-filter">🚗 Cabin Filter</button>
+                <button type="button" class="maint-chip" data-key="wiper">🌧 Wipers</button>
+                <button type="button" class="maint-chip" data-key="ac">❄️ A/C Service</button>
+                <button type="button" class="maint-chip" data-key="inspection">🔍 Inspection</button>
+                <button type="button" class="maint-chip" data-key="detail">✨ Detail</button>
+                <button type="button" class="maint-chip" data-key="wash">🧽 Wash</button>
+                <button type="button" class="maint-chip" data-key="alignment">📐 Alignment</button>
+                <button type="button" class="maint-chip" data-key="roach">🪲 Roach Tx</button>
+                <button type="button" class="maint-chip" data-key="trans">⚙️ Trans Fluid</button>
+                <button type="button" class="maint-chip" data-key="spark-plugs">⚡ Spark Plugs</button>
+                <button type="button" class="maint-chip" data-key="coolant">💧 Coolant</button>
+                <button type="button" class="maint-chip maint-chip-other" data-key="other">✏️ Other…</button>
               </div>
+              <input type="text" id="m-type" class="form-select" style="display:none;margin-top:8px;" placeholder="Describe the service…" list="service-type-suggestions" maxlength="100" autocomplete="off">
+              <datalist id="service-type-suggestions">
+                <option value="Oil Change"><option value="Tire Rotation"><option value="Brake Inspection">
+                <option value="Brake Pads/Rotors"><option value="Air Filter"><option value="Cabin Filter">
+                <option value="Transmission Fluid"><option value="Coolant Flush"><option value="Spark Plugs">
+                <option value="Battery"><option value="Tires (New)"><option value="Alignment">
+                <option value="Wiper Blades"><option value="Belts/Hoses"><option value="A/C Service">
+                <option value="Inspection/Safety"><option value="Roach Treatment"><option value="Detail">
+                <option value="Window Tint"><option value="Wash"><option value="Shop Repair"><option value="Other">
+              </datalist>
             </div>
+            <!-- ── Date / Mileage / Cost ── -->
             <div class="form-row">
-              <div class="form-group">
-                <label for="m-type">Service Type <span style="color:#9ca3af;font-size:0.77rem;">(or type anything)</span></label>
-                <input type="text" id="m-type" class="form-select" placeholder="e.g. Oil Change, Tire Rotation, Other…" list="service-type-suggestions" maxlength="100" autocomplete="off">
-                <datalist id="service-type-suggestions">
-                  <option value="Oil Change"><option value="Tire Rotation"><option value="Brake Inspection">
-                  <option value="Brake Pads/Rotors"><option value="Air Filter"><option value="Cabin Filter">
-                  <option value="Transmission Fluid"><option value="Coolant Flush"><option value="Spark Plugs">
-                  <option value="Battery"><option value="Tires (New)"><option value="Alignment">
-                  <option value="Wiper Blades"><option value="Belts/Hoses"><option value="A/C Service">
-                  <option value="Inspection/Safety"><option value="Roach Treatment"><option value="Detail">
-                  <option value="Window Tint"><option value="Wash"><option value="Other">
-                </datalist>
-              </div>
               <div class="form-group">
                 <label for="m-date">Date</label>
                 <input type="date" id="m-date" required>
               </div>
-            </div>
-            <div class="form-row">
               <div class="form-group">
                 <label for="m-mileage">Mileage at Service</label>
                 <input type="number" id="m-mileage" placeholder="e.g. 45000" min="0" max="999999">
@@ -602,12 +592,17 @@
                 <input type="number" id="m-cost" placeholder="0.00" min="0" step="0.01">
               </div>
             </div>
-            <div class="form-row">
-              <div class="form-group">
-                <label for="m-location">Where Serviced</label>
-                <input type="text" id="m-location" placeholder="e.g. Jiffy Lube Kailua" maxlength="100" list="provider-suggestions" autocomplete="off">
-                <datalist id="provider-suggestions"></datalist>
+            <!-- ── Provider / Shop Chips ── -->
+            <div class="maint-form-section">
+              <label class="maint-quick-label">🏪 Where Serviced — tap to select</label>
+              <div id="provider-chips" class="maint-chip-grid provider-chips-grid">
+                <!-- populated by loadProviderSuggestions() -->
               </div>
+              <input type="text" id="m-location" class="form-select" style="margin-top:8px;" placeholder="Or type / add new shop…" maxlength="100" list="provider-suggestions" autocomplete="off">
+              <datalist id="provider-suggestions"></datalist>
+            </div>
+            <!-- ── Notes ── -->
+            <div class="form-row">
               <div class="form-group">
                 <label for="m-notes">Notes</label>
                 <input type="text" id="m-notes" placeholder="Optional details" maxlength="200">

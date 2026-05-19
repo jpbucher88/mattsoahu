@@ -7116,3 +7116,118 @@ body {
   border-radius: 10px; cursor: pointer;
 }
 .dmg-all-pass-btn:hover { background: #15803d; }
+
+/* ============================================================
+   MAINTENANCE — Service & Provider Quick-Select Chips
+   ============================================================ */
+.maint-form-section {
+  margin-bottom: 12px;
+}
+.maint-quick-label {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #6b7280;
+  margin-bottom: 7px;
+  font-weight: 600;
+}
+.maint-chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.maint-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: 1.5px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.maint-chip:hover {
+  background: #e0f2fe;
+  border-color: #7dd3fc;
+  color: #0369a1;
+}
+.maint-chip.active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.maint-chip-other {
+  border-style: dashed;
+  color: #6b7280;
+}
+.maint-chip-other.active {
+  background: #6b7280;
+  border-color: #6b7280;
+  color: #fff;
+  border-style: solid;
+}
+.maint-chip-provider {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #166534;
+}
+.maint-chip-provider:hover {
+  background: #dcfce7;
+  border-color: #4ade80;
+}
+.maint-chip-provider.active {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+.provider-chips-grid {
+  min-height: 28px;
+}
+.provider-no-chips {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  padding: 4px 0;
+}
+
+/* ============================================================
+   MAINTENANCE DASHBOARD — Recent Services Filter Tabs
+   ============================================================ */
+.rsvc-filter-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.rsvc-tab {
+  padding: 4px 11px;
+  border-radius: 99px;
+  border: 1.5px solid #e5e7eb;
+  background: #f9fafb;
+  color: #374151;
+  font-size: 0.77rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.rsvc-tab:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+.rsvc-tab.active {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #fff;
+}
