@@ -1047,6 +1047,8 @@ auth.onAuthStateChanged(async (user) => {
       resumeAllPendingUploads();
       // Check for any photos that were taken in another browser and never uploaded
       _checkOrphanedPendingUploads();
+      // Flag vehicles with no mileage update in 14+ days
+      setTimeout(() => checkStaleMileage(), 3000);
       showPage('dashboard');
       startMailListener();
       startIncidentListener();
@@ -2783,10 +2785,11 @@ async function confirmMileage() {
 
   // Save mileage to Firestore
   if (selectedVehicle) {
-    db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val }).then(async () => {
+    db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val, mileageUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() }).then(async () => {
       selectedVehicle.mileage = val;
+      selectedVehicle.mileageUpdatedAt = new Date();
       const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-      if (cached) cached.mileage = val;
+      if (cached) { cached.mileage = val; cached.mileageUpdatedAt = new Date(); }
       // Also update the maintenance mileage input
       $('vehicle-mileage').value = val;
       updateRecommendedServices(selectedVehicle.id);
@@ -2816,6 +2819,26 @@ async function confirmMileage() {
           loadDashboardFollowUps();
         }
       } catch (e) { /* ignore */ }
+
+      // Auto-close any open stale-mileage tasks for this vehicle now that mileage is fresh
+      try {
+        const staleSnap = await db.collection('vehicleNotes')
+          .where('vehicleId', '==', selectedVehicle.id)
+          .where('staleMileageTask', '==', true)
+          .where('done', '==', false)
+          .get();
+        if (!staleSnap.empty) {
+          const closeBatch = db.batch();
+          staleSnap.forEach(doc => closeBatch.update(doc.ref, {
+            done: true,
+            completedBy: currentUser.uid,
+            completedByName: currentUser.displayName || currentUser.email,
+            completedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }));
+          await closeBatch.commit();
+          loadDashboardFollowUps();
+        }
+      } catch (e) { /* non-critical */ }
     }).catch(err => console.error('Mileage save error:', err));
   }
 
@@ -6305,10 +6328,11 @@ $('btn-save-mileage').addEventListener('click', async () => {
     createMileageDecreaseTask(selectedVehicle, prev, val);
   }
   try {
-    await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val });
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage: val, mileageUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
     selectedVehicle.mileage = val;
+    selectedVehicle.mileageUpdatedAt = new Date();
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) cached.mileage = val;
+    if (cached) { cached.mileage = val; cached.mileageUpdatedAt = new Date(); }
     toast('Mileage updated!', 'success');
     updateRecommendedServices(selectedVehicle.id);
 
@@ -6337,6 +6361,26 @@ $('btn-save-mileage').addEventListener('click', async () => {
         loadDashboardFollowUps();
       }
     } catch (e) { /* ignore */ }
+
+    // Auto-close any open stale-mileage tasks for this vehicle
+    try {
+      const staleSnap = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', selectedVehicle.id)
+        .where('staleMileageTask', '==', true)
+        .where('done', '==', false)
+        .get();
+      if (!staleSnap.empty) {
+        const closeBatch = db.batch();
+        staleSnap.forEach(doc => closeBatch.update(doc.ref, {
+          done: true,
+          completedBy: currentUser.uid,
+          completedByName: currentUser.displayName || currentUser.email,
+          completedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }));
+        await closeBatch.commit();
+        loadDashboardFollowUps();
+      }
+    } catch (e) { /* non-critical */ }
   } catch (err) {
     console.error('Save mileage error:', err);
     toast('Failed to save mileage.', 'error');
@@ -6924,10 +6968,11 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     // Auto-update vehicle mileage if higher (admin-only; silently skip if permission denied)
     if (mileage && (!selectedVehicle.mileage || mileage > selectedVehicle.mileage)) {
       try {
-        await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage });
+        await db.collection('vehicles').doc(selectedVehicle.id).update({ mileage, mileageUpdatedAt: firebase.firestore.FieldValue.serverTimestamp() });
         selectedVehicle.mileage = mileage;
+        selectedVehicle.mileageUpdatedAt = new Date();
         const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-        if (cached) cached.mileage = mileage;
+        if (cached) { cached.mileage = mileage; cached.mileageUpdatedAt = new Date(); }
         $('vehicle-mileage').value = mileage;
       } catch (mileErr) {
         console.warn('Could not auto-update vehicle mileage (may require admin role):', mileErr);
@@ -8545,6 +8590,93 @@ function renderTaskAgenda(allItems) {
       }
     });
   });
+}
+
+// ================================================================
+// STALE MILEAGE CHECK — flag vehicles with no mileage update in 14d
+// ================================================================
+// Runs once per login (admin/manager only). Creates a Maintenance-sourced
+// vehicleNotes task for each active vehicle whose mileage hasn't been updated
+// in STALE_MILEAGE_DAYS days. Deduplicates so only one open task exists per vehicle.
+const STALE_MILEAGE_DAYS = 14;
+
+async function checkStaleMileage() {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  if (!vehiclesCache || vehiclesCache.length === 0) return;
+
+  const now = Date.now();
+  const cutoff = now - STALE_MILEAGE_DAYS * 24 * 60 * 60 * 1000;
+
+  // Find vehicles that are active (not excluded from photos) and have stale/missing mileage
+  const staleVehicles = vehiclesCache.filter(v => {
+    if (v.photoExcluded) return false; // excluded from ops entirely
+    // Get last recorded mileage timestamp
+    let lastUpdated = null;
+    if (v.mileageUpdatedAt) {
+      lastUpdated = v.mileageUpdatedAt.toDate
+        ? v.mileageUpdatedAt.toDate().getTime()
+        : new Date(v.mileageUpdatedAt).getTime();
+    }
+    // Flag if never recorded OR not recorded in cutoff window
+    return !lastUpdated || lastUpdated < cutoff;
+  });
+
+  if (staleVehicles.length === 0) return;
+
+  // For each stale vehicle, check if an open stale-mileage task already exists
+  const batch = db.batch();
+  let newTasks = 0;
+
+  for (const v of staleVehicles) {
+    try {
+      const existing = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', v.id)
+        .where('staleMileageTask', '==', true)
+        .where('done', '==', false)
+        .limit(1)
+        .get();
+
+      if (!existing.empty) continue; // already has an open task
+
+      const daysSince = v.mileageUpdatedAt
+        ? Math.round((now - (v.mileageUpdatedAt.toDate
+            ? v.mileageUpdatedAt.toDate().getTime()
+            : new Date(v.mileageUpdatedAt).getTime())) / (1000 * 60 * 60 * 24))
+        : null;
+
+      const label = daysSince
+        ? `📍 Mileage not recorded in ${daysSince} days — please update odometer`
+        : `📍 No mileage on file — please record current odometer reading`;
+
+      const ref = db.collection('vehicleNotes').doc();
+      batch.set(ref, {
+        vehicleId: v.id,
+        text: label,
+        isFollowUp: true,
+        done: false,
+        urgent: false,
+        sourceType: 'maintenance',
+        taskStatus: 'maintenance',
+        staleMileageTask: true,
+        autoCreated: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid,
+        createdByName: 'System',
+      });
+      newTasks++;
+    } catch (e) {
+      console.warn('Stale mileage check error for', v.plate, e);
+    }
+  }
+
+  if (newTasks > 0) {
+    try {
+      await batch.commit();
+      loadDashboardFollowUps();
+    } catch (e) {
+      console.warn('Stale mileage batch write error:', e);
+    }
+  }
 }
 
 function renderCompletedBucket(completedItems) {
