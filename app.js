@@ -8736,6 +8736,30 @@ async function checkStaleMileage() {
   const now = Date.now();
   const cutoff = now - STALE_MILEAGE_DAYS * 24 * 60 * 60 * 1000;
 
+  // Close any false-positive stale tasks on vehicles that have a mileage value
+  // (these were created before mileageUpdatedAt existed on pre-existing vehicles)
+  try {
+    const falsePositives = vehiclesCache.filter(v => v.mileage && !v.mileageUpdatedAt);
+    for (const v of falsePositives) {
+      const fpSnap = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', v.id)
+        .where('staleMileageTask', '==', true)
+        .where('done', '==', false)
+        .limit(5)
+        .get();
+      if (!fpSnap.empty) {
+        const closeBatch = db.batch();
+        fpSnap.forEach(doc => closeBatch.update(doc.ref, {
+          done: true,
+          completedBy: currentUser.uid,
+          completedByName: 'System',
+          completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }));
+        await closeBatch.commit();
+      }
+    }
+  } catch (e) { /* non-critical cleanup */ }
+
   // Find vehicles that are active (not excluded from photos) and have stale/missing mileage
   const staleVehicles = vehiclesCache.filter(v => {
     if (v.photoExcluded) return false; // excluded from ops entirely
@@ -8746,8 +8770,12 @@ async function checkStaleMileage() {
         ? v.mileageUpdatedAt.toDate().getTime()
         : new Date(v.mileageUpdatedAt).getTime();
     }
-    // Flag if never recorded OR not recorded in cutoff window
-    return !lastUpdated || lastUpdated < cutoff;
+    // If no timestamp but mileage exists → vehicle predates this feature, not stale
+    if (!lastUpdated && v.mileage) return false;
+    // No mileage at all → flag as missing
+    if (!lastUpdated && !v.mileage) return true;
+    // Has timestamp → flag only if older than cutoff
+    return lastUpdated < cutoff;
   });
 
   if (staleVehicles.length === 0) return;
