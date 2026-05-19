@@ -7231,3 +7231,13 @@ body {
   border-color: #2563eb;
   color: #fff;
 }
+/* Clickable plate links in Recent Services & History tables */
+.rsvc-plate-link {
+  font-weight: 700;
+  color: #1d4ed8;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.rsvc-plate-link:hover { color: #1e40af; text-decoration: underline; }

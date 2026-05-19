@@ -6443,10 +6443,14 @@ function _buildRecentSvcTable(items) {
   items.forEach(d => {
     const v = vehiclesCache.find(x => x.id === d.vehicleId);
     const vLabel = v ? escapeHtml(v.plate) : '?';
+    const vId = v ? v.id : null;
+    const plateCell = vId
+      ? `<span class="rsvc-plate-link" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${vId}'),80)" title="Open ${vLabel}">${vLabel}</span>`
+      : vLabel;
     const costStr = d.cost != null ? `$${d.cost.toFixed(0)}` : '';
     rows += `<tr>
       <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(d.date || '')}</td>
-      <td style="padding:5px 8px;font-weight:600;">${vLabel}</td>
+      <td style="padding:5px 8px;">${plateCell}</td>
       <td style="padding:5px 8px;">${escapeHtml(d.serviceType || '')}</td>
       <td style="padding:5px 8px;color:#6b7280;">${escapeHtml(d.location || '')}</td>
       <td style="padding:5px 8px;text-align:right;font-weight:600;">${escapeHtml(costStr)}</td>
@@ -6711,9 +6715,12 @@ window.loadMaintHistory = async function() {
       if (d.cost) totalCost += d.cost;
       const mileStr = d.mileage ? d.mileage.toLocaleString() : '—';
       const bg = i % 2 === 0 ? '' : 'background:#f9fafb;';
+      const plateCell = d.vehicleId
+        ? `<span class="rsvc-plate-link" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${d.vehicleId}'),80)" title="Open ${escapeHtml(vLabel)}">${escapeHtml(vLabel)}</span>`
+        : escapeHtml(vLabel);
       return `<tr style="${bg}border-bottom:1px solid #f3f4f6;">
         <td style="padding:5px 8px;white-space:nowrap;">${escapeHtml(d.date || '')}</td>
-        <td style="padding:5px 8px;font-weight:500;">${escapeHtml(vLabel)}</td>
+        <td style="padding:5px 8px;">${plateCell}</td>
         <td style="padding:5px 8px;">${escapeHtml(d.serviceType || '')}</td>
         <td style="padding:5px 8px;">${escapeHtml(d.location || '')}</td>
         <td style="padding:5px 8px;">${mileStr}</td>
