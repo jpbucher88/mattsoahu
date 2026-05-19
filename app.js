@@ -7496,6 +7496,8 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
     updateData.intervalMiles = intervalMiles ?? firebase.firestore.FieldValue.delete();
     updateData.nextDueDate = nextDueDate ?? firebase.firestore.FieldValue.delete();
     updateData.nextDueMileage = nextDueMileage ?? firebase.firestore.FieldValue.delete();
+    const eRatComm  = $('em-rat-comm')?.value  ? parseInt($('em-rat-comm').value)  : null;
+    const eRatPrice = $('em-rat-price')?.value ? parseInt($('em-rat-price').value) : null;
     const eRatFixed = $('em-rat-fixed')?.value ? parseInt($('em-rat-fixed').value) : null;
     if (eRatComm || eRatPrice || eRatFixed) {
       updateData.supplierRating = {};
