@@ -1659,7 +1659,7 @@ function renderLocationsWidget() {
         const returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
         html += `<div class="trip-item">
           <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
-          <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+          <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
           ${returnLabel}
           ${returnBtn}
         </div>`;
@@ -1686,7 +1686,7 @@ function renderLocationsWidget() {
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
             <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
-            <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+            <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
             ${photoTag}
           </div>
           <div class="cleaning-actions">
@@ -1711,7 +1711,7 @@ function renderLocationsWidget() {
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
             <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
-            <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+            <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
             <span class="photo-age-tag">${ageText}</span>
           </div>
           <button class="btn btn-sm btn-primary photo-done-btn" data-vid="${v.id}">📷 Done</button>
@@ -1749,7 +1749,7 @@ function renderLocationsWidget() {
       for (const v of needsCleaningNoLoc) {
         const needsDamage = v.needsDamageCheck;
         html += `<div class="cleaning-item" data-vid="${v.id}">
-          <div class="cleaning-vehicle-info"><span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span><span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span></div>
+          <div class="cleaning-vehicle-info"><span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span><span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span></div>
           <div class="cleaning-actions">
             ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
             <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled' : ''}>✓ Cleaned</button>
