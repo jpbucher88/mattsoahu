@@ -3927,6 +3927,16 @@ body {
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(37,99,235,0.12);
   transition: background 0.15s, border-color 0.15s;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+.chip-sub {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: #6b7280;
+  line-height: 1.1;
 }
 .location-vehicle-chip:hover {
   background: #eff6ff;
@@ -4897,7 +4907,11 @@ body {
   border-bottom: 1px solid #f1f5f9;
   font-size: 0.85rem;
   transition: background 0.1s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(37,99,235,0.08);
+  user-select: none;
 }
+.tc-day-label span, .tc-day-hours span { pointer-events: none; }
 .tc-day-row:last-of-type { border-bottom: none; }
 .tc-today-row { background: #eff6ff; }
 .tc-active-row { background: #f0fdf4; }

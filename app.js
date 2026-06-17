@@ -1612,7 +1612,7 @@ function renderLocationsWidget() {
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
     if (isOnTrip || isAtRepair || withinGrace) return false;
-    return v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
+    return !hasPhotosToday(v);
   }
 
   const sortByReturn = (arr) => arr.sort((a, b) => {
@@ -1726,7 +1726,8 @@ function renderLocationsWidget() {
         <div class="location-group-vehicles">`;
       for (const v of atHomeClean) {
         const parkBadge = (isKapiolani && v.needsParking) ? '<span class="parking-badge">🅿️</span>' : '';
-        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>${parkBadge}</div>`;
+        const chipSub = [v.color, v.vehicleType].filter(Boolean).map(s => escapeHtml(s)).join(' · ');
+        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}</div>${parkBadge}</div>`;
       }
       html += '</div>';
     }
@@ -2440,7 +2441,8 @@ async function openVehiclePage(vid) {
   $('vehicle-page-title').textContent = `${selectedVehicle.plate}`;
   $('vehicle-make-model').textContent = `${selectedVehicle.make} ${selectedVehicle.model}` +
     (selectedVehicle.year ? ` (${selectedVehicle.year})` : '') +
-    (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '');
+    (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '') +
+    (selectedVehicle.vehicleType ? ` · ${selectedVehicle.vehicleType}` : '');
 
   // Show color edit button for admins/managers
   const colorEditBtn = $('btn-edit-vehicle-color');
@@ -5482,6 +5484,7 @@ window.openEditVehicle = function (vehicleId) {
   $('ev-model').value = v.model || '';
   $('ev-year').value = v.year || '';
   $('ev-color').value = v.color || '';
+  const evType = $('ev-type'); if (evType) evType.value = v.vehicleType || '';
   $('ev-photo').value = '';
   $('ev-photo-preview').style.display = 'none';
 
@@ -5568,6 +5571,7 @@ $('edit-vehicle-form').addEventListener('submit', async (e) => {
   const model = $('ev-model').value.trim();
   const year = $('ev-year').value ? parseInt($('ev-year').value) : null;
   const color = $('ev-color').value.trim() || null;
+  const vehicleType = ($('ev-type') ? $('ev-type').value : '') || null;
   const photoFile = $('ev-photo').files[0] || null;
   const canExcludeOnSave = !!(currentUser && currentUser.email && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com');
   const photoExcluded = canExcludeOnSave ? $('ev-photo-excluded').checked : !!(vehiclesCache.find(v => v.id === vehicleId)?.photoExcluded);
@@ -5587,7 +5591,7 @@ $('edit-vehicle-form').addEventListener('submit', async (e) => {
   showLoading('Saving changes...');
   try {
     await db.collection('vehicles').doc(vehicleId).update({
-      plate, make, model, year, color, photoExcluded
+      plate, make, model, year, color, vehicleType, photoExcluded
     });
 
     if (photoFile) {
