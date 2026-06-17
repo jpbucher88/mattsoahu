@@ -2454,6 +2454,20 @@ async function openVehiclePage(vid) {
     (selectedVehicle.color ? ` - ${selectedVehicle.color}` : '') +
     (selectedVehicle.vehicleType ? ` · ${selectedVehicle.vehicleType}` : '');
 
+  // Fuel badge
+  const fuelBadgeEl = $('vehicle-fuel-badge');
+  if (fuelBadgeEl) {
+    const fuel = selectedVehicle.vehicleFuelType;
+    if (fuel) {
+      const isPremium = fuel.toLowerCase().includes('premium');
+      fuelBadgeEl.textContent = `⛽ ${fuel}`;
+      fuelBadgeEl.style.display = '';
+      fuelBadgeEl.style.cssText = `display:inline-flex;align-items:center;gap:3px;font-size:0.72rem;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:middle;background:${isPremium ? '#fef3c7' : '#dcfce7'};color:${isPremium ? '#92400e' : '#166534'};border:1px solid ${isPremium ? '#fcd34d' : '#86efac'};`;
+    } else {
+      fuelBadgeEl.style.display = 'none';
+    }
+  }
+
   // Show color edit button for admins/managers
   const colorEditBtn = $('btn-edit-vehicle-color');
   if (colorEditBtn) colorEditBtn.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
