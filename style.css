@@ -3014,6 +3014,52 @@ body {
   justify-content: center;
   padding: 20px;
 }
+
+/* ── Generic modal overlay (used by time clock, photo check, etc.) ── */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 9000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  overflow-y: auto;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 14px;
+  width: 100%;
+  max-width: 420px;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.22);
+  margin: auto;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.modal-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #1e3a5f;
+}
+.modal-body {
+  padding: 16px 20px 20px;
+}
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0 4px;
+}
+.modal-close:hover { color: #111; }
 .reassign-modal {
   background: #fff;
   border-radius: 12px;
