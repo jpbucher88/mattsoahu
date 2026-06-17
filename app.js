@@ -10663,6 +10663,12 @@ function loadVehicleInfoSection(v) {
   document.querySelectorAll('.cheat-gas-btn').forEach(btn => {
     btn.classList.toggle('cheat-gas-active', btn.dataset.gas === cs.gas);
   });
+  // Fuel type buttons (Key & Access tab)
+  const fuelHidden = $('vinfo-fuel');
+  if (fuelHidden) fuelHidden.value = v.vehicleFuelType || '';
+  document.querySelectorAll('.vinfo-fuel-btn').forEach(btn => {
+    btn.classList.toggle('cheat-gas-active', btn.dataset.fuel === v.vehicleFuelType);
+  });
   // Apply dual-tire visibility
   window.toggleDualTire(isDual);
 }
@@ -10684,6 +10690,19 @@ document.addEventListener('click', function(e) {
   const hidden = document.getElementById('cheat-gas');
   if (hidden) hidden.value = gas;
   document.querySelectorAll('.cheat-gas-btn').forEach(b => {
+    b.classList.toggle('cheat-gas-active', b === btn);
+  });
+});
+
+// Wire up fuel-type buttons (Key & Access tab)
+document.addEventListener('click', function(e) {
+  const btn = e.target.closest('.vinfo-fuel-btn');
+  if (!btn) return;
+  e.preventDefault();
+  const fuel = btn.dataset.fuel;
+  const hidden = document.getElementById('vinfo-fuel');
+  if (hidden) hidden.value = fuel;
+  document.querySelectorAll('.vinfo-fuel-btn').forEach(b => {
     b.classList.toggle('cheat-gas-active', b === btn);
   });
 });
@@ -10780,6 +10799,7 @@ $('btn-save-vehicle-info').addEventListener('click', async () => {
       vehicleInfoNotes: notesVal || null,
       vehicleInfoVideos: selectedVehicle.vehicleInfoVideos || [],
       vehicleCheatSheet: cheatSheet,
+      vehicleFuelType: ($('vinfo-fuel') ? $('vinfo-fuel').value : '') || null,
     };
     await db.collection('vehicles').doc(selectedVehicle.id).update(data);
     Object.assign(selectedVehicle, data);
@@ -13199,7 +13219,7 @@ function renderTimeClock() {
     const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
     weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${!isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
       <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ' <span class="tc-expand-hint">›</span>'}</span>
-      <span class="tc-day-hours">${hoursStr}</span>
+      <span class="tc-day-hours">${hoursStr}${!isToday && !hasSessions && !hasActive ? ' <span class="tc-add-hint" title="Add manual entry">＋</span>' : ''}</span>
       <span class="tc-day-rev">${revStr}</span>
     </div>`;
   }
@@ -13304,7 +13324,10 @@ function renderTimeClock() {
             <input type="time" id="tc-scheduled-input" class="tc-input-time">
           </div>
         </div>
-        <button class="btn btn-primary tc-btn" onclick="clockIn()">⏱️ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>`;
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary tc-btn" style="flex:1;" onclick="clockIn()">⏱️ Punch In${pastSessions.length > 0 ? ' (New Session)' : ''}</button>
+          <button class="btn btn-outline tc-btn" style="flex:1;" onclick="tcAddSession('${today}')" title="Submit hours without using the clock">📝 Manual Entry</button>
+        </div>`;
     }
 
     // Revenue section (read-only for view-all)
@@ -13530,15 +13553,13 @@ window.tcSwitchUser = async function(uid) {
 // ── Expand past day into modal ──
 window.tcExpandDay = function(date) {
   const dd = weeklyTimeclockData[date];
-  if (!dd) return;
-  const sessions = dd.sessions || [];
-  if (!sessions.length) return;
+  const sessions = (dd && dd.sessions) ? dd.sessions : [];
   const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const [, mo, dy] = date.split('-');
   const dateLabel = `${MONTHS[+mo - 1]} ${+dy}`;
   const isOwnClockExpand = !tcViewingUid || tcViewingUid === currentUser.uid;
   const canEditExpand = isOwnClockExpand || currentUserRole === 'admin' || currentUserRole === 'manager';
-  const noSessionsMsg = sessions.length === 0 ? '<p class="tc-no-sessions">No sessions recorded for this day.</p>' : '';
+  const noSessionsMsg = sessions.length === 0 ? '<p class="tc-no-sessions">No sessions recorded for this day. Use ➕ Add Session to submit hours manually.</p>' : '';
   const rows = sessions.map((s, idx) => {
     const inT = s.clockIn.toDate ? s.clockIn.toDate() : new Date(s.clockIn);
     const outT = s.clockOut ? (s.clockOut.toDate ? s.clockOut.toDate() : new Date(s.clockOut)) : null;
@@ -13563,8 +13584,8 @@ window.tcExpandDay = function(date) {
       </span>
     </div>`;
   }).join('');
-  const goalVal = dd.revenueGoal || '';
-  const achVal = dd.revenueAchieved != null ? dd.revenueAchieved : '';
+  const goalVal = (dd && dd.revenueGoal) ? dd.revenueGoal : '';
+  const achVal = (dd && dd.revenueAchieved != null) ? dd.revenueAchieved : '';
   let overlay = $('tc-day-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -13739,13 +13760,17 @@ window.tcAddSession = function(date) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:380px;">
       <div class="modal-header">
-        <h3>➕ Add Session — ${dateLabel}</h3>
+        <h3>📝 Manual Time Entry</h3>
         <button class="modal-close" onclick="$('tc-edit-overlay').style.display='none'">&times;</button>
       </div>
       <div class="modal-body">
         <div class="tc-fields">
           <div class="tc-field-row">
-            <label class="tc-label">🕐 Scheduled Start</label>
+            <label class="tc-label">📅 Date</label>
+            <input type="date" id="tce-date" class="tc-input-time" value="${date}" max="${todayDateString()}">
+          </div>
+          <div class="tc-field-row">
+            <label class="tc-label">🕐 Scheduled Start <span style="color:#9ca3af;font-size:0.78rem;">(optional)</span></label>
             <input type="time" id="tce-sched" class="tc-input-time" value="">
           </div>
           <div class="tc-field-row">
@@ -13758,7 +13783,7 @@ window.tcAddSession = function(date) {
           </div>
         </div>
         <div style="margin-top:16px;display:flex;gap:8px;">
-          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveNewSession('${date}')">💾 Add Session</button>
+          <button class="btn btn-primary" style="flex:1;" onclick="tcSaveNewSession()">💾 Save Entry</button>
           <button class="btn btn-outline" style="flex:1;" onclick="$('tc-edit-overlay').style.display='none'">Cancel</button>
         </div>
       </div>
@@ -13766,11 +13791,13 @@ window.tcAddSession = function(date) {
   overlay.style.display = 'flex';
 };
 
-window.tcSaveNewSession = async function(date) {
+window.tcSaveNewSession = async function() {
   if (!currentUser) return;
+  const date = $('tce-date')?.value || todayDateString();
   const inVal = $('tce-in')?.value;
   const outVal = $('tce-out')?.value;
   const schedVal = $('tce-sched')?.value || null;
+  if (!date) { toast('Date is required.', 'error'); return; }
   if (!inVal) { toast('Punch In time is required.', 'error'); return; }
   function toTimestamp(dateStr, timeStr) {
     if (!timeStr) return null;

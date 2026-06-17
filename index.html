@@ -871,6 +871,17 @@
           <label id="vinfo-key-upload-label" class="btn btn-outline vinfo-upload-label" for="vinfo-key-upload">📸 Upload Key Photo</label>
           <input type="file" id="vinfo-key-upload" accept="image/*" hidden>
           <div id="vinfo-key-uploading" style="display:none;font-size:0.85rem;color:#6b7280;">Uploading…</div>
+          <!-- Fuel Type -->
+          <div class="vinfo-fuel-section" style="margin-top:16px;padding-top:14px;border-top:1px solid #e5e7eb;">
+            <p class="hint" style="margin-bottom:8px;">⛽ Fuel type required for this vehicle.</p>
+            <div class="cheat-gas-btns vinfo-fuel-btns">
+              <button class="vinfo-fuel-btn" data-fuel="Regular">Regular</button>
+              <button class="vinfo-fuel-btn" data-fuel="Premium">Premium</button>
+              <button class="vinfo-fuel-btn" data-fuel="Diesel">Diesel</button>
+              <button class="vinfo-fuel-btn" data-fuel="Electric">Electric</button>
+            </div>
+            <input type="hidden" id="vinfo-fuel" value="">
+          </div>
         </div>
         <!-- Cheat Sheet tab -->
         <div id="vinfo-tab-cheatsheet" class="vinfo-panel" style="display:none;">
