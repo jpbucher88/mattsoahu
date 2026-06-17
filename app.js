@@ -1612,7 +1612,7 @@ function renderLocationsWidget() {
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
     if (isOnTrip || isAtRepair || withinGrace) return false;
-    return !hasPhotosToday(v);
+    return v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
   }
 
   const sortByReturn = (arr) => arr.sort((a, b) => {
@@ -1750,7 +1750,7 @@ function renderLocationsWidget() {
       for (const v of needsCleaningNoLoc) {
         const needsDamage = v.needsDamageCheck;
         html += `<div class="cleaning-item" data-vid="${v.id}">
-          <div class="cleaning-vehicle-info"><span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span><span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span></div>
+          <div class="cleaning-vehicle-info"><span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span><span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span></div>
           <div class="cleaning-actions">
             ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
             <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled' : ''}>✓ Cleaned</button>
@@ -1761,7 +1761,7 @@ function renderLocationsWidget() {
     }
     if (cleanNoLoc.length > 0) {
       html += `<div class="location-group-vehicles">`;
-      for (const v of cleanNoLoc) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</div>`;
+      for (const v of cleanNoLoc) html += `<div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</div>`;
       html += '</div>';
     }
     html += '</div>';
@@ -1782,7 +1782,7 @@ function renderLocationsWidget() {
         returnLabel = `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
       }
       html += `<div class="trip-item">
-        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
       </div>`;
@@ -1809,7 +1809,7 @@ function renderLocationsWidget() {
       if (v.repairOrderNumber) partsInfo += `<span class="repair-parts-tag">📦 ${escapeHtml(v.repairOrderNumber)}</span>`;
       if (v.repairPartsEta) partsInfo += `<span class="repair-parts-tag">📅 Parts ETA: ${v.repairPartsEta}</span>`;
       html += `<div class="trip-item">
-        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
         ${partsInfo}
@@ -1831,7 +1831,7 @@ function renderLocationsWidget() {
       const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
       const returnLabel = rd ? `<span class="trip-return-label trip-overdue">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })} OVERDUE</span>` : '';
       html += `<div class="trip-item">
-        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
         <button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>
