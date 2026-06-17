@@ -13227,9 +13227,10 @@ function renderTimeClock() {
       : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
     const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
     const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
-    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${!isToday ? ` style="cursor:pointer;" onclick="tcExpandDay('${d}')"` : ''}>
-      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : ' <span class="tc-expand-hint">›</span>'}</span>
-      <span class="tc-day-hours">${hoursStr}${!isToday && !hasSessions && !hasActive ? ' <span class="tc-add-hint" title="Add manual entry">＋</span>' : ''}</span>
+    const clickFn = hasSessions ? `tcExpandDay('${d}')` : `tcAddSession('${d}')`;
+    weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${!isToday ? ` style="cursor:pointer;" onclick="${clickFn}"` : ''}>
+      <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : hasSessions ? ' <span class="tc-expand-hint">›</span>' : ' <span class="tc-add-hint">＋ Add</span>'}</span>
+      <span class="tc-day-hours">${hoursStr}</span>
       <span class="tc-day-rev">${revStr}</span>
     </div>`;
   }

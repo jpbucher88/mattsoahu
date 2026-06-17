@@ -4933,7 +4933,7 @@ body {
 .tc-icon-btn:hover { opacity: 1; background: #e5e7eb; }
 .tc-icon-del:hover { background: #fee2e2; }
 .tc-expand-hint { color: #9ca3af; font-size: 0.8rem; margin-left: 4px; font-weight: 400; }
-.tc-add-hint { color: #3b82f6; font-size: 0.85rem; margin-left: 4px; font-weight: 500; opacity: 0.7; }
+.tc-add-hint { color: #3b82f6; font-size: 0.75rem; margin-left: 4px; font-weight: 600; background: #eff6ff; border-radius: 6px; padding: 1px 6px; }
 
 /* ============ VEHICLE COMPLIANCE ============ */
 .compliance-grid {
