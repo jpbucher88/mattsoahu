@@ -4879,7 +4879,7 @@ body {
 }
 .tc-week-header {
   display: grid;
-  grid-template-columns: 1fr 80px 1fr;
+  grid-template-columns: 1fr 80px;
   padding: 7px 12px;
   background: #f1f5f9;
   font-size: 0.75rem;
@@ -4891,7 +4891,7 @@ body {
 }
 .tc-day-row {
   display: grid;
-  grid-template-columns: 1fr 80px 1fr;
+  grid-template-columns: 1fr 80px;
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid #f1f5f9;
@@ -4918,7 +4918,7 @@ body {
 .tc-live-dot { color: #16a34a; font-size: 0.8rem; }
 .tc-week-total {
   display: grid;
-  grid-template-columns: 1fr 80px 1fr;
+  grid-template-columns: 1fr 80px;
   align-items: center;
   padding: 9px 12px;
   background: #f8fafc;

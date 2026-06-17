@@ -13207,7 +13207,7 @@ function renderTimeClock() {
   // ── Weekly grid ──
   const DAYS = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
   let weekRows = '';
-  let totalWeekMs = 0, totalGoal = 0, totalAchieved = 0;
+  let totalWeekMs = 0;
 
   for (let i = 0; i < 7; i++) {
     const d = dates[i];
@@ -13215,28 +13215,19 @@ function renderTimeClock() {
     const isToday = d === today;
     const netMs = calcDayCompletedMs(dd);
     totalWeekMs += netMs;
-    const goal = dd?.revenueGoal || 0;
-    const achieved = dd?.revenueAchieved || 0;
-    totalGoal += goal;
-    totalAchieved += achieved;
     const [, mo, dy] = d.split('-');
     const dayLabel = `${DAYS[i]} ${+mo}/${+dy}`;
     const hasActive = isToday && dd?.activeSession;
     const hoursStr = netMs > 0
       ? fmtMs(netMs) + (hasActive ? ' <span class="tc-live-dot">⏱</span>' : '')
       : (hasActive ? '<span class="tc-live-dot">⏱ In Progress</span>' : '—');
-    const revStr = goal > 0 ? `$${Number(achieved).toLocaleString()} / $${Number(goal).toLocaleString()}` : '—';
     const hasSessions = (dd?.sessions || []).length > 0 || !!dd?.activeSession;
     const clickFn = hasSessions ? `tcExpandDay('${d}')` : `tcAddSession('${d}')`;
     weekRows += `<div class="tc-day-row${isToday ? ' tc-today-row' : ''}${hasActive ? ' tc-active-row' : ''}"${!isToday ? ` style="cursor:pointer;" onclick="${clickFn}"` : ''}>
       <span class="tc-day-label">${dayLabel}${isToday ? ' <span class="tc-today-pill">Today</span>' : hasSessions ? ' <span class="tc-expand-hint">›</span>' : ' <span class="tc-add-hint">＋ Add</span>'}</span>
       <span class="tc-day-hours">${hoursStr}</span>
-      <span class="tc-day-rev">${revStr}</span>
     </div>`;
   }
-  const totalRevStr = totalGoal > 0
-    ? `$${Number(totalAchieved).toLocaleString()} / $${Number(totalGoal).toLocaleString()}`
-    : '—';
 
   // ── Today section (only on current week) ──
   let todaySectionHTML = '';
@@ -13341,33 +13332,11 @@ function renderTimeClock() {
         </div>`;
     }
 
-    // Revenue section (read-only for view-all)
-    const goal = todayData?.revenueGoal ?? '';
-    const achieved = todayData?.revenueAchieved ?? '';
-    const revenueHTML = isOwnClock ? `
-      <div class="tc-revenue-section">
-        <div class="tc-rev-row">
-          <div class="tc-field-row">
-            <label class="tc-label">🎯 Daily Goal</label>
-            <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-goal-input" class="tc-input" min="0" step="100" placeholder="e.g. 2000" value="${goal}"></div>
-          </div>
-          <div class="tc-field-row">
-            <label class="tc-label">💰 End of Day Revenue</label>
-            <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tc-achieved-input" class="tc-input" min="0" step="100" placeholder="0" value="${achieved}"></div>
-          </div>
-        </div>
-        <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenue()">💾 Save Revenue</button>
-      </div>` : (goal || achieved ? `
-      <div class="tc-revenue-section" style="opacity:0.7;">
-        <div style="font-size:0.78rem;color:#6b7280;">Revenue: $${Number(achieved||0).toLocaleString()} / $${Number(goal||0).toLocaleString()}</div>
-      </div>` : '');
-
     todaySectionHTML = `
       <div class="tc-today-section">
         <div class="tc-today-title">📅 Today — ${today}</div>
         ${sessionsHTML}
         ${activeHTML}
-        ${revenueHTML}
       </div>`;
   }
 
@@ -13395,12 +13364,11 @@ function renderTimeClock() {
       <button class="tc-nav-btn" onclick="tcNextWeek()"${isCurrentWeek ? ' disabled style="opacity:.4;cursor:default;"' : ''}>Next ›</button>
     </div>
     <div class="tc-week-grid">
-      <div class="tc-week-header"><span>Day</span><span>Hours</span><span>Revenue</span></div>
+      <div class="tc-week-header"><span>Day</span><span>Hours</span></div>
       ${weekRows}
       <div class="tc-week-total">
         <span>Week Total</span>
         <span>${totalWeekMs > 0 ? fmtMs(totalWeekMs) : '—'}</span>
-        <span>${totalRevStr}</span>
       </div>
     </div>
     ${todaySectionHTML}
@@ -13526,33 +13494,6 @@ window.clockOut = async function() {
   }
 };
 
-window.tcSaveRevenue = async function() {
-  if (!currentUser) return;
-  const today = todayDateString();
-  const targetUid = tcViewingUid || currentUser.uid;
-  const docId = targetUid + '_' + today;
-  const goalStr = $('tc-goal-input')?.value;
-  const achStr = $('tc-achieved-input')?.value;
-  const goal = goalStr !== '' && goalStr != null ? parseFloat(goalStr) : null;
-  const achieved = achStr !== '' && achStr != null ? parseFloat(achStr) : null;
-  try {
-    const snap = await db.collection('timeclock').doc(docId).get();
-    if (snap.exists) {
-      await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
-    } else {
-      await db.collection('timeclock').doc(docId).set({
-        uid: targetUid, email: currentUser.email, date: today,
-        sessions: [], activeSession: null, revenueGoal: goal, revenueAchieved: achieved
-      });
-    }
-    toast('Revenue saved! 💰', 'success');
-    await loadWeekData(currentWeekOffset);
-  } catch (e) {
-    console.error('Save revenue error:', e);
-    toast('Failed to save revenue.', 'error');
-  }
-};
-
 window.tcPrevWeek = async function() { await loadWeekData(currentWeekOffset - 1); };
 window.tcNextWeek = async function() { if (currentWeekOffset < 0) await loadWeekData(currentWeekOffset + 1); };
 
@@ -13595,8 +13536,6 @@ window.tcExpandDay = function(date) {
       </span>
     </div>`;
   }).join('');
-  const goalVal = (dd && dd.revenueGoal) ? dd.revenueGoal : '';
-  const achVal = (dd && dd.revenueAchieved != null) ? dd.revenueAchieved : '';
   let overlay = $('tc-day-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -13613,40 +13552,9 @@ window.tcExpandDay = function(date) {
       <div class="modal-body">
         <div class="tc-sessions-list">${noSessionsMsg}${rows}</div>
         ${canEditExpand ? `<button class="btn btn-outline tc-btn-sm" style="margin:8px 0 4px;" onclick="tcAddSession('${date}')">➕ Add Session</button>` : ''}
-        <div style="border-top:1px solid #e5e7eb;margin-top:12px;padding-top:12px;display:flex;flex-direction:column;gap:10px;">
-          <div class="tc-rev-row">
-            <div class="tc-field-row">
-              <label class="tc-label">🎯 Daily Goal</label>
-              <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-goal-input" class="tc-input" min="0" step="100" value="${goalVal}"></div>
-            </div>
-            <div class="tc-field-row">
-              <label class="tc-label">💰 Revenue Achieved</label>
-              <div class="tc-input-row"><span class="tc-dollar">$</span><input type="number" id="tcd-achieved-input" class="tc-input" min="0" step="100" value="${achVal}"></div>
-            </div>
-          </div>
-          <button class="btn btn-outline tc-btn-sm" onclick="tcSaveRevenueForDate('${date}')">💾 Save Revenue</button>
-        </div>
       </div>
     </div>`;
   overlay.style.display = 'flex';
-};
-
-window.tcSaveRevenueForDate = async function(date) {
-  if (!currentUser) return;
-  const targetUid = tcViewingUid || currentUser.uid;
-  const docId = targetUid + '_' + date;
-  const goalStr = $('tcd-goal-input')?.value;
-  const achStr = $('tcd-achieved-input')?.value;
-  const goal = goalStr !== '' && goalStr != null ? parseFloat(goalStr) : null;
-  const achieved = achStr !== '' && achStr != null ? parseFloat(achStr) : null;
-  try {
-    await db.collection('timeclock').doc(docId).update({ revenueGoal: goal, revenueAchieved: achieved });
-    toast('Revenue saved! 💰', 'success');
-    $('tc-day-overlay').style.display = 'none';
-    await loadWeekData(currentWeekOffset);
-  } catch (e) {
-    toast('Failed to save.', 'error');
-  }
 };
 
 window.tcDeleteSession = async function(date, idx) {
