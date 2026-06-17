@@ -1979,11 +1979,21 @@ window.checkLocationPhotos = async function(loc) {
   const needsPhotos = vehiclesCache.filter(v => {
     if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip') return false;
     if (v.tripStatus === 'repair-shop') return false;
-    // needsCleaning no longer suppresses photos — business continues during cleaning
     if (v.photoExcluded) return false;
     if ((v.homeLocation || '') !== loc) return false;
     return !hasPhotosToday(v);
   });
+
+  // Force-reset the 24h timer for every vehicle at this location that doesn't
+  // have today's photo — this makes them appear in the fleet status "Needs Photos"
+  // regardless of when their last photo was taken.
+  locVehicles.forEach(v => {
+    if (!v.photoExcluded && !hasPhotosToday(v) &&
+        v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop') {
+      v.lastPhotoAge = Infinity;
+    }
+  });
+  renderFleetDashboard();
 
   if (needsPhotos.length === 0) {
     _locPhotoQueueActive = null;
