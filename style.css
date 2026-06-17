@@ -6003,6 +6003,13 @@ body {
 .cheat-gas-btn { padding: 6px 12px; border: 1px solid #d1d5db; background: #fff; border-radius: 999px; font-size: 0.82rem; cursor: pointer; transition: all 0.15s; }
 .cheat-gas-btn:hover { background: #f3f4f6; }
 .cheat-gas-active { background: #2563eb !important; color: #fff !important; border-color: #2563eb !important; }
+
+/* Fuel type buttons — Key & Access tab */
+.vinfo-fuel-btns { gap: 8px; }
+.vinfo-fuel-btn { padding: 7px 16px; border: 1.5px solid #d1d5db; background: #fff; border-radius: 999px; font-size: 0.82rem; cursor: pointer; transition: all 0.18s; color: #9ca3af; opacity: 0.55; font-weight: 500; }
+.vinfo-fuel-btn:hover { opacity: 0.8; background: #f3f4f6; }
+.vinfo-fuel-btn.cheat-gas-active { background: #2563eb !important; color: #fff !important; border-color: #2563eb !important; font-size: 0.92rem !important; padding: 9px 22px !important; opacity: 1 !important; box-shadow: 0 2px 8px rgba(37,99,235,0.25); font-weight: 700; }
+.vinfo-fuel-btn:not(.cheat-gas-active) { opacity: 0.4; }
 @media (max-width: 520px) {
   .cheat-field-pair { grid-template-columns: 90px 1fr; }
 }

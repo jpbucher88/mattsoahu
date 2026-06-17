@@ -10705,6 +10705,16 @@ document.addEventListener('click', function(e) {
   document.querySelectorAll('.vinfo-fuel-btn').forEach(b => {
     b.classList.toggle('cheat-gas-active', b === btn);
   });
+  // Auto-save immediately
+  if (!selectedVehicle) return;
+  db.collection('vehicles').doc(selectedVehicle.id).update({ vehicleFuelType: fuel })
+    .then(() => {
+      selectedVehicle.vehicleFuelType = fuel;
+      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cached) cached.vehicleFuelType = fuel;
+      toast(`Fuel type set to ${fuel} ⛽`, 'success');
+    })
+    .catch(() => toast('Failed to save fuel type.', 'error'));
 });
 
 function renderVInfoVideos(videos) {
