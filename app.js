@@ -8210,12 +8210,28 @@ window.applyTaskUserFilter = function(uid) {
 };
 
 window.toggleCompletedBucket = function() {
-  const list = $('completed-bucket-list');
-  const arrow = $('completed-bucket-arrow');
-  if (!list) return;
-  const open = list.style.display !== 'none';
-  list.style.display = open ? 'none' : 'block';
-  if (arrow) arrow.textContent = open ? '▶' : '▼';
+  openCompletedTasksModal();
+};
+
+window.openCompletedTasksModal = function() {
+  const modal = $('completed-tasks-modal');
+  if (modal) modal.style.display = 'flex';
+};
+
+window.closeCompletedTasksModal = function() {
+  const modal = $('completed-tasks-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.openActivityLogModal = function() {
+  const modal = $('activity-log-modal');
+  if (modal) modal.style.display = 'flex';
+  loadGeneralNotes();
+};
+
+window.closeActivityLogModal = function() {
+  const modal = $('activity-log-modal');
+  if (modal) modal.style.display = 'none';
 };
 
 // Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
@@ -8407,7 +8423,7 @@ function renderTaskAgenda(allItems) {
     items = items.filter(i => !i.assignedTo || i.assignedTo === currentTaskUserFilter);
   }
 
-  if (items.length === 0) {
+  if (items.length === 0 && currentTaskTab !== 'compliance' && currentTaskTab !== 'maintenance') {
     if (emptyEl) emptyEl.style.display = '';
     overdueEl.style.display = 'none';
     todayEl.style.display = 'none';
@@ -9738,7 +9754,6 @@ function openTaskPanel() {
   if (panel) panel.style.display = 'flex';
   initTaskPanelForRole();
   loadDashboardFollowUps();
-  loadGeneralNotes();
 }
 function closeTaskPanel() {
   const panel = $('task-panel-overlay');

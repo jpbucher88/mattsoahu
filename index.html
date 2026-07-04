@@ -2108,15 +2108,12 @@
             </div>
             <div id="followup-empty" class="agenda-empty" style="display:none;"><p class="hint">No tasks in this view. ✅</p></div>
           </div>
-          <!-- Completed tasks bucket (collapsible) -->
-          <div id="completed-tasks-bucket" class="completed-bucket" style="margin-top:12px;">
-            <button class="completed-bucket-toggle" onclick="toggleCompletedBucket()">
-              <span class="completed-bucket-icon">✅</span>
-              <span>Completed Tasks</span>
+          <!-- Completed tasks button → opens modal -->
+          <div style="margin-top:14px;text-align:center;">
+            <button class="completed-bucket-open-btn" onclick="openCompletedTasksModal()">
+              ✅ Completed Tasks
               <span id="completed-count-badge" class="completed-count-badge">0</span>
-              <span id="completed-bucket-arrow" class="completed-bucket-arrow">▶</span>
             </button>
-            <div id="completed-bucket-list" class="completed-bucket-list" style="display:none;"></div>
           </div>
         </div>
 
@@ -2177,16 +2174,43 @@
           </div>
         </div>
 
-        <!-- Log Activity -->
-        <div class="task-panel-section">
-          <h4>📋 Log Activity</h4>
-          <div id="general-notes-list" class="notes-list"></div>
+        <!-- Log Activity button → opens modal -->
+        <div class="task-panel-section" style="text-align:center;">
+          <button class="completed-bucket-open-btn" onclick="openActivityLogModal()" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;">
+            📋 View Activity Log
+          </button>
         </div>
       </div>
     </div>
   </div>
 
   <div id="toast-container" class="toast-container"></div>
+
+  <!-- ==================== COMPLETED TASKS MODAL ==================== -->
+  <div id="completed-tasks-modal" class="modal-overlay" onclick="if(event.target===this)closeCompletedTasksModal()">
+    <div class="modal-box" style="max-width:600px;">
+      <div class="modal-header">
+        <h3>✅ Completed Tasks</h3>
+        <button class="modal-close" onclick="closeCompletedTasksModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="completed-bucket-list" class="completed-bucket-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ACTIVITY LOG MODAL ==================== -->
+  <div id="activity-log-modal" class="modal-overlay" onclick="if(event.target===this)closeActivityLogModal()">
+    <div class="modal-box" style="max-width:640px;">
+      <div class="modal-header">
+        <h3>📋 Activity Log</h3>
+        <button class="modal-close" onclick="closeActivityLogModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="general-notes-list" class="notes-list"></div>
+      </div>
+    </div>
+  </div>
 
   <!-- ==================== LOADING OVERLAY ==================== -->
   <div id="loading-overlay" class="loading-overlay" style="display:none;">
