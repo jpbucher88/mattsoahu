@@ -121,6 +121,13 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    // Bills & Payments tracker - managers/admins only
+    match /bills/{billId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create, update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow delete: if isAdmin();
+    }
+
     // Pending photo upload markers — any registered user can create/read/delete their own
     match /_pendingPhotoUploads/{markerId} {
       allow read: if isAuth() && resource.data.userId == request.auth.uid;

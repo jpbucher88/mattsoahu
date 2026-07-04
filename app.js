@@ -1060,6 +1060,10 @@ auth.onAuthStateChanged(async (user) => {
         if (prodBtn) prodBtn.style.display = '';
         const maintDashBtn = $('btn-maint-dash');
         if (maintDashBtn) maintDashBtn.style.display = '';
+        const billsBtn = $('btn-bills');
+        if (billsBtn) billsBtn.style.display = '';
+        // Pre-load bills badge on login
+        setTimeout(_updateBillsBadgeFromFirestore, 2000);
       } else {
         // Non-admin/manager users can still add expenses — show finance button with restricted access
         const financeBtn = $('btn-finance');
@@ -6788,6 +6792,360 @@ window.closeMaintenanceDash = function() {
   _maintDashLoaded = false;
   $('maint-dash-overlay').style.display = 'none';
 };
+
+// ── Maintenance Dashboard: Open Tasks tab ────────────────────────
+window._refreshMaintTasks = async function() {
+  const container = $('maint-tasks-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:16px;text-align:center;">Loading…</p>';
+
+  // Ensure tasks are loaded
+  if (cachedTaskItems.length === 0) await loadDashboardFollowUps();
+  const today = todayDateString();
+  const items = cachedTaskItems.filter(i => i.sourceType === 'maintenance');
+
+  if (items.length === 0) {
+    container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No open maintenance tasks!</p></div>';
+    return;
+  }
+
+  // Group by vehicle
+  const byVehicle = new Map();
+  for (const item of items) {
+    const key = item.vehicleId || '__general';
+    if (!byVehicle.has(key)) byVehicle.set(key, []);
+    byVehicle.get(key).push(item);
+  }
+  const sortedGroups = [...byVehicle.entries()].sort(([, a], [, b]) => {
+    const score = arr => (arr.some(i => i.urgent) ? 4 : 0) + (arr.some(i => i.dueDate && i.dueDate < today) ? 2 : 0);
+    return score(b) - score(a);
+  });
+
+  let html = '';
+  for (const [vehicleId, vItems] of sortedGroups) {
+    const v = vehicleId !== '__general' ? vehiclesCache.find(x => x.id === vehicleId) : null;
+    const plate = v ? v.plate : 'General';
+    const makeModel = v ? [v.make, v.model].filter(Boolean).join(' ') : '';
+    const mileage = v ? v.mileage : null;
+    const hasOverdue = vItems.some(i => i.urgent || (i.dueDate && i.dueDate < today));
+    html += `<div class="maint-vehicle-group${hasOverdue ? ' maint-group-overdue' : ''}">
+      <div class="maint-vehicle-header" onclick="closeMaintenanceDash();openVehiclePage('${vehicleId}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)">
+        <span class="maint-vehicle-plate">🚗 ${escapeHtml(plate)}</span>
+        ${makeModel ? `<span class="maint-vehicle-model">${escapeHtml(makeModel)}</span>` : ''}
+        ${mileage ? `<span class="maint-vehicle-mileage">📍 ${mileage.toLocaleString()} mi</span>` : ''}
+        <span class="maint-vehicle-link">Open ↗</span>
+      </div>
+      <div class="maint-vehicle-items">`;
+    vItems.sort((a, b) => {
+      if (a.urgent !== b.urgent) return b.urgent ? 1 : -1;
+      return (a.dueDate || '').localeCompare(b.dueDate || '');
+    });
+    for (const item of vItems) {
+      const over = item.urgent || (item.dueDate && item.dueDate < today);
+      const dueBadge = item.dueDate ? `<span style="font-size:0.75rem;color:#64748b;margin-left:6px;">📅 ${item.dueDate}</span>` : '';
+      const urgTag = item.urgent ? '<span style="background:#fef2f2;color:#dc2626;font-size:0.72rem;padding:1px 6px;border-radius:4px;font-weight:700;margin-right:4px;">URGENT</span>' : '';
+      html += `<div class="maint-item-row ${over ? 'maint-item-overdue' : 'maint-item-ok'}">
+        <div class="maint-item-info"><div class="maint-item-name">${urgTag}${escapeHtml(item.text)}${dueBadge}</div></div>
+        <div class="task-item-actions">
+          <button class="task-complete-btn" onclick="agendaMarkDone_dispatch('${item.id}','${item.collection}');setTimeout(_refreshMaintTasks,600)">✓ Done</button>
+        </div>
+      </div>`;
+    }
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
+};
+
+// Auto-load when the Tasks tab is opened
+const _origSwitchMaintTab = window.switchMaintTab;
+window.switchMaintTab = function(tabId, btn) {
+  _origSwitchMaintTab(tabId, btn);
+  if (tabId === 'mtab-tasks') window._refreshMaintTasks();
+};
+
+// ================================================================
+// BILLS & PAYMENTS TRACKER
+// ================================================================
+let cachedBills = [];
+let _currentBillsTab = 'all';
+
+const BILL_CAT_ICONS = {
+  insurance: '🛡️', registration: '📝', lease: '🚗',
+  platform: '📱', utilities: '⚡', other: '🏢'
+};
+
+function _billStatus(bill, today) {
+  if (bill.paid) return { cls: 'bill-paid', badge: 'bill-badge-paid', label: '✅ Paid' };
+  if (!bill.dueDate) return { cls: '', badge: 'bill-badge-upcoming', label: 'No date' };
+  const days = Math.ceil((new Date(bill.dueDate) - new Date(today)) / 86400000);
+  if (days < 0)  return { cls: 'bill-overdue', badge: 'bill-badge-overdue', label: `Overdue ${Math.abs(days)}d` };
+  if (days <= 7) return { cls: 'bill-soon',    badge: 'bill-badge-soon',    label: `Due in ${days}d` };
+  return { cls: '', badge: 'bill-badge-upcoming', label: `Due ${bill.dueDate}` };
+}
+
+function _nextBillDueDate(dueDate, period) {
+  const d = new Date(dueDate);
+  if (period === 'monthly')   d.setMonth(d.getMonth() + 1);
+  else if (period === 'quarterly') d.setMonth(d.getMonth() + 3);
+  else if (period === 'annual')    d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function _renderBillsList(bills) {
+  const listEl = $('bills-list');
+  if (!listEl) return;
+  const today = todayDateString();
+  if (bills.length === 0) {
+    listEl.innerHTML = '<div class="bills-empty">No bills found. Add one with "+ Add Bill".</div>';
+    return;
+  }
+  const canManage = currentUserRole === 'admin' || currentUserRole === 'manager';
+  let html = '';
+  for (const bill of bills) {
+    const status = _billStatus(bill, today);
+    const icon = BILL_CAT_ICONS[bill.category] || '🏢';
+    const amtStr = bill.amount != null && bill.amount !== '' ? `$${Number(bill.amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}` : '';
+    const recurStr = bill.recurring ? ` · 🔁 ${bill.recurringPeriod || 'recurring'}` : '';
+    const notesStr = bill.notes ? `<div style="margin-top:3px;font-size:0.78rem;color:#9ca3af;">${escapeHtml(bill.notes)}</div>` : '';
+    html += `<div class="bill-card ${status.cls}">
+      <div class="bill-card-icon">${icon}</div>
+      <div class="bill-card-body">
+        <div class="bill-card-name">${escapeHtml(bill.name)}</div>
+        <div class="bill-card-meta">
+          <span class="bill-status-badge ${status.badge}">${status.label}</span>
+          ${amtStr ? `<span>${amtStr}</span>` : ''}
+          <span style="color:#9ca3af;">${recurStr}</span>
+        </div>
+        ${notesStr}
+      </div>
+      ${amtStr ? `<div class="bill-card-amount">${amtStr}</div>` : ''}
+      <div class="bill-card-actions">
+        ${!bill.paid && canManage ? `<button class="bill-pay-btn" onclick="markBillPaid('${bill.id}')">✓ Mark Paid</button>` : ''}
+        ${canManage ? `<button class="btn btn-sm btn-outline" style="padding:3px 9px;" onclick="openAddBillForm('${bill.id}')">✏️</button>` : ''}
+        ${canManage ? `<button class="btn btn-sm" style="padding:3px 9px;border:1.5px solid #fca5a5;color:#dc2626;background:none;border-radius:6px;" onclick="deleteBill('${bill.id}')">🗑</button>` : ''}
+      </div>
+    </div>`;
+  }
+  listEl.innerHTML = html;
+}
+
+async function _loadBillsData() {
+  try {
+    const snap = await db.collection('bills').orderBy('dueDate', 'asc').limit(200).get();
+    cachedBills = [];
+    snap.forEach(doc => { if (!doc.data().deleted) cachedBills.push({ id: doc.id, ...doc.data() }); });
+    _applyBillsTab(_currentBillsTab);
+    _updateBillsBadge();
+  } catch (e) {
+    console.error('Load bills error:', e);
+    const listEl = $('bills-list');
+    if (listEl) listEl.innerHTML = '<p class="hint" style="padding:20px;text-align:center;">Failed to load bills.</p>';
+  }
+}
+
+function _applyBillsTab(tab) {
+  const today = todayDateString();
+  let bills = cachedBills;
+  if (tab === 'upcoming') bills = cachedBills.filter(b => !b.paid && b.dueDate && b.dueDate >= today);
+  else if (tab === 'overdue') bills = cachedBills.filter(b => !b.paid && b.dueDate && b.dueDate < today);
+  else if (tab === 'paid') bills = cachedBills.filter(b => b.paid);
+  else bills = cachedBills; // 'all'
+  _renderBillsList(bills);
+  // Update overdue badge inside panel
+  const nOverdue = cachedBills.filter(b => !b.paid && b.dueDate && b.dueDate < today).length;
+  const badge = $('bills-overdue-badge');
+  if (badge) { badge.textContent = `${nOverdue} overdue`; badge.style.display = nOverdue > 0 ? '' : 'none'; }
+}
+
+function _updateBillsBadge() {
+  const today = todayDateString();
+  const urgent = cachedBills.filter(b => {
+    if (b.paid || !b.dueDate) return false;
+    const days = Math.ceil((new Date(b.dueDate) - new Date(today)) / 86400000);
+    return days <= 7;
+  }).length;
+  const badge = $('bills-due-badge');
+  if (badge) {
+    badge.textContent = urgent;
+    badge.style.display = urgent > 0 ? '' : 'none';
+    badge.classList.toggle('count-zero', urgent === 0);
+  }
+}
+
+window.openBills = function() {
+  const overlay = $('bills-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  _currentBillsTab = 'all';
+  document.querySelectorAll('.bills-tab').forEach(b => b.classList.toggle('active', b.dataset.btab === 'all'));
+  _loadBillsData();
+};
+
+window.closeBills = function() {
+  const overlay = $('bills-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+window.switchBillsTab = function(tab, btn) {
+  _currentBillsTab = tab;
+  document.querySelectorAll('.bills-tab').forEach(b => b.classList.toggle('active', b.dataset.btab === tab));
+  _applyBillsTab(tab);
+};
+
+window.openAddBillForm = function(id) {
+  const modal = $('bill-form-modal');
+  if (!modal) return;
+  const title = $('bill-form-title');
+  const editId = $('bill-edit-id');
+  $('bill-name').value = '';
+  $('bill-category').value = 'insurance';
+  $('bill-amount').value = '';
+  $('bill-due-date').value = '';
+  $('bill-recurring').checked = false;
+  $('bill-recurring-period').style.display = 'none';
+  $('bill-recurring-period').value = 'monthly';
+  $('bill-notes').value = '';
+  editId.value = '';
+  if (id) {
+    const bill = cachedBills.find(b => b.id === id);
+    if (bill) {
+      title.textContent = 'Edit Bill';
+      editId.value = id;
+      $('bill-name').value = bill.name || '';
+      $('bill-category').value = bill.category || 'other';
+      $('bill-amount').value = bill.amount != null ? bill.amount : '';
+      $('bill-due-date').value = bill.dueDate || '';
+      $('bill-recurring').checked = !!bill.recurring;
+      if (bill.recurring) {
+        $('bill-recurring-period').style.display = '';
+        $('bill-recurring-period').value = bill.recurringPeriod || 'monthly';
+      }
+      $('bill-notes').value = bill.notes || '';
+    }
+  } else {
+    title.textContent = 'Add Bill';
+  }
+  modal.style.display = 'flex';
+};
+
+window.closeBillForm = function() {
+  const modal = $('bill-form-modal');
+  if (modal) modal.style.display = 'none';
+};
+
+window.toggleBillRecurring = function() {
+  const checked = $('bill-recurring').checked;
+  $('bill-recurring-period').style.display = checked ? '' : 'none';
+};
+
+window.saveBill = async function() {
+  const name = ($('bill-name').value || '').trim();
+  const dueDate = $('bill-due-date').value;
+  if (!name) { toast('Name is required.', 'error'); return; }
+  if (!dueDate) { toast('Due date is required.', 'error'); return; }
+  const data = {
+    name,
+    category: $('bill-category').value || 'other',
+    amount: $('bill-amount').value !== '' ? parseFloat($('bill-amount').value) : null,
+    dueDate,
+    recurring: $('bill-recurring').checked,
+    recurringPeriod: $('bill-recurring').checked ? ($('bill-recurring-period').value || 'monthly') : null,
+    notes: ($('bill-notes').value || '').trim() || null,
+    paid: false,
+  };
+  const editId = $('bill-edit-id').value;
+  try {
+    if (editId) {
+      await db.collection('bills').doc(editId).update(data);
+      toast('Bill updated ✅', 'success');
+    } else {
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      data.createdBy = currentUser.uid;
+      await db.collection('bills').add(data);
+      toast('Bill added ✅', 'success');
+    }
+    closeBillForm();
+    await _loadBillsData();
+  } catch (e) {
+    console.error('Save bill error:', e);
+    toast('Failed to save bill.', 'error');
+  }
+};
+
+window.markBillPaid = async function(id) {
+  const bill = cachedBills.find(b => b.id === id);
+  if (!bill) return;
+  try {
+    const today = todayDateString();
+    await db.collection('bills').doc(id).update({
+      paid: true,
+      paidDate: today,
+      paidBy: currentUser.displayName || currentUser.email
+    });
+    // If recurring, create next cycle bill
+    if (bill.recurring && bill.dueDate && bill.recurringPeriod) {
+      const nextDue = _nextBillDueDate(bill.dueDate, bill.recurringPeriod);
+      await db.collection('bills').add({
+        name: bill.name,
+        category: bill.category,
+        amount: bill.amount,
+        dueDate: nextDue,
+        recurring: true,
+        recurringPeriod: bill.recurringPeriod,
+        notes: bill.notes,
+        paid: false,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser.uid
+      });
+      toast(`Marked paid ✅ · Next due ${nextDue}`, 'success');
+    } else {
+      toast('Marked as paid ✅', 'success');
+    }
+    await _loadBillsData();
+  } catch (e) {
+    console.error('Mark bill paid error:', e);
+    toast('Failed to update.', 'error');
+  }
+};
+
+window.deleteBill = async function(id) {
+  if (!confirm('Delete this bill?')) return;
+  try {
+    await db.collection('bills').doc(id).delete();
+    toast('Deleted.', 'success');
+    await _loadBillsData();
+  } catch (e) {
+    console.error('Delete bill error:', e);
+    toast('Failed to delete.', 'error');
+  }
+};
+
+// Load bills count for nav badge without opening the overlay
+async function _updateBillsBadgeFromFirestore() {
+  try {
+    const today = todayDateString();
+    const snap = await db.collection('bills')
+      .where('paid', '==', false)
+      .where('dueDate', '<=', today)
+      .limit(50)
+      .get();
+    // count items where dueDate within 7 days OR overdue
+    const d7 = new Date(); d7.setDate(d7.getDate() + 7);
+    const d7str = d7.toISOString().slice(0, 10);
+    const urgentSnap = await db.collection('bills')
+      .where('paid', '==', false)
+      .where('dueDate', '<=', d7str)
+      .limit(50)
+      .get();
+    const count = urgentSnap.size;
+    const badge = $('bills-due-badge');
+    if (badge) {
+      badge.textContent = count;
+      badge.style.display = count > 0 ? '' : 'none';
+      badge.classList.toggle('count-zero', count === 0);
+    }
+  } catch (e) { /* ignore if collection doesn't exist yet */ }
+}
 
 // ================================================================
 // PER-VEHICLE SCHEDULE EDITOR (removed — schedule editor UI was deleted)

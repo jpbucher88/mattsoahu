@@ -74,6 +74,10 @@
       <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
         <span class="task-alert-icon">🔧</span>
       </button>
+      <button id="btn-bills" class="task-alert-btn" title="Bills &amp; Payments" onclick="openBills()" style="display:none;">
+        <span class="task-alert-icon">💳</span>
+        <span id="bills-due-badge" class="task-alert-count count-zero">0</span>
+      </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
       </button>
@@ -1652,6 +1656,7 @@
         <button class="maint-tab-btn active" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">📊 Overview</button>
         <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Fleet Status</button>
         <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
+        <button class="maint-tab-btn" data-mtab="mtab-tasks" onclick="switchMaintTab('mtab-tasks',this)">📌 Open Tasks</button>
       </div>
       <div class="maint-dash-body">
 
@@ -1667,7 +1672,15 @@
           <div id="maint-fleet-grid" class="maint-fleet-grid"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
         </div>
 
-        <!-- ===== History Tab ===== -->
+        <!-- ===== Open Tasks Tab ===== -->
+        <div id="mtab-tasks" class="maint-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+            <button class="btn btn-sm btn-outline" onclick="_refreshMaintTasks()">↻ Refresh</button>
+          </div>
+          <div id="maint-tasks-content"><p class="hint" style="padding:16px;text-align:center;">Click Refresh to load open maintenance tasks.</p></div>
+        </div>
+
+        <!-- ===== History Tab =====
         <div id="mtab-history" class="maint-tab-content" style="display:none;">
           <div class="maint-history-filters">
             <select id="maint-hist-vehicle" class="form-select" style="flex:1;min-width:140px;">
@@ -2191,6 +2204,89 @@
   </div>
 
   <div id="toast-container" class="toast-container"></div>
+
+  <!-- ==================== BILLS & PAYMENTS OVERLAY ==================== -->
+  <div id="bills-overlay" class="bills-overlay" onclick="if(event.target===this)closeBills()">
+    <div class="bills-panel">
+      <div class="bills-panel-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.4rem;">💳</span>
+          <h3 style="margin:0;font-size:1.1rem;font-weight:700;">Bills &amp; Payments</h3>
+          <span id="bills-overdue-badge" class="bills-overdue-badge" style="display:none;"></span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-sm btn-primary" onclick="openAddBillForm()">+ Add Bill</button>
+          <button class="bills-panel-close" onclick="closeBills()">&times;</button>
+        </div>
+      </div>
+      <div class="bills-filter-tabs">
+        <button class="bills-tab active" data-btab="all" onclick="switchBillsTab('all',this)">All</button>
+        <button class="bills-tab" data-btab="upcoming" onclick="switchBillsTab('upcoming',this)">⏰ Upcoming</button>
+        <button class="bills-tab" data-btab="overdue" onclick="switchBillsTab('overdue',this)">🔴 Overdue</button>
+        <button class="bills-tab" data-btab="paid" onclick="switchBillsTab('paid',this)">✅ Paid</button>
+      </div>
+      <div id="bills-list" class="bills-list"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+    </div>
+  </div>
+
+  <!-- ADD / EDIT BILL MODAL -->
+  <div id="bill-form-modal" class="modal-overlay" onclick="if(event.target===this)closeBillForm()">
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <h3 id="bill-form-title">Add Bill</h3>
+        <button class="modal-close" onclick="closeBillForm()">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="bill-edit-id">
+        <div class="bill-form-field">
+          <label class="bill-form-label">Name *</label>
+          <input type="text" id="bill-name" class="form-select" placeholder="e.g. Turo Subscription" maxlength="100" style="width:100%;">
+        </div>
+        <div class="bill-form-field">
+          <label class="bill-form-label">Category</label>
+          <select id="bill-category" class="form-select" style="width:100%;">
+            <option value="insurance">🛡️ Insurance</option>
+            <option value="registration">📝 Registration</option>
+            <option value="lease">🚗 Lease / Loan</option>
+            <option value="platform">📱 Platform Fee</option>
+            <option value="utilities">⚡ Utilities</option>
+            <option value="other">🏢 Other</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div class="bill-form-field">
+            <label class="bill-form-label">Amount (optional)</label>
+            <input type="number" id="bill-amount" class="form-select" placeholder="0.00" min="0" step="0.01" style="width:100%;">
+          </div>
+          <div class="bill-form-field">
+            <label class="bill-form-label">Due Date *</label>
+            <input type="date" id="bill-due-date" class="form-select" style="width:100%;">
+          </div>
+        </div>
+        <div class="bill-form-field">
+          <label class="bill-form-label">Recurring?</label>
+          <div style="display:flex;align-items:center;gap:12px;margin-top:4px;">
+            <label style="font-weight:normal;display:flex;align-items:center;gap:5px;cursor:pointer;font-size:0.9rem;">
+              <input type="checkbox" id="bill-recurring" onchange="toggleBillRecurring()"> Yes, repeats
+            </label>
+            <select id="bill-recurring-period" class="form-select" style="display:none;width:auto;">
+              <option value="monthly">Monthly</option>
+              <option value="quarterly">Every 3 months</option>
+              <option value="annual">Yearly</option>
+            </select>
+          </div>
+        </div>
+        <div class="bill-form-field">
+          <label class="bill-form-label">Notes</label>
+          <textarea id="bill-notes" class="form-select" rows="2" placeholder="Optional…" maxlength="300" style="width:100%;resize:vertical;"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+          <button class="btn btn-outline" onclick="closeBillForm()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveBill()">💾 Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ==================== COMPLETED TASKS MODAL ==================== -->
   <div id="completed-tasks-modal" class="modal-overlay" onclick="if(event.target===this)closeCompletedTasksModal()">
