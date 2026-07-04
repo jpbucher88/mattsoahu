@@ -8169,6 +8169,7 @@ $('compliance-registration-upload').addEventListener('change', async function(e)
 
 // Current active tab in the task panel: 'all' | 'urgent' | 'scheduled' | 'monitoring'
 let currentTaskTab = 'all';
+let taskViewMode = 'timeline'; // 'timeline' | 'vehicle'
 // Cached items for re-filtering without refetch
 let cachedTaskItems = [];
 // Mailbox
@@ -8195,7 +8196,7 @@ window.switchTaskTab = function(tab) {
   const userFilterRow = $('task-user-filter-row');
   if (tab === 'incidents') {
     if (incPanel) incPanel.style.display = '';
-    ['followup-overdue','followup-today','followup-upcoming','followup-no-date','followup-empty','compliance-grouped-view','maintenance-grouped-view'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
+    ['followup-overdue','followup-today','followup-upcoming','followup-no-date','followup-empty','compliance-grouped-view','maintenance-grouped-view','vehicle-grouped-view'].forEach(id => { const el = $(id); if (el) el.style.display = 'none'; });
     if (userFilterRow) userFilterRow.style.display = 'none';
   } else {
     if (incPanel) incPanel.style.display = 'none';
@@ -8206,6 +8207,13 @@ window.switchTaskTab = function(tab) {
 // Admin user-filter change handler
 window.applyTaskUserFilter = function(uid) {
   currentTaskUserFilter = uid || 'all';
+  renderTaskAgenda(cachedTaskItems);
+};
+
+window.toggleTaskViewMode = function() {
+  taskViewMode = (taskViewMode === 'timeline') ? 'vehicle' : 'timeline';
+  const btn = $('btn-view-toggle');
+  if (btn) btn.textContent = taskViewMode === 'vehicle' ? '📅 Timeline' : '🚗 By Vehicle';
   renderTaskAgenda(cachedTaskItems);
 };
 
@@ -8417,6 +8425,31 @@ function renderTaskAgenda(allItems) {
     items = allItems.filter(i => !i.assignedTo || i.assignedTo === currentUser.uid);
   }
 
+  // Update tab count badges
+  const _tc = (id, count) => { const el = $(id); if (el) el.textContent = count > 0 ? count : ''; };
+  _tc('tc-all', allItems.length);
+  _tc('tc-urgent', allItems.filter(i => i.urgent).length);
+  _tc('tc-scheduled', allItems.filter(i => !i.urgent && i.taskStatus !== 'monitoring' && i.taskStatus !== 'maintenance' && i.dueDate).length);
+  _tc('tc-monitoring', allItems.filter(i => i.taskStatus === 'monitoring').length);
+  _tc('tc-maintenance', allItems.filter(i => i.sourceType === 'maintenance').length);
+  if (currentUser) _tc('tc-mine', allItems.filter(i => !i.assignedTo || i.assignedTo === currentUser.uid).length);
+
+  // Update quick stats bar (show only on 'all' tab)
+  const statsBar = $('task-stats-bar');
+  const statsChips = $('task-stats-chips');
+  if (statsBar) statsBar.style.display = currentTaskTab === 'all' ? '' : 'none';
+  if (statsBar && statsChips && currentTaskTab === 'all') {
+    const nUrgent = allItems.filter(i => i.urgent).length;
+    const nOverdue = allItems.filter(i => i.dueDate && i.dueDate < today).length;
+    const nToday = allItems.filter(i => i.dueDate === today).length;
+    let chips = '';
+    if (nUrgent > 0) chips += `<span class="stats-chip stats-chip-urgent" onclick="switchTaskTab('urgent')" title="Go to Urgent tab">🚨 ${nUrgent} urgent</span>`;
+    if (nOverdue > 0) chips += `<span class="stats-chip stats-chip-overdue">⏰ ${nOverdue} overdue</span>`;
+    if (nToday > 0) chips += `<span class="stats-chip stats-chip-today">📅 ${nToday} today</span>`;
+    if (!chips) chips = `<span class="stats-chip stats-chip-ok">✅ All clear</span>`;
+    statsChips.innerHTML = chips;
+  }
+
   // Admin user-filter: when a specific user is selected in the dropdown,
   // show tasks assigned to that user + all unassigned (team) tasks
   if (currentUserRole === 'admin' && currentTaskUserFilter && currentTaskUserFilter !== 'all') {
@@ -8566,6 +8599,86 @@ function renderTaskAgenda(allItems) {
 
   // Compliance tab: month browser at top + task cards below
   const compGroupEl = $('compliance-grouped-view');
+
+  // Vehicle-grouped view (All tab, vehicle mode)
+  const vehicleGroupEl = $('vehicle-grouped-view');
+  if (vehicleGroupEl) vehicleGroupEl.style.display = 'none';
+
+  if (currentTaskTab === 'all' && taskViewMode === 'vehicle') {
+    [overdueEl, todayEl, upcomingEl, noDateEl].forEach(el => { if (el) el.style.display = 'none'; });
+    if (emptyEl) emptyEl.style.display = 'none';
+    if (vehicleGroupEl) {
+      vehicleGroupEl.style.display = '';
+      // Group tasks by vehicle
+      const byVehicle = new Map();
+      for (const item of items) {
+        const key = item.vehicleId || '__general';
+        if (!byVehicle.has(key)) byVehicle.set(key, []);
+        byVehicle.get(key).push(item);
+      }
+      // Sort: vehicles with urgent or overdue tasks first
+      const sortedGroups = [...byVehicle.entries()].sort(([, a], [, b]) => {
+        const aScore = (a.some(i => i.urgent) ? 4 : 0) + (a.some(i => i.dueDate && i.dueDate < today) ? 2 : 0) + (a.some(i => i.dueDate === today) ? 1 : 0);
+        const bScore = (b.some(i => i.urgent) ? 4 : 0) + (b.some(i => i.dueDate && i.dueDate < today) ? 2 : 0) + (b.some(i => i.dueDate === today) ? 1 : 0);
+        if (bScore !== aScore) return bScore - aScore;
+        // General tasks last
+        if (a[0].vehicleId && !b[0].vehicleId) return -1;
+        if (!a[0].vehicleId && b[0].vehicleId) return 1;
+        return 0;
+      });
+      if (sortedGroups.length === 0) {
+        vehicleGroupEl.innerHTML = '<div class="agenda-empty"><p class="hint">No tasks. ✅</p></div>';
+      } else {
+        let html = '';
+        for (const [vehicleId, vItems] of sortedGroups) {
+          const v = vehicleId !== '__general' ? vehiclesCache.find(x => x.id === vehicleId) : null;
+          const plate = v ? v.plate : 'General';
+          const makeModel = v ? [v.make, v.model].filter(Boolean).join(' ') : '';
+          const hasUrgent = vItems.some(i => i.urgent);
+          const hasOverdue = vItems.some(i => i.dueDate && i.dueDate < today);
+          const hasToday = vItems.some(i => i.dueDate === today);
+          let statusClass = '';
+          let statusDot = '';
+          if (hasUrgent) { statusClass = ' vg-urgent'; statusDot = '<span class="vg-dot vg-dot-urgent"></span>'; }
+          else if (hasOverdue) { statusClass = ' vg-overdue'; statusDot = '<span class="vg-dot vg-dot-overdue"></span>'; }
+          else if (hasToday) { statusClass = ' vg-today'; statusDot = '<span class="vg-dot vg-dot-today"></span>'; }
+          else { statusDot = '<span class="vg-dot vg-dot-ok"></span>'; }
+          const taskWord = vItems.length === 1 ? 'task' : 'tasks';
+          html += `<div class="vg-card${statusClass}">
+            <div class="vg-card-header" onclick="this.closest('.vg-card').classList.toggle('vg-collapsed')">
+              ${statusDot}
+              <span class="vg-plate">${vehicleId !== '__general' ? '🚗' : '📝'} ${escapeHtml(plate)}</span>
+              ${makeModel ? `<span class="vg-model">${escapeHtml(makeModel)}</span>` : ''}
+              <span class="vg-count">${vItems.length} ${taskWord}</span>
+              <span class="vg-chevron">▾</span>
+            </div>
+            <div class="vg-card-body">`;
+          // Sort items: urgent first, then overdue, then by date
+          vItems.sort((a, b) => {
+            if (b.urgent !== a.urgent) return b.urgent ? 1 : -1;
+            if (!a.dueDate && b.dueDate) return 1;
+            if (a.dueDate && !b.dueDate) return -1;
+            return (a.dueDate || '').localeCompare(b.dueDate || '');
+          });
+          for (const item of vItems) {
+            html += renderAgendaItem(item);
+          }
+          html += '</div></div>';
+        }
+        vehicleGroupEl.innerHTML = html;
+        vehicleGroupEl.querySelectorAll('.followup-item').forEach(el => {
+          el.addEventListener('click', e => {
+            if (e.target.closest('button')) return;
+            const wrap = el.closest('.followup-item-wrap');
+            const dd = wrap ? wrap.dataset.due : '';
+            if (dd) jumpToCalendarDay(dd);
+            else if (el.dataset.vid) { closeTaskPanel(); openVehiclePage(el.dataset.vid); }
+          });
+        });
+      }
+    }
+    return;
+  }
 
   // Maintenance tab: grouped by vehicle, showing mileage/time context
   const maintGroupEl = $('maintenance-grouped-view');

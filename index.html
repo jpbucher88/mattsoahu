@@ -2074,17 +2074,23 @@
           </div>
           <!-- Status tabs -->
           <div class="task-status-tabs">
-            <button class="task-tab active" data-tab="all" onclick="switchTaskTab('all')">All Active</button>
-            <button class="task-tab" data-tab="urgent" onclick="switchTaskTab('urgent')">🚨 Urgent</button>
-            <button class="task-tab" data-tab="scheduled" onclick="switchTaskTab('scheduled')">🔵 Scheduled</button>
-            <button class="task-tab" data-tab="monitoring" onclick="switchTaskTab('monitoring')">🟢 Monitoring</button>
-            <button class="task-tab" data-tab="maintenance" onclick="switchTaskTab('maintenance')">🔧 Maintenance</button>
-            <button class="task-tab" data-tab="compliance" onclick="switchTaskTab('compliance')">📋 Compliance</button>
-            <button class="task-tab" data-tab="mine" onclick="switchTaskTab('mine')">👤 My Tasks</button>
+            <button class="task-tab active" data-tab="all" onclick="switchTaskTab('all')">All <span class="tab-count" id="tc-all"></span></button>
+            <button class="task-tab" data-tab="urgent" onclick="switchTaskTab('urgent')">🚨 <span class="tab-count urgent" id="tc-urgent"></span></button>
+            <button class="task-tab" data-tab="scheduled" onclick="switchTaskTab('scheduled')">🔵 Sched <span class="tab-count" id="tc-scheduled"></span></button>
+            <button class="task-tab" data-tab="monitoring" onclick="switchTaskTab('monitoring')">🟢 Watch <span class="tab-count" id="tc-monitoring"></span></button>
+            <button class="task-tab" data-tab="maintenance" onclick="switchTaskTab('maintenance')">🔧 Maint <span class="tab-count" id="tc-maintenance"></span></button>
+            <button class="task-tab" data-tab="compliance" onclick="switchTaskTab('compliance')">📋 Comply</button>
+            <button class="task-tab" data-tab="mine" onclick="switchTaskTab('mine')">👤 Mine <span class="tab-count" id="tc-mine"></span></button>
             <button class="task-tab" id="incidents-tab-btn" data-tab="incidents" onclick="switchTaskTab('incidents')" style="display:none;">🚨 Incidents <span id="incidents-tab-badge" class="task-tab-badge" style="display:none;"></span></button>
+          </div>
+          <!-- Quick stats + view toggle -->
+          <div id="task-stats-bar" style="display:none;">
+            <div id="task-stats-chips"></div>
+            <button id="btn-view-toggle" class="task-view-toggle" onclick="toggleTaskViewMode()" title="Switch between timeline and vehicle-grouped view">🚗 By Vehicle</button>
           </div>
           <!-- Active task lists (filtered by tab) -->
           <div id="task-tab-content">
+            <div id="vehicle-grouped-view" class="vehicle-grouped-view" style="display:none;"></div>
             <div id="followup-overdue" class="agenda-group" style="display:none;"></div>
             <div id="followup-today" class="agenda-group" style="display:none;"></div>
             <div id="followup-upcoming" class="agenda-group" style="display:none;"></div>
