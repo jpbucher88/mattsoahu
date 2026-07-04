@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260518">
+  <link rel="stylesheet" href="style.css?v=20260703">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -2245,7 +2245,7 @@
   </div>
 
   <!-- ADD / EDIT BILL MODAL -->
-  <div id="bill-form-modal" class="modal-overlay" onclick="if(event.target===this)closeBillForm()">
+  <div id="bill-form-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeBillForm()">
     <div class="modal-box" style="max-width:480px;">
       <div class="modal-header">
         <h3 id="bill-form-title">Add Bill</h3>
@@ -2304,7 +2304,7 @@
   </div>
 
   <!-- ==================== COMPLETED TASKS MODAL ==================== -->
-  <div id="completed-tasks-modal" class="modal-overlay" onclick="if(event.target===this)closeCompletedTasksModal()">
+  <div id="completed-tasks-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCompletedTasksModal()">
     <div class="modal-box" style="max-width:600px;">
       <div class="modal-header">
         <h3>✅ Completed Tasks</h3>
@@ -2317,7 +2317,7 @@
   </div>
 
   <!-- ==================== ACTIVITY LOG MODAL ==================== -->
-  <div id="activity-log-modal" class="modal-overlay" onclick="if(event.target===this)closeActivityLogModal()">
+  <div id="activity-log-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeActivityLogModal()">
     <div class="modal-box" style="max-width:640px;">
       <div class="modal-header">
         <h3>📋 Activity Log</h3>
