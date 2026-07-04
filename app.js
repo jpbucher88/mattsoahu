@@ -6891,8 +6891,8 @@ function _nextBillDueDate(dueDate, period) {
   return d.toISOString().slice(0, 10);
 }
 
-function _renderBillsList(bills) {
-  const listEl = $('bills-list');
+function _renderBillsList(bills, containerEl) {
+  const listEl = containerEl || $('bills-list');
   if (!listEl) return;
   const today = todayDateString();
   if (bills.length === 0) {
@@ -6951,7 +6951,10 @@ function _applyBillsTab(tab) {
   else if (tab === 'paid') bills = cachedBills.filter(b => b.paid);
   else bills = cachedBills; // 'all'
   _renderBillsList(bills);
-  // Update overdue badge inside panel
+  // Also update finance tab if open
+  const finContainer = $('finance-bills-list');
+  if (finContainer && finContainer.offsetParent !== null) _renderBillsList(bills, finContainer);
+  // Update overdue badge inside overlay panel
   const nOverdue = cachedBills.filter(b => !b.paid && b.dueDate && b.dueDate < today).length;
   const badge = $('bills-overdue-badge');
   if (badge) { badge.textContent = `${nOverdue} overdue`; badge.style.display = nOverdue > 0 ? '' : 'none'; }
@@ -7123,13 +7126,6 @@ window.deleteBill = async function(id) {
 // Load bills count for nav badge without opening the overlay
 async function _updateBillsBadgeFromFirestore() {
   try {
-    const today = todayDateString();
-    const snap = await db.collection('bills')
-      .where('paid', '==', false)
-      .where('dueDate', '<=', today)
-      .limit(50)
-      .get();
-    // count items where dueDate within 7 days OR overdue
     const d7 = new Date(); d7.setDate(d7.getDate() + 7);
     const d7str = d7.toISOString().slice(0, 10);
     const urgentSnap = await db.collection('bills')
@@ -7145,6 +7141,43 @@ async function _updateBillsBadgeFromFirestore() {
       badge.classList.toggle('count-zero', count === 0);
     }
   } catch (e) { /* ignore if collection doesn't exist yet */ }
+}
+
+// ── Finance tab: Bills ──────────────────────────────────────────
+let _currentFinanceBillsTab = 'all';
+
+async function _loadFinanceBills() {
+  const container = $('finance-bills-list');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:20px;text-align:center;">Loading…</p>';
+  try {
+    const snap = await db.collection('bills').orderBy('dueDate', 'asc').limit(200).get();
+    cachedBills = [];
+    snap.forEach(doc => { if (!doc.data().deleted) cachedBills.push({ id: doc.id, ...doc.data() }); });
+    _applyBillsTabToEl(_currentFinanceBillsTab, container);
+    _updateBillsBadge();
+  } catch (e) {
+    container.innerHTML = '<p class="hint" style="padding:20px;">Failed to load bills.</p>';
+  }
+}
+
+window.switchFinanceBillsTab = function(tab, btn) {
+  _currentFinanceBillsTab = tab;
+  document.querySelectorAll('[data-fbtab]').forEach(b => b.classList.toggle('active', b.dataset.fbtab === tab));
+  // also sync the overlay tabs
+  document.querySelectorAll('[data-btab]').forEach(b => b.classList.toggle('active', b.dataset.btab === tab));
+  _currentBillsTab = tab;
+  const container = $('finance-bills-list');
+  if (container) _applyBillsTabToEl(tab, container);
+};
+
+function _applyBillsTabToEl(tab, containerEl) {
+  const today = todayDateString();
+  let bills = cachedBills;
+  if (tab === 'upcoming') bills = cachedBills.filter(b => !b.paid && b.dueDate && b.dueDate >= today);
+  else if (tab === 'overdue') bills = cachedBills.filter(b => !b.paid && b.dueDate && b.dueDate < today);
+  else if (tab === 'paid') bills = cachedBills.filter(b => b.paid);
+  _renderBillsList(bills, containerEl);
 }
 
 // ================================================================
@@ -14459,7 +14492,7 @@ window.deleteExpense = async function(docId) {
 // FINANCE TABS
 // ================================================================
 window.switchFinanceTab = function(tab) {
-  ['overview','revenue','expenses','pl','ownercut'].forEach(t => {
+  ['overview','revenue','expenses','pl','ownercut','bills'].forEach(t => {
     const btn = $('ftab-' + t);
     const content = $('finance-tab-' + t);
     if (btn) btn.classList.toggle('active', t === tab);
@@ -14470,6 +14503,7 @@ window.switchFinanceTab = function(tab) {
   if (tab === 'expenses') loadExpenseWidget();
   if (tab === 'pl') { const el = $('fin-pl-month'); if (el && !el.value) el.value = _todayMonthVal(); loadFinancePL(); }
   if (tab === 'ownercut') { const el = $('fin-ownercut-month'); if (el && !el.value) el.value = _todayMonthVal(); }
+  if (tab === 'bills') _loadFinanceBills();
 };
 
 async function loadFinanceOverview() {

@@ -74,7 +74,7 @@
       <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
         <span class="task-alert-icon">🔧</span>
       </button>
-      <button id="btn-bills" class="task-alert-btn" title="Bills &amp; Payments" onclick="openBills()" style="display:none;">
+      <button id="btn-bills" class="task-alert-btn" title="Bills &amp; Payments" onclick="openFinance();setTimeout(()=>switchFinanceTab('bills'),50)" style="display:none;">
         <span class="task-alert-icon">💳</span>
         <span id="bills-due-badge" class="task-alert-count count-zero">0</span>
       </button>
@@ -1767,6 +1767,7 @@
         <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
         <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
         <button class="finance-tab" id="ftab-ownercut" onclick="switchFinanceTab('ownercut')">👥 Owner Cut</button>
+        <button class="finance-tab" id="ftab-bills" onclick="switchFinanceTab('bills')">💳 Bills</button>
       </div>
       <div class="finance-body">
 
@@ -1920,6 +1921,20 @@
             <button class="btn btn-sm btn-primary" onclick="loadOwnerCutReport()">Load</button>
           </div>
           <div id="finance-ownercut-body"><p class="hint" style="padding:24px;text-align:center;">Select a month and click Load.</p></div>
+        </div>
+
+        <!-- ===== BILLS TAB ===== -->
+        <div id="finance-tab-bills" class="finance-tab-content" style="display:none;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+            <div class="bills-filter-tabs" style="border:none;padding:0;">
+              <button class="bills-tab active" data-fbtab="all" onclick="switchFinanceBillsTab('all',this)">All</button>
+              <button class="bills-tab" data-fbtab="upcoming" onclick="switchFinanceBillsTab('upcoming',this)">⏰ Upcoming</button>
+              <button class="bills-tab" data-fbtab="overdue" onclick="switchFinanceBillsTab('overdue',this)">🔴 Overdue</button>
+              <button class="bills-tab" data-fbtab="paid" onclick="switchFinanceBillsTab('paid',this)">✅ Paid</button>
+            </div>
+            <button class="btn btn-sm btn-primary" onclick="openAddBillForm()">+ Add Bill</button>
+          </div>
+          <div id="finance-bills-list" class="bills-list" style="max-height:55vh;"></div>
         </div>
 
       </div><!-- finance-body -->
