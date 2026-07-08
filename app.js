@@ -15109,6 +15109,7 @@ window.openFinance = function() {
 window.closeFinance = function() {
   const overlay = $('finance-overlay');
   if (overlay) overlay.style.display = 'none';
+};
 
 // ================================================================
 // ROLE PREVIEW (admin only — lets Matthew see the app as other roles)
@@ -15240,7 +15241,6 @@ window.exitRolePreview = function() {
   if (panel) panel.classList.remove('rp-open');
   _applyRoleToNav();
   toast('Back to Admin view', 'success');
-};
 };
 
 
