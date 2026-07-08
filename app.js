@@ -1053,7 +1053,7 @@ auth.onAuthStateChanged(async (user) => {
       startMailListener();
       startIncidentListener();
       initTimeClock();
-      if (currentUserRole === 'admin' || currentUserRole === 'manager') {
+      if (currentUserRole === 'admin') {
         const financeBtn = $('btn-finance');
         if (financeBtn) financeBtn.style.display = '';
         const prodBtn = $('productivity-open-btn');
@@ -1064,6 +1064,18 @@ auth.onAuthStateChanged(async (user) => {
         if (billsBtn) billsBtn.style.display = '';
         // Pre-load bills badge on login
         setTimeout(_updateBillsBadgeFromFirestore, 2000);
+      } else if (currentUserRole === 'manager') {
+        // Managers get operational tools but not Finance or Bills
+        const prodBtn = $('productivity-open-btn');
+        if (prodBtn) prodBtn.style.display = '';
+        const maintDashBtn = $('btn-maint-dash');
+        if (maintDashBtn) maintDashBtn.style.display = '';
+        // Managers get restricted finance (Add Expense only)
+        const financeBtn = $('btn-finance');
+        if (financeBtn) {
+          financeBtn.style.display = '';
+          financeBtn.title = 'Add Expense';
+        }
       } else {
         // Non-admin/manager users can still add expenses — show finance button with restricted access
         const financeBtn = $('btn-finance');
@@ -6900,6 +6912,7 @@ function _renderBillsList(bills, containerEl) {
     return;
   }
   const canManage = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const canDeleteBill = currentUserRole === 'admin';
   let html = '';
   for (const bill of bills) {
     const status = _billStatus(bill, today);
@@ -6922,7 +6935,7 @@ function _renderBillsList(bills, containerEl) {
       <div class="bill-card-actions">
         ${!bill.paid && canManage ? `<button class="bill-pay-btn" onclick="markBillPaid('${bill.id}')">✓ Mark Paid</button>` : ''}
         ${canManage ? `<button class="btn btn-sm btn-outline" style="padding:3px 9px;" onclick="openAddBillForm('${bill.id}')">✏️</button>` : ''}
-        ${canManage ? `<button class="btn btn-sm" style="padding:3px 9px;border:1.5px solid #fca5a5;color:#dc2626;background:none;border-radius:6px;" onclick="deleteBill('${bill.id}')">🗑</button>` : ''}
+        ${canDeleteBill ? `<button class="btn btn-sm" style="padding:3px 9px;border:1.5px solid #fca5a5;color:#dc2626;background:none;border-radius:6px;" onclick="deleteBill('${bill.id}')">🗑</button>` : ''}
       </div>
     </div>`;
   }
@@ -7583,7 +7596,7 @@ async function loadMaintenanceHistory(vehicleId) {
       const mileStr = d.mileage ? `${d.mileage.toLocaleString()} mi` : '';
       const locStr = d.location ? d.location : '';
       const meta = [mileStr, costStr, locStr].filter(Boolean).join(' · ');
-      const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
+      const canDelete = (currentUserRole === 'admin');
       let intervalBadge = '';
       if (d.intervalMonths) {
         const lbl = d.intervalMonths === 1 ? '1 Mo' : d.intervalMonths === 12 ? '1 Yr' : d.intervalMonths === 24 ? '2 Yr' : `${d.intervalMonths} Mo`;
@@ -8931,7 +8944,7 @@ function renderTaskAgenda(allItems) {
 
     const menuBtn = `<button class="task-menu-btn" onclick="event.stopPropagation(); openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
     const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
-    const canDelete = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    const canDelete = (currentUserRole === 'admin');
     const deleteBtn = canDelete ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>` : '';
     const logCount = item.taskLog && item.taskLog.length > 0
       ? ` · <span class="task-log-badge" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="View log">📋 ${item.taskLog.length} note${item.taskLog.length > 1 ? 's' : ''}</span>`
@@ -9158,7 +9171,7 @@ function renderTaskAgenda(allItems) {
             if (item.urgent) { statusClass = 'maint-item-overdue'; }
             const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
             const completeBtn = `<button class="task-complete-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','vehicleNotes')" title="Mark Complete">✓ Done</button>`;
-            const deleteBtn = canManage ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','vehicleNotes')" title="Delete">🗑</button>` : '';
+            const deleteBtn = currentUserRole === 'admin' ? `<button class="task-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','vehicleNotes')" title="Delete">🗑</button>` : '';
             html += `<div class="maint-item-row ${statusClass}">
               <div class="maint-item-info">
                 <div class="maint-item-name">${escapeHtml(item.text)}${statusBadge}</div>
@@ -9947,7 +9960,7 @@ function renderUrgentBanner(items) {
       ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit">✏️ Edit</button>`
       : '';
     const doneBtn = `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
-    const deleteBtn = canManage
+    const deleteBtn = currentUserRole === 'admin'
       ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>`
       : '';
 
@@ -15062,7 +15075,7 @@ window.openFinance = function() {
   const plEl = $('fin-pl-month');
   if (plEl && !plEl.value) plEl.value = _todayMonthVal();
 
-  const isAdminOrManager = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const isAdminOrManager = currentUserRole === 'admin';
   // Show/hide data tabs based on role
   ['ftab-overview', 'ftab-revenue', 'ftab-pl', 'ftab-ownercut'].forEach(id => {
     const el = $(id);
