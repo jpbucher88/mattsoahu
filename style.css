@@ -213,7 +213,9 @@ body {
   position: sticky;
   top: 0;
   z-index: 50;
+  transition: top 0.15s;
 }
+body.rp-active .app-header { top: 33px; }
 
 .app-header h2 {
   font-size: 18px;
@@ -1049,6 +1051,116 @@ body {
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.toast-success { background: var(--success); }
+.toast-error { background: var(--danger); }
+.toast-info { background: var(--primary); }
+.toast-warning { background: var(--warning); color: #000; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ============ ROLE PREVIEW SYSTEM (admin only) ============ */
+#role-preview-banner {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 99999;
+  background: linear-gradient(90deg, #7c3aed, #a855f7);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 7px 16px;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(124,58,237,0.35);
+}
+.rp-exit-btn {
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.5);
+  color: #fff;
+  border-radius: 6px;
+  padding: 3px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.rp-exit-btn:hover { background: rgba(255,255,255,0.35); }
+
+#role-preview-widget {
+  position: fixed;
+  bottom: 24px;
+  right: 20px;
+  z-index: 99998;
+  font-family: inherit;
+}
+#rp-toggle {
+  background: #1e1b4b;
+  color: #a5b4fc;
+  border: 1.5px solid #4338ca;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+  text-align: right;
+  transition: background 0.15s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+#rp-toggle:hover { background: #312e81; }
+#rp-panel {
+  display: none;
+  flex-direction: column;
+  gap: 8px;
+  background: #1e1b4b;
+  border: 1.5px solid #4338ca;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.35);
+  min-width: 180px;
+}
+#rp-panel.rp-open { display: flex; }
+.rp-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #818cf8;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #312e81;
+}
+.rp-btns { display: flex; flex-direction: column; gap: 5px; }
+.rp-btn {
+  background: #312e81;
+  border: 1.5px solid #4338ca;
+  border-radius: 8px;
+  color: #c7d2fe;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+.rp-btn:hover { background: #3730a3; border-color: #818cf8; }
+.rp-btn.rp-active {
+  background: #4338ca;
+  border-color: #818cf8;
+  color: #fff;
+}
+#rp-current-label {
+  font-size: 0.72rem;
+  color: #818cf8;
+  text-align: center;
+  padding-top: 4px;
+  border-top: 1px solid #312e81;
 }
 
 /* ============ LOADING OVERLAY ============ */

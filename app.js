@@ -43,6 +43,8 @@ function fmtTcTime(date, tz) {
 }
 let currentUser = null;
 let currentUserRole = null;
+let _isRealAdmin = false;  // true only when Firestore role = admin (never changes during preview)
+let _previewingAs = null; // role being previewed, null when in real mode
 let currentUserTimeclockAccess = false;
 let currentUserCanViewAllTimeclocks = false;
 let tcViewingUid = null;   // null = own timeclock
@@ -1011,6 +1013,7 @@ auth.onAuthStateChanged(async (user) => {
       }
       const userData = userDoc.data();
       currentUserRole = userData.role || 'user';
+      _isRealAdmin = currentUserRole === 'admin';
       currentUserTimeclockAccess = currentUserRole === 'admin' || userData.timeclockAccess === true;
       currentUserCanViewAllTimeclocks = currentUserRole === 'admin' || userData.canViewAllTimeclocks === true;
 
@@ -1031,6 +1034,9 @@ auth.onAuthStateChanged(async (user) => {
         if (badge) badge.title = 'Browse Mode — view only';
       }
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
+
+      // Build role preview widget for real admins
+      if (_isRealAdmin) _buildPreviewWidget();
 
       const uName = (userData.displayName || '').toLowerCase();
 
@@ -1107,6 +1113,13 @@ auth.onAuthStateChanged(async (user) => {
   } else {
     currentUser = null;
     currentUserRole = null;
+    _isRealAdmin = false;
+    _previewingAs = null;
+    // Remove preview widget on logout
+    const rpw = document.getElementById('role-preview-widget');
+    const rpb = document.getElementById('role-preview-banner');
+    if (rpw) rpw.remove();
+    if (rpb) rpb.remove();
     currentUserTimeclockAccess = false;
     if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
     if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
@@ -15096,6 +15109,138 @@ window.openFinance = function() {
 window.closeFinance = function() {
   const overlay = $('finance-overlay');
   if (overlay) overlay.style.display = 'none';
+
+// ================================================================
+// ROLE PREVIEW (admin only — lets Matthew see the app as other roles)
+// ================================================================
+function _applyRoleToNav() {
+  // viewer-mode body class
+  if (currentUserRole === 'viewer') {
+    document.body.classList.add('viewer-mode');
+  } else {
+    document.body.classList.remove('viewer-mode');
+  }
+
+  // Admin button
+  const adminBtn = $('btn-admin');
+  if (adminBtn) adminBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
+
+  // Nav buttons
+  const finBtn    = $('btn-finance');
+  const maintBtn  = $('btn-maint-dash');
+  const billsBtn  = $('btn-bills');
+  const prodBtn   = $('productivity-open-btn');
+
+  if (currentUserRole === 'admin') {
+    if (finBtn)   { finBtn.style.display = '';     finBtn.title = 'Finance'; }
+    if (maintBtn)  maintBtn.style.display = '';
+    if (billsBtn)  billsBtn.style.display = '';
+    if (prodBtn)   prodBtn.style.display  = '';
+  } else if (currentUserRole === 'manager') {
+    if (finBtn)   { finBtn.style.display = '';     finBtn.title = 'Add Expense'; }
+    if (maintBtn)  maintBtn.style.display = '';
+    if (billsBtn)  billsBtn.style.display = 'none';
+    if (prodBtn)   prodBtn.style.display  = '';
+  } else {
+    if (finBtn)   { finBtn.style.display = currentUserRole === 'viewer' ? 'none' : ''; finBtn.title = 'Add Expense'; }
+    if (maintBtn)  maintBtn.style.display = 'none';
+    if (billsBtn)  billsBtn.style.display = 'none';
+    if (prodBtn)   prodBtn.style.display  = 'none';
+  }
+
+  // Refresh current view so role-gated elements update
+  renderFleetDashboard();
+  renderLocationsWidget();
+  if (selectedVehicle) {
+    const canUpload  = currentUserRole === 'admin' || currentUserRole === 'manager';
+    const colorBtn   = $('btn-edit-vehicle-color');
+    const uploadSec  = $('upload-section');
+    const addMaintBtn = $('btn-add-maintenance');
+    const mileRow    = $('mileage-edit-row');
+    const ownerRow   = $('vehicle-ownership-row');
+    const adminVBtn  = $('btn-admin-from-vehicle');
+    if (colorBtn)    colorBtn.style.display   = canUpload ? '' : 'none';
+    if (uploadSec)   uploadSec.style.display  = canUpload ? 'block' : 'none';
+    if (addMaintBtn) addMaintBtn.style.display = canUpload ? '' : 'none';
+    if (mileRow)     mileRow.style.display    = canUpload ? '' : 'none';
+    if (ownerRow)    ownerRow.style.display   = canUpload ? '' : 'none';
+    if (adminVBtn)   adminVBtn.style.display  = currentUserRole === 'admin' ? '' : 'none';
+  }
+}
+
+function _buildPreviewWidget() {
+  if (document.getElementById('role-preview-widget')) return;
+
+  // Top banner (shown only when actually previewing a non-admin role)
+  const banner = document.createElement('div');
+  banner.id = 'role-preview-banner';
+  banner.style.display = 'none';
+  banner.innerHTML = `<span id="rp-banner-text"></span><button class="rp-exit-btn" onclick="exitRolePreview()">&#10005; Back to Admin</button>`;
+  document.body.insertBefore(banner, document.body.firstChild);
+
+  // Floating widget (bottom-right)
+  const widget = document.createElement('div');
+  widget.id = 'role-preview-widget';
+  const ROLES = [
+    { key: 'admin',   icon: '👑', label: 'Admin' },
+    { key: 'manager', icon: '🔑', label: 'Manager' },
+    { key: 'user',    icon: '👤', label: 'User' },
+    { key: 'viewer',  icon: '👁', label: 'Viewer' },
+  ];
+  widget.innerHTML = `
+    <div id="rp-toggle" onclick="document.getElementById('rp-panel').classList.toggle('rp-open')" title="Preview as Role">👁 Preview</div>
+    <div id="rp-panel">
+      <div class="rp-header">Preview as Role</div>
+      <div class="rp-btns">${ROLES.map(r =>
+        `<button class="rp-btn rp-${r.key}" onclick="previewAsRole('${r.key}')">${r.icon} ${r.label}</button>`
+      ).join('')}</div>
+      <div id="rp-current-label">Currently: 👑 Admin</div>
+    </div>`;
+  document.body.appendChild(widget);
+}
+
+window.previewAsRole = function(role) {
+  _previewingAs = role;
+  currentUserRole = role;
+
+  const LABELS = { admin: '👑 Admin', manager: '🔑 Manager', user: '👤 User', viewer: '👁 Viewer' };
+
+  // Update banner
+  const banner = document.getElementById('role-preview-banner');
+  const bannerText = document.getElementById('rp-banner-text');
+  if (banner) banner.style.display = role === 'admin' ? 'none' : 'flex';
+  if (bannerText) bannerText.textContent = `👁 Previewing as ${LABELS[role] || role}`;
+  document.body.classList.toggle('rp-active', role !== 'admin');
+
+  // Update widget active state
+  document.querySelectorAll('.rp-btn').forEach(b => b.classList.remove('rp-active'));
+  const activeBtn = document.querySelector(`.rp-${role}`);
+  if (activeBtn) activeBtn.classList.add('rp-active');
+
+  const label = document.getElementById('rp-current-label');
+  if (label) label.textContent = `Currently: ${LABELS[role] || role}`;
+
+  _applyRoleToNav();
+  toast(`Previewing as ${LABELS[role] || role}`, 'info');
+};
+
+window.exitRolePreview = function() {
+  _previewingAs = null;
+  currentUserRole = 'admin';
+  const banner = document.getElementById('role-preview-banner');
+  if (banner) banner.style.display = 'none';
+  document.body.classList.remove('rp-active');
+  document.querySelectorAll('.rp-btn').forEach(b => b.classList.remove('rp-active'));
+  const adminBtn = document.querySelector('.rp-admin');
+  if (adminBtn) adminBtn.classList.add('rp-active');
+  const label = document.getElementById('rp-current-label');
+  if (label) label.textContent = 'Currently: 👑 Admin';
+  // Close the panel
+  const panel = document.getElementById('rp-panel');
+  if (panel) panel.classList.remove('rp-open');
+  _applyRoleToNav();
+  toast('Back to Admin view', 'success');
+};
 };
 
 
