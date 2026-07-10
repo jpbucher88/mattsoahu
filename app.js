@@ -7342,21 +7342,22 @@ window.openNewWorkOrder = function(vehicleId) {
   overlay.id = 'wo-modal-overlay';
   overlay.className = 'modal-overlay';
 
-  // Vehicle availability hint
   let availHint = '';
+  let suggestedDate = '';
   if (v) {
     const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
     if (isOnTrip && v.tripReturnDate) {
       const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-      const rdStr = rd.toISOString().slice(0,10);
       const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
-      availHint = `<div class="wo-avail-hint">🚗 ${escapeHtml(v.plate)} is on a trip — returns <strong>${rdLabel}</strong>. Suggested schedule date set below.</div>`;
-      // Pre-fill suggested date: day after return
-      const sug = new Date(rd); sug.setDate(sug.getDate() + 1);
-      overlay._suggestedDate = sug.toISOString().slice(0,10);
+      // Use the return date itself as the suggested date (day of return)
+      const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }); // YYYY-MM-DD in HST
+      suggestedDate = rdLocal;
+      availHint = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now and schedule for return date or later.</div>`;
     } else {
-      availHint = `<div class="wo-avail-hint">✅ ${escapeHtml(v.plate)} is currently <strong>available</strong>.</div>`;
+      availHint = `<div class="wo-avail-hint">✅ <strong>${escapeHtml(v.plate)}</strong> is currently available — schedule a date or leave blank to schedule later.</div>`;
     }
+  } else {
+    availHint = `<div class="wo-avail-hint" style="color:#9ca3af;">Select a vehicle above to see availability.</div>`;
   }
 
   const vehicleOptions = vehiclesCache.map(x =>
@@ -7389,13 +7390,17 @@ window.openNewWorkOrder = function(vehicleId) {
           </div>
         </div>
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Schedule Date <span style="font-weight:400;color:#9ca3af;">(optional — when vehicle will be at shop)</span></label>
-          <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="${overlay._suggestedDate || ''}">
+          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Schedule Date <span style="font-weight:400;color:#9ca3af;">(optional — leave blank to schedule later)</span></label>
+          <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="${suggestedDate}">
+          ${suggestedDate ? `<div style="font-size:0.75rem;color:#6b7280;margin-top:3px;">💡 Pre-filled with vehicle return date — adjust as needed or clear to leave unscheduled.</div>` : ''}
         </div>
       </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
-        <button class="btn btn-outline" onclick="document.getElementById('wo-modal-overlay').remove()">Cancel</button>
-        <button class="btn btn-primary" onclick="_saveWorkOrder()">🔧 Log Issue</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
+        <button class="btn btn-outline" onclick="document.getElementById('wo-schedule-date').value=''; _saveWorkOrder()" style="font-size:0.82rem;">Save without date →</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-outline" onclick="document.getElementById('wo-modal-overlay').remove()">Cancel</button>
+          <button class="btn btn-primary" onclick="_saveWorkOrder()">✓ Save</button>
+        </div>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -7413,21 +7418,26 @@ window._woVehicleChange = function(vid) {
   if (isOnTrip && v.tripReturnDate) {
     const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
     const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
-    hint.innerHTML = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>.</div>`;
-    const sug = new Date(rd); sug.setDate(sug.getDate() + 1);
-    if (dateInput && !dateInput.value) dateInput.value = sug.toISOString().slice(0,10);
+    hint.innerHTML = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now, schedule for that date or later.</div>`;
+    const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+    if (dateInput && !dateInput.value) dateInput.value = rdLocal;
   } else {
-    hint.innerHTML = `<div class="wo-avail-hint">✅ Currently <strong>available</strong>.</div>`;
+    hint.innerHTML = `<div class="wo-avail-hint">✅ Currently <strong>available</strong> — schedule or leave blank for later.</div>`;
   }
 };
 
 window._saveWorkOrder = async function() {
+  const saveBtn = document.querySelector('#wo-modal-overlay .btn-primary');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+
   const vid = document.getElementById('wo-vehicle-sel')?.value;
   const text = (document.getElementById('wo-description')?.value || '').trim();
   const priority = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
   const scheduledDate = document.getElementById('wo-schedule-date')?.value || null;
-  if (!vid) { toast('Select a vehicle.', 'warning'); return; }
-  if (!text) { toast('Enter a description.', 'warning'); return; }
+
+  if (!vid) { toast('Select a vehicle.', 'warning'); if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='✓ Save'; } return; }
+  if (!text) { toast('Enter a description.', 'warning'); if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='✓ Save'; } return; }
+
   try {
     const p = WO_PRIORITY[priority] || WO_PRIORITY.standard;
     await db.collection('vehicleNotes').add({
@@ -7437,23 +7447,32 @@ window._saveWorkOrder = async function() {
       repairPriority: priority,
       repairStatus: scheduledDate ? 'scheduled' : 'open',
       scheduledDate: scheduledDate || null,
-      dueDate: scheduledDate || null,  // calendar integration
+      dueDate: scheduledDate || null,
       isFollowUp: true,
       done: false,
       urgent: priority === 'critical',
-      taskStatus: priority === 'critical' ? 'urgent' : 'scheduled',
+      taskStatus: priority === 'critical' ? 'urgent' : 'monitoring',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser ? currentUser.uid : null,
       createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
     });
     document.getElementById('wo-modal-overlay')?.remove();
-    toast(`🔧 Issue logged (${p.label} priority)`, 'success');
+    const v = vehiclesCache.find(x => x.id === vid);
+    toast(`✅ "${p.icon} ${text.slice(0,40)}${text.length>40?'…':''}" logged for ${v ? v.plate : 'vehicle'}`, 'success');
     loadDashboardFollowUps();
-    // Refresh work orders tab if open
-    if ($('work-orders-content')) _loadWorkOrders();
+
+    // Open / refresh the Maintenance Dashboard Work Orders tab
+    _maintDashLoaded = false;
+    openMaintenanceDash();
+    setTimeout(() => {
+      const woBtn = document.querySelector('[data-mtab="mtab-work-orders"]');
+      if (woBtn) switchMaintTab('mtab-work-orders', woBtn);
+      else _loadWorkOrders();
+    }, 150);
   } catch(e) {
     console.error('Save work order error:', e);
-    toast('Failed to save.', 'error');
+    toast(`Failed to save: ${e.message || e}`, 'error');
+    if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='✓ Save'; }
   }
 };
 
