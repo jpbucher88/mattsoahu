@@ -2004,16 +2004,26 @@ window.checkLocationPhotos = async function(loc) {
     return !hasPhotosToday(v);
   });
 
-  // Force-reset the 24h timer for every vehicle at this location that doesn't
-  // have today's photo — this makes them appear in the fleet status "Needs Photos"
-  // regardless of when their last photo was taken.
-  locVehicles.forEach(v => {
-    if (!v.photoExcluded && !hasPhotosToday(v) &&
-        v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop') {
-      v.lastPhotoAge = Infinity;
-    }
-  });
+  // Reset the 24h photo timer for all at-home vehicles at this location —
+  // sets lastPhotoOverrideAt = now in Firestore so the clock starts fresh.
+  const atHomeHere = locVehicles.filter(v =>
+    !v.photoExcluded &&
+    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop'
+  );
+  if (atHomeHere.length > 0) {
+    const nowTs = firebase.firestore.Timestamp.now();
+    const batch = db.batch();
+    atHomeHere.forEach(v => {
+      batch.update(db.collection('vehicles').doc(v.id), { lastPhotoOverrideAt: firebase.firestore.FieldValue.serverTimestamp() });
+      // Update local cache immediately
+      v.lastPhotoOverrideAt = { toDate: () => new Date() };
+      v.lastPhotoAge = 0;
+      v.lastPhotoDate = new Date();
+    });
+    await batch.commit().catch(e => console.warn('Photo timer batch warn:', e));
+  }
   renderFleetDashboard();
+  renderLocationsWidget();
 
   if (needsPhotos.length === 0) {
     _locPhotoQueueActive = null;
@@ -2604,6 +2614,10 @@ async function openVehiclePage(vid) {
     const showCleanBtn = selectedVehicle.tripStatus !== 'on-trip' && selectedVehicle.tripStatus !== 'repair-shop' && !selectedVehicle.needsCleaning;
     needsCleanBtn.style.display = showCleanBtn ? '' : 'none';
   }
+
+  // Show Queue Maintenance button for all roles (useful for vehicles on trip or at home)
+  const queueMaintBtn = $('btn-queue-maintenance');
+  if (queueMaintBtn) queueMaintBtn.style.display = '';
 
   // Show hero image if set
   const heroWrap = $('vehicle-hero-wrap');
@@ -5267,6 +5281,22 @@ window.vehicleReturned = async function(vehicleId) {
     toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
     renderFleetDashboard();
     renderLocationsWidget();
+    // Check for pending return-queue items and promote them to urgent
+    db.collection('vehicleNotes')
+      .where('vehicleId', '==', vehicleId)
+      .where('returnQueue', '==', true)
+      .where('done', '==', false)
+      .get()
+      .then(snap => {
+        if (!snap.empty) {
+          const batch = db.batch();
+          snap.forEach(doc => batch.update(doc.ref, { taskStatus: 'urgent', urgent: true, returnQueuePromoted: true }));
+          batch.commit();
+          toast(`🚨 ${snap.size} return-queue item${snap.size !== 1 ? 's' : ''} promoted to Urgent!`, 'error');
+          loadDashboardFollowUps();
+        }
+      })
+      .catch(() => {});
   } catch (err) {
     console.error('Vehicle returned error:', err);
     toast('Failed to update vehicle status.', 'error');
@@ -6907,6 +6937,177 @@ const _origSwitchMaintTab = window.switchMaintTab;
 window.switchMaintTab = function(tabId, btn) {
   _origSwitchMaintTab(tabId, btn);
   if (tabId === 'mtab-tasks') window._refreshMaintTasks();
+  if (tabId === 'mtab-return-queue') _loadReturnQueue();
+};
+
+// ================================================================
+// RETURN QUEUE — maintenance items deferred until a vehicle returns
+// ================================================================
+async function _loadReturnQueue() {
+  const container = $('return-queue-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('returnQueue', '==', true)
+      .where('done', '==', false)
+      .orderBy('createdAt', 'desc')
+      .limit(200)
+      .get();
+
+    if (snap.empty) {
+      container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No items in the return queue!</p></div>';
+      return;
+    }
+
+    const byVehicle = {};
+    snap.forEach(doc => {
+      const d = { id: doc.id, ...doc.data() };
+      if (!byVehicle[d.vehicleId]) byVehicle[d.vehicleId] = [];
+      byVehicle[d.vehicleId].push(d);
+    });
+
+    const groups = Object.entries(byVehicle).map(([vid, items]) => {
+      const v = vehiclesCache.find(x => x.id === vid);
+      const rt = v && v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate().getTime() : new Date(v.tripReturnDate).getTime()) : Infinity;
+      return { vid, v, items, rt };
+    }).sort((a, b) => {
+      // On-trip vehicles first, then by return time
+      const aTrip = a.v && (a.v.tripStatus === 'on-trip' || a.v.tripStatus === 'private-trip') ? 0 : 1;
+      const bTrip = b.v && (b.v.tripStatus === 'on-trip' || b.v.tripStatus === 'private-trip') ? 0 : 1;
+      if (aTrip !== bTrip) return aTrip - bTrip;
+      return a.rt - b.rt;
+    });
+
+    let html = '';
+    for (const { vid, v, items } of groups) {
+      const plate = v ? escapeHtml(v.plate) : '?';
+      const meta = v ? `${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}` : '';
+      const isOnTrip = v && (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
+      const isAtShop = v && v.tripStatus === 'repair-shop';
+      const statusBadge = isOnTrip ? '<span class="rq-badge rq-badge-trip">🚗 On Trip</span>'
+        : isAtShop ? '<span class="rq-badge rq-badge-shop">🔧 At Shop</span>'
+        : '<span class="rq-badge rq-badge-home">🏠 At Home</span>';
+      let returnLabel = '';
+      if (v && v.tripReturnDate) {
+        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        const isPast = rd.getTime() < Date.now();
+        returnLabel = `<span class="rq-return${isPast ? ' rq-return-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${isPast ? ' OVERDUE' : ''}</span>`;
+      }
+      html += `<div class="rq-card">
+        <div class="rq-card-header">
+          <div class="rq-card-vehicle">
+            <span class="rq-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${vid}'),80)">${plate}</span>
+            <span class="rq-meta">${meta}</span>
+            ${statusBadge}${returnLabel}
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span class="rq-count">${items.length} item${items.length !== 1 ? 's' : ''}</span>
+            <button class="btn btn-sm btn-outline" style="padding:3px 10px;font-size:0.78rem;" onclick="_openReturnQueueAdd('${vid}')">+ Add</button>
+          </div>
+        </div>
+        <div class="rq-items">
+          ${items.map(item => `
+            <div class="rq-item" id="rqi-${item.id}">
+              <div class="rq-item-body">
+                ${item.urgent ? '<span class="rq-urgent">\ud83d\udea8 Urgent</span>' : ''}
+                <div class="rq-item-text">${escapeHtml(item.text)}</div>
+                <div class="rq-item-meta">Added by ${escapeHtml(item.createdByName || 'Unknown')}${item.createdAt ? ' · ' + (item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt)).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}</div>
+              </div>
+              <button class="btn btn-sm rq-done-btn" onclick="markReturnQueueDone('${item.id}')">✓ Done</button>
+            </div>`).join('')}
+        </div>
+      </div>`;
+    }
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Return queue load error:', err);
+    container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load. Check console.</p>';
+  }
+}
+
+window._openReturnQueueAdd = function(vehicleId) {
+  const existing = document.getElementById('rq-add-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'rq-add-overlay';
+  overlay.className = 'modal-overlay';
+  const vehicleOptions = vehiclesCache.map(v =>
+    `<option value="${v.id}"${v.id === vehicleId ? ' selected' : ''}>${escapeHtml(v.plate)} — ${escapeHtml(v.make)} ${escapeHtml(v.model)}</option>`
+  ).join('');
+  const selV = vehiclesCache.find(x => x.id === vehicleId);
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header">
+        <h3>\ud83d\udd01 Queue Maintenance${selV ? ' — ' + escapeHtml(selV.plate) : ''}</h3>
+        <button class="modal-close" onclick="document.getElementById('rq-add-overlay').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:600;color:#374151;">Vehicle</label>
+          <select id="rq-vehicle-sel" class="vehicle-location-select" style="width:100%;margin-top:4px;">${vehicleOptions}</select>
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:600;color:#374151;">What needs to be done when it returns?</label>
+          <textarea id="rq-note-text" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="e.g. Check transmission fluid, order wiper blades, inspect front brakes…"></textarea>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer;">
+          <input type="checkbox" id="rq-is-urgent"> Mark as Urgent (must address before next trip)
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
+        <button class="btn btn-outline" onclick="document.getElementById('rq-add-overlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="_saveReturnQueueItem()">Add to Queue</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => { const t = document.getElementById('rq-note-text'); if (t) t.focus(); }, 80);
+};
+
+window._saveReturnQueueItem = async function() {
+  const vid = document.getElementById('rq-vehicle-sel')?.value;
+  const text = (document.getElementById('rq-note-text')?.value || '').trim();
+  const urgent = document.getElementById('rq-is-urgent')?.checked || false;
+  if (!vid) { toast('Select a vehicle.', 'warning'); return; }
+  if (!text) { toast('Enter a description.', 'warning'); return; }
+  try {
+    await db.collection('vehicleNotes').add({
+      vehicleId: vid,
+      text,
+      returnQueue: true,
+      urgent,
+      isFollowUp: true,
+      done: false,
+      taskStatus: urgent ? 'urgent' : 'monitoring',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser ? currentUser.uid : null,
+      createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+    });
+    document.getElementById('rq-add-overlay')?.remove();
+    toast('Added to return queue ✓', 'success');
+    // Refresh the queue view if open
+    const qContent = $('return-queue-content');
+    if (qContent) _loadReturnQueue();
+    loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Save return queue error:', err);
+    toast('Failed to save.', 'error');
+  }
+};
+
+window.markReturnQueueDone = async function(noteId) {
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({ done: true, doneAt: firebase.firestore.FieldValue.serverTimestamp() });
+    const el = document.getElementById('rqi-' + noteId);
+    if (el) el.remove();
+    toast('Item marked done ✓', 'success');
+    // If the card is now empty, refresh
+    _loadReturnQueue();
+  } catch (err) {
+    console.error('Mark return queue done error:', err);
+    toast('Failed to update.', 'error');
+  }
 };
 
 // ================================================================

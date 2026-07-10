@@ -3539,6 +3539,76 @@ body {
 }
 .maint-tab-empty span { font-size: 2rem; }
 
+/* ===== RETURN QUEUE ===== */
+.rq-card {
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: #fff;
+}
+.rq-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.rq-card-vehicle { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.rq-plate {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #1e40af;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  transition: text-decoration-color 0.15s;
+}
+.rq-plate:hover { text-decoration-color: #1e40af; }
+.rq-meta { font-size: 0.82rem; color: #6b7280; }
+.rq-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.rq-badge-trip { background: #dbeafe; color: #1e40af; }
+.rq-badge-shop { background: #fee2e2; color: #991b1b; }
+.rq-badge-home { background: #dcfce7; color: #15803d; }
+.rq-return { font-size: 0.78rem; color: #d97706; font-weight: 600; }
+.rq-return-overdue { color: #dc2626; }
+.rq-count { font-size: 0.78rem; color: #6b7280; white-space: nowrap; }
+.rq-items { padding: 6px 14px; display: flex; flex-direction: column; gap: 6px; }
+.rq-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.rq-item:last-child { border-bottom: none; }
+.rq-item-body { flex: 1; min-width: 0; }
+.rq-urgent { font-size: 0.72rem; font-weight: 700; color: #dc2626; display: block; margin-bottom: 2px; }
+.rq-item-text { font-size: 0.88rem; color: #111827; font-weight: 500; }
+.rq-item-meta { font-size: 0.75rem; color: #9ca3af; margin-top: 2px; }
+.rq-done-btn {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1.5px solid #86efac;
+  border-radius: 6px;
+  padding: 3px 10px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.rq-done-btn:hover { background: #dcfce7; }
+
 .maint-vehicle-group {
   border: 1.5px solid #bfdbfe;
   border-radius: 10px;
