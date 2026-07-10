@@ -6495,8 +6495,9 @@ $('btn-save-mileage').addEventListener('click', async () => {
 // ================================================================
 
 let _maintDashLoaded = false;
-let _maintByVehicleScored = null; // cached scored data for filter
-let _maintByVehicleFilter = 'all'; // 'all' | 'critical' | 'warn' | 'ok'
+let _maintByVehicleScored = null;
+let _maintByVehicleFilter = 'all';
+let _maintByVehicleSortMode = 'priority'; // 'priority' | 'oil'
 
 window.openMaintenanceDash = function() {
   const overlay = $('maint-dash-overlay');
@@ -6841,7 +6842,7 @@ async function _loadMaintFleet() {
       if (urgentRQ.length > 0) { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `🔁 ${urgentRQ.length} urgent return queue item${urgentRQ.length !== 1 ? 's' : ''}` }); }
       else if (rq.length > 0) flags.push({ level: 'info', msg: `🔁 ${rq.length} item${rq.length !== 1 ? 's' : ''} queued for return` });
 
-      return { v, oil, rq, priority, flags };
+      return { v, oil, rq, priority, flags, miIntervals };
     });
 
     // Sort: Critical → Attention → Good; within each, available first
@@ -6858,15 +6859,36 @@ async function _loadMaintFleet() {
   }
 }
 
-function _renderMaintByVehicle(filter) {
+function _renderMaintByVehicle(filter, sortMode) {
   const grid = $('maint-fleet-grid');
   if (!grid || !_maintByVehicleScored) return;
   _maintByVehicleFilter = filter;
+  if (sortMode !== undefined) _maintByVehicleSortMode = sortMode;
 
-  const scored = _maintByVehicleScored;
+  let scored = [..._maintByVehicleScored];
   const critCount = scored.filter(s => s.priority === 2).length;
   const warnCount = scored.filter(s => s.priority === 1).length;
   const okCount   = scored.filter(s => s.priority === 0).length;
+
+  // Helper: get miles until next oil change for a vehicle
+  function oilMilesLeft(entry) {
+    const oilItem = (entry.miIntervals || []).find(i => i.service && i.service.toLowerCase().includes('oil'));
+    if (oilItem) return oilItem.milesLeft;
+    if (!entry.oil) return -999999; // no record = most urgent
+    // Estimate using months since last oil change (proxy ~1000 mi/mo)
+    const mo = (Date.now() - new Date(entry.oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30);
+    return Math.round((3 - mo) * 1000); // rough: 3mo = ok, 0 = due, negative = overdue
+  }
+
+  // Apply sort mode
+  if (_maintByVehicleSortMode === 'oil') {
+    scored.sort((a, b) => oilMilesLeft(a) - oilMilesLeft(b));
+  } else {
+    scored.sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      return (a.v.tripStatus === 'home' ? 0 : 1) - (b.v.tripStatus === 'home' ? 0 : 1);
+    });
+  }
 
   const filtered = filter === 'critical' ? scored.filter(s => s.priority === 2)
     : filter === 'warn' ? scored.filter(s => s.priority === 1)
@@ -6874,12 +6896,21 @@ function _renderMaintByVehicle(filter) {
     : scored;
 
   const chipClass = (f) => filter === f ? 'mv-sum-chip mv-sum-active' : 'mv-sum-chip';
+  const sortCls   = (m) => _maintByVehicleSortMode === m ? 'mv-sort-btn mv-sort-active' : 'mv-sort-btn';
 
-  let html = `<div class="mv-summary">
-    <span class="${chipClass('critical')} mv-sum-critical" onclick="window._filterMaintByVehicle('critical')" title="Show Critical only">🔴 ${critCount} Critical</span>
-    <span class="${chipClass('warn')} mv-sum-warn" onclick="window._filterMaintByVehicle('warn')" title="Show Needs Attention only">🟡 ${warnCount} Needs Attention</span>
-    <span class="${chipClass('ok')} mv-sum-ok" onclick="window._filterMaintByVehicle('ok')" title="Show Good only">🟢 ${okCount} Good</span>
-    ${filter !== 'all' ? `<span class="mv-sum-chip mv-sum-clear" onclick="window._filterMaintByVehicle('all')">✕ Show All</span>` : ''}
+  let html = `
+  <div class="mv-toolbar">
+    <div class="mv-summary" style="flex:1;">
+      <span class="${chipClass('critical')} mv-sum-critical" onclick="window._filterMaintByVehicle('critical')" title="Critical only">🔴 ${critCount} Critical</span>
+      <span class="${chipClass('warn')} mv-sum-warn" onclick="window._filterMaintByVehicle('warn')" title="Needs Attention only">🟡 ${warnCount} Needs Attention</span>
+      <span class="${chipClass('ok')} mv-sum-ok" onclick="window._filterMaintByVehicle('ok')" title="Good only">🟢 ${okCount} Good</span>
+      ${filter !== 'all' ? `<span class="mv-sum-chip mv-sum-clear" onclick="window._filterMaintByVehicle('all')">✕ All</span>` : ''}
+    </div>
+    <div class="mv-sort-group">
+      <span class="mv-sort-label">Sort:</span>
+      <button class="${sortCls('priority')}" onclick="window._sortMaintByVehicle('priority')">🔴 Priority</button>
+      <button class="${sortCls('oil')}" onclick="window._sortMaintByVehicle('oil')">⛽ Oil Due</button>
+    </div>
   </div>`;
 
   if (!filtered.length) {
@@ -6888,7 +6919,7 @@ function _renderMaintByVehicle(filter) {
     return;
   }
 
-  for (const { v, rq, priority, flags } of filtered) {
+  for (const { v, oil, rq, priority, flags, miIntervals } of filtered) {
     const isOnTrip   = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
     const isAtShop   = v.tripStatus === 'repair-shop';
     const isCleaning = v.needsCleaning && !isOnTrip && !isAtShop;
@@ -6902,11 +6933,43 @@ function _renderMaintByVehicle(filter) {
     if (v.tripReturnDate) {
       const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
       const overdue = rd.getTime() < Date.now();
-      returnInfo = `<span class="mv-return${overdue ? ' mv-return-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${overdue ? ' OVERDUE' : ''}</span>`;
+      returnInfo = `<span class="mv-return${overdue ? ' mv-return-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE })}${overdue ? ' OVERDUE' : ''}</span>`;
+    }
+
+    // ── Oil status row (shown on EVERY vehicle) ──────────────
+    const oilItem = (miIntervals || []).find(i => i.service && i.service.toLowerCase().includes('oil'));
+    let oilRow = '';
+    if (!oil) {
+      oilRow = `<div class="mv-oil-row mv-oil-missing">⛽ No oil change on record</div>`;
+    } else {
+      const mo = Math.floor((Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30));
+      const lastPart = `Last: ${oil.date}${oil.mileage ? ' · ' + oil.mileage.toLocaleString() + ' mi' : ''} (${mo}mo ago)`;
+      if (oilItem) {
+        const ml = oilItem.milesLeft;
+        const dueCls = ml <= 0 ? 'mv-due-overdue' : ml <= 500 ? 'mv-due-urgent' : ml <= 1500 ? 'mv-due-warn' : 'mv-due-ok';
+        const dueLabel = ml <= 0
+          ? `Overdue by ${Math.abs(ml).toLocaleString()} mi`
+          : `Due in ${ml.toLocaleString()} mi`;
+        const atHint = ` (at ${oilItem.nextDueMileage.toLocaleString()} mi · every ${(oilItem.intervalMiles || '?').toLocaleString()} mi)`;
+        // If on trip, flag whether oil will be due by return
+        let tripNote = '';
+        if (isOnTrip && v.tripReturnDate && v.mileage) {
+          const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+          const daysOut = Math.max(0, Math.round((rd.getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+          const estMilesOnReturn = v.mileage + daysOut * 80; // ~80mi/day estimate
+          const mlOnReturn = oilItem.nextDueMileage - estMilesOnReturn;
+          if (mlOnReturn <= 500) tripNote = ` <span class="mv-trip-oil-note">⚠️ likely due by return</span>`;
+        }
+        oilRow = `<div class="mv-oil-row">⛽ ${lastPart} → <span class="${dueCls}">${dueLabel}</span><span class="mv-oil-hint">${atHint}</span>${tripNote}</div>`;
+      } else {
+        oilRow = `<div class="mv-oil-row">⛽ ${lastPart}</div>`;
+      }
     }
 
     const mileHtml  = v.mileage ? `<span class="mv-mileage">${v.mileage.toLocaleString()} mi</span>` : '';
-    const flagsHtml = flags.length ? `<div class="mv-flags">${flags.map(f => `<div class="mv-flag mv-flag-${f.level}">${f.msg}</div>`).join('')}</div>` : '';
+    // Only show flags that aren't oil-related (oil is now in its own row)
+    const nonOilFlags = flags.filter(f => !f.msg.includes('⛽'));
+    const flagsHtml = nonOilFlags.length ? `<div class="mv-flags">${nonOilFlags.map(f => `<div class="mv-flag mv-flag-${f.level}">${f.msg}</div>`).join('')}</div>` : '';
     const rqCount   = rq.length ? `<span class="mv-rq-count">${rq.length} queued</span>` : '';
     const borderCls = priority === 2 ? 'mv-card-critical' : priority === 1 ? 'mv-card-warn' : 'mv-card-ok';
     const priorityIcon = priority === 2 ? '🔴' : priority === 1 ? '🟡' : '🟢';
@@ -6920,10 +6983,9 @@ function _renderMaintByVehicle(filter) {
             <span class="mv-make">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}</span>
             ${mileHtml}
           </div>
-          <div class="mv-status-group">
-            ${statusBadge}${returnInfo}${rqCount}
-          </div>
+          <div class="mv-status-group">${statusBadge}${returnInfo}${rqCount}</div>
         </div>
+        ${oilRow}
         ${flagsHtml}
       </div>
       <div class="mv-actions" onclick="event.stopPropagation()">
@@ -6933,13 +6995,11 @@ function _renderMaintByVehicle(filter) {
     </div>`;
   }
 
-  if (!scored.length) html = '<div class="maint-tab-empty"><span>🚗</span><p>No vehicles found.</p></div>';
   grid.innerHTML = html;
 }
 
-window._filterMaintByVehicle = function(filter) {
-  _renderMaintByVehicle(filter);
-};
+window._filterMaintByVehicle = function(filter) { _renderMaintByVehicle(filter); };
+window._sortMaintByVehicle   = function(mode)   { _renderMaintByVehicle(_maintByVehicleFilter, mode); };
 
 // ── History ───────────────────────────────────────────────────────
 window.loadMaintHistory = async function() {

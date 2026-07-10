@@ -6705,6 +6705,48 @@ body {
 .mv-return-overdue { color: #dc2626; }
 .mv-rq-count { font-size: 0.72rem; color: #6b7280; background: #f3f4f6; padding: 2px 7px; border-radius: 999px; }
 
+.mv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.mv-sort-group { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.mv-sort-label { font-size: 0.75rem; color: #6b7280; white-space: nowrap; }
+.mv-sort-btn {
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1.5px solid #d1d5db;
+  background: #f9fafb;
+  color: #374151;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+.mv-sort-btn:hover { background: #f3f4f6; border-color: #9ca3af; }
+.mv-sort-active { background: #1e293b; color: #fff; border-color: #1e293b; }
+.mv-sort-active:hover { background: #334155; }
+
+.mv-oil-row {
+  font-size: 0.8rem;
+  color: #374151;
+  padding: 4px 0 0 26px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.mv-oil-missing { color: #dc2626; font-weight: 600; }
+.mv-oil-hint { color: #9ca3af; font-size: 0.75rem; }
+.mv-due-overdue { color: #dc2626; font-weight: 700; }
+.mv-due-urgent  { color: #dc2626; font-weight: 700; }
+.mv-due-warn    { color: #d97706; font-weight: 700; }
+.mv-due-ok      { color: #16a34a; font-weight: 600; }
+.mv-trip-oil-note { font-size: 0.73rem; background: #fef3c7; color: #92400e; padding: 1px 6px; border-radius: 4px; font-weight: 700; }
+
 .mv-flags { display: flex; flex-direction: column; gap: 3px; padding-top: 2px; }
 .mv-flag {
   font-size: 0.8rem;
