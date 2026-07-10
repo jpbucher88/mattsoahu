@@ -6656,9 +6656,12 @@ body {
   border-radius: 999px;
   border: 1.5px solid;
 }
-.mv-sum-critical { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
-.mv-sum-warn     { background: #fffbeb; color: #b45309; border-color: #fcd34d; }
-.mv-sum-ok       { background: #f0fdf4; color: #15803d; border-color: #86efac; }
+.mv-sum-critical { background: #fef2f2; color: #dc2626; border-color: #fca5a5; cursor: pointer; }
+.mv-sum-warn     { background: #fffbeb; color: #b45309; border-color: #fcd34d; cursor: pointer; }
+.mv-sum-ok       { background: #f0fdf4; color: #15803d; border-color: #86efac; cursor: pointer; }
+.mv-sum-clear    { background: #f3f4f6; color: #374151; border-color: #d1d5db; cursor: pointer; }
+.mv-sum-chip:hover { opacity: 0.8; }
+.mv-sum-active { box-shadow: 0 0 0 2px currentColor; font-size: 0.88rem; }
 
 .mv-card {
   border-radius: 10px;

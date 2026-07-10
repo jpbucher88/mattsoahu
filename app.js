@@ -6493,6 +6493,8 @@ $('btn-save-mileage').addEventListener('click', async () => {
 // ================================================================
 
 let _maintDashLoaded = false;
+let _maintByVehicleScored = null; // cached scored data for filter
+let _maintByVehicleFilter = 'all'; // 'all' | 'critical' | 'warn' | 'ok'
 
 window.openMaintenanceDash = function() {
   const overlay = $('maint-dash-overlay');
@@ -6721,45 +6723,49 @@ async function _loadMaintFleet() {
   const grid = $('maint-fleet-grid');
   if (!grid) return;
   grid.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  _maintByVehicleFilter = 'all';
 
   const today = todayDateString();
   const d30 = new Date(); d30.setDate(d30.getDate() + 30);
   const d30str = d30.toISOString().slice(0, 10);
 
   try {
-    const [maintSnap, dueSnap, rqSnap] = await Promise.all([
+    const [maintSnap, dueSnap, rqSnap, mileageSnap] = await Promise.all([
       db.collection('maintenance').orderBy('date', 'desc').limit(500).get(),
       db.collection('maintenance').where('nextDueDate', '<=', d30str).orderBy('nextDueDate', 'asc').get(),
       db.collection('vehicleNotes').where('returnQueue', '==', true).where('done', '==', false).get(),
+      db.collection('vehicleNotes').where('intervalType', '==', 'mileage').where('done', '==', false).limit(300).get(),
     ]);
 
-    // Last oil change and last service per vehicle
     const lastOil = {};
     const lastService = {};
+    const mileageBasedMaint = {}; // vehicleId → [{serviceType, nextDueMileage}] from maintenance records
     maintSnap.forEach(doc => {
       const d = doc.data();
       if (!d.vehicleId) return;
       if (!lastService[d.vehicleId]) lastService[d.vehicleId] = d;
-      if (!lastOil[d.vehicleId] && d.serviceType && d.serviceType.toLowerCase().includes('oil')) {
-        lastOil[d.vehicleId] = d;
+      if (!lastOil[d.vehicleId] && d.serviceType && d.serviceType.toLowerCase().includes('oil')) lastOil[d.vehicleId] = d;
+      if (d.nextDueMileage) {
+        if (!mileageBasedMaint[d.vehicleId]) mileageBasedMaint[d.vehicleId] = [];
+        // Only track most recent per serviceType
+        const existing = mileageBasedMaint[d.vehicleId].find(x => x.serviceType === d.serviceType);
+        if (!existing) mileageBasedMaint[d.vehicleId].push({ serviceType: d.serviceType, nextDueMileage: d.nextDueMileage });
       }
     });
 
-    // Overdue / upcoming maintenance alerts
     const vehicleAlerts = {};
-    const seenAlert = new Set();
+    const seen = new Set();
     dueSnap.forEach(doc => {
       const d = doc.data();
       if (!d.nextDueDate || !d.vehicleId) return;
       const key = `${d.vehicleId}_${d.serviceType}`;
-      if (seenAlert.has(key)) return;
-      seenAlert.add(key);
+      if (seen.has(key)) return;
+      seen.add(key);
       if (!vehicleAlerts[d.vehicleId]) vehicleAlerts[d.vehicleId] = { overdue: [], upcoming: [] };
       if (d.nextDueDate <= today) vehicleAlerts[d.vehicleId].overdue.push(d.serviceType);
       else vehicleAlerts[d.vehicleId].upcoming.push(d.serviceType);
     });
 
-    // Return queue items per vehicle
     const rqByVehicle = {};
     rqSnap.forEach(doc => {
       const d = { id: doc.id, ...doc.data() };
@@ -6767,124 +6773,171 @@ async function _loadMaintFleet() {
       rqByVehicle[d.vehicleId].push(d);
     });
 
-    // Score each vehicle: 2=Critical, 1=Needs Attention, 0=Good
+    // Mileage interval alerts from vehicleNotes (auto-tracked service intervals)
+    const mileageIntervals = {}; // vehicleId → [{service, nextDueMileage, intervalMiles, milesLeft}]
+    mileageSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.vehicleId || !d.nextDueMileage) return;
+      const v = vehiclesCache.find(x => x.id === d.vehicleId);
+      if (!v || !v.mileage) return;
+      const milesLeft = d.nextDueMileage - v.mileage;
+      if (!mileageIntervals[d.vehicleId]) mileageIntervals[d.vehicleId] = [];
+      mileageIntervals[d.vehicleId].push({ service: d.maintenanceService || d.text, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
+    });
+
     const scored = vehiclesCache.filter(v => !v.excluded).map(v => {
       const oil = lastOil[v.id];
       const alerts = vehicleAlerts[v.id] || { overdue: [], upcoming: [] };
       const rq = rqByVehicle[v.id] || [];
+      const miIntervals = mileageIntervals[v.id] || [];
+      const mileBasedMaint = mileageBasedMaint[v.id] || [];
       let priority = 0;
       const flags = [];
 
+      // Oil change check
       if (!oil) {
         priority = 2;
         flags.push({ level: 'critical', msg: '⚠️ No oil change on record — needs immediate attention' });
       } else {
-        const monthsSince = (Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30);
+        const mo = Math.floor((Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30));
         const mStr = oil.mileage ? ` · ${oil.mileage.toLocaleString()} mi` : '';
-        if (monthsSince > 6) {
-          priority = Math.max(priority, 2);
-          flags.push({ level: 'critical', msg: `⛽ Oil change overdue — ${oil.date}${mStr} (${Math.floor(monthsSince)}mo ago)` });
-        } else if (monthsSince > 3) {
+        if (mo > 6)      { priority = 2; flags.push({ level: 'critical', msg: `⛽ Oil change overdue — ${oil.date}${mStr} (${mo}mo ago)` }); }
+        else if (mo > 3) { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `⛽ Oil change due soon — ${oil.date}${mStr} (${mo}mo ago)` }); }
+      }
+
+      // Date-based maintenance alerts
+      if (alerts.overdue.length)  { priority = 2; flags.push({ level: 'critical', msg: `🔴 Date overdue: ${alerts.overdue.slice(0, 3).join(', ')}` }); }
+      if (alerts.upcoming.length) { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `🟡 Due within 30 days: ${alerts.upcoming.slice(0, 2).join(', ')}` }); }
+
+      // Mileage-based interval alerts (from auto-tracked vehicleNotes)
+      miIntervals.forEach(s => {
+        if (s.milesLeft <= 0) {
+          priority = 2;
+          flags.push({ level: 'critical', msg: `🔧 ${s.service} — overdue by ${Math.abs(s.milesLeft).toLocaleString()} mi (due at ${s.nextDueMileage.toLocaleString()} mi)` });
+        } else if (s.milesLeft <= 1000) {
           priority = Math.max(priority, 1);
-          flags.push({ level: 'warn', msg: `⛽ Oil change due soon — ${oil.date}${mStr} (${Math.floor(monthsSince)}mo ago)` });
+          flags.push({ level: 'warn', msg: `🔧 ${s.service} — due in ${s.milesLeft.toLocaleString()} mi (at ${s.nextDueMileage.toLocaleString()} mi)` });
         }
+      });
+
+      // Mileage-based alerts from maintenance records with nextDueMileage
+      if (v.mileage) {
+        mileBasedMaint.forEach(s => {
+          const left = s.nextDueMileage - v.mileage;
+          if (left <= 0) {
+            priority = 2;
+            flags.push({ level: 'critical', msg: `🔧 ${s.serviceType} — overdue by ${Math.abs(left).toLocaleString()} mi (due at ${s.nextDueMileage.toLocaleString()} mi)` });
+          } else if (left <= 1000) {
+            priority = Math.max(priority, 1);
+            flags.push({ level: 'warn', msg: `🔧 ${s.serviceType} — due in ${left.toLocaleString()} mi (at ${s.nextDueMileage.toLocaleString()} mi)` });
+          }
+        });
       }
 
-      if (alerts.overdue.length > 0) {
-        priority = Math.max(priority, 2);
-        const list = alerts.overdue.slice(0, 3).join(', ') + (alerts.overdue.length > 3 ? ` +${alerts.overdue.length - 3} more` : '');
-        flags.push({ level: 'critical', msg: `🔴 Overdue: ${list}` });
-      }
-      if (alerts.upcoming.length > 0) {
-        priority = Math.max(priority, 1);
-        flags.push({ level: 'warn', msg: `🟡 Due within 30 days: ${alerts.upcoming.slice(0, 2).join(', ')}` });
-      }
-
+      // Return queue
       const urgentRQ = rq.filter(i => i.urgent);
-      if (urgentRQ.length > 0) {
-        priority = Math.max(priority, 1);
-        flags.push({ level: 'warn', msg: `🔁 ${urgentRQ.length} urgent return queue item${urgentRQ.length !== 1 ? 's' : ''}` });
-      } else if (rq.length > 0) {
-        flags.push({ level: 'info', msg: `🔁 ${rq.length} item${rq.length !== 1 ? 's' : ''} queued for return` });
-      }
+      if (urgentRQ.length > 0) { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `🔁 ${urgentRQ.length} urgent return queue item${urgentRQ.length !== 1 ? 's' : ''}` }); }
+      else if (rq.length > 0) flags.push({ level: 'info', msg: `🔁 ${rq.length} item${rq.length !== 1 ? 's' : ''} queued for return` });
 
       return { v, oil, rq, priority, flags };
     });
 
-    // Sort: Critical → Needs Attention → Good; within group, available vehicles first
+    // Sort: Critical → Attention → Good; within each, available first
     scored.sort((a, b) => {
       if (b.priority !== a.priority) return b.priority - a.priority;
-      const aHome = a.v.tripStatus === 'home' ? 0 : 1;
-      const bHome = b.v.tripStatus === 'home' ? 0 : 1;
-      return aHome - bHome;
+      return (a.v.tripStatus === 'home' ? 0 : 1) - (b.v.tripStatus === 'home' ? 0 : 1);
     });
 
-    const critCount = scored.filter(s => s.priority === 2).length;
-    const warnCount = scored.filter(s => s.priority === 1).length;
-    const okCount   = scored.filter(s => s.priority === 0).length;
-
-    let html = `<div class="mv-summary">
-      <span class="mv-sum-chip mv-sum-critical">🔴 ${critCount} Critical</span>
-      <span class="mv-sum-chip mv-sum-warn">🟡 ${warnCount} Needs Attention</span>
-      <span class="mv-sum-chip mv-sum-ok">🟢 ${okCount} Good</span>
-    </div>`;
-
-    for (const { v, rq, priority, flags } of scored) {
-      const isOnTrip   = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
-      const isAtShop   = v.tripStatus === 'repair-shop';
-      const isCleaning = v.needsCleaning && !isOnTrip && !isAtShop;
-
-      const statusBadge = isOnTrip   ? '<span class="mv-status mv-trip">🚗 On Trip</span>'
-        : isAtShop   ? '<span class="mv-status mv-shop">🔧 At Shop</span>'
-        : isCleaning ? '<span class="mv-status mv-cleaning">🧹 Needs Cleaning</span>'
-        :              '<span class="mv-status mv-avail">✅ Available</span>';
-
-      let returnInfo = '';
-      if (v.tripReturnDate) {
-        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        const overdue = rd.getTime() < Date.now();
-        returnInfo = `<span class="mv-return${overdue ? ' mv-return-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${overdue ? ' OVERDUE' : ''}</span>`;
-      }
-
-      const mileHtml = v.mileage ? `<span class="mv-mileage">${v.mileage.toLocaleString()} mi</span>` : '';
-
-      const flagsHtml = flags.length
-        ? `<div class="mv-flags">${flags.map(f => `<div class="mv-flag mv-flag-${f.level}">${f.msg}</div>`).join('')}</div>`
-        : '';
-
-      const rqCount = rq.length ? `<span class="mv-rq-count">${rq.length} queued</span>` : '';
-      const borderCls = priority === 2 ? 'mv-card-critical' : priority === 1 ? 'mv-card-warn' : 'mv-card-ok';
-      const priorityIcon = priority === 2 ? '🔴' : priority === 1 ? '🟡' : '🟢';
-
-      html += `<div class="mv-card ${borderCls}">
-        <div class="mv-card-main" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)" style="cursor:pointer;">
-          <div class="mv-top">
-            <span class="mv-priority-icon">${priorityIcon}</span>
-            <div class="mv-ident">
-              <span class="mv-plate">${escapeHtml(v.plate)}</span>
-              <span class="mv-make">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}</span>
-              ${mileHtml}
-            </div>
-            <div class="mv-status-group">
-              ${statusBadge}${returnInfo}${rqCount}
-            </div>
-          </div>
-          ${flagsHtml}
-        </div>
-        <div class="mv-actions" onclick="event.stopPropagation()">
-          <button class="btn btn-sm btn-outline mv-action-btn" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)">📋 Records</button>
-          <button class="btn btn-sm btn-outline mv-action-btn" onclick="_openReturnQueueAdd('${v.id}')">🔁 Queue</button>
-        </div>
-      </div>`;
-    }
-
-    if (!scored.length) html = '<div class="maint-tab-empty"><span>🚗</span><p>No vehicles found.</p></div>';
-    grid.innerHTML = html;
+    _maintByVehicleScored = scored;
+    _renderMaintByVehicle('all');
   } catch (e) {
     grid.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Error loading. Check console.</p>';
     console.error('[MaintByVehicle]', e);
   }
 }
+
+function _renderMaintByVehicle(filter) {
+  const grid = $('maint-fleet-grid');
+  if (!grid || !_maintByVehicleScored) return;
+  _maintByVehicleFilter = filter;
+
+  const scored = _maintByVehicleScored;
+  const critCount = scored.filter(s => s.priority === 2).length;
+  const warnCount = scored.filter(s => s.priority === 1).length;
+  const okCount   = scored.filter(s => s.priority === 0).length;
+
+  const filtered = filter === 'critical' ? scored.filter(s => s.priority === 2)
+    : filter === 'warn' ? scored.filter(s => s.priority === 1)
+    : filter === 'ok'   ? scored.filter(s => s.priority === 0)
+    : scored;
+
+  const chipClass = (f) => filter === f ? 'mv-sum-chip mv-sum-active' : 'mv-sum-chip';
+
+  let html = `<div class="mv-summary">
+    <span class="${chipClass('critical')} mv-sum-critical" onclick="window._filterMaintByVehicle('critical')" title="Show Critical only">🔴 ${critCount} Critical</span>
+    <span class="${chipClass('warn')} mv-sum-warn" onclick="window._filterMaintByVehicle('warn')" title="Show Needs Attention only">🟡 ${warnCount} Needs Attention</span>
+    <span class="${chipClass('ok')} mv-sum-ok" onclick="window._filterMaintByVehicle('ok')" title="Show Good only">🟢 ${okCount} Good</span>
+    ${filter !== 'all' ? `<span class="mv-sum-chip mv-sum-clear" onclick="window._filterMaintByVehicle('all')">✕ Show All</span>` : ''}
+  </div>`;
+
+  if (!filtered.length) {
+    html += '<div class="maint-tab-empty"><span>✅</span><p>No vehicles in this category.</p></div>';
+    grid.innerHTML = html;
+    return;
+  }
+
+  for (const { v, rq, priority, flags } of filtered) {
+    const isOnTrip   = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+    const isAtShop   = v.tripStatus === 'repair-shop';
+    const isCleaning = v.needsCleaning && !isOnTrip && !isAtShop;
+
+    const statusBadge = isOnTrip   ? '<span class="mv-status mv-trip">🚗 On Trip</span>'
+      : isAtShop   ? '<span class="mv-status mv-shop">🔧 At Shop</span>'
+      : isCleaning ? '<span class="mv-status mv-cleaning">🧹 Needs Cleaning</span>'
+      :              '<span class="mv-status mv-avail">✅ Available</span>';
+
+    let returnInfo = '';
+    if (v.tripReturnDate) {
+      const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+      const overdue = rd.getTime() < Date.now();
+      returnInfo = `<span class="mv-return${overdue ? ' mv-return-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${overdue ? ' OVERDUE' : ''}</span>`;
+    }
+
+    const mileHtml  = v.mileage ? `<span class="mv-mileage">${v.mileage.toLocaleString()} mi</span>` : '';
+    const flagsHtml = flags.length ? `<div class="mv-flags">${flags.map(f => `<div class="mv-flag mv-flag-${f.level}">${f.msg}</div>`).join('')}</div>` : '';
+    const rqCount   = rq.length ? `<span class="mv-rq-count">${rq.length} queued</span>` : '';
+    const borderCls = priority === 2 ? 'mv-card-critical' : priority === 1 ? 'mv-card-warn' : 'mv-card-ok';
+    const priorityIcon = priority === 2 ? '🔴' : priority === 1 ? '🟡' : '🟢';
+
+    html += `<div class="mv-card ${borderCls}">
+      <div class="mv-card-main" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)" style="cursor:pointer;">
+        <div class="mv-top">
+          <span class="mv-priority-icon">${priorityIcon}</span>
+          <div class="mv-ident">
+            <span class="mv-plate">${escapeHtml(v.plate)}</span>
+            <span class="mv-make">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}</span>
+            ${mileHtml}
+          </div>
+          <div class="mv-status-group">
+            ${statusBadge}${returnInfo}${rqCount}
+          </div>
+        </div>
+        ${flagsHtml}
+      </div>
+      <div class="mv-actions" onclick="event.stopPropagation()">
+        <button class="btn btn-sm btn-outline mv-action-btn" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)">📋 Records</button>
+        <button class="btn btn-sm btn-outline mv-action-btn" onclick="_openReturnQueueAdd('${v.id}')">🔁 Queue</button>
+      </div>
+    </div>`;
+  }
+
+  if (!scored.length) html = '<div class="maint-tab-empty"><span>🚗</span><p>No vehicles found.</p></div>';
+  grid.innerHTML = html;
+}
+
+window._filterMaintByVehicle = function(filter) {
+  _renderMaintByVehicle(filter);
+};
 
 // ── History ───────────────────────────────────────────────────────
 window.loadMaintHistory = async function() {
