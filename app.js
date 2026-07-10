@@ -7238,7 +7238,6 @@ async function _loadWorkOrders() {
     const snap = await db.collection('vehicleNotes')
       .where('workOrder', '==', true)
       .where('done', '==', false)
-      .orderBy('createdAt', 'desc')
       .limit(300)
       .get();
 
@@ -7248,9 +7247,16 @@ async function _loadWorkOrders() {
     }
 
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const missed     = items.filter(i => i.scheduledDate && i.scheduledDate < today);
-    const scheduled  = items.filter(i => i.scheduledDate && i.scheduledDate >= today);
-    const open       = items.filter(i => !i.scheduledDate);
+    // Sort newest first client-side (avoids needing a Firestore composite index)
+    items.sort((a, b) => {
+      const aT = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+      const bT = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+      return bT - aT;
+    });
+
+    const missed    = items.filter(i => i.scheduledDate && i.scheduledDate < today);
+    const scheduled = items.filter(i => i.scheduledDate && i.scheduledDate >= today);
+    const open      = items.filter(i => !i.scheduledDate);
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
