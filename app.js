@@ -5281,7 +5281,7 @@ window.vehicleReturned = async function(vehicleId) {
     toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
     renderFleetDashboard();
     renderLocationsWidget();
-    // Check for pending return-queue items and promote them to urgent
+    // Check for pending return-queue items — surface in Return Queue tab
     db.collection('vehicleNotes')
       .where('vehicleId', '==', vehicleId)
       .where('returnQueue', '==', true)
@@ -5289,10 +5289,7 @@ window.vehicleReturned = async function(vehicleId) {
       .get()
       .then(snap => {
         if (!snap.empty) {
-          const batch = db.batch();
-          snap.forEach(doc => batch.update(doc.ref, { taskStatus: 'urgent', urgent: true, returnQueuePromoted: true }));
-          batch.commit();
-          toast(`🚨 ${snap.size} return-queue item${snap.size !== 1 ? 's' : ''} promoted to Urgent!`, 'error');
+          toast(`📋 ${snap.size} return-queue item${snap.size !== 1 ? 's' : ''} pending for ${plate} — check the Return Queue tab.`, 'info');
           loadDashboardFollowUps();
         }
       })
@@ -6517,7 +6514,10 @@ window.openMaintenanceDash = function() {
   }
   if (!_maintDashLoaded) {
     _maintDashLoaded = true;
-    _loadMaintOverview();
+    // Open to the By Vehicle tab by default
+    const fleetBtn = document.querySelector('[data-mtab="mtab-fleet"]');
+    if (fleetBtn) switchMaintTab('mtab-fleet', fleetBtn);
+    else _loadMaintOverview();
   }
 };
 
@@ -6720,7 +6720,7 @@ async function _loadMaintOverview() {
   }
 }
 
-// ── Fleet Status ──────────────────────────────────────────────────
+// ── By Vehicle — prioritized maintenance view ─────────────────────
 async function _loadMaintFleet() {
   const grid = $('maint-fleet-grid');
   if (!grid) return;
@@ -6731,20 +6731,26 @@ async function _loadMaintFleet() {
   const d30str = d30.toISOString().slice(0, 10);
 
   try {
-    // Get most recent maintenance record per vehicle (query all, de-dup client-side)
-    const snap = await db.collection('maintenance').orderBy('date', 'desc').limit(500).get();
-    const lastService = {}; // vehicleId → { serviceType, date, cost }
-    snap.forEach(doc => {
+    const [maintSnap, dueSnap, rqSnap] = await Promise.all([
+      db.collection('maintenance').orderBy('date', 'desc').limit(500).get(),
+      db.collection('maintenance').where('nextDueDate', '<=', d30str).orderBy('nextDueDate', 'asc').get(),
+      db.collection('vehicleNotes').where('returnQueue', '==', true).where('done', '==', false).get(),
+    ]);
+
+    // Last oil change and last service per vehicle
+    const lastOil = {};
+    const lastService = {};
+    maintSnap.forEach(doc => {
       const d = doc.data();
+      if (!d.vehicleId) return;
       if (!lastService[d.vehicleId]) lastService[d.vehicleId] = d;
+      if (!lastOil[d.vehicleId] && d.serviceType && d.serviceType.toLowerCase().includes('oil')) {
+        lastOil[d.vehicleId] = d;
+      }
     });
 
-    // Get all nextDueDate items overdue or due in 30 days
-    const dueSnap = await db.collection('maintenance')
-      .where('nextDueDate', '<=', d30str)
-      .orderBy('nextDueDate', 'asc')
-      .get();
-    const vehicleAlerts = {}; // vehicleId → { overdue: [], upcoming: [] }
+    // Overdue / upcoming maintenance alerts
+    const vehicleAlerts = {};
     const seenAlert = new Set();
     dueSnap.forEach(doc => {
       const d = doc.data();
@@ -6757,39 +6763,130 @@ async function _loadMaintFleet() {
       else vehicleAlerts[d.vehicleId].upcoming.push(d.serviceType);
     });
 
-    const vehicles = vehiclesCache.filter(v => !v.excluded);
-    if (!vehicles.length) { grid.innerHTML = '<p class="hint" style="padding:24px;">No vehicles found.</p>'; return; }
+    // Return queue items per vehicle
+    const rqByVehicle = {};
+    rqSnap.forEach(doc => {
+      const d = { id: doc.id, ...doc.data() };
+      if (!rqByVehicle[d.vehicleId]) rqByVehicle[d.vehicleId] = [];
+      rqByVehicle[d.vehicleId].push(d);
+    });
 
-    grid.innerHTML = vehicles.map(v => {
-      const last = lastService[v.id];
+    // Score each vehicle: 2=Critical, 1=Needs Attention, 0=Good
+    const scored = vehiclesCache.filter(v => !v.excluded).map(v => {
+      const oil = lastOil[v.id];
       const alerts = vehicleAlerts[v.id] || { overdue: [], upcoming: [] };
-      let statusDot = '<span class="maint-status-dot maint-dot-ok" title="All good">✅</span>';
-      let statusLabel = '<span style="color:#16a34a;font-size:0.78rem;">All good</span>';
-      if (alerts.overdue.length > 0) {
-        statusDot = '<span class="maint-status-dot maint-dot-overdue" title="Overdue">🔴</span>';
-        statusLabel = `<span style="color:#dc2626;font-size:0.78rem;font-weight:600;">Overdue: ${alerts.overdue.join(', ')}</span>`;
-      } else if (alerts.upcoming.length > 0) {
-        statusDot = '<span class="maint-status-dot maint-dot-warn" title="Due soon">🟡</span>';
-        statusLabel = `<span style="color:#d97706;font-size:0.78rem;">Due soon: ${alerts.upcoming.join(', ')}</span>`;
+      const rq = rqByVehicle[v.id] || [];
+      let priority = 0;
+      const flags = [];
+
+      if (!oil) {
+        priority = 2;
+        flags.push({ level: 'critical', msg: '⚠️ No oil change on record — needs immediate attention' });
+      } else {
+        const monthsSince = (Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30);
+        const mStr = oil.mileage ? ` · ${oil.mileage.toLocaleString()} mi` : '';
+        if (monthsSince > 6) {
+          priority = Math.max(priority, 2);
+          flags.push({ level: 'critical', msg: `⛽ Oil change overdue — ${oil.date}${mStr} (${Math.floor(monthsSince)}mo ago)` });
+        } else if (monthsSince > 3) {
+          priority = Math.max(priority, 1);
+          flags.push({ level: 'warn', msg: `⛽ Oil change due soon — ${oil.date}${mStr} (${Math.floor(monthsSince)}mo ago)` });
+        }
       }
-      const lastSvcHtml = last
-        ? `<div style="font-size:0.8rem;color:#6b7280;margin-top:4px;">Last: <strong>${escapeHtml(last.serviceType)}</strong> · ${escapeHtml(last.date)}${last.cost != null ? ' · $' + last.cost.toFixed(0) : ''}</div>`
-        : `<div style="font-size:0.8rem;color:#9ca3af;margin-top:4px;">No service records yet</div>`;
-      const mileHtml = v.mileage ? `<div style="font-size:0.78rem;color:#6b7280;">${v.mileage.toLocaleString()} mi</div>` : '';
-      return `<div class="maint-fleet-card" onclick="closeMaintenanceDash();openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)">
-        <div class="maint-fleet-card-header">
-          <span class="maint-fleet-plate">${escapeHtml(v.plate)}</span>
-          ${statusDot}
+
+      if (alerts.overdue.length > 0) {
+        priority = Math.max(priority, 2);
+        const list = alerts.overdue.slice(0, 3).join(', ') + (alerts.overdue.length > 3 ? ` +${alerts.overdue.length - 3} more` : '');
+        flags.push({ level: 'critical', msg: `🔴 Overdue: ${list}` });
+      }
+      if (alerts.upcoming.length > 0) {
+        priority = Math.max(priority, 1);
+        flags.push({ level: 'warn', msg: `🟡 Due within 30 days: ${alerts.upcoming.slice(0, 2).join(', ')}` });
+      }
+
+      const urgentRQ = rq.filter(i => i.urgent);
+      if (urgentRQ.length > 0) {
+        priority = Math.max(priority, 1);
+        flags.push({ level: 'warn', msg: `🔁 ${urgentRQ.length} urgent return queue item${urgentRQ.length !== 1 ? 's' : ''}` });
+      } else if (rq.length > 0) {
+        flags.push({ level: 'info', msg: `🔁 ${rq.length} item${rq.length !== 1 ? 's' : ''} queued for return` });
+      }
+
+      return { v, oil, rq, priority, flags };
+    });
+
+    // Sort: Critical → Needs Attention → Good; within group, available vehicles first
+    scored.sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      const aHome = a.v.tripStatus === 'home' ? 0 : 1;
+      const bHome = b.v.tripStatus === 'home' ? 0 : 1;
+      return aHome - bHome;
+    });
+
+    const critCount = scored.filter(s => s.priority === 2).length;
+    const warnCount = scored.filter(s => s.priority === 1).length;
+    const okCount   = scored.filter(s => s.priority === 0).length;
+
+    let html = `<div class="mv-summary">
+      <span class="mv-sum-chip mv-sum-critical">🔴 ${critCount} Critical</span>
+      <span class="mv-sum-chip mv-sum-warn">🟡 ${warnCount} Needs Attention</span>
+      <span class="mv-sum-chip mv-sum-ok">🟢 ${okCount} Good</span>
+    </div>`;
+
+    for (const { v, rq, priority, flags } of scored) {
+      const isOnTrip   = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+      const isAtShop   = v.tripStatus === 'repair-shop';
+      const isCleaning = v.needsCleaning && !isOnTrip && !isAtShop;
+
+      const statusBadge = isOnTrip   ? '<span class="mv-status mv-trip">🚗 On Trip</span>'
+        : isAtShop   ? '<span class="mv-status mv-shop">🔧 At Shop</span>'
+        : isCleaning ? '<span class="mv-status mv-cleaning">🧹 Needs Cleaning</span>'
+        :              '<span class="mv-status mv-avail">✅ Available</span>';
+
+      let returnInfo = '';
+      if (v.tripReturnDate) {
+        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        const overdue = rd.getTime() < Date.now();
+        returnInfo = `<span class="mv-return${overdue ? ' mv-return-overdue' : ''}">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}${overdue ? ' OVERDUE' : ''}</span>`;
+      }
+
+      const mileHtml = v.mileage ? `<span class="mv-mileage">${v.mileage.toLocaleString()} mi</span>` : '';
+
+      const flagsHtml = flags.length
+        ? `<div class="mv-flags">${flags.map(f => `<div class="mv-flag mv-flag-${f.level}">${f.msg}</div>`).join('')}</div>`
+        : '';
+
+      const rqCount = rq.length ? `<span class="mv-rq-count">${rq.length} queued</span>` : '';
+      const borderCls = priority === 2 ? 'mv-card-critical' : priority === 1 ? 'mv-card-warn' : 'mv-card-ok';
+      const priorityIcon = priority === 2 ? '🔴' : priority === 1 ? '🟡' : '🟢';
+
+      html += `<div class="mv-card ${borderCls}">
+        <div class="mv-card-main" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)" style="cursor:pointer;">
+          <div class="mv-top">
+            <span class="mv-priority-icon">${priorityIcon}</span>
+            <div class="mv-ident">
+              <span class="mv-plate">${escapeHtml(v.plate)}</span>
+              <span class="mv-make">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}</span>
+              ${mileHtml}
+            </div>
+            <div class="mv-status-group">
+              ${statusBadge}${returnInfo}${rqCount}
+            </div>
+          </div>
+          ${flagsHtml}
         </div>
-        <div style="font-size:0.85rem;font-weight:600;color:#374151;">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
-        ${mileHtml}
-        ${statusLabel}
-        ${lastSvcHtml}
+        <div class="mv-actions" onclick="event.stopPropagation()">
+          <button class="btn btn-sm btn-outline mv-action-btn" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)">📋 Records</button>
+          <button class="btn btn-sm btn-outline mv-action-btn" onclick="_openReturnQueueAdd('${v.id}')">🔁 Queue</button>
+        </div>
       </div>`;
-    }).join('');
+    }
+
+    if (!scored.length) html = '<div class="maint-tab-empty"><span>🚗</span><p>No vehicles found.</p></div>';
+    grid.innerHTML = html;
   } catch (e) {
-    grid.innerHTML = '<p class="hint">Error loading fleet data.</p>';
-    console.error('[MaintFleet]', e);
+    grid.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Error loading. Check console.</p>';
+    console.error('[MaintByVehicle]', e);
   }
 }
 
