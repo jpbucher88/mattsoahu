@@ -7320,27 +7320,64 @@ async function _loadWorkOrders() {
       }
 
       const plate = v ? escapeHtml(v.plate) : 'Unknown';
-      const vInfo = v ? `${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}${v.mileage ? ' · ' + v.mileage.toLocaleString() + ' mi' : ''}` : '';
-      const addedBy = item.createdByName ? `Added by ${escapeHtml(item.createdByName)}` : '';
+      const vInfo = v ? escapeHtml(v.make) + ' ' + escapeHtml(v.model) + (v.color ? ' · ' + escapeHtml(v.color) : '') + (v.mileage ? ' · ' + v.mileage.toLocaleString() + ' mi' : '') : '';
+      const addedBy = item.createdByName ? 'Added by ' + escapeHtml(item.createdByName) : '';
       const addedDate = item.createdAt ? ' · ' + (item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt)).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
 
-      return `<div class="wo-card" style="border-color:${p.color}40;background:${p.bg};">
-        <div class="wo-card-top">
-          <div class="wo-priority-pill" style="background:${p.color};color:#fff;">${p.icon} ${p.label}</div>
-          <span class="wo-status-pill ${st.cls}">${st.icon} ${st.label}</span>
-          <div class="wo-vehicle-info">
-            <span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${item.vehicleId}'),80)">${plate}</span>
-            <span class="wo-vmeta">${vInfo}</span>
-          </div>
-          <div class="wo-avail-group">${availBadge}${returnNote}</div>
-        </div>
-        <div class="wo-description">${escapeHtml(item.text)}</div>
-        <div class="wo-meta-row">${schedBadge}<span class="wo-added">${addedBy}${addedDate}</span></div>
-        <div class="wo-actions">
-          ${statusActions}
-          <button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder('${item.id}')">✏️</button>
-        </div>
-      </div>`;
+      // Mechanic / shop
+      const mechLine = item.assignedMechanic
+        ? '<div class="wo-mechanic-row">🔧 <strong>Mechanic/Shop:</strong> ' + escapeHtml(item.assignedMechanic) + '</div>'
+        : '';
+
+      // Trip conflict warning
+      let tripConflict = '';
+      if (item.scheduledDate && v && (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip') && v.tripReturnDate) {
+        const rd2 = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        const rdStr2 = rd2.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+        if (item.scheduledDate < rdStr2) {
+          tripConflict = '<div class="wo-conflict">⚠️ Schedule conflict — vehicle is on trip until ' + rd2.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone: APP_TIMEZONE }) + '</div>';
+        }
+      }
+
+      // Progress log — pure string concat, no nested templates
+      const progLog = item.progressLog || [];
+      let progEntries = '';
+      for (let pi = 0; pi < progLog.length; pi++) {
+        const pe = progLog[pi];
+        progEntries += '<div class="wo-log-entry"><span class="wo-log-by">' + escapeHtml(pe.by || '') + '</span> <span class="wo-log-at">' + (pe.at || '') + '</span><div class="wo-log-text">' + escapeHtml(pe.text || '') + '</div></div>';
+      }
+      const canManageWO = currentUserRole === 'admin' || currentUserRole === 'manager';
+      const progBodyId = 'wo-prog-body-' + item.id;
+      const progCount = progLog.length ? ' (' + progLog.length + ')' : '';
+      const addRowHtml = canManageWO
+        ? '<div class="wo-log-add-row"><input type="text" id="wo-prog-input-' + item.id + '" class="wo-log-input" placeholder="Add progress update\u2026"><button class="btn btn-sm wo-btn-schedule" onclick="window.addWorkOrderProgress(\'' + item.id + '\',document.getElementById(\'wo-prog-input-' + item.id + '\').value)">Add</button></div>'
+        : '';
+      const toggleFn = 'var b=document.getElementById(\'' + progBodyId + '\');b.style.display=b.style.display===\'none\'?\'block\':\'none\'';
+      const progressSection = '<div class="wo-progress-section">'
+        + '<button class="wo-progress-toggle" onclick="' + toggleFn + '">\uD83D\uDCCB Progress Log' + progCount + '</button>'
+        + '<div id="' + progBodyId + '" style="display:' + (rs === 'dropped_off' ? 'block' : 'none') + ';">'
+        + (progEntries || '<div class="wo-log-empty">No updates yet.</div>')
+        + addRowHtml
+        + '</div></div>';
+
+      // Delete button — admin only
+      const deleteBtn = currentUserRole === 'admin'
+        ? '<button class="btn btn-sm wo-btn-delete" onclick="window.deleteWorkOrder(\'' + item.id + '\')" title="Delete">🗑</button>'
+        : '';
+
+      return '<div class="wo-card" style="border-color:' + p.color + '40;background:' + p.bg + ';">'
+        + '<div class="wo-card-top">'
+        + '<div class="wo-priority-pill" style="background:' + p.color + ';color:#fff;">' + p.icon + ' ' + p.label + '</div>'
+        + '<span class="wo-status-pill ' + st.cls + '">' + st.icon + ' ' + st.label + '</span>'
+        + '<div class="wo-vehicle-info"><span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage(\'' + item.vehicleId + '\'),80)">' + plate + '</span><span class="wo-vmeta">' + vInfo + '</span></div>'
+        + '<div class="wo-avail-group">' + availBadge + returnNote + '</div>'
+        + '</div>'
+        + '<div class="wo-description">' + escapeHtml(item.text) + '</div>'
+        + mechLine + tripConflict
+        + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
+        + progressSection
+        + '<div class="wo-actions">' + statusActions + '<button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder(\'' + item.id + '\')">✏️ Edit</button>' + deleteBtn + '</div>'
+        + '</div>';
     }
 
     let html = `<div class="wo-pipeline-bar">
@@ -7378,6 +7415,35 @@ async function _loadWorkOrders() {
     console.error('[WorkOrders]', e);
   }
 }
+
+window.deleteWorkOrder = async function(noteId) {
+  if (currentUserRole !== 'admin') { toast('Admin only.', 'warning'); return; }
+  if (!await confirm('Delete Work Order', 'Permanently delete this work order? This cannot be undone.')) return;
+  try {
+    await db.collection('vehicleNotes').doc(noteId).delete();
+    toast('Work order deleted.', 'success');
+    _loadWorkOrders();
+  } catch(e) { toast('Failed to delete.', 'error'); }
+};
+
+window.addWorkOrderProgress = async function(noteId, text) {
+  text = (text || '').trim();
+  if (!text) { toast('Enter an update.', 'warning'); return; }
+  const entry = {
+    text: text,
+    by: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+    at: new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }),
+  };
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      progressLog: firebase.firestore.FieldValue.arrayUnion(entry),
+    });
+    const inp = document.getElementById('wo-prog-input-' + noteId);
+    if (inp) inp.value = '';
+    toast('Progress update added \u2713', 'success');
+    _loadWorkOrders();
+  } catch(e) { toast('Failed to add update.', 'error'); }
+};
 
 window.updateWorkOrderStatus = async function(noteId, newStatus) {
   const labels = { dropped_off: 'Dropped Off', scheduled: 'Scheduled', open: 'Open', deferred: 'Deferred' };
@@ -7471,6 +7537,10 @@ window.openNewWorkOrder = function(vehicleId) {  const existing = document.getEl
           <label style="font-size:0.82rem;font-weight:700;color:#374151;">Schedule Date <span style="font-weight:400;color:#9ca3af;">(optional — leave blank to schedule later)</span></label>
           <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="">
         </div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Mechanic / Shop <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+          <input type="text" id="wo-mechanic" placeholder="e.g. Joe Auto, Dan, Firestone..." style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+        </div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
         <button class="btn btn-outline" onclick="document.getElementById('wo-schedule-date').value=''; _saveWorkOrder()" style="font-size:0.82rem;">Save without date →</button>
@@ -7511,6 +7581,7 @@ window._saveWorkOrder = async function() {
   const text = (document.getElementById('wo-description')?.value || '').trim();
   const priority = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
   const scheduledDate = document.getElementById('wo-schedule-date')?.value || null;
+  const mechanic = (document.getElementById('wo-mechanic')?.value || '').trim() || null;
 
   if (!vid) { toast('Select a vehicle.', 'warning'); if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='✓ Save'; } return; }
   if (!text) { toast('Enter a description.', 'warning'); if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='✓ Save'; } return; }
@@ -7525,6 +7596,7 @@ window._saveWorkOrder = async function() {
       repairStatus: scheduledDate ? 'scheduled' : 'open',
       scheduledDate: scheduledDate || null,
       dueDate: scheduledDate || null,
+      assignedMechanic: mechanic || null,
       isFollowUp: true,
       done: false,
       urgent: priority === 'critical',

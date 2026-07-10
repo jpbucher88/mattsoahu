@@ -6669,6 +6669,20 @@ body {
 .wo-btn-nofault { background: #f3e8ff; color: #7e22ce; border: 1.5px solid #d8b4fe; font-size: 0.8rem; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
 .wo-btn-nofault:hover { background: #ede9fe; }
 .wo-btn-defer   { background: #fef3c7; color: #92400e; border: 1.5px solid #fde68a; font-size: 0.8rem; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.wo-btn-delete  { background: #fff; color: #dc2626; border: 1.5px solid #fca5a5; font-size: 0.8rem; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.wo-btn-delete:hover { background: #fef2f2; }
+.wo-mechanic-row { font-size: 0.8rem; color: #374151; padding: 2px 0 4px; }
+.wo-conflict { font-size: 0.78rem; background: #fef3c7; color: #92400e; border-left: 3px solid #f59e0b; padding: 4px 8px; border-radius: 0 5px 5px 0; margin: 4px 0; }
+.wo-progress-section { border-top: 1px solid rgba(0,0,0,0.07); margin-top: 8px; padding-top: 6px; }
+.wo-progress-toggle { background: none; border: none; cursor: pointer; font-size: 0.8rem; color: #6b7280; font-weight: 600; padding: 0; }
+.wo-progress-toggle:hover { color: #374151; }
+.wo-log-entry { border-left: 2px solid #e5e7eb; padding: 4px 8px; margin: 6px 0; font-size: 0.82rem; }
+.wo-log-by { font-weight: 700; color: #374151; margin-right: 6px; }
+.wo-log-at { font-size: 0.73rem; color: #9ca3af; }
+.wo-log-text { color: #374151; margin-top: 2px; }
+.wo-log-empty { font-size: 0.78rem; color: #9ca3af; padding: 4px 8px; font-style: italic; }
+.wo-log-add-row { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.wo-log-input { flex: 1; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.82rem; }
 
 /* Route-to-Maintenance button in urgent banner */
 .urgent-maint-btn {
