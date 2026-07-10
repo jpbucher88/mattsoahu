@@ -7082,22 +7082,59 @@ window.closeMaintenanceDash = function() {
 };
 
 // ── Maintenance Dashboard: Open Tasks tab ────────────────────────
+let _maintTasksAllItems = []; // cached for search filtering
+
 window._refreshMaintTasks = async function() {
   const container = $('maint-tasks-content');
   if (!container) return;
   container.innerHTML = '<p class="hint" style="padding:16px;text-align:center;">Loading…</p>';
 
-  // Ensure tasks are loaded
   if (cachedTaskItems.length === 0) await loadDashboardFollowUps();
   const today = todayDateString();
-  const items = cachedTaskItems.filter(i => i.sourceType === 'maintenance');
 
-  if (items.length === 0) {
-    container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No open maintenance tasks!</p></div>';
+  // Include ALL vehicle-specific follow-up notes + work orders (not just sourceType='maintenance')
+  _maintTasksAllItems = cachedTaskItems.filter(i =>
+    i.collection === 'vehicleNotes' || i.workOrder
+  );
+
+  // Build filter bar
+  const vehicleOptions = vehiclesCache.map(v =>
+    `<option value="${v.id}">${escapeHtml(v.plate)} — ${escapeHtml(v.make)} ${escapeHtml(v.model)}</option>`
+  ).join('');
+
+  container.innerHTML = `
+    <div class="mt-filter-bar">
+      <input type="text" id="mt-search" class="mt-search-input" placeholder="🔍 Search tasks…" oninput="_filterMaintTasks()">
+      <select id="mt-vehicle-sel" class="mt-vehicle-sel" onchange="_filterMaintTasks()">
+        <option value="">All Vehicles</option>
+        ${vehicleOptions}
+      </select>
+    </div>
+    <div id="mt-tasks-list"></div>`;
+
+  _filterMaintTasks();
+};
+
+window._filterMaintTasks = function() {
+  const listEl = document.getElementById('mt-tasks-list');
+  if (!listEl) return;
+  const search = (document.getElementById('mt-search')?.value || '').toLowerCase().trim();
+  const vehicleFilter = document.getElementById('mt-vehicle-sel')?.value || '';
+  const today = todayDateString();
+
+  let items = _maintTasksAllItems;
+  if (vehicleFilter) items = items.filter(i => i.vehicleId === vehicleFilter);
+  if (search) items = items.filter(i =>
+    (i.text || '').toLowerCase().includes(search) ||
+    (i.vehicleId && vehiclesCache.find(v => v.id === i.vehicleId)?.plate?.toLowerCase().includes(search))
+  );
+
+  if (!items.length) {
+    listEl.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No tasks match.</p></div>';
     return;
   }
 
-  // Group by vehicle
+  // Group by vehicle, urgent-first
   const byVehicle = new Map();
   for (const item of items) {
     const key = item.vehicleId || '__general';
@@ -7109,52 +7146,67 @@ window._refreshMaintTasks = async function() {
     return score(b) - score(a);
   });
 
-  let html = '';
+  let html = `<div style="font-size:0.78rem;color:#6b7280;margin-bottom:10px;">${items.length} task${items.length !== 1 ? 's' : ''} across ${sortedGroups.length} vehicle${sortedGroups.length !== 1 ? 's' : ''}</div>`;
+
   for (const [vehicleId, vItems] of sortedGroups) {
     const v = vehicleId !== '__general' ? vehiclesCache.find(x => x.id === vehicleId) : null;
     const plate = v ? v.plate : 'General';
-    const makeModel = v ? [v.make, v.model].filter(Boolean).join(' ') : '';
+    const makeModel = v ? `${v.make} ${v.model}${v.color ? ' · ' + v.color : ''}` : '';
     const mileage = v ? v.mileage : null;
     const hasOverdue = vItems.some(i => i.urgent || (i.dueDate && i.dueDate < today));
+
     html += `<div class="maint-vehicle-group${hasOverdue ? ' maint-group-overdue' : ''}">
-      <div class="maint-vehicle-header" onclick="closeMaintenanceDash();openVehiclePage('${vehicleId}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)">
+      <div class="maint-vehicle-header" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${vehicleId}'),80)">
         <span class="maint-vehicle-plate">🚗 ${escapeHtml(plate)}</span>
         ${makeModel ? `<span class="maint-vehicle-model">${escapeHtml(makeModel)}</span>` : ''}
         ${mileage ? `<span class="maint-vehicle-mileage">📍 ${mileage.toLocaleString()} mi</span>` : ''}
         <span class="maint-vehicle-link">Open ↗</span>
       </div>
       <div class="maint-vehicle-items">`;
+
     vItems.sort((a, b) => {
       if (a.urgent !== b.urgent) return b.urgent ? 1 : -1;
+      if (a.workOrder !== b.workOrder) return b.workOrder ? 1 : -1;
       return (a.dueDate || '').localeCompare(b.dueDate || '');
     });
+
     for (const item of vItems) {
       const over = item.urgent || (item.dueDate && item.dueDate < today);
       const dueBadge = item.dueDate ? `<span style="font-size:0.75rem;color:#64748b;margin-left:6px;">📅 ${item.dueDate}</span>` : '';
       const urgTag = item.urgent ? '<span style="background:#fef2f2;color:#dc2626;font-size:0.72rem;padding:1px 6px;border-radius:4px;font-weight:700;margin-right:4px;">URGENT</span>' : '';
-      // For mileage-interval items, compute miles-left and display it prominently
-      let displayName = `${urgTag}${escapeHtml(item.text)}${dueBadge}`;
+      const woTag = item.workOrder
+        ? `<span style="background:#eff6ff;color:#1e40af;font-size:0.72rem;padding:1px 6px;border-radius:4px;font-weight:700;margin-right:4px;">🔧 Work Order</span>`
+        : '';
+
+      // For mileage-interval items, show miles left
+      let displayName = `${urgTag}${woTag}${escapeHtml(item.text)}${dueBadge}`;
       if (item.nextDueMileage && mileage) {
         const miLeft = item.nextDueMileage - mileage;
         const svc = escapeHtml(item.maintenanceService || item.text.replace(/\s+due at.*/i, '').replace(/[🛢️⚙️🔧]/g, '').trim());
         const miBadge = miLeft <= 0
           ? `<span style="background:#fef2f2;color:#dc2626;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Overdue by ${Math.abs(miLeft).toLocaleString()} mi</span>`
-          : miLeft <= 500  ? `<span style="background:#fef2f2;color:#dc2626;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Due in ${miLeft.toLocaleString()} mi</span>`
           : miLeft <= 1000 ? `<span style="background:#fef9c3;color:#854d0e;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Due in ${miLeft.toLocaleString()} mi</span>`
           :                  `<span style="background:#f0fdf4;color:#166534;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Due in ${miLeft.toLocaleString()} mi</span>`;
-        const atHint = `<span style="font-size:0.75rem;color:#9ca3af;margin-left:4px;">at ${item.nextDueMileage.toLocaleString()} mi${item.intervalMiles ? ` · every ${item.intervalMiles.toLocaleString()} mi` : ''}</span>`;
-        displayName = `${urgTag}<strong>${svc}</strong> ${miBadge}${atHint}`;
+        displayName = `${urgTag}<strong>${svc}</strong> ${miBadge}`;
       }
+
+      const editAction = item.workOrder
+        ? `openCloseOutWorkOrder('${item.id}','${vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')`
+        : `openNoteEditModal('${item.id}','${item.collection}')`;
+
       html += `<div class="maint-item-row ${over ? 'maint-item-overdue' : 'maint-item-ok'}">
-        <div class="maint-item-info"><div class="maint-item-name">${displayName}</div></div>
+        <div class="maint-item-info">
+          <div class="maint-item-name">${displayName}</div>
+        </div>
         <div class="task-item-actions">
           <button class="task-complete-btn" onclick="agendaMarkDone_dispatch('${item.id}','${item.collection}');setTimeout(_refreshMaintTasks,600)">✓ Done</button>
+          <button class="btn btn-sm btn-outline" style="padding:3px 9px;font-size:0.78rem;" onclick="${editAction}">✏️ Edit</button>
         </div>
       </div>`;
     }
     html += '</div></div>';
   }
-  container.innerHTML = html;
+  listEl.innerHTML = html;
 };
 
 // Auto-load when the Tasks tab is opened
@@ -10731,8 +10783,11 @@ window.openNoteEditModal = async function(docId, collection) {
   overlay.className = 'note-edit-overlay';
   overlay.innerHTML = `
     <div class="note-edit-modal">
-      <h4>✏️ Edit Note</h4>
-      <div class="form-group">
+      <h4>✏️ Edit Task / Note</h4>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:0.78rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">Description / Title</label>
+        <textarea id="ne-text" rows="2" style="width:100%;margin-top:4px;padding:8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Task description...">${escapeHtml(d.text || '')}</textarea>
+      </div>
         <label class="note-followup-label">
           <input type="checkbox" id="ne-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
         </label>
@@ -10794,6 +10849,7 @@ window.openNoteEditModal = async function(docId, collection) {
         <div id="ne-invoice-hint" class="ne-invoice-hint">${(d.invoiceUrls && d.invoiceUrls.length) ? d.invoiceUrls.length + ' attachment(s) saved' : 'No attachments yet'}</div>
       </div>
       <div class="note-edit-actions">
+        ${(currentUserRole === 'admin' || currentUserRole === 'manager') ? `<button class="btn btn-outline" id="btn-ne-to-maint" style="border-color:#86efac;color:#15803d;">🔧 → Maintenance</button>` : ''}
         <button class="btn btn-primary" id="btn-ne-save">Save Changes</button>
         <button class="btn btn-outline" id="btn-ne-cancel">Cancel</button>
       </div>
@@ -10820,6 +10876,16 @@ window.openNoteEditModal = async function(docId, collection) {
   });
 
   overlay.querySelector('#btn-ne-cancel').onclick = () => overlay.remove();
+
+  // → Maintenance button
+  const toMaintBtn = overlay.querySelector('#btn-ne-to-maint');
+  if (toMaintBtn) {
+    toMaintBtn.onclick = () => {
+      const currentText = overlay.querySelector('#ne-text')?.value?.trim() || d.text || '';
+      overlay.remove();
+      convertTaskToWorkOrder(docId, collection, d.vehicleId || '', currentText);
+    };
+  }
 
   // --- Invoice / Photo attachment logic ---
   let removedInvoiceUrls = [];
@@ -10907,6 +10973,7 @@ window.openNoteEditModal = async function(docId, collection) {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
     const isFollowUp = followupEl.checked;
+    const newText    = (overlay.querySelector('#ne-text')?.value || '').trim();
     const urgent = isFollowUp && selectedStatus === 'urgent';
     const taskStatus = isFollowUp ? selectedStatus : null;
     const dueDate = isFollowUp ? overlay.querySelector('#ne-due-date').value : '';
@@ -10914,6 +10981,7 @@ window.openNoteEditModal = async function(docId, collection) {
     const assignedTo     = overlay.querySelector('#ne-assignee-id')?.value   || '';
     const assignedToName = overlay.querySelector('#ne-assignee-name')?.value || '';
     const updates = { isFollowUp, urgent };
+    if (newText) updates.text = newText;
     if (taskStatus) updates.taskStatus = taskStatus;
     if (dueDate) { updates.dueDate = dueDate; }
     else { updates.dueDate = firebase.firestore.FieldValue.delete(); }

@@ -6520,7 +6520,33 @@ body {
 }
 .maint-tab-btn:hover { color: #374151; }
 .maint-tab-btn.active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
-.maint-dash-body { padding: 20px; overflow-y: auto; }
+.maint-dash-body { padding: 20px; overflow-y: auto; max-height: calc(90vh - 130px); }
+
+/* Open Tasks filter bar */
+.mt-filter-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+.mt-search-input {
+  flex: 1;
+  min-width: 160px;
+  padding: 7px 12px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+.mt-search-input:focus { outline: none; border-color: #6366f1; }
+.mt-vehicle-sel {
+  padding: 6px 10px;
+  border: 1.5px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 0.88rem;
+  background: #fff;
+  min-width: 160px;
+}
+.mt-vehicle-sel:focus { outline: none; border-color: #6366f1; }
 
 /* Stat cards */
 .maint-stat-cards {
