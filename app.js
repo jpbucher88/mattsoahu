@@ -7347,6 +7347,7 @@ window.openNewWorkOrder = function(vehicleId) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   setTimeout(() => { const t = document.getElementById('wo-description'); if (t) t.focus(); }, 80);
 };
@@ -7431,6 +7432,7 @@ window.openScheduleWorkOrder = function(noteId, currentDate) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 };
 
@@ -7488,6 +7490,7 @@ window.openCloseOutWorkOrder = function(noteId, vehicleId, issueText) {
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   setTimeout(() => { document.getElementById('wo-resolution')?.focus(); }, 80);
 };
