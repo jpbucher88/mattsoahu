@@ -7254,13 +7254,26 @@ async function _loadWorkOrders() {
       return bT - aT;
     });
 
-    const missed    = items.filter(i => i.scheduledDate && i.scheduledDate < today);
-    const scheduled = items.filter(i => i.scheduledDate && i.scheduledDate >= today);
-    const open      = items.filter(i => !i.scheduledDate);
+    const WO_STATUS = {
+      open:        { label: 'Open',           icon: '⚪', cls: 'wo-st-open' },
+      scheduled:   { label: 'Scheduled',      icon: '📅', cls: 'wo-st-sched' },
+      dropped_off: { label: 'Dropped Off',    icon: '🔧', cls: 'wo-st-active' },
+      completed:   { label: 'Completed',      icon: '✅', cls: 'wo-st-done' },
+      no_fault:    { label: 'No Fault Found', icon: '🔍', cls: 'wo-st-nofault' },
+      deferred:    { label: 'Deferred',       icon: '📅', cls: 'wo-st-defer' },
+    };
+
+    // Group: dropped off gets its own section; missed/open/scheduled as before
+    const droppedOff = items.filter(i => i.repairStatus === 'dropped_off');
+    const missedList = items.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate < today);
+    const scheduled  = items.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate >= today);
+    const open       = items.filter(i => i.repairStatus !== 'dropped_off' && !i.scheduledDate);
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
       const p = WO_PRIORITY[item.repairPriority] || WO_PRIORITY.standard;
+      const rs = item.repairStatus || 'open';
+      const st = WO_STATUS[rs] || WO_STATUS.open;
       const isOnTrip  = v && (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
       const isAtShop  = v && v.tripStatus === 'repair-shop';
       const needsClean = v && v.needsCleaning && !isOnTrip && !isAtShop;
@@ -7293,6 +7306,19 @@ async function _loadWorkOrders() {
         schedBadge = '<span class="wo-sched-badge wo-sched-none">📅 Not yet scheduled</span>';
       }
 
+      // Status pipeline actions — change based on current status
+      let statusActions = '';
+      if (rs === 'dropped_off') {
+        statusActions = `
+          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Mark Completed</button>
+          <button class="btn btn-sm wo-btn-nofault" onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found — issue could not be reproduced.')">🔍 No Fault Found</button>
+          <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}')">📅 Defer / Reschedule</button>`;
+      } else {
+        statusActions = `
+          <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
+          <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
+      }
+
       const plate = v ? escapeHtml(v.plate) : 'Unknown';
       const vInfo = v ? `${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}${v.mileage ? ' · ' + v.mileage.toLocaleString() + ' mi' : ''}` : '';
       const addedBy = item.createdByName ? `Added by ${escapeHtml(item.createdByName)}` : '';
@@ -7301,6 +7327,7 @@ async function _loadWorkOrders() {
       return `<div class="wo-card" style="border-color:${p.color}40;background:${p.bg};">
         <div class="wo-card-top">
           <div class="wo-priority-pill" style="background:${p.color};color:#fff;">${p.icon} ${p.label}</div>
+          <span class="wo-status-pill ${st.cls}">${st.icon} ${st.label}</span>
           <div class="wo-vehicle-info">
             <span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${item.vehicleId}'),80)">${plate}</span>
             <span class="wo-vmeta">${vInfo}</span>
@@ -7310,28 +7337,40 @@ async function _loadWorkOrders() {
         <div class="wo-description">${escapeHtml(item.text)}</div>
         <div class="wo-meta-row">${schedBadge}<span class="wo-added">${addedBy}${addedDate}</span></div>
         <div class="wo-actions">
-          <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>
-          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text)}')">✅ Close Out</button>
+          ${statusActions}
           <button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder('${item.id}')">✏️</button>
         </div>
       </div>`;
     }
 
-    let html = '';
-    if (missed.length) {
-      missed.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
-      html += `<div class="wo-section-header wo-section-missed">⚠️ Missed Schedule <span class="wo-sec-count">${missed.length}</span></div>`;
-      html += missed.map(renderCard).join('');
+    let html = `<div class="wo-pipeline-bar">
+      ${droppedOff.length ? `<span class="wo-pip-chip wo-pip-active">🔧 In Progress: ${droppedOff.length}</span>` : ''}
+      ${missedList.length ? `<span class="wo-pip-chip wo-pip-missed">⚠️ Missed: ${missedList.length}</span>` : ''}
+      ${open.length ? `<span class="wo-pip-chip wo-pip-open">⚪ Open: ${open.length}</span>` : ''}
+      ${scheduled.length ? `<span class="wo-pip-chip wo-pip-sched">📅 Scheduled: ${scheduled.length}</span>` : ''}
+    </div>`;
+
+    if (droppedOff.length) {
+      html += `<div class="wo-section-header" style="background:#eff6ff;color:#1e40af;">🔧 In Progress — At Shop <span class="wo-sec-count">${droppedOff.length}</span></div>`;
+      html += droppedOff.map(renderCard).join('');
+    }
+    if (missedList.length) {
+      missedList.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
+      html += `<div class="wo-section-header wo-section-missed">⚠️ Missed Schedule <span class="wo-sec-count">${missedList.length}</span></div>`;
+      html += missedList.map(renderCard).join('');
     }
     if (open.length) {
       open.sort((a,b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2) - (po[b.repairPriority]||2); });
-      html += `<div class="wo-section-header wo-section-open">📋 Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span></div>`;
+      html += `<div class="wo-section-header wo-section-open">⚪ Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span></div>`;
       html += open.map(renderCard).join('');
     }
     if (scheduled.length) {
       scheduled.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
       html += `<div class="wo-section-header wo-section-sched">📅 Scheduled <span class="wo-sec-count">${scheduled.length}</span></div>`;
       html += scheduled.map(renderCard).join('');
+    }
+    if (!html.replace(/<div class="wo-pipeline-bar">[\s\S]*?<\/div>/, '').trim()) {
+      html += '<div class="maint-tab-empty"><span>✅</span><p>No open work orders!</p></div>';
     }
     container.innerHTML = html;
   } catch(e) {
@@ -7340,8 +7379,44 @@ async function _loadWorkOrders() {
   }
 }
 
-window.openNewWorkOrder = function(vehicleId) {
-  const existing = document.getElementById('wo-modal-overlay');
+window.updateWorkOrderStatus = async function(noteId, newStatus) {
+  const labels = { dropped_off: 'Dropped Off', scheduled: 'Scheduled', open: 'Open', deferred: 'Deferred' };
+  try {
+    const updates = { repairStatus: newStatus };
+    if (newStatus === 'dropped_off') {
+      updates.droppedOffAt = firebase.firestore.FieldValue.serverTimestamp();
+      updates.droppedOffByName = currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown';
+    }
+    await db.collection('vehicleNotes').doc(noteId).update(updates);
+    toast(`Status updated: ${labels[newStatus] || newStatus} ✓`, 'success');
+    _loadWorkOrders();
+    loadDashboardFollowUps();
+  } catch(e) {
+    console.error('Update status error:', e);
+    toast('Failed to update status.', 'error');
+  }
+};
+
+window.quickResolveWorkOrder = async function(noteId, resStatus, resText) {
+  if (!await confirm('Confirm Resolution', `Mark as "${resStatus === 'no_fault' ? 'No Fault Found' : resStatus}"?\n\n${resText}`)) return;
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      done: true,
+      repairStatus: resStatus,
+      resolution: resText,
+      resolutionDate: todayDateString(),
+      resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast(`✅ Marked as "${resStatus === 'no_fault' ? 'No Fault Found' : resStatus}"`, 'success');
+    _loadWorkOrders();
+    loadDashboardFollowUps();
+  } catch(e) {
+    toast('Failed to update.', 'error');
+  }
+};
+
+window.openNewWorkOrder = function(vehicleId) {  const existing = document.getElementById('wo-modal-overlay');
   if (existing) existing.remove();
   const v = vehicleId && vehiclesCache.find(x => x.id === vehicleId);
   const overlay = document.createElement('div');
@@ -7349,16 +7424,13 @@ window.openNewWorkOrder = function(vehicleId) {
   overlay.className = 'modal-overlay';
 
   let availHint = '';
-  let suggestedDate = '';
   if (v) {
     const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
     if (isOnTrip && v.tripReturnDate) {
       const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
       const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
-      // Use the return date itself as the suggested date (day of return)
-      const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }); // YYYY-MM-DD in HST
-      suggestedDate = rdLocal;
-      availHint = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now and schedule for return date or later.</div>`;
+      const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+      availHint = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now, schedule for that date or later. <button type="button" class="wo-date-fill-btn" onclick="document.getElementById('wo-schedule-date').value='${rdLocal}'">📅 Use ${rdLabel}</button></div>`;
     } else {
       availHint = `<div class="wo-avail-hint">✅ <strong>${escapeHtml(v.plate)}</strong> is currently available — schedule a date or leave blank to schedule later.</div>`;
     }
@@ -7397,8 +7469,7 @@ window.openNewWorkOrder = function(vehicleId) {
         </div>
         <div class="form-group">
           <label style="font-size:0.82rem;font-weight:700;color:#374151;">Schedule Date <span style="font-weight:400;color:#9ca3af;">(optional — leave blank to schedule later)</span></label>
-          <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="${suggestedDate}">
-          ${suggestedDate ? `<div style="font-size:0.75rem;color:#6b7280;margin-top:3px;">💡 Pre-filled with vehicle return date — adjust as needed or clear to leave unscheduled.</div>` : ''}
+          <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="">
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
@@ -7424,9 +7495,9 @@ window._woVehicleChange = function(vid) {
   if (isOnTrip && v.tripReturnDate) {
     const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
     const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
-    hint.innerHTML = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now, schedule for that date or later.</div>`;
     const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
-    if (dateInput && !dateInput.value) dateInput.value = rdLocal;
+    hint.innerHTML = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now, schedule for that date or later. <button type="button" class="wo-date-fill-btn" onclick="document.getElementById('wo-schedule-date').value='${rdLocal}'">📅 Use ${rdLabel}</button></div>`;
+    // Do NOT auto-fill — user clicks the button if they want the return date
   } else {
     hint.innerHTML = `<div class="wo-avail-hint">✅ Currently <strong>available</strong> — schedule or leave blank for later.</div>`;
   }
