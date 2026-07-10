@@ -6368,7 +6368,7 @@ async function updateRecommendedServices(vehicleId) {
         const milesLeft = d.nextDueMileage - mileage;
         if (milesLeft <= 0) {
           miIntervalDue.push({ service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
-        } else if (milesLeft <= 500) {
+        } else if (milesLeft <= 1500) {
           miIntervalWarn.push({ service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
         }
       });
@@ -6401,11 +6401,13 @@ async function updateRecommendedServices(vehicleId) {
   miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
   miIntervalDue.forEach(s => {
     const over = Math.abs(s.milesLeft).toLocaleString();
-    html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> · Due at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+    html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> <span class="hint">(due at ${s.nextDueMileage.toLocaleString()} mi · every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
   });
   miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
   miIntervalWarn.forEach(s => {
-    html += `<div class="rec-item rec-upcoming">⚠️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.milesLeft.toLocaleString()} mi · at ${s.nextDueMileage.toLocaleString()} mi <span class="hint">(every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+    const urgCls = s.milesLeft <= 500 ? 'rec-overdue' : s.milesLeft <= 1000 ? 'rec-upcoming' : '';
+    const urgLabel = s.milesLeft <= 500 ? `<span class="text-danger">Due in ${s.milesLeft.toLocaleString()} mi</span>` : `<span style="color:#d97706;">Due in ${s.milesLeft.toLocaleString()} mi</span>`;
+    html += `<div class="rec-item ${urgCls}">⚠️ <strong>${escapeHtml(s.service)}</strong> — ${urgLabel} <span class="hint">(at ${s.nextDueMileage.toLocaleString()} mi · every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
   });
 
   list.innerHTML = html;
@@ -7066,8 +7068,21 @@ window._refreshMaintTasks = async function() {
       const over = item.urgent || (item.dueDate && item.dueDate < today);
       const dueBadge = item.dueDate ? `<span style="font-size:0.75rem;color:#64748b;margin-left:6px;">📅 ${item.dueDate}</span>` : '';
       const urgTag = item.urgent ? '<span style="background:#fef2f2;color:#dc2626;font-size:0.72rem;padding:1px 6px;border-radius:4px;font-weight:700;margin-right:4px;">URGENT</span>' : '';
+      // For mileage-interval items, compute miles-left and display it prominently
+      let displayName = `${urgTag}${escapeHtml(item.text)}${dueBadge}`;
+      if (item.nextDueMileage && mileage) {
+        const miLeft = item.nextDueMileage - mileage;
+        const svc = escapeHtml(item.maintenanceService || item.text.replace(/\s+due at.*/i, '').replace(/[🛢️⚙️🔧]/g, '').trim());
+        const miBadge = miLeft <= 0
+          ? `<span style="background:#fef2f2;color:#dc2626;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Overdue by ${Math.abs(miLeft).toLocaleString()} mi</span>`
+          : miLeft <= 500  ? `<span style="background:#fef2f2;color:#dc2626;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Due in ${miLeft.toLocaleString()} mi</span>`
+          : miLeft <= 1000 ? `<span style="background:#fef9c3;color:#854d0e;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Due in ${miLeft.toLocaleString()} mi</span>`
+          :                  `<span style="background:#f0fdf4;color:#166534;font-size:0.75rem;padding:1px 7px;border-radius:4px;font-weight:700;">Due in ${miLeft.toLocaleString()} mi</span>`;
+        const atHint = `<span style="font-size:0.75rem;color:#9ca3af;margin-left:4px;">at ${item.nextDueMileage.toLocaleString()} mi${item.intervalMiles ? ` · every ${item.intervalMiles.toLocaleString()} mi` : ''}</span>`;
+        displayName = `${urgTag}<strong>${svc}</strong> ${miBadge}${atHint}`;
+      }
       html += `<div class="maint-item-row ${over ? 'maint-item-overdue' : 'maint-item-ok'}">
-        <div class="maint-item-info"><div class="maint-item-name">${urgTag}${escapeHtml(item.text)}${dueBadge}</div></div>
+        <div class="maint-item-info"><div class="maint-item-name">${displayName}</div></div>
         <div class="task-item-actions">
           <button class="task-complete-btn" onclick="agendaMarkDone_dispatch('${item.id}','${item.collection}');setTimeout(_refreshMaintTasks,600)">✓ Done</button>
         </div>
@@ -9755,12 +9770,15 @@ function renderTaskAgenda(allItems) {
                 statusBadge = `<span class="maint-status-badge maint-badge-overdue">Overdue by ${Math.abs(milesLeft).toLocaleString()} mi</span>`;
               } else if (milesLeft <= 500) {
                 statusClass = 'maint-item-soon';
-                statusBadge = `<span class="maint-status-badge maint-badge-soon">${milesLeft.toLocaleString()} mi left</span>`;
+                statusBadge = `<span class="maint-status-badge maint-badge-overdue">Due in ${milesLeft.toLocaleString()} mi</span>`;
+              } else if (milesLeft <= 1000) {
+                statusClass = 'maint-item-soon';
+                statusBadge = `<span class="maint-status-badge maint-badge-soon">Due in ${milesLeft.toLocaleString()} mi</span>`;
               } else {
                 statusClass = 'maint-item-ok';
-                statusBadge = `<span class="maint-status-badge maint-badge-ok">${milesLeft.toLocaleString()} mi left</span>`;
+                statusBadge = `<span class="maint-status-badge maint-badge-ok">Due in ${milesLeft.toLocaleString()} mi</span>`;
               }
-              contextLine = `Due at ${item.nextDueMileage.toLocaleString()} mi${item.intervalMiles ? ` · Every ${item.intervalMiles.toLocaleString()} mi` : ''}${currentMileage ? ` · Now: ${currentMileage.toLocaleString()} mi` : ''}`;
+              contextLine = `At ${item.nextDueMileage.toLocaleString()} mi${item.intervalMiles ? ` · every ${item.intervalMiles.toLocaleString()} mi` : ''}${currentMileage ? ` · current: ${currentMileage.toLocaleString()} mi` : ''}`;
             } else if (item.intervalType === 'time' && item.dueDate) {
               const [dy, dm, dd2] = item.dueDate.split('-').map(Number);
               const due = new Date(dy, dm - 1, dd2);
