@@ -6566,7 +6566,58 @@ body {
   gap: 8px;
 }
 
-/* ===== BY LOCATION (Mechanic Report) ===== */
+/* ===== WORK ORDERS ===== */
+.wo-section-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-radius: 8px; margin: 8px 0 6px;
+  font-size: 0.83rem; font-weight: 700;
+}
+.wo-section-missed { background: #fef2f2; color: #dc2626; }
+.wo-section-open   { background: #eff6ff; color: #1e40af; }
+.wo-section-sched  { background: #f0fdf4; color: #15803d; }
+.wo-sec-count { background: rgba(0,0,0,0.12); color: inherit; font-size:0.72rem; padding:1px 7px; border-radius:999px; }
+
+.wo-card {
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  margin-bottom: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wo-card-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wo-priority-pill { font-size: 0.75rem; font-weight: 800; padding: 3px 10px; border-radius: 999px; white-space: nowrap; }
+.wo-vehicle-info { flex: 1; min-width: 0; }
+.wo-plate { font-size: 0.95rem; font-weight: 800; color: #1e40af; cursor: pointer; margin-right: 6px; }
+.wo-plate:hover { text-decoration: underline; }
+.wo-vmeta { font-size: 0.78rem; color: #6b7280; }
+.wo-avail-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wo-avail { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.wo-trip   { background: #dbeafe; color: #1e40af; }
+.wo-shop   { background: #fee2e2; color: #991b1b; }
+.wo-clean  { background: #fef9c3; color: #854d0e; }
+.wo-avail-ok { background: #dcfce7; color: #15803d; }
+.wo-return { font-size: 0.75rem; color: #d97706; font-weight: 600; }
+.wo-return-overdue { color: #dc2626; }
+
+.wo-description { font-size: 0.9rem; font-weight: 600; color: #111827; }
+.wo-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wo-sched-badge { font-size: 0.78rem; font-weight: 600; padding: 2px 9px; border-radius: 6px; }
+.wo-sched-missed { background: #fef2f2; color: #dc2626; }
+.wo-sched-ok     { background: #f0fdf4; color: #15803d; }
+.wo-sched-none   { background: #f3f4f6; color: #6b7280; }
+.wo-added { font-size: 0.75rem; color: #9ca3af; margin-left: auto; }
+
+.wo-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.wo-btn-schedule { background: #eff6ff; color: #1e40af; border: 1.5px solid #bfdbfe; font-size: 0.8rem; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.wo-btn-schedule:hover { background: #dbeafe; }
+.wo-btn-resolve  { background: #f0fdf4; color: #15803d; border: 1.5px solid #86efac; font-size: 0.8rem; padding: 4px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.wo-btn-resolve:hover { background: #dcfce7; }
+.wo-btn-edit     { font-size: 0.8rem; padding: 4px 10px; }
+.wo-avail-hint   { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 12px; font-size: 0.83rem; color: #374151; }
+.wo-pri-opt input { display: none; }
+.wo-pri-opt input:checked + span { box-shadow: 0 0 0 2px currentColor; }
 .mbl-location-card {
   border: 1.5px solid #e5e7eb;
   border-radius: 12px;

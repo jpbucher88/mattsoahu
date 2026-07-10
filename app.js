@@ -2615,6 +2615,10 @@ async function openVehiclePage(vid) {
   const queueMaintBtn = $('btn-queue-maintenance');
   if (queueMaintBtn) queueMaintBtn.style.display = '';
 
+  // Show Log Issue button
+  const logIssueBtn = $('btn-log-issue');
+  if (logIssueBtn) logIssueBtn.style.display = '';
+
   // Show hero image if set
   const heroWrap = $('vehicle-hero-wrap');
   const heroImg = $('vehicle-hero-img');
@@ -7160,6 +7164,405 @@ window.switchMaintTab = function(tabId, btn) {
   if (tabId === 'mtab-tasks') window._refreshMaintTasks();
   if (tabId === 'mtab-return-queue') _loadReturnQueue();
   if (tabId === 'mtab-location') _loadMaintByLocation();
+  if (tabId === 'mtab-work-orders') _loadWorkOrders();
+};
+
+// ================================================================
+// WORK ORDERS — Record → React → Resolve
+// ================================================================
+const WO_PRIORITY = {
+  critical: { label: 'Critical',  color: '#dc2626', bg: '#fef2f2', icon: '🔴', desc: 'Do not put back in service' },
+  high:     { label: 'High',      color: '#ea580c', bg: '#fff7ed', icon: '🟠', desc: 'Resolve within 3 days' },
+  standard: { label: 'Standard',  color: '#d97706', bg: '#fffbeb', icon: '🟡', desc: 'Schedule within 2 weeks' },
+  monitor:  { label: 'Monitor',   color: '#16a34a', bg: '#f0fdf4', icon: '🟢', desc: 'Watch, low urgency' },
+};
+
+async function _loadWorkOrders() {
+  const container = $('work-orders-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  const today = todayDateString();
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('workOrder', '==', true)
+      .where('done', '==', false)
+      .orderBy('createdAt', 'desc')
+      .limit(300)
+      .get();
+
+    if (snap.empty) {
+      container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No open work orders! Use "+ Log Issue" to record a problem.</p></div>';
+      return;
+    }
+
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const missed     = items.filter(i => i.scheduledDate && i.scheduledDate < today);
+    const scheduled  = items.filter(i => i.scheduledDate && i.scheduledDate >= today);
+    const open       = items.filter(i => !i.scheduledDate);
+
+    function renderCard(item) {
+      const v = vehiclesCache.find(x => x.id === item.vehicleId);
+      const p = WO_PRIORITY[item.repairPriority] || WO_PRIORITY.standard;
+      const isOnTrip  = v && (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
+      const isAtShop  = v && v.tripStatus === 'repair-shop';
+      const needsClean = v && v.needsCleaning && !isOnTrip && !isAtShop;
+      const availBadge = !v ? ''
+        : isOnTrip  ? '<span class="wo-avail wo-trip">🚗 On Trip</span>'
+        : isAtShop  ? '<span class="wo-avail wo-shop">🔧 At Shop</span>'
+        : needsClean? '<span class="wo-avail wo-clean">🧹 Needs Cleaning</span>'
+        :             '<span class="wo-avail wo-avail-ok">✅ Available</span>';
+
+      let returnNote = '';
+      if (v && v.tripReturnDate) {
+        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+        const overdue = rd.getTime() < Date.now();
+        returnNote = `<span class="wo-return${overdue ? ' wo-return-overdue' : ''}">↩ Returns ${rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone: APP_TIMEZONE })}${overdue ? ' OVERDUE':''}</span>`;
+      }
+
+      let schedBadge = '';
+      if (item.scheduledDate) {
+        const isMissed = item.scheduledDate < today;
+        const sDate = new Date(item.scheduledDate + 'T12:00:00');
+        const sLabel = sDate.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+        if (isMissed) {
+          const daysAgo = Math.round((Date.now() - sDate.getTime()) / (1000*60*60*24));
+          schedBadge = `<span class="wo-sched-badge wo-sched-missed">⚠️ Missed — was ${sLabel} (${daysAgo}d ago)</span>`;
+        } else {
+          const daysUntil = Math.round((sDate.getTime() - Date.now()) / (1000*60*60*24));
+          schedBadge = `<span class="wo-sched-badge wo-sched-ok">📅 Scheduled ${sLabel} (in ${daysUntil}d)</span>`;
+        }
+      } else {
+        schedBadge = '<span class="wo-sched-badge wo-sched-none">📅 Not yet scheduled</span>';
+      }
+
+      const plate = v ? escapeHtml(v.plate) : 'Unknown';
+      const vInfo = v ? `${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}${v.mileage ? ' · ' + v.mileage.toLocaleString() + ' mi' : ''}` : '';
+      const addedBy = item.createdByName ? `Added by ${escapeHtml(item.createdByName)}` : '';
+      const addedDate = item.createdAt ? ' · ' + (item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt)).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
+
+      return `<div class="wo-card" style="border-color:${p.color}40;background:${p.bg};">
+        <div class="wo-card-top">
+          <div class="wo-priority-pill" style="background:${p.color};color:#fff;">${p.icon} ${p.label}</div>
+          <div class="wo-vehicle-info">
+            <span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${item.vehicleId}'),80)">${plate}</span>
+            <span class="wo-vmeta">${vInfo}</span>
+          </div>
+          <div class="wo-avail-group">${availBadge}${returnNote}</div>
+        </div>
+        <div class="wo-description">${escapeHtml(item.text)}</div>
+        <div class="wo-meta-row">${schedBadge}<span class="wo-added">${addedBy}${addedDate}</span></div>
+        <div class="wo-actions">
+          <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>
+          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text)}')">✅ Close Out</button>
+          <button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder('${item.id}')">✏️</button>
+        </div>
+      </div>`;
+    }
+
+    let html = '';
+    if (missed.length) {
+      missed.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
+      html += `<div class="wo-section-header wo-section-missed">⚠️ Missed Schedule <span class="wo-sec-count">${missed.length}</span></div>`;
+      html += missed.map(renderCard).join('');
+    }
+    if (open.length) {
+      open.sort((a,b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2) - (po[b.repairPriority]||2); });
+      html += `<div class="wo-section-header wo-section-open">📋 Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span></div>`;
+      html += open.map(renderCard).join('');
+    }
+    if (scheduled.length) {
+      scheduled.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
+      html += `<div class="wo-section-header wo-section-sched">📅 Scheduled <span class="wo-sec-count">${scheduled.length}</span></div>`;
+      html += scheduled.map(renderCard).join('');
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load work orders.</p>';
+    console.error('[WorkOrders]', e);
+  }
+}
+
+window.openNewWorkOrder = function(vehicleId) {
+  const existing = document.getElementById('wo-modal-overlay');
+  if (existing) existing.remove();
+  const v = vehicleId && vehiclesCache.find(x => x.id === vehicleId);
+  const overlay = document.createElement('div');
+  overlay.id = 'wo-modal-overlay';
+  overlay.className = 'modal-overlay';
+
+  // Vehicle availability hint
+  let availHint = '';
+  if (v) {
+    const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+    if (isOnTrip && v.tripReturnDate) {
+      const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+      const rdStr = rd.toISOString().slice(0,10);
+      const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
+      availHint = `<div class="wo-avail-hint">🚗 ${escapeHtml(v.plate)} is on a trip — returns <strong>${rdLabel}</strong>. Suggested schedule date set below.</div>`;
+      // Pre-fill suggested date: day after return
+      const sug = new Date(rd); sug.setDate(sug.getDate() + 1);
+      overlay._suggestedDate = sug.toISOString().slice(0,10);
+    } else {
+      availHint = `<div class="wo-avail-hint">✅ ${escapeHtml(v.plate)} is currently <strong>available</strong>.</div>`;
+    }
+  }
+
+  const vehicleOptions = vehiclesCache.map(x =>
+    `<option value="${x.id}"${x.id === vehicleId ? ' selected' : ''}>${escapeHtml(x.plate)} — ${escapeHtml(x.make)} ${escapeHtml(x.model)}</option>`
+  ).join('');
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header" style="background:#1e293b;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">🔧 Log Issue — Record</h3>
+        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-modal-overlay').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Vehicle</label>
+          <select id="wo-vehicle-sel" class="vehicle-location-select" style="width:100%;margin-top:4px;" onchange="window._woVehicleChange(this.value)">${vehicleOptions}</select>
+        </div>
+        <div id="wo-avail-hint-area">${availHint}</div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Problem / Issue Description</label>
+          <textarea id="wo-description" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Describe what's wrong, what was noticed, symptoms…"></textarea>
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Priority Level</label>
+          <div class="wo-priority-select" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
+            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="critical"> <span style="background:#fef2f2;color:#dc2626;border:1.5px solid #fca5a5;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🔴 Critical</span></label>
+            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="high"> <span style="background:#fff7ed;color:#ea580c;border:1.5px solid #fed7aa;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟠 High</span></label>
+            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="standard" checked> <span style="background:#fffbeb;color:#d97706;border:1.5px solid #fde68a;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟡 Standard</span></label>
+            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="monitor"> <span style="background:#f0fdf4;color:#16a34a;border:1.5px solid #86efac;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟢 Monitor</span></label>
+          </div>
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Schedule Date <span style="font-weight:400;color:#9ca3af;">(optional — when vehicle will be at shop)</span></label>
+          <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="${overlay._suggestedDate || ''}">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
+        <button class="btn btn-outline" onclick="document.getElementById('wo-modal-overlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="_saveWorkOrder()">🔧 Log Issue</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => { const t = document.getElementById('wo-description'); if (t) t.focus(); }, 80);
+};
+
+window._woVehicleChange = function(vid) {
+  const v = vehiclesCache.find(x => x.id === vid);
+  const hint = document.getElementById('wo-avail-hint-area');
+  const dateInput = document.getElementById('wo-schedule-date');
+  if (!hint || !v) return;
+  const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+  if (isOnTrip && v.tripReturnDate) {
+    const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+    const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
+    hint.innerHTML = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>.</div>`;
+    const sug = new Date(rd); sug.setDate(sug.getDate() + 1);
+    if (dateInput && !dateInput.value) dateInput.value = sug.toISOString().slice(0,10);
+  } else {
+    hint.innerHTML = `<div class="wo-avail-hint">✅ Currently <strong>available</strong>.</div>`;
+  }
+};
+
+window._saveWorkOrder = async function() {
+  const vid = document.getElementById('wo-vehicle-sel')?.value;
+  const text = (document.getElementById('wo-description')?.value || '').trim();
+  const priority = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
+  const scheduledDate = document.getElementById('wo-schedule-date')?.value || null;
+  if (!vid) { toast('Select a vehicle.', 'warning'); return; }
+  if (!text) { toast('Enter a description.', 'warning'); return; }
+  try {
+    const p = WO_PRIORITY[priority] || WO_PRIORITY.standard;
+    await db.collection('vehicleNotes').add({
+      vehicleId: vid,
+      text,
+      workOrder: true,
+      repairPriority: priority,
+      repairStatus: scheduledDate ? 'scheduled' : 'open',
+      scheduledDate: scheduledDate || null,
+      dueDate: scheduledDate || null,  // calendar integration
+      isFollowUp: true,
+      done: false,
+      urgent: priority === 'critical',
+      taskStatus: priority === 'critical' ? 'urgent' : 'scheduled',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser ? currentUser.uid : null,
+      createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+    });
+    document.getElementById('wo-modal-overlay')?.remove();
+    toast(`🔧 Issue logged (${p.label} priority)`, 'success');
+    loadDashboardFollowUps();
+    // Refresh work orders tab if open
+    if ($('work-orders-content')) _loadWorkOrders();
+  } catch(e) {
+    console.error('Save work order error:', e);
+    toast('Failed to save.', 'error');
+  }
+};
+
+window.openScheduleWorkOrder = function(noteId, currentDate) {
+  const existing = document.getElementById('wo-sched-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'wo-sched-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:400px;">
+      <div class="modal-header"><h3>📅 ${currentDate ? 'Reschedule' : 'Schedule'} Work Order</h3>
+        <button class="modal-close" onclick="document.getElementById('wo-sched-overlay').remove()">&times;</button></div>
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        ${currentDate ? `<div style="background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:6px;font-size:0.85rem;">Previously scheduled: <strong>${currentDate}</strong></div>` : ''}
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;">New Service Date</label>
+          <input type="date" id="wo-new-sched-date" value="${currentDate || ''}" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;">
+        </div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;">Notes <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+          <input type="text" id="wo-sched-notes" placeholder="Reason for reschedule, shop name, etc." style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
+        <button class="btn btn-outline" onclick="document.getElementById('wo-sched-overlay').remove()">Cancel</button>
+        <button class="btn btn-primary" onclick="_saveScheduleWorkOrder('${noteId}')">📅 Save Schedule</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+};
+
+window._saveScheduleWorkOrder = async function(noteId) {
+  const newDate = document.getElementById('wo-new-sched-date')?.value;
+  const notes   = document.getElementById('wo-sched-notes')?.value?.trim();
+  if (!newDate) { toast('Pick a date.', 'warning'); return; }
+  try {
+    const updateData = { scheduledDate: newDate, dueDate: newDate, repairStatus: 'scheduled' };
+    if (notes) updateData.scheduleNotes = notes;
+    await db.collection('vehicleNotes').doc(noteId).update(updateData);
+    document.getElementById('wo-sched-overlay')?.remove();
+    toast('📅 Schedule updated ✓', 'success');
+    _loadWorkOrders();
+    loadDashboardFollowUps();
+  } catch(e) {
+    toast('Failed to save.', 'error');
+  }
+};
+
+window.openCloseOutWorkOrder = function(noteId, vehicleId, issueText) {
+  const existing = document.getElementById('wo-closeout-overlay');
+  if (existing) existing.remove();
+  const today = new Date().toISOString().slice(0,10);
+  const overlay = document.createElement('div');
+  overlay.id = 'wo-closeout-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:480px;">
+      <div class="modal-header" style="background:#15803d;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">✅ Close Out — Resolve</h3>
+        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-closeout-overlay').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <div style="background:#f0fdf4;border:1px solid #86efac;padding:8px 12px;border-radius:6px;font-size:0.88rem;color:#166534;">${escapeHtml(issueText)}</div>
+        <div class="form-group">
+          <label style="font-size:0.82rem;font-weight:700;">What was done? <span style="color:#ef4444;">*</span></label>
+          <textarea id="wo-resolution" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Describe the repair/work completed…"></textarea>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div class="form-group" style="flex:1;min-width:140px;">
+            <label style="font-size:0.82rem;font-weight:700;">Date Completed</label>
+            <input type="date" id="wo-resolution-date" value="${today}" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+          </div>
+          <div class="form-group" style="flex:1;min-width:120px;">
+            <label style="font-size:0.82rem;font-weight:700;">Cost ($) <span style="font-weight:400;color:#9ca3af;">optional</span></label>
+            <input type="number" id="wo-resolution-cost" min="0" step="0.01" placeholder="0.00" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+          </div>
+        </div>
+        <p style="font-size:0.8rem;color:#6b7280;margin:0;">This will also create a maintenance record for this vehicle.</p>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
+        <button class="btn btn-outline" onclick="document.getElementById('wo-closeout-overlay').remove()">Cancel</button>
+        <button class="btn" style="background:#15803d;color:#fff;" onclick="_saveCloseOut('${noteId}','${vehicleId}','${escapeHtml(issueText)}')">✅ Resolve & Log</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => { document.getElementById('wo-resolution')?.focus(); }, 80);
+};
+
+window._saveCloseOut = async function(noteId, vehicleId, issueText) {
+  const resolution = (document.getElementById('wo-resolution')?.value || '').trim();
+  const resDate    = document.getElementById('wo-resolution-date')?.value || todayDateString();
+  const costRaw    = document.getElementById('wo-resolution-cost')?.value;
+  const cost       = costRaw ? parseFloat(costRaw) : null;
+  if (!resolution) { toast('Describe what was done.', 'warning'); return; }
+  try {
+    // Mark the work order as done
+    await db.collection('vehicleNotes').doc(noteId).update({
+      done: true,
+      repairStatus: 'resolved',
+      resolution,
+      resolutionDate: resDate,
+      resolutionCost: cost,
+      resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    // Create a maintenance record
+    await db.collection('maintenance').add({
+      vehicleId,
+      serviceType: issueText.slice(0, 80),
+      date: resDate,
+      notes: resolution,
+      cost: cost,
+      loggedBy: currentUser ? currentUser.uid : null,
+      loggedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    document.getElementById('wo-closeout-overlay')?.remove();
+    toast('✅ Issue resolved and maintenance record created!', 'success');
+    _loadWorkOrders();
+    loadDashboardFollowUps();
+    // Refresh By Vehicle if open
+    if (_maintByVehicleScored) { _maintDashLoaded = false; }
+  } catch(e) {
+    console.error('Close out error:', e);
+    toast('Failed to save.', 'error');
+  }
+};
+
+window.openEditWorkOrder = async function(noteId) {
+  const doc = await db.collection('vehicleNotes').doc(noteId).get();
+  if (!doc.exists) return;
+  const d = doc.data();
+  // Re-use the new work order modal but pre-filled
+  openNewWorkOrder(d.vehicleId);
+  setTimeout(() => {
+    const descEl = document.getElementById('wo-description');
+    const schedEl = document.getElementById('wo-schedule-date');
+    const priEl = document.querySelector(`input[name="wo-priority"][value="${d.repairPriority || 'standard'}"]`);
+    if (descEl) descEl.value = d.text || '';
+    if (schedEl) schedEl.value = d.scheduledDate || '';
+    if (priEl) priEl.checked = true;
+    // Change the save button to update
+    const saveBtn = document.querySelector('#wo-modal-overlay .btn-primary');
+    if (saveBtn) { saveBtn.textContent = '💾 Update Issue'; saveBtn.onclick = async () => {
+      const text2 = document.getElementById('wo-description')?.value?.trim();
+      const pri2  = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
+      const sched2 = document.getElementById('wo-schedule-date')?.value || null;
+      if (!text2) { toast('Enter a description.', 'warning'); return; }
+      await db.collection('vehicleNotes').doc(noteId).update({
+        text: text2, repairPriority: pri2, scheduledDate: sched2, dueDate: sched2,
+        repairStatus: sched2 ? 'scheduled' : 'open', urgent: pri2 === 'critical',
+      });
+      document.getElementById('wo-modal-overlay')?.remove();
+      toast('Issue updated ✓', 'success');
+      _loadWorkOrders();
+    }; }
+    const headerEl = document.querySelector('#wo-modal-overlay h3');
+    if (headerEl) headerEl.textContent = '✏️ Edit Issue';
+  }, 100);
 };
 
 // ================================================================

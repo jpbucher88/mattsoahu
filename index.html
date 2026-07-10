@@ -366,6 +366,7 @@
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
           <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>
           <button id="btn-queue-maintenance" class="btn btn-sm btn-outline" onclick="_openReturnQueueAdd(selectedVehicle && selectedVehicle.id)" title="Queue maintenance for when this vehicle returns" style="display:none;">🔁 Queue Maintenance</button>
+          <button id="btn-log-issue" class="btn btn-sm btn-outline" onclick="openNewWorkOrder(selectedVehicle && selectedVehicle.id)" title="Log a repair issue or problem" style="display:none;">🔧 Log Issue</button>
 
           <!-- Ownership row (admin/manager only) -->
           <div id="vehicle-ownership-row" class="loc-field" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid #e5e7eb;">
@@ -1656,6 +1657,7 @@
         <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
         <button class="maint-tab-btn" data-mtab="mtab-tasks" onclick="switchMaintTab('mtab-tasks',this)">📌 Open Tasks</button>
         <button class="maint-tab-btn" data-mtab="mtab-return-queue" onclick="switchMaintTab('mtab-return-queue',this)">🔁 Return Queue</button>
+        <button class="maint-tab-btn" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🔧 Work Orders</button>
       </div>
       <div class="maint-dash-body">
 
@@ -1684,7 +1686,17 @@
           <div id="maint-tasks-content"><p class="hint" style="padding:16px;text-align:center;">Click Refresh to load open maintenance tasks.</p></div>
         </div>
 
-        <!-- ===== Return Queue Tab ===== -->
+        <!-- ===== Work Orders Tab ===== -->
+        <div id="mtab-work-orders" class="maint-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Record → React → Resolve. Track every vehicle issue through to close-out.</p>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-sm btn-primary" onclick="openNewWorkOrder()">+ Log Issue</button>
+              <button class="btn btn-sm btn-outline" onclick="_loadWorkOrders()">↻ Refresh</button>
+            </div>
+          </div>
+          <div id="work-orders-content"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
         <div id="mtab-return-queue" class="maint-tab-content" style="display:none;">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
             <p style="margin:0;font-size:0.85rem;color:#6b7280;">Maintenance queued for when vehicles return from trips.</p>
@@ -2041,6 +2053,10 @@
         <button class="fab-action-btn" onclick="closeFabMenu(); openFabAddTask();">
           <span class="fab-action-icon">➕</span>
           <span class="fab-action-label">Add Task</span>
+        </button>
+        <button class="fab-action-btn" onclick="closeFabMenu(); openNewWorkOrder();">
+          <span class="fab-action-icon">🔧</span>
+          <span class="fab-action-label">Log Issue</span>
         </button>
         <button class="fab-action-btn" onclick="closeFabMenu(); openTaskPanel(); setTimeout(()=>switchTaskTab('urgent'),100);">
           <span class="fab-action-icon">🚨</span>
