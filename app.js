@@ -43,8 +43,6 @@ function fmtTcTime(date, tz) {
 }
 let currentUser = null;
 let currentUserRole = null;
-let _isRealAdmin = false;  // true only when Firestore role = admin (never changes during preview)
-let _previewingAs = null; // role being previewed, null when in real mode
 let currentUserTimeclockAccess = false;
 let currentUserCanViewAllTimeclocks = false;
 let tcViewingUid = null;   // null = own timeclock
@@ -1013,7 +1011,6 @@ auth.onAuthStateChanged(async (user) => {
       }
       const userData = userDoc.data();
       currentUserRole = userData.role || 'user';
-      _isRealAdmin = currentUserRole === 'admin';
       currentUserTimeclockAccess = currentUserRole === 'admin' || userData.timeclockAccess === true;
       currentUserCanViewAllTimeclocks = currentUserRole === 'admin' || userData.canViewAllTimeclocks === true;
 
@@ -1034,9 +1031,6 @@ auth.onAuthStateChanged(async (user) => {
         if (badge) badge.title = 'Browse Mode — view only';
       }
       $('btn-admin').style.display = currentUserRole === 'admin' ? '' : 'none';
-
-      // Build role preview widget for real admins
-      if (_isRealAdmin) _buildPreviewWidget();
 
       const uName = (userData.displayName || '').toLowerCase();
 
@@ -1113,13 +1107,6 @@ auth.onAuthStateChanged(async (user) => {
   } else {
     currentUser = null;
     currentUserRole = null;
-    _isRealAdmin = false;
-    _previewingAs = null;
-    // Remove preview widget on logout
-    const rpw = document.getElementById('role-preview-widget');
-    const rpb = document.getElementById('role-preview-banner');
-    if (rpw) rpw.remove();
-    if (rpb) rpb.remove();
     currentUserTimeclockAccess = false;
     if (mailUnsubscribe) { mailUnsubscribe(); mailUnsubscribe = null; }
     if (incidentUnsubscribe) { incidentUnsubscribe(); incidentUnsubscribe = null; }
@@ -1661,10 +1648,10 @@ function renderLocationsWidget() {
 
   // ── Per-location combined sections ──────────────────────────────
   for (const loc of allLocations) {
-    // needsCleaning vehicles still need photos — show them in photos group too
+    // needsCleaning vehicles already shown in cleaning section — exclude from photos/ready groups
     const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && !v.photoExcluded && v.homeLocation === loc);
-    const photosOnly = vehiclesCache.filter(v => isAtHome(v) && needsPhotosCheck(v) && v.homeLocation === loc);
-    const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !needsPhotosCheck(v) && v.homeLocation === loc);
+    const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && !v.photoExcluded && v.homeLocation === loc);
+    const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !needsPhotosCheck(v) && v.homeLocation === loc);
     const overdueHere = [...overdueTrip, ...overdueRepair].filter(v => (v.homeLocation || '') === loc);
     const total = cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length;
     if (total === 0) continue;
@@ -1686,11 +1673,12 @@ function renderLocationsWidget() {
         const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
         const returnLabel = rd ? `<span class="trip-return-label trip-overdue">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })} OVERDUE</span>` : '';
         const returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
+        const notReturnedBtn = `<button class="btn btn-sm btn-not-returned" onclick="event.stopPropagation(); flagVehicleNotReturned('${v.id}')" title="Flag as not returned — alerts management">🚨 Not Returned</button>`;
         html += `<div class="trip-item">
           <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
           <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
           ${returnLabel}
-          ${returnBtn}
+          <div class="overdue-action-btns">${notReturnedBtn}${returnBtn}</div>
         </div>`;
       }
       html += '</div>';
@@ -1863,7 +1851,10 @@ function renderLocationsWidget() {
         <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span>
         <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
         ${returnLabel}
-        <button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>
+        <div class="overdue-action-btns">
+          <button class="btn btn-sm btn-not-returned" onclick="event.stopPropagation(); flagVehicleNotReturned('${v.id}')" title="Flag as not returned">🚨 Not Returned</button>
+          <button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>
+        </div>
       </div>`;
     }
     html += '</div></div>';
@@ -5282,9 +5273,39 @@ window.vehicleReturned = async function(vehicleId) {
   }
 };
 
+// Flag a vehicle as not returned — creates urgent management task
+window.flagVehicleNotReturned = async function(vehicleId) {
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  if (!v) return;
+  const plate = v.plate || vehicleId;
+  const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
+  const dueStr = rd ? rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : 'unknown time';
+  const ok = await confirm('Flag as Not Returned', `Flag ${plate} as NOT returned? This will create an urgent management alert. Due back: ${dueStr}.`);
+  if (!ok) return;
+  try {
+    await db.collection('vehicleNotes').add({
+      vehicleId,
+      text: `🚨 ${plate} has NOT been returned — was due back ${dueStr}. Driver contact required.`,
+      isFollowUp: true,
+      done: false,
+      urgent: true,
+      taskStatus: 'urgent',
+      autoCreated: true,
+      sourceType: 'not_returned',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser ? currentUser.uid : null,
+      createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'System',
+    });
+    toast(`🚨 ${plate} flagged as not returned — management alerted.`, 'error');
+    loadDashboardFollowUps();
+  } catch (err) {
+    console.error('Flag not returned error:', err);
+    toast('Failed to create alert.', 'error');
+  }
+};
+
 // Locations button — scroll to Locations widget
-$('btn-locations').addEventListener('click', () => {
-  const widget = $('locations-widget');
+$('btn-locations').addEventListener('click', () => {  const widget = $('locations-widget');
   if (widget) {
     widget.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
@@ -15112,7 +15133,7 @@ window.closeFinance = function() {
 };
 
 // ================================================================
-// ROLE PREVIEW (admin only — lets Matthew see the app as other roles)
+// (role preview removed)
 // ================================================================
 function _applyRoleToNav() {
   // viewer-mode body class
