@@ -74,10 +74,6 @@
       <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
         <span class="task-alert-icon">🔧</span>
       </button>
-      <button id="btn-bills" class="task-alert-btn" title="Bills &amp; Payments" onclick="openFinance();setTimeout(()=>switchFinanceTab('bills'),50)" style="display:none;">
-        <span class="task-alert-icon">💳</span>
-        <span id="bills-due-badge" class="task-alert-count count-zero">0</span>
-      </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
       </button>
@@ -1656,6 +1652,7 @@
       <div class="maint-dash-tabs">
         <button class="maint-tab-btn active" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">📊 Overview</button>
         <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 By Vehicle</button>
+        <button class="maint-tab-btn" data-mtab="mtab-location" onclick="switchMaintTab('mtab-location',this)">📍 By Location</button>
         <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
         <button class="maint-tab-btn" data-mtab="mtab-tasks" onclick="switchMaintTab('mtab-tasks',this)">📌 Open Tasks</button>
         <button class="maint-tab-btn" data-mtab="mtab-return-queue" onclick="switchMaintTab('mtab-return-queue',this)">🔁 Return Queue</button>
@@ -1672,6 +1669,11 @@
         <!-- ===== Fleet Status Tab ===== -->
         <div id="mtab-fleet" class="maint-tab-content" style="display:none;">
           <div id="maint-fleet-grid" class="maint-fleet-grid"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
+
+        <!-- ===== By Location Tab ===== -->
+        <div id="mtab-location" class="maint-tab-content" style="display:none;">
+          <div id="maint-location-grid"></div>
         </div>
 
         <!-- ===== Open Tasks Tab ===== -->
@@ -1779,7 +1781,7 @@
         <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
         <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
         <button class="finance-tab" id="ftab-ownercut" onclick="switchFinanceTab('ownercut')">👥 Owner Cut</button>
-        <button class="finance-tab" id="ftab-bills" onclick="switchFinanceTab('bills')">💳 Bills</button>
+        <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
       </div>
       <div class="finance-body">
 
@@ -1935,7 +1937,7 @@
           <div id="finance-ownercut-body"><p class="hint" style="padding:24px;text-align:center;">Select a month and click Load.</p></div>
         </div>
 
-        <!-- ===== BILLS TAB ===== -->
+        <!-- Bills tab hidden — will be rebuilt later -->
         <div id="finance-tab-bills" class="finance-tab-content" style="display:none;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
             <div class="bills-filter-tabs" style="border:none;padding:0;">

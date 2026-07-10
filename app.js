@@ -1060,10 +1060,6 @@ auth.onAuthStateChanged(async (user) => {
         if (prodBtn) prodBtn.style.display = '';
         const maintDashBtn = $('btn-maint-dash');
         if (maintDashBtn) maintDashBtn.style.display = '';
-        const billsBtn = $('btn-bills');
-        if (billsBtn) billsBtn.style.display = '';
-        // Pre-load bills badge on login
-        setTimeout(_updateBillsBadgeFromFirestore, 2000);
       } else if (currentUserRole === 'manager') {
         // Managers get operational tools but not Finance or Bills
         const prodBtn = $('productivity-open-btn');
@@ -7035,6 +7031,235 @@ window.switchMaintTab = function(tabId, btn) {
   _origSwitchMaintTab(tabId, btn);
   if (tabId === 'mtab-tasks') window._refreshMaintTasks();
   if (tabId === 'mtab-return-queue') _loadReturnQueue();
+  if (tabId === 'mtab-location') _loadMaintByLocation();
+};
+
+// ================================================================
+// BY LOCATION — maintenance schedule grouped by home location
+// ================================================================
+async function _loadMaintByLocation() {
+  const container = $('maint-location-grid');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+
+  const today = todayDateString();
+  const d30 = new Date(); d30.setDate(d30.getDate() + 30);
+  const d30str = d30.toISOString().slice(0, 10);
+
+  try {
+    const [maintSnap, dueSnap, rqSnap] = await Promise.all([
+      db.collection('maintenance').orderBy('date', 'desc').limit(500).get(),
+      db.collection('maintenance').where('nextDueDate', '<=', d30str).orderBy('nextDueDate', 'asc').get(),
+      db.collection('vehicleNotes').where('returnQueue', '==', true).where('done', '==', false).get(),
+    ]);
+
+    const lastOil = {};
+    const lastService = {};
+    maintSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.vehicleId) return;
+      if (!lastService[d.vehicleId]) lastService[d.vehicleId] = d;
+      if (!lastOil[d.vehicleId] && d.serviceType && d.serviceType.toLowerCase().includes('oil')) lastOil[d.vehicleId] = d;
+    });
+
+    const vehicleAlerts = {};
+    const seen = new Set();
+    dueSnap.forEach(doc => {
+      const d = doc.data();
+      if (!d.nextDueDate || !d.vehicleId) return;
+      const key = `${d.vehicleId}_${d.serviceType}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      if (!vehicleAlerts[d.vehicleId]) vehicleAlerts[d.vehicleId] = { overdue: [], upcoming: [] };
+      if (d.nextDueDate <= today) vehicleAlerts[d.vehicleId].overdue.push(d.serviceType);
+      else vehicleAlerts[d.vehicleId].upcoming.push(d.serviceType);
+    });
+
+    const rqByVehicle = {};
+    rqSnap.forEach(doc => {
+      const d = { id: doc.id, ...doc.data() };
+      if (!rqByVehicle[d.vehicleId]) rqByVehicle[d.vehicleId] = [];
+      rqByVehicle[d.vehicleId].push(d);
+    });
+
+    // Score a vehicle and extract maintenance flags
+    function scoreVehicle(v) {
+      const oil = lastOil[v.id];
+      const alerts = vehicleAlerts[v.id] || { overdue: [], upcoming: [] };
+      const rq = rqByVehicle[v.id] || [];
+      const flags = [];
+      let priority = 0;
+
+      if (!oil) {
+        priority = 2;
+        flags.push({ level: 'critical', msg: '⚠️ No oil change on record' });
+      } else {
+        const mo = Math.floor((Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30));
+        const mStr = oil.mileage ? ` · ${oil.mileage.toLocaleString()} mi` : '';
+        if (mo > 6)       { priority = 2; flags.push({ level: 'critical', msg: `⛽ Oil overdue — ${oil.date}${mStr} (${mo}mo ago)` }); }
+        else if (mo > 3)  { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `⛽ Oil due soon — ${oil.date}${mStr} (${mo}mo ago)` }); }
+      }
+      if (alerts.overdue.length)  { priority = 2; flags.push({ level: 'critical', msg: `🔴 Overdue: ${alerts.overdue.slice(0,2).join(', ')}` }); }
+      if (alerts.upcoming.length) { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `🟡 Due soon: ${alerts.upcoming.slice(0,2).join(', ')}` }); }
+      if (rq.length)              flags.push({ level: 'info', msg: `🔁 ${rq.length} queued for return` });
+      return { priority, flags, oil, rq };
+    }
+
+    // Group vehicles by homeLocation
+    const locations = ['HNL', '1585 Kapiolani', '94-530 Lumiauau'];
+    const usedIds = new Set();
+    vehiclesCache.forEach(v => { if (v.homeLocation && !locations.includes(v.homeLocation)) locations.push(v.homeLocation); });
+
+    let html = '';
+
+    for (const loc of locations) {
+      const locVehicles = vehiclesCache.filter(v => v.homeLocation === loc && !v.excluded);
+      if (!locVehicles.length) continue;
+      usedIds.add(loc);
+
+      const isOnTrip  = v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+      const isAtShop  = v => v.tripStatus === 'repair-shop';
+      const isAtHome  = v => !isOnTrip(v) && !isAtShop(v);
+
+      const availableNow = locVehicles.filter(isAtHome);
+      const onTripVehicles = locVehicles.filter(isOnTrip);
+      const atShopVehicles = locVehicles.filter(isAtShop);
+
+      // Group on-trip by return date
+      const byReturnDate = {};
+      onTripVehicles.forEach(v => {
+        const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
+        const key = rd ? rd.toISOString().slice(0, 10) : 'unknown';
+        if (!byReturnDate[key]) byReturnDate[key] = { date: rd, vehicles: [] };
+        byReturnDate[key].vehicles.push(v);
+      });
+      const sortedDates = Object.entries(byReturnDate).sort(([a], [b]) => a.localeCompare(b));
+
+      const critCount = locVehicles.filter(v => scoreVehicle(v).priority === 2).length;
+      const warnCount = locVehicles.filter(v => scoreVehicle(v).priority === 1).length;
+
+      html += `<div class="mbl-location-card">
+        <div class="mbl-loc-header">
+          <div class="mbl-loc-title">
+            <span class="mbl-loc-name">🏠 ${escapeHtml(loc)}</span>
+            <span class="mbl-loc-stats">${locVehicles.length} vehicle${locVehicles.length !== 1 ? 's' : ''}
+              ${critCount ? `<span class="mbl-stat-chip mbl-crit">${critCount} critical</span>` : ''}
+              ${warnCount ? `<span class="mbl-stat-chip mbl-warn">${warnCount} attention</span>` : ''}
+            </span>
+          </div>
+          <div class="mbl-loc-actions">
+            <button class="btn btn-sm btn-outline" onclick="_copyLocationReport('${escapeHtml(loc)}')">📋 Copy Report</button>
+            <button class="btn btn-sm btn-outline" onclick="_emailLocationReport('${escapeHtml(loc)}')">📧 Email</button>
+          </div>
+        </div>`;
+
+      function renderVehicleRow(v, returnLabel) {
+        const { priority, flags } = scoreVehicle(v);
+        const icon = priority === 2 ? '🔴' : priority === 1 ? '🟡' : '🟢';
+        const statusBadge = isOnTrip(v) ? '<span class="mv-status mv-trip">🚗 On Trip</span>'
+          : isAtShop(v) ? '<span class="mv-status mv-shop">🔧 At Shop</span>'
+          : v.needsCleaning ? '<span class="mv-status mv-cleaning">🧹 Needs Cleaning</span>'
+          : '<span class="mv-status mv-avail">✅ Available</span>';
+        const mileStr = v.mileage ? `${v.mileage.toLocaleString()} mi` : '';
+        const flagsHtml = flags.map(f => `<div class="mv-flag mv-flag-${f.level}">${f.msg}</div>`).join('');
+        return `<div class="mbl-vehicle-row" onclick="closeMaintenanceDash();setTimeout(()=>{openVehiclePage('${v.id}');setTimeout(()=>{const ms=$('maintenance-section');if(ms)ms.scrollIntoView({behavior:'smooth'})},400)},80)">
+          <div class="mbl-row-top">
+            <span class="mbl-row-icon">${icon}</span>
+            <span class="mv-plate" style="font-size:0.9rem;">${escapeHtml(v.plate)}</span>
+            <span class="mbl-row-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}${mileStr ? ' · ' + mileStr : ''}</span>
+            <div class="mbl-row-status">${statusBadge}${returnLabel || ''}</div>
+          </div>
+          ${flagsHtml ? `<div class="mv-flags" style="padding-left:26px;">${flagsHtml}</div>` : ''}
+        </div>`;
+      }
+
+      if (availableNow.length > 0) {
+        html += `<div class="mbl-section-header">✅ Available Now <span class="mbl-sec-count">${availableNow.length}</span></div>`;
+        html += availableNow.sort((a, b) => scoreVehicle(b).priority - scoreVehicle(a).priority).map(v => renderVehicleRow(v)).join('');
+      }
+
+      for (const [key, { date, vehicles }] of sortedDates) {
+        const overdue = date && date.getTime() < Date.now();
+        const dateLabel = date ? date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE }) : 'Unknown Return';
+        html += `<div class="mbl-section-header${overdue ? ' mbl-section-overdue' : ''}">↩ Returns ${dateLabel}${overdue ? ' — OVERDUE' : ''} <span class="mbl-sec-count">${vehicles.length}</span></div>`;
+        html += vehicles.sort((a, b) => scoreVehicle(b).priority - scoreVehicle(a).priority).map(v => renderVehicleRow(v)).join('');
+      }
+
+      if (atShopVehicles.length > 0) {
+        html += `<div class="mbl-section-header">🔧 At Repair Shop <span class="mbl-sec-count">${atShopVehicles.length}</span></div>`;
+        html += atShopVehicles.map(v => renderVehicleRow(v)).join('');
+      }
+
+      html += '</div>';
+    }
+
+    container.innerHTML = html || '<div class="maint-tab-empty"><span>🏠</span><p>No vehicles with a home location set.</p></div>';
+  } catch (e) {
+    container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Error loading. Check console.</p>';
+    console.error('[MaintByLocation]', e);
+  }
+}
+
+function _buildLocationReportText(loc) {
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: APP_TIMEZONE });
+  const locVehicles = vehiclesCache.filter(v => v.homeLocation === loc && !v.excluded);
+  if (!locVehicles.length) return `No vehicles at ${loc}.`;
+
+  const isOnTrip = v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+  const isAtShop = v => v.tripStatus === 'repair-shop';
+  const isAtHome = v => !isOnTrip(v) && !isAtShop(v);
+
+  function vehicleSummary(v) {
+    const lines = [`  • ${v.plate} | ${v.make} ${v.model}${v.color ? ' · ' + v.color : ''}${v.mileage ? ' | ' + v.mileage.toLocaleString() + ' mi' : ''}`];
+    // Checking maintenance is approximate here since we don't re-query — use cached data
+    if (v.mileage) lines.push(`    Mileage: ${v.mileage.toLocaleString()} mi`);
+    return lines.join('\n');
+  }
+
+  const available = locVehicles.filter(isAtHome);
+  const onTrip    = locVehicles.filter(isOnTrip).sort((a, b) => {
+    const aT = a.tripReturnDate ? (a.tripReturnDate.toDate ? a.tripReturnDate.toDate().getTime() : new Date(a.tripReturnDate).getTime()) : Infinity;
+    const bT = b.tripReturnDate ? (b.tripReturnDate.toDate ? b.tripReturnDate.toDate().getTime() : new Date(b.tripReturnDate).getTime()) : Infinity;
+    return aT - bT;
+  });
+  const atShop    = locVehicles.filter(isAtShop);
+
+  let report = `MAINTENANCE REPORT — ${loc.toUpperCase()}\nGenerated: ${today}\n${'─'.repeat(40)}\n\n`;
+
+  if (available.length) {
+    report += `AVAILABLE NOW (${available.length} vehicle${available.length !== 1 ? 's' : ''}):\n`;
+    report += available.map(vehicleSummary).join('\n') + '\n\n';
+  }
+  if (onTrip.length) {
+    report += `RETURNING FROM TRIPS:\n`;
+    onTrip.forEach(v => {
+      const rd = v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate)) : null;
+      const dateStr = rd ? rd.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: APP_TIMEZONE }) : 'Unknown date';
+      report += `  ↩ ${dateStr}: ${v.plate} | ${v.make} ${v.model}${v.color ? ' · ' + v.color : ''}${v.mileage ? ' | ' + v.mileage.toLocaleString() + ' mi' : ''}\n`;
+    });
+    report += '\n';
+  }
+  if (atShop.length) {
+    report += `AT REPAIR SHOP:\n`;
+    report += atShop.map(v => `  🔧 ${v.plate} | ${v.make} ${v.model}${v.repairShopName ? ' @ ' + v.repairShopName : ''}`).join('\n') + '\n\n';
+  }
+
+  report += `\nPlease contact us to schedule service.\nAloha Fleet Management`;
+  return report;
+}
+
+window._copyLocationReport = function(loc) {
+  const text = _buildLocationReportText(loc);
+  navigator.clipboard.writeText(text).then(() => toast('📋 Report copied to clipboard!', 'success')).catch(() => {
+    prompt('Copy this report:', text);
+  });
+};
+
+window._emailLocationReport = function(loc) {
+  const text = _buildLocationReportText(loc);
+  const subject = encodeURIComponent(`Maintenance Schedule — ${loc}`);
+  const body = encodeURIComponent(text);
+  window.open(`mailto:?subject=${subject}&body=${body}`, '_blank');
 };
 
 // ================================================================
@@ -15448,18 +15673,15 @@ function _applyRoleToNav() {
   // Nav buttons
   const finBtn    = $('btn-finance');
   const maintBtn  = $('btn-maint-dash');
-  const billsBtn  = $('btn-bills');
   const prodBtn   = $('productivity-open-btn');
 
   if (currentUserRole === 'admin') {
     if (finBtn)   { finBtn.style.display = '';     finBtn.title = 'Finance'; }
     if (maintBtn)  maintBtn.style.display = '';
-    if (billsBtn)  billsBtn.style.display = '';
     if (prodBtn)   prodBtn.style.display  = '';
   } else if (currentUserRole === 'manager') {
     if (finBtn)   { finBtn.style.display = '';     finBtn.title = 'Add Expense'; }
     if (maintBtn)  maintBtn.style.display = '';
-    if (billsBtn)  billsBtn.style.display = 'none';
     if (prodBtn)   prodBtn.style.display  = '';
   } else {
     if (finBtn)   { finBtn.style.display = currentUserRole === 'viewer' ? 'none' : ''; finBtn.title = 'Add Expense'; }
