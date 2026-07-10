@@ -11065,6 +11065,11 @@ function renderUrgentBanner(items) {
       ? `<button class="btn btn-sm btn-outline urgent-inc-btn" onclick="event.stopPropagation(); openIncidentEditFromDashboard('${item.incidentDocId}', false)" title="View incident report">📋 View Incident</button>`
       : '';
 
+    // Maintenance Concern shortcut — admin/manager can route any task to work orders
+    const maintRouteBtn = (currentUserRole === 'admin' || currentUserRole === 'manager') && !item.workOrder
+      ? `<button class="btn btn-sm urgent-maint-btn" onclick="event.stopPropagation(); convertTaskToWorkOrder('${item.id}','${item.collection}','${item.vehicleId || ''}','${escapeHtml(item.text).replace(/'/g, '&#39;')}')" title="Send to Maintenance">🔧 Maintenance</button>`
+      : '';
+
     html += `
       <div class="urgent-banner-item" style="cursor:pointer;"${itemAttrs}>
         <div class="urgent-banner-info">
@@ -11075,6 +11080,7 @@ function renderUrgentBanner(items) {
         <div class="urgent-banner-actions">
           ${incidentBtnHTML}
           ${reassignBtn}
+          ${maintRouteBtn}
           ${doneBtn}
           ${editBtn}
           ${deleteBtn}
@@ -11088,6 +11094,38 @@ function renderUrgentBanner(items) {
     el.addEventListener('click', () => openNoteEditModal(el.dataset.id, el.dataset.col));
   });
 }
+
+// Convert an existing task to a Maintenance Work Order (admin/manager shortcut)
+window.convertTaskToWorkOrder = function(noteId, collection, vehicleId, issueText) {
+  // Pre-open the work order modal with the task info filled in
+  openNewWorkOrder(vehicleId || null);
+  setTimeout(() => {
+    const descEl = document.getElementById('wo-description');
+    if (descEl) descEl.value = issueText;
+    // Update header
+    const hdr = document.querySelector('#wo-modal-overlay h3');
+    if (hdr) hdr.textContent = '🔧 Convert to Maintenance Concern';
+    // Override save to also mark original task done
+    const saveBtn = document.querySelector('#wo-modal-overlay .btn-primary');
+    if (saveBtn) {
+      saveBtn.textContent = '🔧 Send to Maintenance';
+      const origOnclick = saveBtn.onclick;
+      saveBtn.onclick = async function() {
+        await window._saveWorkOrder();
+        // Mark the original task as done if it was saved successfully
+        try {
+          await db.collection(collection).doc(noteId).update({
+            done: true,
+            taskStatus: 'resolved',
+            completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            completedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'System',
+            completionNote: 'Rerouted to Maintenance Work Orders',
+          });
+        } catch(e) { /* non-critical */ }
+      };
+    }
+  }, 120);
+};
 
 // ================================================================
 // TASK CALENDAR

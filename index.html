@@ -1647,6 +1647,7 @@
         <div style="display:flex;align-items:center;gap:10px;">
           <span style="font-size:1.5rem;">🔧</span>
           <h3 style="margin:0;font-size:1.1rem;font-weight:700;">Maintenance Dashboard</h3>
+          <button class="btn btn-sm btn-primary" style="margin-left:8px;font-size:0.8rem;padding:4px 12px;" onclick="openNewWorkOrder()">+ Log Concern</button>
         </div>
         <button class="maint-dash-close" onclick="closeMaintenanceDash()">&times;</button>
       </div>
@@ -2054,9 +2055,9 @@
           <span class="fab-action-icon">➕</span>
           <span class="fab-action-label">Add Task</span>
         </button>
-        <button class="fab-action-btn" onclick="closeFabMenu(); openNewWorkOrder();">
+        <button class="fab-action-btn" onclick="closeFabMenu(); setTimeout(function(){ openNewWorkOrder(); }, 100);">
           <span class="fab-action-icon">🔧</span>
-          <span class="fab-action-label">Log Issue</span>
+          <span class="fab-action-label">Maintenance Concern</span>
         </button>
         <button class="fab-action-btn" onclick="closeFabMenu(); openTaskPanel(); setTimeout(()=>switchTaskTab('urgent'),100);">
           <span class="fab-action-icon">🚨</span>

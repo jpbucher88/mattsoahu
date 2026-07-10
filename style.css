@@ -6618,6 +6618,19 @@ body {
 .wo-avail-hint   { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 6px; padding: 7px 12px; font-size: 0.83rem; color: #374151; }
 .wo-pri-opt input { display: none; }
 .wo-pri-opt input:checked + span { box-shadow: 0 0 0 2px currentColor; }
+
+/* Route-to-Maintenance button in urgent banner */
+.urgent-maint-btn {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1.5px solid #86efac;
+  border-radius: 6px;
+  padding: 3px 9px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
 .mbl-location-card {
   border: 1.5px solid #e5e7eb;
   border-radius: 12px;
