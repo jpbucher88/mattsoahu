@@ -6208,8 +6208,9 @@ async function loadAdminUsers() {
       const data = doc.data();
       const isSelf = doc.id === currentUser.uid;
       const roleBadgeClass = data.role === 'admin' ? '' : data.role === 'manager' ? 'badge-warning' : data.role === 'viewer' ? 'badge-info' : 'badge-muted';
-      const cycle = { viewer: 'user', user: 'manager', manager: 'admin', admin: 'viewer' };
-      const nextRole = cycle[data.role] || 'user';
+      const roleOptions = ['viewer', 'user', 'manager', 'admin'].map(r =>
+        `<option value="${r}" ${r === data.role ? 'selected' : ''}>${r.charAt(0).toUpperCase() + r.slice(1)}</option>`
+      ).join('');
       const item = document.createElement('div');
       item.className = 'data-list-item';
       item.innerHTML = `
@@ -6219,9 +6220,9 @@ async function loadAdminUsers() {
         </div>
         <div class="item-actions">
           ${!isSelf ? `
-            <button class="btn btn-sm btn-outline" onclick="toggleUserRole('${doc.id}', '${data.role}')">
-              Make ${nextRole.charAt(0).toUpperCase() + nextRole.slice(1)}
-            </button>
+            <select class="form-select" style="width:auto;font-size:0.85rem;padding:4px 8px;" onchange="changeUserRole('${doc.id}', this.value)" title="Change role">
+              ${roleOptions}
+            </select>
             <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
             <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">👁 View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
@@ -6236,21 +6237,26 @@ async function loadAdminUsers() {
   }
 }
 
-window.toggleUserRole = async function (uid, currentRole) {
-  if (currentUserRole !== 'admin') return;
-  const cycle = { viewer: 'user', user: 'manager', manager: 'admin', admin: 'viewer' };
-  const newRole = cycle[currentRole] || 'user';
+window.changeUserRole = async function (uid, newRole) {
+  if (currentUserRole !== 'admin') { loadAdminUsers(); return; }
   const ok = await confirm('Change Role', `Change this user's role to "${newRole}"?`);
-  if (!ok) return;
+  if (!ok) { loadAdminUsers(); return; }
 
   try {
     await db.collection('users').doc(uid).update({ role: newRole });
     toast('Role updated!', 'success');
     loadAdminUsers();
   } catch (err) {
-    console.error('Toggle role error:', err);
+    console.error('Change role error:', err);
     toast('Failed to update role.', 'error');
+    loadAdminUsers();
   }
+};
+
+// Keep legacy name in case anything else references it
+window.toggleUserRole = async function (uid, currentRole) {
+  const cycle = { viewer: 'user', user: 'manager', manager: 'admin', admin: 'viewer' };
+  await window.changeUserRole(uid, cycle[currentRole] || 'user');
 };
 
 window.toggleTimeclockAccess = async function(uid, currentAccess) {

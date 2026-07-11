@@ -22,6 +22,11 @@ service cloud.firestore {
       return isAuth() && getUserRole() == 'admin';
     }
 
+    // Helper: check if admin or manager
+    function isManager() {
+      return isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+    }
+
     // Helper: check if registered user (admin or user)
     function isRegistered() {
       return isAuth() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
@@ -33,10 +38,11 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
-    // Vehicles collection - registered users can read, admins can write
+    // Vehicles collection - registered users can read, managers/admins can update, admins can create/delete
     match /vehicles/{vehicleId} {
       allow read: if isRegistered();
-      allow create, update, delete: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isManager();
     }
 
     // Photos collection - registered users can create & read, admins can delete
