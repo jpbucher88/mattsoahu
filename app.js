@@ -7317,9 +7317,9 @@ async function _loadWorkOrders() {
 
     // Group: dropped off gets its own section; missed/open/scheduled as before
     const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
-    const missedList = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate < today);
-    const scheduled  = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate >= today);
-    const open       = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && !i.scheduledDate);
+    const missedList = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate < today);
+    const scheduled  = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate >= today);
+    const open       = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
@@ -7450,6 +7450,8 @@ async function _loadWorkOrders() {
         ? '<button class="btn btn-sm wo-btn-delete" onclick="window.deleteWorkOrder(\'' + item.id + '\')" title="Delete">🗑</button>'
         : '';
 
+      // "Complete My Task" button — shown to the assigned user
+      let myTaskAction = '';
       // CRM pipeline tracker (4-step)
       const stepState = (rs === 'open') ? 0
         : (rs === 'scheduled' || rs === 'deferred') ? 1
