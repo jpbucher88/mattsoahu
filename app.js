@@ -7294,12 +7294,13 @@ async function _loadWorkOrders() {
     });
 
     const WO_STATUS = {
-      open:        { label: 'Open',           icon: '⚪', cls: 'wo-st-open' },
-      scheduled:   { label: 'Scheduled',      icon: '📅', cls: 'wo-st-sched' },
-      dropped_off: { label: 'Dropped Off',    icon: '🔧', cls: 'wo-st-active' },
-      completed:   { label: 'Completed',      icon: '✅', cls: 'wo-st-done' },
-      no_fault:    { label: 'No Fault Found', icon: '🔍', cls: 'wo-st-nofault' },
-      deferred:    { label: 'Deferred',       icon: '📅', cls: 'wo-st-defer' },
+      open:           { label: 'Open',           icon: '⚪', cls: 'wo-st-open' },
+      scheduled:      { label: 'Scheduled',      icon: '📅', cls: 'wo-st-sched' },
+      dropped_off:    { label: 'At Shop',         icon: '🔧', cls: 'wo-st-active' },
+      awaiting_parts: { label: 'Awaiting Parts',  icon: '⏳', cls: 'wo-st-waiting' },
+      completed:      { label: 'Completed',       icon: '✅', cls: 'wo-st-done' },
+      no_fault:       { label: 'No Fault Found',  icon: '🔍', cls: 'wo-st-nofault' },
+      deferred:       { label: 'Deferred',        icon: '📅', cls: 'wo-st-defer' },
     };
 
     // Category breakdown counts (across ALL items, before filter)
@@ -7315,7 +7316,7 @@ async function _loadWorkOrders() {
       : items;
 
     // Group: dropped off gets its own section; missed/open/scheduled as before
-    const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off');
+    const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
     const missedList = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate < today);
     const scheduled  = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate >= today);
     const open       = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && !i.scheduledDate);
@@ -7361,13 +7362,19 @@ async function _loadWorkOrders() {
       let statusActions = '';
       if (rs === 'dropped_off') {
         statusActions = `
-          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Mark Completed</button>
-          <button class="btn btn-sm wo-btn-nofault" onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found — issue could not be reproduced.')">🔍 No Fault Found</button>
-          <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}')">📅 Defer / Reschedule</button>`;
+          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Completed</button>
+          <button class="btn btn-sm wo-btn-drop" style="background:#fef9c3;color:#854d0e;border-color:#fde68a;" onclick="window.updateWorkOrderStatus('${item.id}','awaiting_parts')" title="Parts not in stock — put on hold">⏳ Awaiting Parts</button>
+          <button class="btn btn-sm wo-btn-nofault" onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found — issue could not be reproduced.')">🔍 No Fault</button>
+          <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
+      } else if (rs === 'awaiting_parts') {
+        statusActions = `
+          <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Parts Arrived — Resume</button>
+          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Completed</button>
+          <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
       } else {
         statusActions = `
           <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
-          <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
+          <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
       }
 
       const plate = v ? escapeHtml(v.plate) : 'Unknown';
@@ -7443,13 +7450,37 @@ async function _loadWorkOrders() {
         ? '<button class="btn btn-sm wo-btn-delete" onclick="window.deleteWorkOrder(\'' + item.id + '\')" title="Delete">🗑</button>'
         : '';
 
-      // "Complete My Task" button — shown to the assigned user
-      let myTaskAction = '';
+      // CRM pipeline tracker (4-step)
+      const stepState = (rs === 'open') ? 0
+        : (rs === 'scheduled' || rs === 'deferred') ? 1
+        : (rs === 'dropped_off' || rs === 'awaiting_parts') ? 2
+        : 3;
+      const pipeSteps = ['📋 Logged', '📅 Scheduled', '🔧 At Shop', '✅ Done'];
+      let pipelineHtml = '<div class="wo-crm-pipeline">';
+      pipeSteps.forEach((lbl, i) => {
+        const isDone = i < stepState;
+        const isActive = i === stepState;
+        pipelineHtml += '<span class="wo-crm-step' + (isDone ? ' wo-crm-done' : isActive ? ' wo-crm-active' : '') + '">' + lbl + '</span>';
+        if (i < pipeSteps.length - 1) pipelineHtml += '<span class="wo-crm-arrow' + (isDone ? ' wo-crm-arr-done' : '') + '">›</span>';
+      });
+      if (rs === 'awaiting_parts') pipelineHtml += '<span class="wo-crm-sub">⏳ Awaiting Parts</span>';
+      pipelineHtml += '</div>';
+
+      // Supplier / shop info when scheduled
+      const supplierLine = item.assignedMechanic
+        ? '<div class="wo-supplier-line">🏪 <strong>' + (rs === 'dropped_off' || rs === 'awaiting_parts' ? 'At shop:' : 'Supplier:') + '</strong> ' + escapeHtml(item.assignedMechanic)
+          + (item.scheduleTime ? ' &nbsp;·&nbsp; 🕐 ' + escapeHtml(item.scheduleTime) : '')
+          + '</div>'
+        : '';
+      const instrLine = item.scheduleNotes
+        ? '<div class="wo-instr-line">📝 ' + escapeHtml(item.scheduleNotes) + '</div>'
+        : '';
       if (isMyTask) {
         myTaskAction = '<button class="btn btn-sm wo-btn-resolve wo-btn-my-task" onclick="openCloseOutWorkOrder(\'' + item.id + '\',\'' + item.vehicleId + '\',\'' + escapeHtml(item.text).replace(/'/g, '&#39;') + '\')">✅ Complete My Task</button>';
       }
 
       return '<div class="wo-card' + (isMyTask ? ' wo-card-my-task' : '') + '" style="border-color:' + p.color + '40;background:' + p.bg + ';">'
+        + pipelineHtml
         + '<div class="wo-card-top">'
         + '<div class="wo-priority-pill" style="background:' + p.color + ';color:#fff;">' + p.icon + ' ' + p.label + '</div>'
         + '<span class="wo-status-pill ' + st.cls + '">' + st.icon + ' ' + st.label + '</span>'
@@ -7459,6 +7490,7 @@ async function _loadWorkOrders() {
         + '<div class="wo-avail-group">' + availBadge + returnNote + '</div>'
         + '</div>'
         + '<div class="wo-description">' + escapeHtml(item.text) + '</div>'
+        + supplierLine + instrLine
         + maintDueLine
         + assigneeLine + tripConflict
         + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
@@ -7809,50 +7841,151 @@ window._saveWorkOrder = async function() {
   }
 };
 
-window.openScheduleWorkOrder = function(noteId, currentDate) {
+window.openScheduleWorkOrder = function(noteId, currentDate, currentMechanic) {
   const existing = document.getElementById('wo-sched-overlay');
   if (existing) existing.remove();
   const overlay = document.createElement('div');
   overlay.id = 'wo-sched-overlay';
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:400px;">
-      <div class="modal-header"><h3>📅 ${currentDate ? 'Reschedule' : 'Schedule'} Work Order</h3>
-        <button class="modal-close" onclick="document.getElementById('wo-sched-overlay').remove()">&times;</button></div>
-      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-        ${currentDate ? `<div style="background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:6px;font-size:0.85rem;">Previously scheduled: <strong>${currentDate}</strong></div>` : ''}
+    <div class="modal-box" style="max-width:500px;">
+      <div class="modal-header" style="background:#1e40af;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">📅 Send to Shop — Schedule</h3>
+        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-sched-overlay').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:13px;max-height:76vh;overflow-y:auto;">
+        <div id="wo-sched-issue-wrap" style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:6px;padding:8px 12px;font-size:0.88rem;color:#0c4a6e;min-height:32px;">Loading issue…</div>
+        ${currentDate ? `<div style="background:#fef3c7;color:#92400e;padding:6px 12px;border-radius:6px;font-size:0.82rem;">Previously scheduled: <strong>${currentDate}</strong></div>` : ''}
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;">New Service Date</label>
-          <input type="date" id="wo-new-sched-date" value="${currentDate || ''}" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;">
+          <label class="wo-modal-label">SHOP / SUPPLIER</label>
+          <div id="wo-sched-supplier-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;min-height:32px;">
+            <span style="font-size:0.8rem;color:#9ca3af;">Loading shops…</span>
+          </div>
+          <input type="hidden" id="wo-sched-supplier-val" value="${escapeHtml(currentMechanic || '')}">
+          <input type="text" id="wo-sched-supplier-other" placeholder="Or type a shop / mechanic name…" value="${escapeHtml(currentMechanic || '')}" style="margin-top:6px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          <div class="form-group" style="flex:1;min-width:140px;">
+            <label class="wo-modal-label">SERVICE DATE</label>
+            <input type="date" id="wo-new-sched-date" value="${currentDate || ''}" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+          </div>
+          <div class="form-group" style="flex:1;min-width:130px;">
+            <label class="wo-modal-label">TIME SLOT <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+            <select id="wo-sched-time" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+              <option value="">Any time</option>
+              <option value="Morning">Morning (8am–12pm)</option>
+              <option value="Afternoon">Afternoon (12pm–5pm)</option>
+              <option value="Drop off night before">Drop off night before</option>
+              <option value="First thing AM">First thing AM</option>
+            </select>
+          </div>
         </div>
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;">Notes <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
-          <input type="text" id="wo-sched-notes" placeholder="Reason for reschedule, shop name, etc." style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+          <label class="wo-modal-label">INSTRUCTIONS FOR SHOP <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+          <textarea id="wo-sched-notes" rows="2" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Describe issue to shop, previous work done, what to look for…"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="wo-modal-label">NEXT STEP</label>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
+            <button type="button" class="wo-nextstep-pill wo-nextstep-active" data-step="drop_off" onclick="_woSelectNextStep(this)">🚗 Drop Off Vehicle</button>
+            <button type="button" class="wo-nextstep-pill" data-step="shop_pickup" onclick="_woSelectNextStep(this)">🏪 Shop Will Pick Up</button>
+            <button type="button" class="wo-nextstep-pill" data-step="waiting_parts" onclick="_woSelectNextStep(this)">⏳ Waiting for Parts</button>
+            <button type="button" class="wo-nextstep-pill" data-step="remote_fix" onclick="_woSelectNextStep(this)">📞 Quick / Remote Fix</button>
+          </div>
+          <input type="hidden" id="wo-sched-nextstep" value="drop_off">
         </div>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
         <button class="btn btn-outline" onclick="document.getElementById('wo-sched-overlay').remove()">Cancel</button>
-        <button class="btn btn-primary" onclick="_saveScheduleWorkOrder('${noteId}')">📅 Save Schedule</button>
+        <button class="btn btn-primary" style="background:#1e40af;" onclick="_saveScheduleWorkOrder('${noteId}')">📅 Confirm Schedule</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
   overlay.style.display = 'flex';
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  // Async: load issue description
+  db.collection('vehicleNotes').doc(noteId).get().then(doc => {
+    const wrap = document.getElementById('wo-sched-issue-wrap');
+    if (wrap && doc.exists) {
+      const d = doc.data();
+      wrap.innerHTML = '<strong>' + escapeHtml(d.plate || (vehiclesCache.find(v=>v.id===d.vehicleId)||{}).plate||'') + '</strong> — ' + escapeHtml(d.text||'');
+    }
+  }).catch(() => {});
+
+  // Async: load supplier chips from serviceProviders
+  db.collection('serviceProviders').orderBy('serviceCount', 'desc').limit(20).get().then(snap => {
+    const area = document.getElementById('wo-sched-supplier-chips');
+    if (!area) return;
+    if (snap.empty) { area.innerHTML = '<span style="font-size:0.8rem;color:#9ca3af;">No saved shops yet — type below.</span>'; return; }
+    const providers = snap.docs.map(d => d.data().name || d.id).filter(Boolean);
+    area.innerHTML = providers.map(name =>
+      `<button type="button" class="wo-cat-chip${name === (currentMechanic||'') ? ' wo-cat-chip-active' : ''}" onclick="_woSchedSelectSupplier(this,'${escapeHtml(name)}')">${escapeHtml(name)}</button>`
+    ).join('') + `<button type="button" class="wo-cat-chip" onclick="_woSchedSelectSupplier(this,'')">✏️ Other</button>`;
+    if (currentMechanic) {
+      document.getElementById('wo-sched-supplier-val').value = currentMechanic;
+    }
+  }).catch(() => {
+    const area = document.getElementById('wo-sched-supplier-chips');
+    if (area) area.innerHTML = '';
+  });
+};
+
+window._woSchedSelectSupplier = function(btn, name) {
+  document.querySelectorAll('#wo-sched-supplier-chips .wo-cat-chip').forEach(c => c.classList.remove('wo-cat-chip-active'));
+  btn.classList.add('wo-cat-chip-active');
+  const valEl = document.getElementById('wo-sched-supplier-val');
+  const otherEl = document.getElementById('wo-sched-supplier-other');
+  if (valEl) valEl.value = name;
+  if (otherEl) {
+    if (!name) { otherEl.value = ''; otherEl.focus(); }
+    else { otherEl.value = name; }
+  }
+};
+
+window._woSelectNextStep = function(btn) {
+  document.querySelectorAll('#wo-sched-overlay .wo-nextstep-pill').forEach(p => p.classList.remove('wo-nextstep-active'));
+  btn.classList.add('wo-nextstep-active');
+  const el = document.getElementById('wo-sched-nextstep');
+  if (el) el.value = btn.dataset.step;
 };
 
 window._saveScheduleWorkOrder = async function(noteId) {
-  const newDate = document.getElementById('wo-new-sched-date')?.value;
-  const notes   = document.getElementById('wo-sched-notes')?.value?.trim();
-  if (!newDate) { toast('Pick a date.', 'warning'); return; }
+  const newDate  = document.getElementById('wo-new-sched-date')?.value;
+  const supplier = (document.getElementById('wo-sched-supplier-other')?.value || document.getElementById('wo-sched-supplier-val')?.value || '').trim();
+  const notes    = document.getElementById('wo-sched-notes')?.value?.trim() || null;
+  const timeSlot = document.getElementById('wo-sched-time')?.value || null;
+  const nextStep = document.getElementById('wo-sched-nextstep')?.value || 'drop_off';
+
+  if (!newDate) { toast('Pick a service date.', 'warning'); return; }
+
+  // Determine status based on next step
+  const newStatus = nextStep === 'waiting_parts' ? 'awaiting_parts' : 'scheduled';
+
+  // Build a progress log entry for this schedule action
+  const progEntry = {
+    by: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+    at: new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone: APP_TIMEZONE }),
+    text: '📅 Scheduled: ' + newDate + (supplier ? ' @ ' + supplier : '') + (timeSlot ? ' (' + timeSlot + ')' : '') + (notes ? ' — ' + notes : ''),
+  };
+
   try {
-    const updateData = { scheduledDate: newDate, dueDate: newDate, repairStatus: 'scheduled' };
-    if (notes) updateData.scheduleNotes = notes;
-    await db.collection('vehicleNotes').doc(noteId).update(updateData);
+    await db.collection('vehicleNotes').doc(noteId).update({
+      scheduledDate: newDate,
+      dueDate: newDate,
+      repairStatus: newStatus,
+      assignedMechanic: supplier || null,
+      scheduleNotes: notes,
+      scheduleTime: timeSlot || null,
+      scheduleNextStep: nextStep,
+      progressLog: firebase.firestore.FieldValue.arrayUnion(progEntry),
+    });
     document.getElementById('wo-sched-overlay')?.remove();
-    toast('📅 Schedule updated ✓', 'success');
+    toast('📅 Scheduled' + (supplier ? ' @ ' + supplier : '') + ' ✓', 'success');
     _loadWorkOrders();
     loadDashboardFollowUps();
   } catch(e) {
+    console.error('Schedule save error:', e);
     toast('Failed to save.', 'error');
   }
 };

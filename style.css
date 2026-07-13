@@ -6646,6 +6646,27 @@ body {
 .wo-cat-chip:hover { border-color: #6366f1; background: #eef2ff; color: #4338ca; }
 .wo-cat-chip-active { border-color: #6366f1 !important; background: #eef2ff !important; color: #4338ca !important; font-weight: 700 !important; }
 
+/* Awaiting parts status pill */
+.wo-st-waiting { background: #fef9c3; color: #854d0e; }
+
+/* CRM pipeline tracker on each work order card */
+.wo-crm-pipeline { display: flex; align-items: center; padding: 7px 14px 0; flex-wrap: nowrap; overflow-x: auto; }
+.wo-crm-step { font-size: 0.72rem; font-weight: 600; color: #9ca3af; white-space: nowrap; }
+.wo-crm-active { color: #1e40af; font-weight: 800; }
+.wo-crm-done { color: #15803d; }
+.wo-crm-arrow { font-size: 0.8rem; color: #d1d5db; padding: 0 4px; }
+.wo-crm-arr-done { color: #86efac; }
+.wo-crm-sub { font-size: 0.7rem; font-weight: 700; color: #854d0e; background: #fef9c3; padding: 1px 7px; border-radius: 999px; margin-left: 8px; white-space: nowrap; }
+
+/* Supplier and instructions lines on card */
+.wo-supplier-line { font-size: 0.82rem; color: #1e40af; margin: 5px 0 0; }
+.wo-instr-line { font-size: 0.8rem; color: #374151; background: #f8fafc; border-left: 3px solid #bfdbfe; padding: 4px 8px; border-radius: 0 4px 4px 0; margin: 4px 0 0; }
+
+/* Next-step pills in Schedule modal */
+.wo-nextstep-pill { font-size: 0.8rem; font-weight: 600; padding: 5px 12px; border-radius: 20px; border: 1.5px solid #d1d5db; background: #f9fafb; color: #374151; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.wo-nextstep-pill:hover { border-color: #1e40af; color: #1e40af; background: #eff6ff; }
+.wo-nextstep-active { border-color: #1e40af !important; background: #1e40af !important; color: #fff !important; }
+
 /* Assignee user pills — in Log Issue modal */
 .wo-assignee-pill { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; padding: 5px 12px; border-radius: 20px; border: 1.5px solid #d1d5db; background: #f9fafb; color: #374151; cursor: pointer; transition: all 0.15s; }
 .wo-assignee-pill:hover { border-color: #0369a1; background: #e0f2fe; color: #0369a1; }
