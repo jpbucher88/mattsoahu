@@ -11517,7 +11517,6 @@ window.openNoteEditModal = async function(docId, collection) {
     });
   }
   overlay.querySelector('#btn-ne-close').onclick = () => overlay.remove();
-  });
 
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   // Status button selection
