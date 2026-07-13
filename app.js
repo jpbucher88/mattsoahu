@@ -7330,6 +7330,24 @@ async function _loadWorkOrders() {
       const addedBy = item.createdByName ? 'Added by ' + escapeHtml(item.createdByName) : '';
       const addedDate = item.createdAt ? ' · ' + (item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt)).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }) : '';
 
+      // Maintenance source badge + due date info
+      const isMaintAuto = !!(item.autoCreated && item.sourceType === 'maintenance');
+      const maintSourceBadge = isMaintAuto ? '<span class="wo-maint-source-badge">🛠 Scheduled Maintenance</span>' : '';
+      let maintDueLine = '';
+      if (isMaintAuto) {
+        if (item.dueDate) {
+          const dueD = new Date(item.dueDate + 'T12:00:00');
+          const isOverdue = item.dueDate < today;
+          const dueFmt = dueD.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+          maintDueLine = '<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">📆 ' + (isOverdue ? '<strong>Overdue</strong> — was due ' : 'Service due: ') + dueFmt + '</div>';
+        } else if (item.nextDueMileage) {
+          const mileage = v && v.mileage ? v.mileage : 0;
+          const milesLeft = item.nextDueMileage - mileage;
+          const isOverdue = milesLeft <= 0;
+          maintDueLine = '<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">🛣️ ' + (isOverdue ? '<strong>Overdue by ' + Math.abs(milesLeft).toLocaleString() + ' mi</strong>' : 'Due at ' + item.nextDueMileage.toLocaleString() + ' mi' + (mileage ? ' (' + milesLeft.toLocaleString() + ' mi away)' : '')) + '</div>';
+        }
+      }
+
       // Mechanic / shop
       const mechLine = item.assignedMechanic
         ? '<div class="wo-mechanic-row">🔧 <strong>Mechanic/Shop:</strong> ' + escapeHtml(item.assignedMechanic) + '</div>'
@@ -7375,10 +7393,12 @@ async function _loadWorkOrders() {
         + '<div class="wo-card-top">'
         + '<div class="wo-priority-pill" style="background:' + p.color + ';color:#fff;">' + p.icon + ' ' + p.label + '</div>'
         + '<span class="wo-status-pill ' + st.cls + '">' + st.icon + ' ' + st.label + '</span>'
+        + maintSourceBadge
         + '<div class="wo-vehicle-info"><span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage(\'' + item.vehicleId + '\'),80)">' + plate + '</span><span class="wo-vmeta">' + vInfo + '</span></div>'
         + '<div class="wo-avail-group">' + availBadge + returnNote + '</div>'
         + '</div>'
         + '<div class="wo-description">' + escapeHtml(item.text) + '</div>'
+        + maintDueLine
         + mechLine + tripConflict
         + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
         + progressSection
@@ -7728,6 +7748,11 @@ window._saveCloseOut = async function(noteId, vehicleId, issueText) {
   const cost       = costRaw ? parseFloat(costRaw) : null;
   if (!resolution) { toast('Describe what was done.', 'warning'); return; }
   try {
+    // Fetch note to check if it's an auto-created maintenance work order
+    const noteSnap = await db.collection('vehicleNotes').doc(noteId).get();
+    const noteData = noteSnap.exists ? noteSnap.data() : {};
+    const isMaintAuto = !!(noteData.autoCreated && noteData.sourceType === 'maintenance');
+
     // Mark the work order as done
     await db.collection('vehicleNotes').doc(noteId).update({
       done: true,
@@ -7738,17 +7763,75 @@ window._saveCloseOut = async function(noteId, vehicleId, issueText) {
       resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
       completedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
-    // Create a maintenance record
-    await db.collection('maintenance').add({
+
+    // Build the maintenance record
+    const serviceType = noteData.maintenanceService || issueText.slice(0, 80);
+    const maintRecord = {
       vehicleId,
-      serviceType: issueText.slice(0, 80),
+      plate: noteData.plate || (vehiclesCache.find(v => v.id === vehicleId) || {}).plate || '',
+      serviceType,
       date: resDate,
       notes: resolution,
       cost: cost,
       loggedBy: currentUser ? currentUser.uid : null,
       loggedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+    };
+    // Preserve interval data if this was a recurring auto-generated item
+    if (isMaintAuto && noteData.intervalMonths) maintRecord.intervalMonths = noteData.intervalMonths;
+    if (isMaintAuto && noteData.intervalMiles)  maintRecord.intervalMiles  = noteData.intervalMiles;
+
+    // Compute next due date/mileage for the cycle restart
+    let nextDueDate = null;
+    let nextDueMileage = null;
+    if (isMaintAuto && noteData.intervalMonths) {
+      const [y, mo, d] = resDate.split('-').map(Number);
+      const next = new Date(y, mo - 1 + noteData.intervalMonths, d);
+      nextDueDate = next.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+      maintRecord.nextDueDate = nextDueDate;
+    }
+    const currentMileage = (vehiclesCache.find(v => v.id === vehicleId) || {}).mileage || null;
+    if (isMaintAuto && noteData.intervalMiles && currentMileage) {
+      nextDueMileage = currentMileage + noteData.intervalMiles;
+      maintRecord.nextDueMileage = nextDueMileage;
+    }
+
+    const maintRef = await db.collection('maintenance').add(maintRecord);
+
+    // For auto-created maintenance items, create the next recurring work order
+    if (isMaintAuto && (noteData.intervalMonths || noteData.intervalMiles)) {
+      const intervalLabel = noteData.intervalMonths
+        ? (noteData.intervalMonths === 1 ? '1 Month' : noteData.intervalMonths === 12 ? '1 Year' : noteData.intervalMonths === 24 ? '2 Years' : `${noteData.intervalMonths} Months`)
+        : null;
+      const newText = noteData.intervalType === 'mileage'
+        ? `🛢️ ${serviceType} due at ${(nextDueMileage || noteData.nextDueMileage || 0).toLocaleString()} mi (every ${(noteData.intervalMiles || 0).toLocaleString()} mi)`
+        : `🔧 ${serviceType} due (every ${intervalLabel})`;
+      await db.collection('vehicleNotes').add({
+        vehicleId,
+        text: newText,
+        isFollowUp: true,
+        done: false,
+        urgent: false,
+        dueDate: nextDueDate || null,
+        nextDueMileage: nextDueMileage || null,
+        intervalMiles: noteData.intervalMiles || null,
+        sourceType: 'maintenance',
+        taskStatus: 'maintenance',
+        maintenanceService: serviceType,
+        maintenanceRecordId: maintRef.id,
+        autoCreated: true,
+        intervalType: noteData.intervalType || 'time',
+        intervalMonths: noteData.intervalMonths || null,
+        workOrder: true,
+        repairStatus: 'open',
+        repairPriority: 'monitor',
+        scheduledDate: null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdBy: currentUser ? currentUser.uid : null,
+        createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      });
+    }
+
     document.getElementById('wo-closeout-overlay')?.remove();
     toast('✅ Issue resolved and maintenance record created!', 'success');
     _loadWorkOrders();
@@ -8778,7 +8861,7 @@ $('maintenance-form').addEventListener('submit', async (e) => {
       const batch = db.batch();
       oldNotes.forEach(d => batch.delete(d.ref));
 
-      // Time-based follow-up
+      // Time-based follow-up → auto-create as Work Order so it surfaces in Maintenance Dashboard
       if (intervalMonths && nextDueDate) {
         const intervalLabel = intervalMonths === 1 ? '1 Month' : intervalMonths === 12 ? '1 Year' : intervalMonths === 24 ? '2 Years' : `${intervalMonths} Months`;
         const noteRef = db.collection('vehicleNotes').doc();
@@ -8796,13 +8879,18 @@ $('maintenance-form').addEventListener('submit', async (e) => {
           autoCreated: true,
           intervalType: 'time',
           intervalMonths,
+          // Work Order fields — makes this visible in Maintenance Dashboard → Work Orders tab
+          workOrder: true,
+          repairStatus: 'open',
+          repairPriority: 'monitor',
+          scheduledDate: null,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           createdBy: currentUser.uid,
           createdByName: currentUser.displayName || currentUser.email,
         });
       }
 
-      // Mileage-based follow-up (no calendar dueDate, stored as nextDueMileage)
+      // Mileage-based follow-up → auto-create as Work Order
       if (intervalMiles && nextDueMileage) {
         const mileNoteRef = db.collection('vehicleNotes').doc();
         batch.set(mileNoteRef, {
@@ -8819,6 +8907,11 @@ $('maintenance-form').addEventListener('submit', async (e) => {
           maintenanceRecordId: maintenanceRef.id,
           autoCreated: true,
           intervalType: 'mileage',
+          // Work Order fields — makes this visible in Maintenance Dashboard → Work Orders tab
+          workOrder: true,
+          repairStatus: 'open',
+          repairPriority: 'monitor',
+          scheduledDate: null,
           createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           createdBy: currentUser.uid,
           createdByName: currentUser.displayName || currentUser.email,

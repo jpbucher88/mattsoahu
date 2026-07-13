@@ -6627,6 +6627,11 @@ body {
 .wo-return { font-size: 0.75rem; color: #d97706; font-weight: 600; }
 .wo-return-overdue { color: #dc2626; }
 
+/* Maintenance source badge & due-date line */
+.wo-maint-source-badge { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd; white-space: nowrap; }
+.wo-due-line { font-size: 0.8rem; color: #374151; margin: 4px 0 0; }
+.wo-due-overdue { color: #dc2626; font-weight: 600; }
+
 .wo-description { font-size: 0.9rem; font-weight: 600; color: #111827; }
 .wo-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wo-sched-badge { font-size: 0.78rem; font-weight: 600; padding: 2px 9px; border-radius: 6px; }
