@@ -7267,6 +7267,7 @@ async function _loadWoUsers() {
 }
 
 let _activeWoCategoryFilter = null; // null = show all
+let _pendingWOResolveId = null;    // set when close-out sends user to maintenance form
 
 async function _loadWorkOrders() {
   const container = $('work-orders-content');
@@ -7992,46 +7993,48 @@ window._saveScheduleWorkOrder = async function(noteId) {
   }
 };
 
-window.openCloseOutWorkOrder = function(noteId, vehicleId, issueText) {
-  const existing = document.getElementById('wo-closeout-overlay');
-  if (existing) existing.remove();
-  const today = new Date().toISOString().slice(0,10);
-  const overlay = document.createElement('div');
-  overlay.id = 'wo-closeout-overlay';
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-box" style="max-width:480px;">
-      <div class="modal-header" style="background:#15803d;color:#fff;border-radius:10px 10px 0 0;">
-        <h3 style="color:#fff;margin:0;">✅ Close Out — Resolve</h3>
-        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-closeout-overlay').remove()">&times;</button>
-      </div>
-      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-        <div style="background:#f0fdf4;border:1px solid #86efac;padding:8px 12px;border-radius:6px;font-size:0.88rem;color:#166534;">${escapeHtml(issueText)}</div>
-        <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;">What was done? <span style="color:#ef4444;">*</span></label>
-          <textarea id="wo-resolution" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Describe the repair/work completed…"></textarea>
-        </div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;">
-          <div class="form-group" style="flex:1;min-width:140px;">
-            <label style="font-size:0.82rem;font-weight:700;">Date Completed</label>
-            <input type="date" id="wo-resolution-date" value="${today}" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
-          </div>
-          <div class="form-group" style="flex:1;min-width:120px;">
-            <label style="font-size:0.82rem;font-weight:700;">Cost ($) <span style="font-weight:400;color:#9ca3af;">optional</span></label>
-            <input type="number" id="wo-resolution-cost" min="0" step="0.01" placeholder="0.00" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
-          </div>
-        </div>
-        <p style="font-size:0.8rem;color:#6b7280;margin:0;">This will also create a maintenance record for this vehicle.</p>
-      </div>
-      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
-        <button class="btn btn-outline" onclick="document.getElementById('wo-closeout-overlay').remove()">Cancel</button>
-        <button class="btn" style="background:#15803d;color:#fff;" onclick="_saveCloseOut('${noteId}','${vehicleId}','${escapeHtml(issueText)}')">✅ Resolve & Log</button>
-      </div>
-    </div>`;
-  document.body.appendChild(overlay);
-  overlay.style.display = 'flex';
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  setTimeout(() => { document.getElementById('wo-resolution')?.focus(); }, 80);
+// Close out a work order by logging it through the vehicle's Maintenance form
+// This ties work orders and maintenance history together using the same UI
+window.openCloseOutWorkOrder = async function(noteId, vehicleId, issueText) {
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  const plate = v ? v.plate : 'this vehicle';
+
+  const ok = await confirm('Log to Maintenance',
+    `Close out this work order by filling in the Maintenance Log for ${plate}.\n\nYou'll be taken to the vehicle page where the form will be pre-filled with the issue details.`
+  );
+  if (!ok) return;
+
+  // Store the pending work order to resolve after maintenance is saved
+  _pendingWOResolveId = noteId;
+
+  // Close maintenance dashboard and navigate to vehicle
+  closeMaintenanceDash();
+  openVehiclePage(vehicleId);
+
+  // After the vehicle page loads, open and pre-fill the maintenance form
+  setTimeout(async () => {
+    const addBtn = $('btn-add-maintenance');
+    const wrap = $('maintenance-form-wrap');
+    if (addBtn && (!wrap || wrap.style.display === 'none')) {
+      addBtn.click();
+      await new Promise(r => setTimeout(r, 150));
+    }
+    // Pre-fill the form fields
+    if ($('m-date')) $('m-date').value = todayDateString();
+    if ($('m-mileage') && v && v.mileage) $('m-mileage').value = v.mileage;
+    if ($('m-notes')) $('m-notes').value = issueText || '';
+    // Try to match a service chip to the issue text
+    if (issueText) {
+      const lower = issueText.toLowerCase();
+      const chipMap = { oil: 'oil', tire: 'tire-rotation', brake: 'brakes', battery: 'battery', filter: 'air-filter', wiper: 'wiper', ac: 'ac', align: 'alignment', inspect: 'inspection', detail: 'detail', wash: 'wash', trans: 'trans', spark: 'spark-plugs', coolant: 'coolant' };
+      for (const [kw, chipKey] of Object.entries(chipMap)) {
+        if (lower.includes(kw)) { applyServiceChip(chipKey); break; }
+      }
+    }
+    // Show a banner guiding the user
+    toast('📋 Fill in the maintenance details below, then Save — this will close the work order automatically.', 'info');
+    if (wrap) setTimeout(() => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+  }, 700);
 };
 
 window._saveCloseOut = async function(noteId, vehicleId, issueText) {
@@ -9288,6 +9291,29 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     }
 
     toast('Maintenance record saved!', 'success');
+
+    // If this save is closing out a pending work order, resolve it now
+    if (_pendingWOResolveId) {
+      const woId = _pendingWOResolveId;
+      _pendingWOResolveId = null;
+      try {
+        await db.collection('vehicleNotes').doc(woId).update({
+          done: true,
+          repairStatus: 'resolved',
+          resolution: serviceType + (notes ? ' — ' + notes : ''),
+          resolutionDate: date,
+          resolutionCost: cost || null,
+          resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+          completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          maintenanceRecordId: maintenanceRef.id,
+        });
+        toast('✅ Work order resolved and linked to maintenance record!', 'success');
+        loadDashboardFollowUps();
+      } catch(woErr) {
+        console.error('Work order resolve error:', woErr);
+        toast('Maintenance saved — but failed to close work order.', 'warning');
+      }
+    }
 
     // Update service provider aggregate in Firestore
     if (location) {
@@ -11376,75 +11402,102 @@ window.openNoteEditModal = async function(docId, collection) {
   // Track open in global activity log only (not per-task, to avoid clutter)
   logUserActivity('open_task', { docId, collection, text: (d.text || '').slice(0, 80) });
 
+  const v = d.vehicleId ? vehiclesCache.find(x => x.id === d.vehicleId) : null;
+  const plate = v ? v.plate : null;
+  const vehicleChip = plate ? `<span class="ne-vehicle-chip">🚗 ${escapeHtml(plate)}</span>` : '';
+  const isUrgent     = d.taskStatus === 'urgent' || d.urgent;
+  const isScheduled  = d.taskStatus === 'scheduled' && !d.urgent;
+  const isMonitoring = d.taskStatus === 'monitoring';
+  const isFollowUp   = !!d.isFollowUp;
+
   const overlay = document.createElement('div');
   overlay.className = 'note-edit-overlay';
   overlay.innerHTML = `
     <div class="note-edit-modal">
-      <h4>✏️ Edit Task / Note</h4>
-      <div class="form-group" style="margin-bottom:10px;">
-        <label style="font-size:0.78rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.05em;">Description / Title</label>
-        <textarea id="ne-text" rows="2" style="width:100%;margin-top:4px;padding:8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Task description...">${escapeHtml(d.text || '')}</textarea>
+      <div class="ne-header">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:1rem;font-weight:700;">✏️ Update Task</span>
+          ${vehicleChip}
+        </div>
+        <button class="modal-close" id="btn-ne-close">&times;</button>
       </div>
-        <label class="note-followup-label">
-          <input type="checkbox" id="ne-followup" ${d.isFollowUp ? 'checked' : ''}> ⚑ Follow Up Task
-        </label>
-      </div>
-      <div id="ne-followup-opts" style="${d.isFollowUp ? '' : 'display:none;'}">
-        <div class="form-group">
-          <label class="note-edit-section-label">Status</label>
-          <div class="ne-status-btns">
-            <button type="button" class="ne-status-btn ${(d.taskStatus === 'urgent' || d.urgent) ? 'ne-status-active-urgent' : ''}" data-status="urgent">🚨 Urgent</button>
-            <button type="button" class="ne-status-btn ${(d.taskStatus === 'scheduled' && !d.urgent) ? 'ne-status-active-scheduled' : ''}" data-status="scheduled">🔵 Scheduled</button>
-            <button type="button" class="ne-status-btn ${d.taskStatus === 'monitoring' ? 'ne-status-active-monitoring' : ''}" data-status="monitoring">🟢 Monitoring</button>
-          </div>
+
+      ${isFollowUp ? `
+      <div class="ne-status-section">
+        <div class="ne-status-label">STATUS — tap to change</div>
+        <div class="ne-status-btns">
+          <button type="button" class="ne-status-btn ${isUrgent ? 'ne-status-active-urgent' : ''}" data-status="urgent">🚨 Urgent</button>
+          <button type="button" class="ne-status-btn ${isScheduled ? 'ne-status-active-scheduled' : ''}" data-status="scheduled">🔵 Scheduled</button>
+          <button type="button" class="ne-status-btn ${isMonitoring ? 'ne-status-active-monitoring' : ''}" data-status="monitoring">🟢 Monitoring</button>
         </div>
-        <div class="form-group">
-          <label>Due Date</label>
-          <input type="date" id="ne-due-date" class="form-select" value="${d.dueDate || ''}">
-        </div>
-        <div class="form-group">
-          <label>Due Time <span style="color:#9ca3af;font-size:0.8rem;">(optional)</span></label>
-          ${_timeSelect('ne-due-time', d.dueTime || '')}
-        </div>
-        <div class="form-group">
-          <label>👤 Assign To</label>
-          <div style="position:relative;">
-            <input type="text" id="ne-assignee-search" class="form-select" placeholder="Search user…"
-              value="${escapeHtml(d.assignedToName || '')}"
-              oninput="filterNeAssigneeList(this.value)" onfocus="_loadFabUsers()" autocomplete="off">
-            <div id="ne-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:150px;overflow-y:auto;z-index:9999;"></div>
-            <input type="hidden" id="ne-assignee-id"   value="${escapeHtml(d.assignedTo || '')}">
-            <input type="hidden" id="ne-assignee-name" value="${escapeHtml(d.assignedToName || '')}">
-          </div>
-        </div>
-      </div>
-      ${(currentUserRole === 'admin' || currentUserRole === 'manager') ? `
-      <div class="task-log-section">
-        <button onclick="const b=this,s=b.nextElementSibling;s.style.display=s.style.display==='none'?'':'none';b.querySelector('.tlg-arrow').textContent=s.style.display===''?'▼':'▶';" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:6px;color:#6b7280;font-size:0.85rem;font-weight:600;margin-bottom:6px;">
-          <span class="tlg-arrow">▶</span> 📋 Notes / Activity Log
-        </button>
-        <div style="display:none;">
-          <div id="ne-log-entries" class="task-log-entries">${renderTaskLogEntries(d.taskLog || [])}</div>
-          <div class="task-log-input-row">
-            <textarea id="ne-log-input" class="task-log-textarea" placeholder="Add a note or update…" rows="2"></textarea>
-            <button class="btn btn-sm btn-outline" id="btn-ne-log-add">Add</button>
-          </div>
-        </div>
+        <div style="font-size:0.75rem;color:#6b7280;margin-top:4px;">Switching to Scheduled or Monitoring removes this from urgent alerts.</div>
       </div>` : ''}
-      <div class="ne-invoice-section">
-        <div class="note-edit-section-label" style="margin-bottom:6px;">📎 Invoice / Photo Attachments</div>
-        <div id="ne-invoice-existing" class="ne-invoice-thumbs">${(d.invoiceUrls || []).map((url, idx) => `
-          <div class="ne-invoice-thumb-wrap" data-url="${escapeHtml(url)}">
-            <img src="${escapeHtml(url)}" class="ne-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View full size">
-            <button class="ne-invoice-remove" data-idx="${idx}" title="Remove">✕</button>
-          </div>`).join('')}</div>
-        <div id="ne-invoice-new-thumbs" class="ne-invoice-thumbs" style="margin-top:4px;"></div>
-        <label class="ne-invoice-upload-label">
-          📎 Attach Photo / Invoice
-          <input type="file" id="ne-invoice-input" accept="image/*" multiple style="display:none;">
-        </label>
-        <div id="ne-invoice-hint" class="ne-invoice-hint">${(d.invoiceUrls && d.invoiceUrls.length) ? d.invoiceUrls.length + ' attachment(s) saved' : 'No attachments yet'}</div>
+
+      <div class="ne-body">
+        <div class="form-group">
+          <label class="ne-field-label">DESCRIPTION</label>
+          <textarea id="ne-text" rows="2" style="width:100%;margin-top:4px;padding:8px;border:1.5px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Task description...">${escapeHtml(d.text || '')}</textarea>
+        </div>
+
+        ${!isFollowUp ? `
+        <label class="note-followup-label" style="margin-bottom:8px;display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="ne-followup"> ⚑ Make Follow-Up Task
+        </label>` : `<input type="hidden" id="ne-followup" data-checked="true">`}
+
+        <div id="ne-followup-opts" style="${isFollowUp ? '' : 'display:none;'}">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <div class="form-group" style="flex:1;min-width:140px;">
+              <label class="ne-field-label">DUE DATE</label>
+              <input type="date" id="ne-due-date" class="form-select" value="${d.dueDate || ''}">
+            </div>
+            <div class="form-group" style="flex:1;min-width:130px;">
+              <label class="ne-field-label">DUE TIME <span style="color:#9ca3af;font-size:0.75rem;">(optional)</span></label>
+              ${_timeSelect('ne-due-time', d.dueTime || '')}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="ne-field-label">👤 ASSIGN TO</label>
+            <div style="position:relative;">
+              <input type="text" id="ne-assignee-search" class="form-select" placeholder="Search user…"
+                value="${escapeHtml(d.assignedToName || '')}"
+                oninput="filterNeAssigneeList(this.value)" onfocus="_loadFabUsers()" autocomplete="off">
+              <div id="ne-assignee-dropdown" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1px solid #d1d5db;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.12);max-height:150px;overflow-y:auto;z-index:9999;"></div>
+              <input type="hidden" id="ne-assignee-id"   value="${escapeHtml(d.assignedTo || '')}">
+              <input type="hidden" id="ne-assignee-name" value="${escapeHtml(d.assignedToName || '')}">
+            </div>
+          </div>
+        </div>
+
+        ${(currentUserRole === 'admin' || currentUserRole === 'manager') ? `
+        <div class="task-log-section">
+          <button onclick="const b=this,s=b.nextElementSibling;s.style.display=s.style.display==='none'?'':'none';b.querySelector('.tlg-arrow').textContent=s.style.display===''?'▼':'▶';" style="background:none;border:none;cursor:pointer;padding:0;display:flex;align-items:center;gap:6px;color:#6b7280;font-size:0.85rem;font-weight:600;margin-bottom:6px;">
+            <span class="tlg-arrow">▶</span> 📋 Activity Log
+          </button>
+          <div style="display:none;">
+            <div id="ne-log-entries" class="task-log-entries">${renderTaskLogEntries(d.taskLog || [])}</div>
+            <div class="task-log-input-row">
+              <textarea id="ne-log-input" class="task-log-textarea" placeholder="Add a note or update…" rows="2"></textarea>
+              <button class="btn btn-sm btn-outline" id="btn-ne-log-add">Add</button>
+            </div>
+          </div>
+        </div>` : ''}
+
+        <div class="ne-invoice-section">
+          <div class="note-edit-section-label" style="margin-bottom:6px;">📎 Invoice / Photo Attachments</div>
+          <div id="ne-invoice-existing" class="ne-invoice-thumbs">${(d.invoiceUrls || []).map((url, idx) => `
+            <div class="ne-invoice-thumb-wrap" data-url="${escapeHtml(url)}">
+              <img src="${escapeHtml(url)}" class="ne-invoice-thumb" onclick="window.open('${escapeHtml(url)}','_blank')" title="View full size">
+              <button class="ne-invoice-remove" data-idx="${idx}" title="Remove">✕</button>
+            </div>`).join('')}</div>
+          <div id="ne-invoice-new-thumbs" class="ne-invoice-thumbs" style="margin-top:4px;"></div>
+          <label class="ne-invoice-upload-label">
+            📎 Attach Photo / Invoice
+            <input type="file" id="ne-invoice-input" accept="image/*" multiple style="display:none;">
+          </label>
+          <div id="ne-invoice-hint" class="ne-invoice-hint">${(d.invoiceUrls && d.invoiceUrls.length) ? d.invoiceUrls.length + ' attachment(s) saved' : 'No attachments yet'}</div>
+        </div>
       </div>
+
       <div class="note-edit-actions">
         ${(currentUserRole === 'admin' || currentUserRole === 'manager') ? `<button class="btn btn-outline" id="btn-ne-to-maint" style="border-color:#86efac;color:#15803d;">🔧 → Maintenance</button>` : ''}
         <button class="btn btn-primary" id="btn-ne-save">Save Changes</button>
@@ -11454,10 +11507,16 @@ window.openNoteEditModal = async function(docId, collection) {
   `;
   document.body.appendChild(overlay);
 
+  // Status is always follow-up if task already has isFollowUp set
   const followupEl = overlay.querySelector('#ne-followup');
   const optsEl = overlay.querySelector('#ne-followup-opts');
-  followupEl.addEventListener('change', () => {
-    optsEl.style.display = followupEl.checked ? '' : 'none';
+  // For non-followup tasks, the checkbox is a real checkbox; for existing followups it's a hidden input
+  if (followupEl && followupEl.type === 'checkbox') {
+    followupEl.addEventListener('change', () => {
+      optsEl.style.display = followupEl.checked ? '' : 'none';
+    });
+  }
+  overlay.querySelector('#btn-ne-close').onclick = () => overlay.remove();
   });
 
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
@@ -11569,7 +11628,7 @@ window.openNoteEditModal = async function(docId, collection) {
     const saveBtn = overlay.querySelector('#btn-ne-save');
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving…';
-    const isFollowUp = followupEl.checked;
+    const isFollowUp = followupEl.type === 'checkbox' ? followupEl.checked : (followupEl.dataset.checked === 'true');
     const newText    = (overlay.querySelector('#ne-text')?.value || '').trim();
     const urgent = isFollowUp && selectedStatus === 'urgent';
     const taskStatus = isFollowUp ? selectedStatus : null;
