@@ -6601,15 +6601,34 @@ body {
 }
 
 /* ===== WORK ORDERS ===== */
+.wo-section-group { margin-bottom: 4px; }
 .wo-section-header {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 14px; border-radius: 8px; margin: 8px 0 6px;
   font-size: 0.83rem; font-weight: 700;
 }
+.wo-sect-toggle-btn { cursor: pointer; user-select: none; }
+.wo-sect-toggle-btn:hover { filter: brightness(0.95); }
+.wo-sect-arrow { margin-left: auto; font-size: 0.75rem; opacity: 0.7; }
 .wo-section-missed { background: #fef2f2; color: #dc2626; }
 .wo-section-open   { background: #eff6ff; color: #1e40af; }
 .wo-section-sched  { background: #f0fdf4; color: #15803d; }
 .wo-sec-count { background: rgba(0,0,0,0.12); color: inherit; font-size:0.72rem; padding:1px 7px; border-radius:999px; }
+
+/* Parts ETA line */
+.wo-parts-line { font-size:0.82rem; color:#92400e; background:#fffbeb; border-left:3px solid #fde68a; padding:4px 8px; border-radius:0 4px 4px 0; margin:4px 0 0; }
+
+/* ===== SHOP SCHEDULE WIDGET ===== */
+.sched-day-group { margin-bottom: 8px; }
+.sched-day-header { font-size: 0.72rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 8px; border-radius: 4px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px; }
+.sched-day-now      { background: #fee2e2; color: #991b1b; }
+.sched-day-today    { background: #fef3c7; color: #92400e; }
+.sched-day-tomorrow { background: #eff6ff; color: #1e40af; }
+.sched-day-future   { background: #f3f4f6; color: #374151; }
+.sched-item { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; padding: 5px 8px; border-radius: 6px; cursor: pointer; font-size: 0.82rem; color: #374151; transition: background 0.1s; }
+.sched-item:hover { background: #f0f9ff; }
+.sched-plate { font-weight: 800; color: #1e293b; white-space: nowrap; margin-right: 2px; }
+.sched-desc { color: #6b7280; flex: 1; min-width: 0; }
 
 .wo-card {
   border: 1.5px solid #e5e7eb;

@@ -120,6 +120,20 @@
         </div>
       </section>
 
+      <!-- Shop Schedule Widget -->
+      <section id="shop-schedule-widget" class="card" style="display:none;">
+        <div class="collapsible-header" onclick="toggleSection('shop-schedule-body', 'shop-schedule-toggle')">
+          <div class="collapsible-title">
+            <h3>🔧 Shop Schedule</h3>
+            <span id="shop-schedule-count" class="badge" style="background:#1e40af;color:#fff;">0</span>
+          </div>
+          <button class="collapse-btn" id="shop-schedule-toggle">&#8722;</button>
+        </div>
+        <div id="shop-schedule-body" class="collapsible-body">
+          <div id="shop-schedule-list"></div>
+        </div>
+      </section>
+
       <!-- Locations & Fleet Status Widget -->
       <section id="locations-widget" class="card">
         <div class="collapsible-header" onclick="toggleSection('locations-widget-body', 'locations-widget-toggle')">

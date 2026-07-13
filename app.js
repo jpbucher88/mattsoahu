@@ -1581,7 +1581,109 @@ function renderFleetDashboard() {
   renderLocationsWidget();
   // Compliance widget removed from dashboard — accessible via top-bar ✅ button
   // loadFleetComplianceWidget();
+  // Refresh shop schedule widget
+  if (typeof renderShopSchedule === 'function') renderShopSchedule();
 }
+
+// ================================================================
+// SHOP SCHEDULE WIDGET — upcoming work orders on the dashboard
+// ================================================================
+window.renderShopSchedule = async function() {
+  const widget = $('shop-schedule-widget');
+  const list   = $('shop-schedule-list');
+  const badge  = $('shop-schedule-count');
+  if (!list) return;
+
+  const today = todayDateString();
+  const d14   = new Date(); d14.setDate(d14.getDate() + 14);
+  const d14str = d14.toISOString().slice(0, 10);
+
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('workOrder', '==', true)
+      .where('done', '==', false)
+      .get();
+
+    const allItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Items currently at shop (dropped_off / awaiting_parts)
+    const atShop = allItems.filter(i =>
+      i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts'
+    );
+
+    // Items scheduled within next 14 days (not yet at shop)
+    const upcoming = allItems.filter(i =>
+      i.scheduledDate && i.scheduledDate >= today && i.scheduledDate <= d14str &&
+      i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts'
+    );
+
+    const total = atShop.length + upcoming.length;
+    if (widget) widget.style.display = total > 0 ? '' : 'none';
+    if (badge)  badge.textContent = total;
+    if (total === 0) { list.innerHTML = '<p class="hint" style="padding:8px 0;">No vehicles scheduled for the shop in the next 14 days.</p>'; return; }
+
+    const WO_PRI_COLOR = { critical:'#dc2626', high:'#ea580c', standard:'#d97706', monitor:'#16a34a' };
+
+    // Group upcoming by date
+    const byDate = {};
+    upcoming.forEach(i => {
+      if (!byDate[i.scheduledDate]) byDate[i.scheduledDate] = [];
+      byDate[i.scheduledDate].push(i);
+    });
+    const sortedDates = Object.keys(byDate).sort();
+
+    let html = '';
+
+    // Currently at shop
+    if (atShop.length) {
+      html += '<div class="sched-day-group">';
+      html += '<div class="sched-day-header sched-day-now">🔧 Currently At Shop</div>';
+      atShop.forEach(i => {
+        const v = vehiclesCache.find(x => x.id === i.vehicleId);
+        const plate = v ? escapeHtml(v.plate) : '?';
+        const dot   = `<span style="width:8px;height:8px;border-radius:50%;background:${WO_PRI_COLOR[i.repairPriority]||'#d97706'};display:inline-block;margin-right:5px;flex-shrink:0;"></span>`;
+        const shop  = i.assignedMechanic ? ` · <span style="color:#1e40af;">${escapeHtml(i.assignedMechanic)}</span>` : '';
+        const wait  = i.repairStatus === 'awaiting_parts' ? ' <span style="background:#fef9c3;color:#854d0e;font-size:0.7rem;padding:1px 6px;border-radius:999px;border:1px solid #fde68a;">⏳ Parts</span>' : '';
+        const partsEta = (i.repairStatus === 'awaiting_parts' && i.partsEta)
+          ? ` <span style="color:#854d0e;font-size:0.75rem;">ETA ${new Date(i.partsEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
+        html += `<div class="sched-item" onclick="closeMaintenanceDash ? openMaintenanceDash() : null; setTimeout(()=>{ var wo=document.querySelector('[data-mtab=\\'mtab-work-orders\\']'); if(wo) wo.click(); },150);" title="View in Maintenance Dashboard">
+          ${dot}<span class="sched-plate">${plate}</span>
+          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,45))}${(i.text||'').length>45?'…':''}</span>${wait}${partsEta}${shop}
+        </div>`;
+      });
+      html += '</div>';
+    }
+
+    // Upcoming by date
+    sortedDates.forEach(dateStr => {
+      const items = byDate[dateStr];
+      const dateObj = new Date(dateStr + 'T12:00:00');
+      const isToday = dateStr === today;
+      const isTomorrow = dateStr === (() => { const t = new Date(); t.setDate(t.getDate()+1); return t.toISOString().slice(0,10); })();
+      const dayLabel = isToday ? 'TODAY' : isTomorrow ? 'TOMORROW' : dateObj.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }).toUpperCase();
+      const headerCls = isToday ? 'sched-day-today' : isTomorrow ? 'sched-day-tomorrow' : 'sched-day-future';
+
+      html += `<div class="sched-day-group">`;
+      html += `<div class="sched-day-header ${headerCls}">${dayLabel} <span style="font-weight:400;font-size:0.7rem;opacity:0.7;">${items.length} vehicle${items.length>1?'s':''}</span></div>`;
+      items.forEach(i => {
+        const v = vehiclesCache.find(x => x.id === i.vehicleId);
+        const plate = v ? escapeHtml(v.plate) : '?';
+        const dot   = `<span style="width:8px;height:8px;border-radius:50%;background:${WO_PRI_COLOR[i.repairPriority]||'#d97706'};display:inline-block;margin-right:5px;flex-shrink:0;"></span>`;
+        const shop  = i.assignedMechanic ? ` · <span style="color:#1e40af;">${escapeHtml(i.assignedMechanic)}</span>` : '';
+        html += `<div class="sched-item" onclick="openMaintenanceDash(); setTimeout(()=>{ var wo=document.querySelector('[data-mtab=\\'mtab-work-orders\\']'); if(wo) wo.click(); },150);" title="View in Maintenance Dashboard">
+          ${dot}<span class="sched-plate">${plate}</span>
+          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,45))}${(i.text||'').length>45?'…':''}</span>${shop}
+        </div>`;
+      });
+      html += '</div>';
+    });
+
+    list.innerHTML = html;
+  } catch(e) {
+    console.error('Shop schedule error:', e);
+    if (list) list.innerHTML = '<p class="hint">Could not load schedule.</p>';
+  }
+};
 
 function renderLocationsWidget() {
   const container = $('locations-grid');
@@ -7364,7 +7466,7 @@ async function _loadWorkOrders() {
       if (rs === 'dropped_off') {
         statusActions = `
           <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Completed</button>
-          <button class="btn btn-sm wo-btn-drop" style="background:#fef9c3;color:#854d0e;border-color:#fde68a;" onclick="window.updateWorkOrderStatus('${item.id}','awaiting_parts')" title="Parts not in stock — put on hold">⏳ Awaiting Parts</button>
+          <button class="btn btn-sm wo-btn-drop" style="background:#fef9c3;color:#854d0e;border-color:#fde68a;" onclick="window.openAwaitingPartsModal('${item.id}')" title="Parts not in stock — log ETA and supplier">⏳ Awaiting Parts</button>
           <button class="btn btn-sm wo-btn-nofault" onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found — issue could not be reproduced.')">🔍 No Fault</button>
           <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
       } else if (rs === 'awaiting_parts') {
@@ -7453,6 +7555,14 @@ async function _loadWorkOrders() {
 
       // "Complete My Task" button — shown to the assigned user
       let myTaskAction = '';
+      // Parts ETA line (shown when awaiting_parts)
+      const partsLine = (rs === 'awaiting_parts' && (item.partsSupplier || item.partsEta))
+        ? '<div class="wo-parts-line">📦 '
+          + (item.partsSupplier ? '<strong>' + escapeHtml(item.partsSupplier) + '</strong>' : '')
+          + (item.partsEta ? (item.partsSupplier ? ' &nbsp;·&nbsp; ' : '') + '📅 ETA: <strong>' + new Date(item.partsEta + 'T12:00:00').toLocaleDateString('en-US', {weekday:'short', month:'short', day:'numeric'}) + '</strong>' : '')
+          + '</div>'
+        : '';
+
       // CRM pipeline tracker (4-step)
       const stepState = (rs === 'open') ? 0
         : (rs === 'scheduled' || rs === 'deferred') ? 1
@@ -7493,7 +7603,7 @@ async function _loadWorkOrders() {
         + '<div class="wo-avail-group">' + availBadge + returnNote + '</div>'
         + '</div>'
         + '<div class="wo-description">' + escapeHtml(item.text) + '</div>'
-        + supplierLine + instrLine
+        + supplierLine + instrLine + partsLine
         + maintDueLine
         + assigneeLine + tripConflict
         + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
@@ -7524,23 +7634,39 @@ async function _loadWorkOrders() {
     </div>`;
 
     if (droppedOff.length) {
-      html += `<div class="wo-section-header" style="background:#eff6ff;color:#1e40af;">🔧 In Progress — At Shop <span class="wo-sec-count">${droppedOff.length}</span></div>`;
-      html += droppedOff.map(renderCard).join('');
+      html += `<div class="wo-section-group">
+        <div class="wo-section-header wo-sect-toggle-btn" style="background:#eff6ff;color:#1e40af;" onclick="_woToggleSection('wo-sect-inprog',this)">
+          🔧 In Progress — At Shop <span class="wo-sec-count">${droppedOff.length}</span><span class="wo-sect-arrow">▼</span>
+        </div>
+        <div id="wo-sect-inprog">${droppedOff.map(renderCard).join('')}</div>
+      </div>`;
     }
     if (missedList.length) {
       missedList.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
-      html += `<div class="wo-section-header wo-section-missed">⚠️ Missed Schedule <span class="wo-sec-count">${missedList.length}</span></div>`;
-      html += missedList.map(renderCard).join('');
+      html += `<div class="wo-section-group">
+        <div class="wo-section-header wo-section-missed wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-missed',this)">
+          ⚠️ Missed Schedule <span class="wo-sec-count">${missedList.length}</span><span class="wo-sect-arrow">▼</span>
+        </div>
+        <div id="wo-sect-missed">${missedList.map(renderCard).join('')}</div>
+      </div>`;
     }
     if (open.length) {
       open.sort((a,b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2) - (po[b.repairPriority]||2); });
-      html += `<div class="wo-section-header wo-section-open">⚪ Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span></div>`;
-      html += open.map(renderCard).join('');
+      html += `<div class="wo-section-group">
+        <div class="wo-section-header wo-section-open wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-open',this)">
+          ⚪ Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span><span class="wo-sect-arrow">▼</span>
+        </div>
+        <div id="wo-sect-open">${open.map(renderCard).join('')}</div>
+      </div>`;
     }
     if (scheduled.length) {
       scheduled.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
-      html += `<div class="wo-section-header wo-section-sched">📅 Scheduled <span class="wo-sec-count">${scheduled.length}</span></div>`;
-      html += scheduled.map(renderCard).join('');
+      html += `<div class="wo-section-group">
+        <div class="wo-section-header wo-section-sched wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-sched',this)">
+          📅 Scheduled <span class="wo-sec-count">${scheduled.length}</span><span class="wo-sect-arrow">▼</span>
+        </div>
+        <div id="wo-sect-sched">${scheduled.map(renderCard).join('')}</div>
+      </div>`;
     }
     if (!html.replace(/<div class="wo-pipeline-bar">[\s\S]*?<\/div>/, '').trim()) {
       html += '<div class="maint-tab-empty"><span>✅</span><p>No open work orders!</p></div>';
@@ -7555,6 +7681,15 @@ async function _loadWorkOrders() {
 window._woFilterByCategory = function(catKey) {
   _activeWoCategoryFilter = catKey || null;
   _loadWorkOrders();
+};
+
+window._woToggleSection = function(bodyId, headerEl) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : '';
+  const arrow = headerEl.querySelector('.wo-sect-arrow');
+  if (arrow) arrow.textContent = isOpen ? '▶' : '▼';
 };
 
 window.deleteWorkOrder = async function(noteId) {
@@ -7601,6 +7736,72 @@ window.updateWorkOrderStatus = async function(noteId, newStatus) {
   } catch(e) {
     console.error('Update status error:', e);
     toast('Failed to update status.', 'error');
+  }
+};
+
+window.openAwaitingPartsModal = function(noteId) {
+  const existing = document.getElementById('wo-parts-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'wo-parts-overlay';
+  overlay.className = 'modal-overlay';
+  // Prefill if already set
+  db.collection('vehicleNotes').doc(noteId).get().then(doc => {
+    const d = doc.exists ? doc.data() : {};
+    overlay.querySelector('#wo-parts-supplier').value = d.partsSupplier || '';
+    overlay.querySelector('#wo-parts-eta').value = d.partsEta || '';
+  }).catch(() => {});
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:400px;">
+      <div class="modal-header" style="background:#92400e;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">⏳ Log Parts Order</h3>
+        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-parts-overlay').remove()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+        <p style="font-size:0.85rem;color:#6b7280;margin:0;">Track the parts order so the team knows when to expect the vehicle back.</p>
+        <div class="form-group">
+          <label class="wo-modal-label">PARTS SUPPLIER / VENDOR</label>
+          <input type="text" id="wo-parts-supplier" placeholder="e.g. O'Reilly, NAPA, Dealer, Amazon" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+        </div>
+        <div class="form-group">
+          <label class="wo-modal-label">ESTIMATED ARRIVAL DATE</label>
+          <input type="date" id="wo-parts-eta" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;">
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
+        <button class="btn btn-outline" onclick="document.getElementById('wo-parts-overlay').remove()">Cancel</button>
+        <button class="btn btn-primary" style="background:#92400e;" onclick="window._saveAwaitingParts('${noteId}')">⏳ Confirm Parts Order</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  setTimeout(() => overlay.querySelector('#wo-parts-supplier')?.focus(), 80);
+};
+
+window._saveAwaitingParts = async function(noteId) {
+  const supplier = document.getElementById('wo-parts-supplier')?.value.trim() || null;
+  const eta = document.getElementById('wo-parts-eta')?.value || null;
+  const progEntry = {
+    by: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+    at: new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone: APP_TIMEZONE }),
+    text: '⏳ Awaiting parts' + (supplier ? ' from ' + supplier : '') + (eta ? ' · ETA ' + eta : ''),
+  };
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      repairStatus: 'awaiting_parts',
+      partsSupplier: supplier || null,
+      partsEta: eta || null,
+      progressLog: firebase.firestore.FieldValue.arrayUnion(progEntry),
+    });
+    document.getElementById('wo-parts-overlay')?.remove();
+    toast('⏳ Parts order logged ✓', 'success');
+    _loadWorkOrders();
+    loadDashboardFollowUps();
+    renderShopSchedule();
+  } catch(e) {
+    console.error('Parts order error:', e);
+    toast('Failed to save.', 'error');
   }
 };
 
@@ -7987,6 +8188,7 @@ window._saveScheduleWorkOrder = async function(noteId) {
     toast('📅 Scheduled' + (supplier ? ' @ ' + supplier : '') + ' ✓', 'success');
     _loadWorkOrders();
     loadDashboardFollowUps();
+    renderShopSchedule();
   } catch(e) {
     console.error('Schedule save error:', e);
     toast('Failed to save.', 'error');
