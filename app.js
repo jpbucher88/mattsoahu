@@ -1634,6 +1634,24 @@ window.renderShopSchedule = async function() {
 
     let html = '';
 
+    // Helper: build a small location emblem for a vehicle
+    function _schedLocChip(v) {
+      if (!v) return '';
+      const ts = v.tripStatus || '';
+      let label, bg, color, border;
+      if (ts === 'on-trip' || ts === 'private-trip') {
+        label = '🚗 On Trip'; bg = '#dbeafe'; color = '#1e40af'; border = '#bfdbfe';
+      } else if (ts === 'repair-shop') {
+        label = '🔧 At Shop'; bg = '#fef9c3'; color = '#854d0e'; border = '#fde68a';
+      } else if (ts === 'scheduled') {
+        label = '📅 Scheduled'; bg = '#f0fdf4'; color = '#15803d'; border = '#86efac';
+      } else {
+        const loc = v.homeLocation || 'Home';
+        label = '📍 ' + loc; bg = '#f3f4f6'; color = '#374151'; border = '#e5e7eb';
+      }
+      return `<span class="sched-loc-chip" style="background:${bg};color:${color};border-color:${border};">${escapeHtml(label)}</span>`;
+    }
+
     // Currently at shop
     if (atShop.length) {
       html += '<div class="sched-day-group">';
@@ -1646,9 +1664,10 @@ window.renderShopSchedule = async function() {
         const wait  = i.repairStatus === 'awaiting_parts' ? ' <span style="background:#fef9c3;color:#854d0e;font-size:0.7rem;padding:1px 6px;border-radius:999px;border:1px solid #fde68a;">⏳ Parts</span>' : '';
         const partsEta = (i.repairStatus === 'awaiting_parts' && i.partsEta)
           ? ` <span style="color:#854d0e;font-size:0.75rem;">ETA ${new Date(i.partsEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
-        html += `<div class="sched-item" onclick="closeMaintenanceDash ? openMaintenanceDash() : null; setTimeout(()=>{ var wo=document.querySelector('[data-mtab=\\'mtab-work-orders\\']'); if(wo) wo.click(); },150);" title="View in Maintenance Dashboard">
-          ${dot}<span class="sched-plate">${plate}</span>
-          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,45))}${(i.text||'').length>45?'…':''}</span>${wait}${partsEta}${shop}
+        const locChip = _schedLocChip(v);
+        html += `<div class="sched-item" onclick="openMaintenanceDash(); setTimeout(()=>{ var wo=document.querySelector('[data-mtab=\\'mtab-work-orders\\']'); if(wo) wo.click(); },150);" title="View in Maintenance Dashboard">
+          ${dot}<span class="sched-plate">${plate}</span>${locChip}
+          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,40))}${(i.text||'').length>40?'…':''}</span>${wait}${partsEta}${shop}
         </div>`;
       });
       html += '</div>';
@@ -1670,9 +1689,10 @@ window.renderShopSchedule = async function() {
         const plate = v ? escapeHtml(v.plate) : '?';
         const dot   = `<span style="width:8px;height:8px;border-radius:50%;background:${WO_PRI_COLOR[i.repairPriority]||'#d97706'};display:inline-block;margin-right:5px;flex-shrink:0;"></span>`;
         const shop  = i.assignedMechanic ? ` · <span style="color:#1e40af;">${escapeHtml(i.assignedMechanic)}</span>` : '';
+        const locChip = _schedLocChip(v);
         html += `<div class="sched-item" onclick="openMaintenanceDash(); setTimeout(()=>{ var wo=document.querySelector('[data-mtab=\\'mtab-work-orders\\']'); if(wo) wo.click(); },150);" title="View in Maintenance Dashboard">
-          ${dot}<span class="sched-plate">${plate}</span>
-          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,45))}${(i.text||'').length>45?'…':''}</span>${shop}
+          ${dot}<span class="sched-plate">${plate}</span>${locChip}
+          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,40))}${(i.text||'').length>40?'…':''}</span>${shop}
         </div>`;
       });
       html += '</div>';
