@@ -6629,7 +6629,8 @@ body {
 .sched-item:hover { background: #f0f9ff; }
 .sched-plate { font-weight: 800; color: #1e293b; white-space: nowrap; margin-right: 2px; }
 .sched-desc { color: #6b7280; flex: 1; min-width: 0; }
-.sched-loc-chip { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; flex-shrink: 0; margin-right: 4px; }
+.sched-loc-chip { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; flex-shrink: 0; margin-right: 4px; transition: opacity 0.15s; }
+.sched-loc-chip:hover { opacity: 0.75; text-decoration: underline; }
 
 .wo-card {
   border: 1.5px solid #e5e7eb;

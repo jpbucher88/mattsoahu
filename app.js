@@ -1634,7 +1634,7 @@ window.renderShopSchedule = async function() {
 
     let html = '';
 
-    // Helper: build a small location emblem for a vehicle
+    // Helper: build a small location emblem for a vehicle — clickable to open vehicle page
     function _schedLocChip(v) {
       if (!v) return '';
       const ts = v.tripStatus || '';
@@ -1649,7 +1649,7 @@ window.renderShopSchedule = async function() {
         const loc = v.homeLocation || 'Home';
         label = '📍 ' + loc; bg = '#f3f4f6'; color = '#374151'; border = '#e5e7eb';
       }
-      return `<span class="sched-loc-chip" style="background:${bg};color:${color};border-color:${border};">${escapeHtml(label)}</span>`;
+      return `<span class="sched-loc-chip" style="background:${bg};color:${color};border-color:${border};cursor:pointer;" onclick="event.stopPropagation();openVehiclePage('${v.id}')" title="Open ${escapeHtml(v.plate)} details">${escapeHtml(label)}</span>`;
     }
 
     // Currently at shop
