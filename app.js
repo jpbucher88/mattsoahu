@@ -1586,7 +1586,7 @@ function renderFleetDashboard() {
 }
 
 // ================================================================
-// SHOP SCHEDULE WIDGET — upcoming work orders on the dashboard
+// SHOP SCHEDULE WIDGET — merges repair-shop vehicles + work orders on the dashboard
 // ================================================================
 window.renderShopSchedule = async function() {
   const widget = $('shop-schedule-widget');
@@ -1603,28 +1603,32 @@ window.renderShopSchedule = async function() {
       .where('workOrder', '==', true)
       .where('done', '==', false)
       .get();
+    const allWOs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-    const allItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // --- "Currently At Shop" section ---
+    // Source A: vehicles flagged as repair-shop in vehiclesCache
+    const atRepairVehicles = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
+    // Source B: work orders with dropped_off / awaiting_parts status
+    const atShopWOs = allWOs.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
 
-    // Items currently at shop (dropped_off / awaiting_parts)
-    const atShop = allItems.filter(i =>
-      i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts'
-    );
+    // Merge by vehicleId — vehicle record takes priority; work order adds detail
+    const atShopMap = {};
+    atRepairVehicles.forEach(v => { atShopMap[v.id] = { v, wo: null }; });
+    atShopWOs.forEach(i => {
+      if (atShopMap[i.vehicleId]) {
+        atShopMap[i.vehicleId].wo = i;
+      } else {
+        const v = vehiclesCache.find(x => x.id === i.vehicleId);
+        atShopMap[i.vehicleId] = { v: v || null, wo: i };
+      }
+    });
+    const atShopEntries = Object.values(atShopMap);
 
-    // Items scheduled within next 14 days (not yet at shop)
-    const upcoming = allItems.filter(i =>
+    // --- "Upcoming" section ---
+    const upcoming = allWOs.filter(i =>
       i.scheduledDate && i.scheduledDate >= today && i.scheduledDate <= d14str &&
       i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts'
     );
-
-    const total = atShop.length + upcoming.length;
-    if (widget) widget.style.display = total > 0 ? '' : 'none';
-    if (badge)  badge.textContent = total;
-    if (total === 0) { list.innerHTML = '<p class="hint" style="padding:8px 0;">No vehicles scheduled for the shop in the next 14 days.</p>'; return; }
-
-    const WO_PRI_COLOR = { critical:'#dc2626', high:'#ea580c', standard:'#d97706', monitor:'#16a34a' };
-
-    // Group upcoming by date
     const byDate = {};
     upcoming.forEach(i => {
       if (!byDate[i.scheduledDate]) byDate[i.scheduledDate] = [];
@@ -1632,9 +1636,14 @@ window.renderShopSchedule = async function() {
     });
     const sortedDates = Object.keys(byDate).sort();
 
-    let html = '';
+    const total = atShopEntries.length + upcoming.length;
+    if (widget) widget.style.display = total > 0 ? '' : 'none';
+    if (badge)  badge.textContent = total;
+    if (total === 0) { list.innerHTML = '<p class="hint" style="padding:8px 0;">No vehicles at the shop or scheduled in the next 14 days.</p>'; return; }
 
-    // Helper: build a small location emblem for a vehicle — clickable to open vehicle page
+    const WO_PRI_COLOR = { critical:'#dc2626', high:'#ea580c', standard:'#d97706', monitor:'#16a34a' };
+
+    // Helper: location chip — clickable to open vehicle page
     function _schedLocChip(v) {
       if (!v) return '';
       const ts = v.tripStatus || '';
@@ -1642,7 +1651,7 @@ window.renderShopSchedule = async function() {
       if (ts === 'on-trip' || ts === 'private-trip') {
         label = '🚗 On Trip'; bg = '#dbeafe'; color = '#1e40af'; border = '#bfdbfe';
       } else if (ts === 'repair-shop') {
-        label = '🔧 At Shop'; bg = '#fef9c3'; color = '#854d0e'; border = '#fde68a';
+        label = '🔧 At Shop'; bg = '#fee2e2'; color = '#991b1b'; border = '#fca5a5';
       } else if (ts === 'scheduled') {
         label = '📅 Scheduled'; bg = '#f0fdf4'; color = '#15803d'; border = '#86efac';
       } else {
@@ -1652,28 +1661,39 @@ window.renderShopSchedule = async function() {
       return `<span class="sched-loc-chip" style="background:${bg};color:${color};border-color:${border};cursor:pointer;" onclick="event.stopPropagation();openVehiclePage('${v.id}')" title="Open ${escapeHtml(v.plate)} details">${escapeHtml(label)}</span>`;
     }
 
-    // Currently at shop
-    if (atShop.length) {
+    let html = '';
+
+    // --- Currently At Shop (merged) ---
+    if (atShopEntries.length) {
       html += '<div class="sched-day-group">';
       html += '<div class="sched-day-header sched-day-now">🔧 Currently At Shop</div>';
-      atShop.forEach(i => {
-        const v = vehiclesCache.find(x => x.id === i.vehicleId);
+      atShopEntries.forEach(({ v, wo }) => {
         const plate = v ? escapeHtml(v.plate) : '?';
-        const dot   = `<span style="width:8px;height:8px;border-radius:50%;background:${WO_PRI_COLOR[i.repairPriority]||'#d97706'};display:inline-block;margin-right:5px;flex-shrink:0;"></span>`;
-        const shop  = i.assignedMechanic ? ` · <span style="color:#1e40af;">${escapeHtml(i.assignedMechanic)}</span>` : '';
-        const wait  = i.repairStatus === 'awaiting_parts' ? ' <span style="background:#fef9c3;color:#854d0e;font-size:0.7rem;padding:1px 6px;border-radius:999px;border:1px solid #fde68a;">⏳ Parts</span>' : '';
-        const partsEta = (i.repairStatus === 'awaiting_parts' && i.partsEta)
-          ? ` <span style="color:#854d0e;font-size:0.75rem;">ETA ${new Date(i.partsEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
+        const desc  = wo ? wo.text : (v ? `${v.make} ${v.model}` : '');
+        const pri   = wo ? (wo.repairPriority || 'standard') : 'standard';
+        const dot   = `<span style="width:8px;height:8px;border-radius:50%;background:${WO_PRI_COLOR[pri]||'#d97706'};display:inline-block;margin-right:5px;flex-shrink:0;"></span>`;
         const locChip = _schedLocChip(v);
+        // Return date from vehicle, shop from work order or vehicle
+        let returnTag = '';
+        if (v && v.tripReturnDate) {
+          const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+          returnTag = ` <span style="font-size:0.75rem;color:#6b7280;">↩ ${rd.toLocaleDateString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:APP_TIMEZONE})}</span>`;
+        }
+        const shopName = (wo && wo.assignedMechanic) || v?.repairShopName || null;
+        const shop = shopName ? ` · <span style="color:#1e40af;">${escapeHtml(shopName)}</span>` : '';
+        const wait = (wo && wo.repairStatus === 'awaiting_parts') ? ' <span style="background:#fef9c3;color:#854d0e;font-size:0.7rem;padding:1px 6px;border-radius:999px;border:1px solid #fde68a;">⏳ Parts</span>' : '';
+        const partsEta = (wo && wo.repairStatus === 'awaiting_parts' && (wo.partsEta || v?.repairPartsEta))
+          ? ` <span style="color:#854d0e;font-size:0.75rem;">ETA ${new Date(((wo.partsEta||v.repairPartsEta)+'T12:00:00')).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>` : '';
+        const orderNum = (v && v.repairOrderNumber) ? ` <span style="font-size:0.73rem;color:#6b7280;">RO#${escapeHtml(v.repairOrderNumber)}</span>` : '';
         html += `<div class="sched-item" onclick="openMaintenanceDash(); setTimeout(()=>{ var wo=document.querySelector('[data-mtab=\\'mtab-work-orders\\']'); if(wo) wo.click(); },150);" title="View in Maintenance Dashboard">
           ${dot}<span class="sched-plate">${plate}</span>${locChip}
-          <span class="sched-desc">${escapeHtml((i.text||'').slice(0,40))}${(i.text||'').length>40?'…':''}</span>${wait}${partsEta}${shop}
+          <span class="sched-desc">${escapeHtml(desc.slice(0,40))}${desc.length>40?'…':''}</span>${wait}${partsEta}${shop}${orderNum}${returnTag}
         </div>`;
       });
       html += '</div>';
     }
 
-    // Upcoming by date
+    // --- Upcoming by date ---
     sortedDates.forEach(dateStr => {
       const items = byDate[dateStr];
       const dateObj = new Date(dateStr + 'T12:00:00');
@@ -1681,9 +1701,7 @@ window.renderShopSchedule = async function() {
       const isTomorrow = dateStr === (() => { const t = new Date(); t.setDate(t.getDate()+1); return t.toISOString().slice(0,10); })();
       const dayLabel = isToday ? 'TODAY' : isTomorrow ? 'TOMORROW' : dateObj.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' }).toUpperCase();
       const headerCls = isToday ? 'sched-day-today' : isTomorrow ? 'sched-day-tomorrow' : 'sched-day-future';
-
-      html += `<div class="sched-day-group">`;
-      html += `<div class="sched-day-header ${headerCls}">${dayLabel} <span style="font-weight:400;font-size:0.7rem;opacity:0.7;">${items.length} vehicle${items.length>1?'s':''}</span></div>`;
+      html += `<div class="sched-day-group"><div class="sched-day-header ${headerCls}">${dayLabel} <span style="font-weight:400;font-size:0.7rem;opacity:0.7;">${items.length} vehicle${items.length>1?'s':''}</span></div>`;
       items.forEach(i => {
         const v = vehiclesCache.find(x => x.id === i.vehicleId);
         const plate = v ? escapeHtml(v.plate) : '?';
@@ -1925,33 +1943,7 @@ function renderLocationsWidget() {
     html += '</div></div>';
   }
 
-  // Repair Shop (non-overdue only)
-  if (atRepair.length > 0) {
-    html += `<div class="location-group">
-      <div class="location-group-header" style="background:#dc2626;">
-        <span class="location-group-name">🔧 Repair Shop</span>
-        <span class="location-group-count">${atRepair.length}</span>
-      </div>
-      <div class="location-group-vehicles trip-list">`;
-    for (const v of atRepair) {
-      let returnLabel = '';
-      if (v.tripReturnDate) {
-        const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        returnLabel = `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
-      }
-      let partsInfo = '';
-      if (v.repairShopName) partsInfo += `<span class="repair-parts-tag">🏥 ${escapeHtml(v.repairShopName)}</span>`;
-      if (v.repairOrderNumber) partsInfo += `<span class="repair-parts-tag">📦 ${escapeHtml(v.repairOrderNumber)}</span>`;
-      if (v.repairPartsEta) partsInfo += `<span class="repair-parts-tag">📅 Parts ETA: ${v.repairPartsEta}</span>`;
-      html += `<div class="trip-item">
-        <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span>
-        <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
-        ${returnLabel}
-        ${partsInfo}
-      </div>`;
-    }
-    html += '</div></div>';
-  }
+  // Repair Shop section suppressed — shown in the Shop Schedule widget at the bottom of the dashboard
 
   // Overdue with no home location
   const overdueNoLoc = [...overdueTrip, ...overdueRepair].filter(v => !v.homeLocation);
