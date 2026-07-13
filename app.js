@@ -1271,8 +1271,23 @@ $('btn-change-password').addEventListener('click', async () => {
 
 let vehiclesCache = [];
 
-async function loadVehicles() {
-  const snapshot = await db.collection('vehicles').orderBy('plate').get();
+window.refreshDashboard = async function(btn) {
+  if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
+  try {
+    await loadVehicles();
+    renderFleetDashboard();
+    renderLocationsWidget();
+    renderShopSchedule();
+    loadDashboardFollowUps();
+    toast('Fleet data refreshed ✓', 'success');
+  } catch(e) {
+    toast('Refresh failed.', 'error');
+  } finally {
+    if (btn) { btn.textContent = '↻ Refresh'; btn.disabled = false; }
+  }
+};
+
+async function loadVehicles() {  const snapshot = await db.collection('vehicles').orderBy('plate').get();
   vehiclesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
   // Check latest photo timestamp + overdue maintenance for each vehicle
