@@ -6632,6 +6632,38 @@ body {
 .wo-due-line { font-size: 0.8rem; color: #374151; margin: 4px 0 0; }
 .wo-due-overdue { color: #dc2626; font-weight: 600; }
 
+/* Problem category badge on work order cards */
+.wo-cat-badge { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f3e8ff; color: #7e22ce; border: 1px solid #d8b4fe; white-space: nowrap; }
+
+/* My-task card highlight */
+.wo-card-my-task { border-left: 4px solid #15803d !important; }
+.wo-my-task-badge { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #dcfce7; color: #15803d; border: 1px solid #86efac; white-space: nowrap; margin-right: 4px; }
+.wo-btn-my-task { border: 2px solid #15803d !important; font-weight: 700; }
+
+/* Problem category chips — in Log Issue modal */
+.wo-modal-label { font-size: 0.82rem; font-weight: 700; color: #374151; letter-spacing: 0.04em; }
+.wo-cat-chip { font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 20px; border: 1.5px solid #d1d5db; background: #f9fafb; color: #374151; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.wo-cat-chip:hover { border-color: #6366f1; background: #eef2ff; color: #4338ca; }
+.wo-cat-chip-active { border-color: #6366f1 !important; background: #eef2ff !important; color: #4338ca !important; font-weight: 700 !important; }
+
+/* Assignee user pills — in Log Issue modal */
+.wo-assignee-pill { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; padding: 5px 12px; border-radius: 20px; border: 1.5px solid #d1d5db; background: #f9fafb; color: #374151; cursor: pointer; transition: all 0.15s; }
+.wo-assignee-pill:hover { border-color: #0369a1; background: #e0f2fe; color: #0369a1; }
+.wo-assignee-pill-active { border-color: #0369a1 !important; background: #0369a1 !important; color: #fff !important; }
+.wo-assignee-avatar { width: 22px; height: 22px; border-radius: 50%; background: #1e40af; color: #fff; font-size: 0.65rem; font-weight: 800; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.wo-assignee-pill-active .wo-assignee-avatar { background: rgba(255,255,255,0.25); }
+
+/* Problem breakdown section at top of Work Orders tab */
+.wo-breakdown-wrap { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+.wo-breakdown-header { font-size: 0.82rem; font-weight: 700; color: #374151; padding: 8px 14px; cursor: pointer; user-select: none; display: flex; align-items: center; gap: 6px; }
+.wo-breakdown-header:hover { background: #f1f5f9; }
+.wo-breakdown-toggle { margin-left: auto; color: #9ca3af; font-size: 0.7rem; }
+.wo-breakdown-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px 12px; }
+.wo-bdc { font-size: 0.77rem; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1.5px solid #d1d5db; background: #fff; color: #374151; cursor: pointer; }
+.wo-bdc:hover { border-color: #6366f1; color: #4338ca; }
+.wo-bdc-active { border-color: #6366f1 !important; background: #eef2ff !important; color: #4338ca !important; }
+.wo-bdc-clear { font-size: 0.77rem; font-weight: 700; padding: 3px 10px; border-radius: 999px; border: 1.5px solid #fca5a5; background: #fef2f2; color: #dc2626; cursor: pointer; margin-left: auto; }
+
 .wo-description { font-size: 0.9rem; font-weight: 600; color: #111827; }
 .wo-meta-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .wo-sched-badge { font-size: 0.78rem; font-weight: 600; padding: 2px 9px; border-radius: 6px; }

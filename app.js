@@ -7235,6 +7235,39 @@ const WO_PRIORITY = {
   monitor:  { label: 'Monitor',   color: '#16a34a', bg: '#f0fdf4', icon: '🟢', desc: 'Watch, low urgency' },
 };
 
+const WO_PROBLEM_CATEGORIES = [
+  { key: 'low_tire_pressure', label: 'Low Tire Pressure',  icon: '🫧' },
+  { key: 'brakes',            label: 'Brakes',              icon: '🛑' },
+  { key: 'check_engine',      label: 'Check Engine Light',  icon: '⚠️' },
+  { key: 'windshield',        label: 'Windshield',          icon: '🪟' },
+  { key: 'low_oil',           label: 'Low Oil Light',       icon: '🛢️' },
+  { key: 'mirrors',           label: 'Mirrors',             icon: '🔲' },
+  { key: 'low_tire_tread',    label: 'Low Tire Tread',      icon: '🔄' },
+  { key: 'battery',           label: 'Low Car Battery',     icon: '🔋' },
+  { key: 'seat_belts',        label: 'Seat Belts',          icon: '🔒' },
+  { key: 'ac_heat',           label: 'A/C or Heat',         icon: '❄️' },
+  { key: 'wipers',            label: 'Wipers',              icon: '🌧️' },
+  { key: 'body_damage',       label: 'Body Damage',         icon: '💥' },
+  { key: 'interior',          label: 'Interior Issue',      icon: '🪑' },
+  { key: 'lights',            label: 'Lights',              icon: '💡' },
+  { key: 'noise',             label: 'Unusual Noise',       icon: '🔊' },
+  { key: 'other',             label: 'Other',               icon: '📋' },
+];
+
+let _woUsersCache = null;
+async function _loadWoUsers() {
+  if (_woUsersCache) return _woUsersCache;
+  try {
+    const snap = await db.collection('users').orderBy('displayName').get();
+    _woUsersCache = snap.docs
+      .map(d => ({ uid: d.id, ...d.data() }))
+      .filter(u => u.role === 'admin' || u.role === 'manager');
+    return _woUsersCache;
+  } catch(e) { return []; }
+}
+
+let _activeWoCategoryFilter = null; // null = show all
+
 async function _loadWorkOrders() {
   const container = $('work-orders-content');
   if (!container) return;
@@ -7269,11 +7302,23 @@ async function _loadWorkOrders() {
       deferred:    { label: 'Deferred',       icon: '📅', cls: 'wo-st-defer' },
     };
 
+    // Category breakdown counts (across ALL items, before filter)
+    const catCounts = {};
+    items.forEach(i => {
+      const k = i.repairCategory || '__none__';
+      catCounts[k] = (catCounts[k] || 0) + 1;
+    });
+
+    // Apply active category filter
+    const filteredItems = _activeWoCategoryFilter
+      ? items.filter(i => (_activeWoCategoryFilter === '__none__' ? !i.repairCategory : i.repairCategory === _activeWoCategoryFilter))
+      : items;
+
     // Group: dropped off gets its own section; missed/open/scheduled as before
-    const droppedOff = items.filter(i => i.repairStatus === 'dropped_off');
-    const missedList = items.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate < today);
-    const scheduled  = items.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate >= today);
-    const open       = items.filter(i => i.repairStatus !== 'dropped_off' && !i.scheduledDate);
+    const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off');
+    const missedList = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate < today);
+    const scheduled  = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.scheduledDate && i.scheduledDate >= today);
+    const open       = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && !i.scheduledDate);
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
@@ -7348,10 +7393,19 @@ async function _loadWorkOrders() {
         }
       }
 
-      // Mechanic / shop
-      const mechLine = item.assignedMechanic
-        ? '<div class="wo-mechanic-row">🔧 <strong>Mechanic/Shop:</strong> ' + escapeHtml(item.assignedMechanic) + '</div>'
-        : '';
+      // Problem category badge
+      const catInfo = WO_PROBLEM_CATEGORIES.find(c => c.key === item.repairCategory);
+      const catBadge = catInfo
+        ? '<span class="wo-cat-badge">' + catInfo.icon + ' ' + escapeHtml(catInfo.label) + '</span>'
+        : (item.repairCategoryLabel ? '<span class="wo-cat-badge">📋 ' + escapeHtml(item.repairCategoryLabel) + '</span>' : '');
+
+      // Assigned user / mechanic
+      const isMyTask = !!(currentUser && item.assignedUserId && item.assignedUserId === currentUser.uid);
+      const assigneeLine = item.assignedUserName
+        ? '<div class="wo-mechanic-row">' + (isMyTask ? '<span class="wo-my-task-badge">⭐ My Task</span> ' : '') + '👤 <strong>Assigned:</strong> ' + escapeHtml(item.assignedUserName) + '</div>'
+        : item.assignedMechanic
+        ? '<div class="wo-mechanic-row">🔧 <strong>Shop/Mechanic:</strong> ' + escapeHtml(item.assignedMechanic) + '</div>'
+        : ''
 
       // Trip conflict warning
       let tripConflict = '';
@@ -7389,28 +7443,49 @@ async function _loadWorkOrders() {
         ? '<button class="btn btn-sm wo-btn-delete" onclick="window.deleteWorkOrder(\'' + item.id + '\')" title="Delete">🗑</button>'
         : '';
 
-      return '<div class="wo-card" style="border-color:' + p.color + '40;background:' + p.bg + ';">'
+      // "Complete My Task" button — shown to the assigned user
+      let myTaskAction = '';
+      if (isMyTask) {
+        myTaskAction = '<button class="btn btn-sm wo-btn-resolve wo-btn-my-task" onclick="openCloseOutWorkOrder(\'' + item.id + '\',\'' + item.vehicleId + '\',\'' + escapeHtml(item.text).replace(/'/g, '&#39;') + '\')">✅ Complete My Task</button>';
+      }
+
+      return '<div class="wo-card' + (isMyTask ? ' wo-card-my-task' : '') + '" style="border-color:' + p.color + '40;background:' + p.bg + ';">'
         + '<div class="wo-card-top">'
         + '<div class="wo-priority-pill" style="background:' + p.color + ';color:#fff;">' + p.icon + ' ' + p.label + '</div>'
         + '<span class="wo-status-pill ' + st.cls + '">' + st.icon + ' ' + st.label + '</span>'
         + maintSourceBadge
+        + catBadge
         + '<div class="wo-vehicle-info"><span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage(\'' + item.vehicleId + '\'),80)">' + plate + '</span><span class="wo-vmeta">' + vInfo + '</span></div>'
         + '<div class="wo-avail-group">' + availBadge + returnNote + '</div>'
         + '</div>'
         + '<div class="wo-description">' + escapeHtml(item.text) + '</div>'
         + maintDueLine
-        + mechLine + tripConflict
+        + assigneeLine + tripConflict
         + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
         + progressSection
-        + '<div class="wo-actions">' + statusActions + '<button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder(\'' + item.id + '\')">✏️ Edit</button>' + deleteBtn + '</div>'
+        + '<div class="wo-actions">' + myTaskAction + statusActions + '<button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder(\'' + item.id + '\')">✏️ Edit</button>' + deleteBtn + '</div>'
         + '</div>';
     }
 
-    let html = `<div class="wo-pipeline-bar">
+    // Build category breakdown chips
+    const catEntries = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
+    let breakdownChips = `<button class="wo-bdc${!_activeWoCategoryFilter ? ' wo-bdc-active' : ''}" onclick="window._woFilterByCategory(null)">All (${items.length})</button>`;
+    for (const [key, count] of catEntries) {
+      const cat = WO_PROBLEM_CATEGORIES.find(c => c.key === key);
+      const lbl = cat ? cat.icon + ' ' + cat.label : (key === '__none__' ? '📋 Uncategorized' : '📋 ' + key);
+      breakdownChips += `<button class="wo-bdc${_activeWoCategoryFilter === key ? ' wo-bdc-active' : ''}" onclick="window._woFilterByCategory('${key}')">${escapeHtml(lbl)} (${count})</button>`;
+    }
+    const breakdownHtml = `<div class="wo-breakdown-wrap">
+      <div class="wo-breakdown-header" onclick="var c=this.nextElementSibling;c.style.display=c.style.display==='none'?'flex':'none';">📊 Problem Breakdown <span class="wo-breakdown-toggle">▼</span></div>
+      <div class="wo-breakdown-chips">${breakdownChips}</div>
+    </div>`;
+
+    let html = breakdownHtml + `<div class="wo-pipeline-bar">
       ${droppedOff.length ? `<span class="wo-pip-chip wo-pip-active">🔧 In Progress: ${droppedOff.length}</span>` : ''}
       ${missedList.length ? `<span class="wo-pip-chip wo-pip-missed">⚠️ Missed: ${missedList.length}</span>` : ''}
       ${open.length ? `<span class="wo-pip-chip wo-pip-open">⚪ Open: ${open.length}</span>` : ''}
       ${scheduled.length ? `<span class="wo-pip-chip wo-pip-sched">📅 Scheduled: ${scheduled.length}</span>` : ''}
+      ${_activeWoCategoryFilter ? `<button class="wo-bdc-clear" onclick="window._woFilterByCategory(null)">✕ Clear filter</button>` : ''}
     </div>`;
 
     if (droppedOff.length) {
@@ -7441,6 +7516,11 @@ async function _loadWorkOrders() {
     console.error('[WorkOrders]', e);
   }
 }
+
+window._woFilterByCategory = function(catKey) {
+  _activeWoCategoryFilter = catKey || null;
+  _loadWorkOrders();
+};
 
 window.deleteWorkOrder = async function(noteId) {
   if (currentUserRole !== 'admin') { toast('Admin only.', 'warning'); return; }
@@ -7508,7 +7588,8 @@ window.quickResolveWorkOrder = async function(noteId, resStatus, resText) {
   }
 };
 
-window.openNewWorkOrder = function(vehicleId) {  const existing = document.getElementById('wo-modal-overlay');
+window.openNewWorkOrder = function(vehicleId) {
+  const existing = document.getElementById('wo-modal-overlay');
   if (existing) existing.remove();
   const v = vehicleId && vehiclesCache.find(x => x.id === vehicleId);
   const overlay = document.createElement('div');
@@ -7534,24 +7615,34 @@ window.openNewWorkOrder = function(vehicleId) {  const existing = document.getEl
     `<option value="${x.id}"${x.id === vehicleId ? ' selected' : ''}>${escapeHtml(x.plate)} — ${escapeHtml(x.make)} ${escapeHtml(x.model)}</option>`
   ).join('');
 
+  const catChips = WO_PROBLEM_CATEGORIES.map(c =>
+    `<button type="button" class="wo-cat-chip" data-key="${c.key}" data-label="${escapeHtml(c.label)}" onclick="_woSelectCategory(this)">${c.icon} ${escapeHtml(c.label)}</button>`
+  ).join('');
+
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:520px;">
+    <div class="modal-box" style="max-width:560px;">
       <div class="modal-header" style="background:#1e293b;color:#fff;border-radius:10px 10px 0 0;">
         <h3 style="color:#fff;margin:0;">🔧 Log Issue — Record</h3>
         <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-modal-overlay').remove()">&times;</button>
       </div>
-      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;max-height:78vh;overflow-y:auto;">
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Vehicle</label>
+          <label class="wo-modal-label">VEHICLE</label>
           <select id="wo-vehicle-sel" class="vehicle-location-select" style="width:100%;margin-top:4px;" onchange="window._woVehicleChange(this.value)">${vehicleOptions}</select>
         </div>
         <div id="wo-avail-hint-area">${availHint}</div>
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Problem / Issue Description</label>
+          <label class="wo-modal-label">PROBLEM CATEGORY <span style="font-weight:400;color:#9ca3af;">— tap to select</span></label>
+          <div id="wo-category-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;">${catChips}</div>
+          <input type="hidden" id="wo-cat-key" value="">
+          <input type="hidden" id="wo-cat-label" value="">
+        </div>
+        <div class="form-group">
+          <label class="wo-modal-label">PROBLEM / ISSUE DESCRIPTION</label>
           <textarea id="wo-description" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Describe what's wrong, what was noticed, symptoms…"></textarea>
         </div>
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Priority Level</label>
+          <label class="wo-modal-label">PRIORITY LEVEL</label>
           <div class="wo-priority-select" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
             <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="critical"> <span style="background:#fef2f2;color:#dc2626;border:1.5px solid #fca5a5;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🔴 Critical</span></label>
             <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="high"> <span style="background:#fff7ed;color:#ea580c;border:1.5px solid #fed7aa;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟠 High</span></label>
@@ -7560,12 +7651,17 @@ window.openNewWorkOrder = function(vehicleId) {  const existing = document.getEl
           </div>
         </div>
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Schedule Date <span style="font-weight:400;color:#9ca3af;">(optional — leave blank to schedule later)</span></label>
+          <label class="wo-modal-label">SCHEDULE DATE <span style="font-weight:400;color:#9ca3af;">(optional — leave blank to schedule later)</span></label>
           <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="">
         </div>
         <div class="form-group">
-          <label style="font-size:0.82rem;font-weight:700;color:#374151;">Mechanic / Shop <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
-          <input type="text" id="wo-mechanic" placeholder="e.g. Joe Auto, Dan, Firestone..." style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:100%;">
+          <label class="wo-modal-label">ASSIGN TO <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+          <div id="wo-assignee-area" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;min-height:34px;">
+            <span style="font-size:0.8rem;color:#9ca3af;padding:6px 0;">Loading staff…</span>
+          </div>
+          <input type="hidden" id="wo-assignee-uid" value="">
+          <input type="hidden" id="wo-assignee-name" value="">
+          <input type="text" id="wo-mechanic" placeholder="Or type external shop / mechanic (e.g. Firestone, Joe Auto)…" style="margin-top:6px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;width:100%;">
         </div>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
@@ -7580,6 +7676,60 @@ window.openNewWorkOrder = function(vehicleId) {  const existing = document.getEl
   overlay.style.display = 'flex';
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   setTimeout(() => { const t = document.getElementById('wo-description'); if (t) t.focus(); }, 80);
+
+  // Async-load staff/manager users for the assignee picker
+  _loadWoUsers().then(users => {
+    const area = document.getElementById('wo-assignee-area');
+    if (!area) return;
+    if (!users.length) {
+      area.innerHTML = '<span style="font-size:0.8rem;color:#9ca3af;">No managers found — use the text field below.</span>';
+      return;
+    }
+    area.innerHTML = users.map(u => {
+      const initials = (u.displayName || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+      return `<button type="button" class="wo-assignee-pill" data-uid="${u.uid}" data-name="${escapeHtml(u.displayName || u.email)}" onclick="_woSelectAssignee(this)"><span class="wo-assignee-avatar">${initials}</span>${escapeHtml(u.displayName || u.email)}</button>`;
+    }).join('');
+  });
+};
+
+// Category chip toggle
+window._woSelectCategory = function(btn) {
+  const chips = document.querySelectorAll('#wo-category-chips .wo-cat-chip');
+  const isActive = btn.classList.contains('wo-cat-chip-active');
+  chips.forEach(c => c.classList.remove('wo-cat-chip-active'));
+  const keyEl = document.getElementById('wo-cat-key');
+  const labelEl = document.getElementById('wo-cat-label');
+  const descEl = document.getElementById('wo-description');
+  if (isActive) {
+    if (keyEl) keyEl.value = '';
+    if (labelEl) labelEl.value = '';
+  } else {
+    btn.classList.add('wo-cat-chip-active');
+    if (keyEl) keyEl.value = btn.dataset.key;
+    if (labelEl) labelEl.value = btn.dataset.label;
+    // Pre-fill description only if still empty
+    if (descEl && !descEl.value.trim()) descEl.value = btn.dataset.label;
+  }
+};
+
+// Assignee user pill toggle
+window._woSelectAssignee = function(btn) {
+  const pills = document.querySelectorAll('#wo-assignee-area .wo-assignee-pill');
+  const isActive = btn.classList.contains('wo-assignee-pill-active');
+  pills.forEach(p => p.classList.remove('wo-assignee-pill-active'));
+  const uidEl = document.getElementById('wo-assignee-uid');
+  const nameEl = document.getElementById('wo-assignee-name');
+  if (isActive) {
+    if (uidEl) uidEl.value = '';
+    if (nameEl) nameEl.value = '';
+  } else {
+    btn.classList.add('wo-assignee-pill-active');
+    if (uidEl) uidEl.value = btn.dataset.uid;
+    if (nameEl) nameEl.value = btn.dataset.name;
+    // Clear external mechanic text if a user is selected
+    const mechEl = document.getElementById('wo-mechanic');
+    if (mechEl) mechEl.placeholder = 'User selected above — or override with external shop name';
+  }
 };
 
 window._woVehicleChange = function(vid) {
@@ -7607,6 +7757,10 @@ window._saveWorkOrder = async function() {
   const text = (document.getElementById('wo-description')?.value || '').trim();
   const priority = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
   const scheduledDate = document.getElementById('wo-schedule-date')?.value || null;
+  const catKey   = document.getElementById('wo-cat-key')?.value || null;
+  const catLabel = document.getElementById('wo-cat-label')?.value || null;
+  const assigneeUid  = document.getElementById('wo-assignee-uid')?.value || null;
+  const assigneeName = document.getElementById('wo-assignee-name')?.value || null;
   const mechanic = (document.getElementById('wo-mechanic')?.value || '').trim() || null;
 
   if (!vid) { toast('Select a vehicle.', 'warning'); if (saveBtn) { saveBtn.disabled=false; saveBtn.textContent='✓ Save'; } return; }
@@ -7622,7 +7776,11 @@ window._saveWorkOrder = async function() {
       repairStatus: scheduledDate ? 'scheduled' : 'open',
       scheduledDate: scheduledDate || null,
       dueDate: scheduledDate || null,
-      assignedMechanic: mechanic || null,
+      repairCategory: catKey || null,
+      repairCategoryLabel: catLabel || null,
+      assignedUserId: assigneeUid || null,
+      assignedUserName: assigneeName || null,
+      assignedMechanic: assigneeName || mechanic || null,
       isFollowUp: true,
       done: false,
       urgent: priority === 'critical',
@@ -7857,16 +8015,53 @@ window.openEditWorkOrder = async function(noteId) {
     if (descEl) descEl.value = d.text || '';
     if (schedEl) schedEl.value = d.scheduledDate || '';
     if (priEl) priEl.checked = true;
+    // Pre-select category chip
+    if (d.repairCategory) {
+      const catChip = document.querySelector(`#wo-category-chips [data-key="${d.repairCategory}"]`);
+      if (catChip) {
+        catChip.classList.add('wo-cat-chip-active');
+        const keyEl = document.getElementById('wo-cat-key');
+        const lblEl = document.getElementById('wo-cat-label');
+        if (keyEl) keyEl.value = d.repairCategory;
+        if (lblEl) lblEl.value = d.repairCategoryLabel || d.repairCategory;
+      }
+    }
+    // Pre-fill external mechanic text
+    const mechEl = document.getElementById('wo-mechanic');
+    if (mechEl && !d.assignedUserId) mechEl.value = d.assignedMechanic || '';
+    // Pre-select system user assignee (wait for users to load)
+    if (d.assignedUserId) {
+      _loadWoUsers().then(() => {
+        const pill = document.querySelector(`#wo-assignee-area [data-uid="${d.assignedUserId}"]`);
+        if (pill) { _woSelectAssignee(pill); }
+        else {
+          const uidEl = document.getElementById('wo-assignee-uid');
+          const nameEl = document.getElementById('wo-assignee-name');
+          if (uidEl) uidEl.value = d.assignedUserId;
+          if (nameEl) nameEl.value = d.assignedUserName || '';
+        }
+      });
+    }
     // Change the save button to update
     const saveBtn = document.querySelector('#wo-modal-overlay .btn-primary');
     if (saveBtn) { saveBtn.textContent = '💾 Update Issue'; saveBtn.onclick = async () => {
-      const text2 = document.getElementById('wo-description')?.value?.trim();
-      const pri2  = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
+      const text2  = document.getElementById('wo-description')?.value?.trim();
+      const pri2   = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
       const sched2 = document.getElementById('wo-schedule-date')?.value || null;
+      const cat2   = document.getElementById('wo-cat-key')?.value || null;
+      const catLbl2 = document.getElementById('wo-cat-label')?.value || null;
+      const uid2   = document.getElementById('wo-assignee-uid')?.value || null;
+      const name2  = document.getElementById('wo-assignee-name')?.value || null;
+      const mech2  = (document.getElementById('wo-mechanic')?.value || '').trim() || null;
       if (!text2) { toast('Enter a description.', 'warning'); return; }
       await db.collection('vehicleNotes').doc(noteId).update({
         text: text2, repairPriority: pri2, scheduledDate: sched2, dueDate: sched2,
         repairStatus: sched2 ? 'scheduled' : 'open', urgent: pri2 === 'critical',
+        repairCategory: cat2 || null,
+        repairCategoryLabel: catLbl2 || null,
+        assignedUserId: uid2 || null,
+        assignedUserName: name2 || null,
+        assignedMechanic: name2 || mech2 || null,
       });
       document.getElementById('wo-modal-overlay')?.remove();
       toast('Issue updated ✓', 'success');
@@ -7874,7 +8069,7 @@ window.openEditWorkOrder = async function(noteId) {
     }; }
     const headerEl = document.querySelector('#wo-modal-overlay h3');
     if (headerEl) headerEl.textContent = '✏️ Edit Issue';
-  }, 100);
+  }, 300);
 };
 
 // ================================================================
