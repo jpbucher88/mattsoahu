@@ -1271,6 +1271,131 @@ $('btn-change-password').addEventListener('click', async () => {
 
 let vehiclesCache = [];
 
+// ================================================================
+// AVAILABLE FLEET MAINTENANCE CHECK
+// ================================================================
+window.openAvailableFleetCheck = async function() {
+  const existing = document.getElementById('avail-maint-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'avail-maint-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header" style="background:#15803d;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">🔧 Available Fleet — Maintenance Check</h3>
+        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('avail-maint-overlay').remove()">&times;</button>
+      </div>
+      <div id="avail-maint-body" style="padding:16px;max-height:68vh;overflow-y:auto;">
+        <p style="text-align:center;color:#9ca3af;font-size:0.85rem;">Loading…</p>
+      </div>
+      <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="document.getElementById('avail-maint-overlay').remove()">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  const today = todayDateString();
+  // Available = at home, not on trip, not repair shop, no scheduled trip
+  const available = vehiclesCache.filter(v =>
+    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' &&
+    v.tripStatus !== 'repair-shop' && v.tripStatus !== 'scheduled'
+  );
+
+  if (!available.length) {
+    document.getElementById('avail-maint-body').innerHTML = '<p style="text-align:center;color:#9ca3af;padding:24px 0;">No vehicles currently available.</p>';
+    return;
+  }
+
+  // Load maintenance due data for each available vehicle
+  try {
+    // Query all open maintenance follow-up notes for available vehicles
+    const vids = available.map(v => v.id);
+    // Firestore 'in' is limited to 30; batch if needed
+    const chunks = [];
+    for (let i = 0; i < vids.length; i += 30) chunks.push(vids.slice(i, i + 30));
+    const notesByVehicle = {};
+    for (const chunk of chunks) {
+      const snap = await db.collection('vehicleNotes')
+        .where('vehicleId', 'in', chunk)
+        .where('autoCreated', '==', true)
+        .where('done', '==', false)
+        .get();
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (!notesByVehicle[d.vehicleId]) notesByVehicle[d.vehicleId] = [];
+        notesByVehicle[d.vehicleId].push(d);
+      });
+    }
+
+    // Categorise each vehicle
+    const overdue = [], dueSoon = [], upToDate = [], noData = [];
+    available.forEach(v => {
+      const notes = notesByVehicle[v.id] || [];
+      const overdueNotes = notes.filter(n =>
+        (n.dueDate && n.dueDate <= today) ||
+        (n.nextDueMileage && v.mileage && n.nextDueMileage <= v.mileage)
+      );
+      const upcomingNotes = notes.filter(n =>
+        !overdueNotes.includes(n) && (
+          (n.dueDate) ||
+          (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= 1500)
+        )
+      );
+      if (overdueNotes.length)        overdue.push({ v, overdueNotes, upcomingNotes });
+      else if (upcomingNotes.length)   dueSoon.push({ v, overdueNotes, upcomingNotes });
+      else if (notes.length || v.mileage) upToDate.push({ v });
+      else                              noData.push({ v });
+    });
+
+    function makeRow(entry, urgency) {
+      const { v, overdueNotes = [], upcomingNotes = [] } = entry;
+      const loc = v.homeLocation ? ` · ${escapeHtml(v.homeLocation)}` : '';
+      const mi  = v.mileage ? v.mileage.toLocaleString() + ' mi' : 'no mileage';
+      const tag = urgency === 'overdue' ? `<span class="amc-tag amc-overdue">${overdueNotes.length} overdue</span>` :
+                  urgency === 'soon'    ? `<span class="amc-tag amc-soon">${upcomingNotes.length} due soon</span>` :
+                  urgency === 'ok'      ? `<span class="amc-tag amc-ok">✓ Up to date</span>` :
+                                         `<span class="amc-tag amc-nodata">No data</span>`;
+      const details = [...overdueNotes.slice(0,3), ...upcomingNotes.slice(0,2)].map(n =>
+        `<div class="amc-note">• ${escapeHtml((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''}</div>`
+      ).join('');
+      return `<div class="amc-row" onclick="document.getElementById('avail-maint-overlay').remove(); openVehiclePage('${v.id}');" title="Open vehicle page">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong style="font-size:0.9rem;">${escapeHtml(v.plate)}</strong>
+          <span style="color:#6b7280;font-size:0.8rem;">${escapeHtml(v.make)} ${escapeHtml(v.model)}${loc}</span>
+          <span style="color:#9ca3af;font-size:0.75rem;">${mi}</span>
+          ${tag}
+        </div>
+        ${details ? `<div style="margin-top:4px;">${details}</div>` : ''}
+      </div>`;
+    }
+
+    let html = '';
+    if (overdue.length) {
+      html += `<div class="amc-section-header" style="background:#fef2f2;color:#dc2626;">🔴 Overdue Maintenance <span class="amc-sec-count">${overdue.length}</span></div>`;
+      html += overdue.map(e => makeRow(e, 'overdue')).join('');
+    }
+    if (dueSoon.length) {
+      html += `<div class="amc-section-header" style="background:#fffbeb;color:#d97706;">🟡 Due Soon <span class="amc-sec-count">${dueSoon.length}</span></div>`;
+      html += dueSoon.map(e => makeRow(e, 'soon')).join('');
+    }
+    if (upToDate.length) {
+      html += `<div class="amc-section-header" style="background:#f0fdf4;color:#15803d;">✅ Up to Date <span class="amc-sec-count">${upToDate.length}</span></div>`;
+      html += upToDate.map(e => makeRow(e, 'ok')).join('');
+    }
+    if (noData.length) {
+      html += `<div class="amc-section-header" style="background:#f3f4f6;color:#6b7280;">⚪ No Maintenance Data <span class="amc-sec-count">${noData.length}</span></div>`;
+      html += noData.map(e => makeRow(e, 'nodata')).join('');
+    }
+    document.getElementById('avail-maint-body').innerHTML = html || '<p style="text-align:center;color:#9ca3af;padding:24px 0;">All vehicles are up to date!</p>';
+  } catch(e) {
+    console.error('Available fleet check error:', e);
+    document.getElementById('avail-maint-body').innerHTML = '<p style="color:#ef4444;text-align:center;">Failed to load maintenance data.</p>';
+  }
+};
+
 window.refreshDashboard = async function(btn) {
   if (btn) { btn.textContent = '↻ …'; btn.disabled = true; }
   try {
@@ -2904,24 +3029,26 @@ async function openVehiclePage(vid) {
 // MILEAGE PROMPT — required before photo upload
 // ================================================================
 
-// Creates an urgent management verification task when mileage is recorded lower than previous
+// Creates a management verification task when mileage is recorded lower than previous
 function createMileageDecreaseTask(vehicle, prevMileage, newMileage) {
   if (!vehicle || !currentUser) return;
   const plate = vehicle.plate || vehicle.id;
   db.collection('vehicleNotes').add({
     vehicleId: vehicle.id,
-    text: `⚠️ Mileage decrease needs verification — was ${prevMileage.toLocaleString()} mi, now recorded as ${newMileage.toLocaleString()} mi. Logged by ${currentUser.displayName || currentUser.email}. Please verify odometer with driver.`,
+    text: `⚠️ Mileage entered lower than recorded — was ${prevMileage.toLocaleString()} mi, entered as ${newMileage.toLocaleString()} mi. Logged by ${currentUser.displayName || currentUser.email}. Please verify odometer with driver.`,
     isFollowUp: true,
     done: false,
-    urgent: true,
-    taskStatus: 'urgent',
+    urgent: false,
+    taskStatus: 'monitoring',
     autoCreated: true,
     sourceType: 'mileage_decrease',
+    prevMileage,
+    newMileage,
     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     createdBy: currentUser.uid,
     createdByName: currentUser.displayName || currentUser.email,
   }).then(() => {
-    toast(`⚠️ Verification task created for management.`, 'warning');
+    toast('Mileage discrepancy flagged for review.', 'warning');
     loadDashboardFollowUps();
   }).catch(err => console.error('createMileageDecreaseTask error:', err));
   logUserActivity('mileage_decrease', `${plate}: ${prevMileage.toLocaleString()} → ${newMileage.toLocaleString()} mi`);
@@ -2954,16 +3081,39 @@ function resetMileagePrompt() {
 
 async function confirmMileage() {
   const input = $('mileage-prompt-input');
-  const val = parseInt(input.value);
+  // Whole numbers only — strip any decimal the user may have typed
+  const val = Math.floor(parseFloat(input.value) || 0);
+  input.value = val || '';
+
   if (!val || val < 1) {
     toast('Enter the current odometer reading to continue.', 'warning');
     input.focus();
     return;
   }
+
+  // Hard cap: fleet vehicles should not exceed 200,000 miles
+  if (val > 200000) {
+    toast('⚠️ Mileage exceeds 200,000 mi — please recheck the odometer.', 'error');
+    input.value = '';
+    input.focus();
+    return;
+  }
+
   const prev = selectedVehicle && selectedVehicle.mileage;
+
+  // Flag unusually large increases (>10% above previous)
+  if (prev && val > Math.floor(prev * 1.10)) {
+    const pctIncrease = Math.round(((val - prev) / prev) * 100);
+    const ok = await confirm(
+      'Unusually High Mileage — Please Verify',
+      `Recorded: ${prev.toLocaleString()} mi   →   Entered: ${val.toLocaleString()} mi\n\nThis is a ${pctIncrease}% increase, which seems high. Please double-check the odometer before saving.\n\nAre you sure this is correct?`
+    );
+    if (!ok) { input.value = ''; input.focus(); return; }
+  }
+
   if (prev && val < prev) {
     const ok = await confirm(
-      '⚠️ Mileage Decrease Warning',
+      '⚠️ Mileage Decrease — Please Verify',
       `The current recorded mileage is ${prev.toLocaleString()} mi. You entered ${val.toLocaleString()} mi, which is lower.\n\nOdometers don't go backwards — are you sure this is correct?`
     );
     if (!ok) { input.focus(); return; }
@@ -6554,19 +6704,33 @@ async function updateRecommendedServices(vehicleId) {
 
 $('btn-save-mileage').addEventListener('click', async () => {
   if (!selectedVehicle) return;
-  const val = parseInt($('vehicle-mileage').value);
+  const raw = Math.floor(parseFloat($('vehicle-mileage').value) || 0);
+  $('vehicle-mileage').value = raw || '';
+  const val = raw;
   if (!val || val < 0) {
     toast('Enter a valid mileage.', 'warning');
     return;
   }
+  if (val > 200000) {
+    toast('⚠️ Mileage exceeds 200,000 mi — please recheck the odometer.', 'error');
+    $('vehicle-mileage').value = '';
+    return;
+  }
   const prev = selectedVehicle.mileage;
+  if (prev && val > Math.floor(prev * 1.10)) {
+    const pctIncrease = Math.round(((val - prev) / prev) * 100);
+    const ok = await confirm(
+      'Unusually High Mileage — Please Verify',
+      `Recorded: ${prev.toLocaleString()} mi   →   Entered: ${val.toLocaleString()} mi\n\nThis is a ${pctIncrease}% increase. Please double-check the odometer before saving.\n\nAre you sure this is correct?`
+    );
+    if (!ok) return;
+  }
   if (prev && val < prev) {
     const ok = await confirm(
-      '⚠️ Mileage Decrease Warning',
+      '⚠️ Mileage Decrease — Please Verify',
       `The current recorded mileage is ${prev.toLocaleString()} mi. You entered ${val.toLocaleString()} mi, which is lower.\n\nOdometers don't go backwards — are you sure this is correct?`
     );
     if (!ok) return;
-    // Create management verification task
     createMileageDecreaseTask(selectedVehicle, prev, val);
   }
   try {
@@ -11918,6 +12082,83 @@ window.openNoteEditModal = async function(docId, collection) {
 };
 
 // ================================================================
+// MILEAGE DISCREPANCY REVIEW PANEL
+// ================================================================
+window.openMileageReviewPanel = function(alerts) {
+  const existing = document.getElementById('mileage-review-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'mileage-review-overlay';
+  overlay.className = 'modal-overlay';
+
+  const rows = alerts.map(a => {
+    const v = vehiclesCache.find(x => x.id === a.vehicleId);
+    const plate = v ? escapeHtml(v.plate) : '?';
+    const make  = v ? escapeHtml(v.make + ' ' + v.model) : '';
+    const prev  = a.prevMileage ? a.prevMileage.toLocaleString() + ' mi' : 'unknown';
+    const curr  = a.newMileage  ? a.newMileage.toLocaleString()  + ' mi' : 'unknown';
+    const by    = escapeHtml(a.createdByName || '?');
+    const when  = a.createdAt ? (a.createdAt.toDate ? a.createdAt.toDate() : new Date(a.createdAt)).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+    return `<div class="mil-rev-row">
+      <div class="mil-rev-vehicle"><strong>${plate}</strong> <span style="color:#6b7280;font-size:0.82rem;">${make}</span></div>
+      <div class="mil-rev-detail">
+        <span class="mil-rev-chip mil-rev-prev">${prev} recorded</span>
+        <span style="color:#6b7280;">→</span>
+        <span class="mil-rev-chip mil-rev-new">${curr} entered</span>
+      </div>
+      <div style="font-size:0.75rem;color:#9ca3af;margin-top:2px;">By ${by}${when ? ' · ' + when : ''}</div>
+      <div class="mil-rev-actions">
+        <button class="btn btn-sm mil-rev-approve" onclick="window._mileageReviewAction('${a.id}','${a.collection||'vehicleNotes'}','approve',${a.newMileage||0})">✓ Approve — Keep ${curr}</button>
+        <button class="btn btn-sm mil-rev-deny" onclick="window._mileageReviewAction('${a.id}','${a.collection||'vehicleNotes'}','deny',${a.prevMileage||0},'${a.vehicleId}')">✕ Deny — Revert to ${prev}</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:520px;">
+      <div class="modal-header" style="background:#92400e;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">🔍 Mileage Review</h3>
+        <button class="modal-close" style="color:#fff;" onclick="document.getElementById('mileage-review-overlay').remove()">&times;</button>
+      </div>
+      <div style="padding:14px 16px 6px;font-size:0.83rem;color:#6b7280;">Review each mileage entry below. Approving keeps the new reading; denying reverts to the previously recorded value.</div>
+      <div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow-y:auto;margin-top:8px;">${rows}</div>
+      <div style="padding:12px 16px;border-top:1px solid #e5e7eb;display:flex;justify-content:flex-end;">
+        <button class="btn btn-outline" onclick="document.getElementById('mileage-review-overlay').remove()">Close</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.style.display = 'flex';
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+};
+
+window._mileageReviewAction = async function(noteId, collection, action, mileage, vehicleId) {
+  try {
+    if (action === 'deny' && vehicleId && mileage) {
+      // Revert vehicle mileage to previous value
+      await db.collection('vehicles').doc(vehicleId).update({
+        mileage,
+        mileageUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      const cached = vehiclesCache.find(v => v.id === vehicleId);
+      if (cached) cached.mileage = mileage;
+    }
+    // Mark the review task as done
+    await db.collection(collection || 'vehicleNotes').doc(noteId).update({
+      done: true,
+      mileageReviewAction: action,
+      mileageReviewedBy: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast(action === 'approve' ? '✓ Mileage approved.' : '✕ Mileage reverted to previous value.', 'success');
+    document.getElementById('mileage-review-overlay')?.remove();
+    loadDashboardFollowUps();
+  } catch(e) {
+    console.error('Mileage review error:', e);
+    toast('Failed to save review.', 'error');
+  }
+};
+
+// ================================================================
 // GENERAL NOTES (not tied to a vehicle)
 // ================================================================
 
@@ -11932,31 +12173,30 @@ function renderUrgentBanner(items) {
 
   const today = todayDateString();
   // Compliance items belong to the Fleet Compliance widget only — never show here
-  // mileage_decrease tasks: management-only, hidden in banner, accessible via 🔍 button
+  // mileage_decrease tasks: separate review panel, not in main urgent banner
   const urgentItems = items.filter(i => i.urgent && i.sourceType !== 'compliance' && i.sourceType !== 'mileage_decrease');
-  const mileageAlerts = items.filter(i => i.urgent && i.sourceType === 'mileage_decrease');
+  const mileageAlerts = items.filter(i => i.sourceType === 'mileage_decrease' && !i.done);
 
-  if (urgentItems.length === 0) {
+  if (urgentItems.length === 0 && mileageAlerts.length === 0) {
     banner.style.display = 'none';
     return;
   }
+  if (urgentItems.length === 0 && mileageAlerts.length > 0) banner.style.display = '';
+  else banner.style.display = '';
+  if (countEl) countEl.textContent = urgentItems.length || '';
 
-  banner.style.display = '';
-  if (countEl) countEl.textContent = urgentItems.length;
-
-  // Discreet management button for mileage decrease alerts
+  // Mileage discrepancy review button — opens a dedicated approve/deny panel
   let mileageAlertBtn = banner.querySelector('.mileage-alert-mgmt-btn');
   if (mileageAlerts.length > 0 && (currentUserRole === 'admin' || currentUserRole === 'manager')) {
     if (!mileageAlertBtn) {
       mileageAlertBtn = document.createElement('button');
       mileageAlertBtn.className = 'btn btn-sm btn-outline mileage-alert-mgmt-btn';
-      mileageAlertBtn.style.cssText = 'font-size:0.72rem;opacity:0.65;margin-left:8px;';
-      mileageAlertBtn.title = 'Mileage decrease verification tasks';
-      mileageAlertBtn.textContent = `🔍 ${mileageAlerts.length} mileage alert${mileageAlerts.length > 1 ? 's' : ''}`;
-      mileageAlertBtn.onclick = () => openNoteEditModal(mileageAlerts[0].id, mileageAlerts[0].collection);
+      mileageAlertBtn.style.cssText = 'font-size:0.78rem;margin-left:8px;border-color:#d97706;color:#d97706;';
       const header = banner.querySelector('.urgent-banner-header') || banner;
       header.appendChild(mileageAlertBtn);
     }
+    mileageAlertBtn.textContent = `🔍 ${mileageAlerts.length} mileage review${mileageAlerts.length > 1 ? 's' : ''}`;
+    mileageAlertBtn.onclick = () => openMileageReviewPanel(mileageAlerts);
   } else if (mileageAlertBtn) {
     mileageAlertBtn.remove();
   }
