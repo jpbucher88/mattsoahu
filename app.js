@@ -881,11 +881,17 @@ function todayDateString() {
   return parts; // returns YYYY-MM-DD
 }
 
-// Returns true if the vehicle's last photo was taken today (HST calendar day)
+// Returns true if today's photos are covered — either a real upload today, or a manual override done today (HST)
 function hasPhotosToday(v) {
-  if (!v || !v.lastPhotoDate) return false;
-  const d = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(v.lastPhotoDate);
-  return d === todayDateString();
+  if (!v) return false;
+  const fmt = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(d);
+  const today = todayDateString();
+  if (v.lastPhotoDate && fmt(v.lastPhotoDate) === today) return true;
+  if (v.lastPhotoOverrideAt) {
+    const od = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate() : new Date(v.lastPhotoOverrideAt);
+    if (fmt(od) === today) return true;
+  }
+  return false;
 }
 
 // 15-minute interval time select helper
@@ -1438,12 +1444,13 @@ async function loadVehicles() {  const snapshot = await db.collection('vehicles'
           v.lastPhotoDate = null;
         }
       }
-      // Check manual override — if more recent than last photo, use it
+      // Manual override — use it for the stale-age calculation ONLY,
+      // do NOT overwrite lastPhotoDate so the calendar-day check stays accurate
       if (v.lastPhotoOverrideAt) {
         const overrideTime = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate().getTime() : new Date(v.lastPhotoOverrideAt).getTime();
         if (v.lastPhotoAge === Infinity || overrideTime > (now - v.lastPhotoAge)) {
           v.lastPhotoAge = now - overrideTime;
-          v.lastPhotoDate = new Date(overrideTime);
+          // Keep v.lastPhotoDate as the real photo date — don't overwrite
         }
       }
     } catch (e) {
