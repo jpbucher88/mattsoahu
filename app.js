@@ -2003,7 +2003,7 @@ function renderLocationsWidget() {
         else { const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60)); const days = Math.floor(hrs / 24); ageText = days > 0 ? `${days}d ${hrs % 24}h ago` : `${hrs}h ago`; }
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
-            <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+            <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}<span class="photo-needed-dot" title="Needs photos"></span></span>
             <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
             <span class="photo-age-tag">${ageText}</span>
           </div>
@@ -2254,24 +2254,6 @@ window.checkLocationPhotos = async function(loc) {
     return !hasPhotosToday(v);
   });
 
-  // Reset the 24h photo timer for all at-home vehicles at this location —
-  // sets lastPhotoOverrideAt = now in Firestore so the clock starts fresh.
-  const atHomeHere = locVehicles.filter(v =>
-    !v.photoExcluded &&
-    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop'
-  );
-  if (atHomeHere.length > 0) {
-    const nowTs = firebase.firestore.Timestamp.now();
-    const batch = db.batch();
-    atHomeHere.forEach(v => {
-      batch.update(db.collection('vehicles').doc(v.id), { lastPhotoOverrideAt: firebase.firestore.FieldValue.serverTimestamp() });
-      // Update local cache immediately
-      v.lastPhotoOverrideAt = { toDate: () => new Date() };
-      v.lastPhotoAge = 0;
-      v.lastPhotoDate = new Date();
-    });
-    await batch.commit().catch(e => console.warn('Photo timer batch warn:', e));
-  }
   renderFleetDashboard();
   renderLocationsWidget();
 
@@ -9396,29 +9378,52 @@ const MAINT_TEMPLATES = {
 };
 
 // ── Service chip & provider chip handlers ──────────────────────
+// Recalculate combined type + intervals from all active chips
+function _updateMultiChipResult() {
+  const grid = $('service-chips');
+  if (!grid) return;
+  const activeKeys = Array.from(grid.querySelectorAll('.maint-chip.active')).map(b => b.dataset.key);
+  if (activeKeys.length === 0) {
+    $('m-type').value = '';
+    $('m-interval').value = '';
+    $('m-mile-interval').value = '';
+    updateNextDueDisplay();
+    return;
+  }
+  const templates = activeKeys.filter(k => k !== 'other').map(k => MAINT_TEMPLATES[k]).filter(Boolean);
+  const typeStr = templates.map(t => t.type).join(' + ') || $('m-type').value;
+  $('m-type').value = typeStr;
+  const monthsVals = templates.map(t => t.months).filter(Boolean);
+  if (monthsVals.length) $('m-interval').value = String(Math.min(...monthsVals));
+  const milesVals = templates.map(t => t.miles).filter(Boolean);
+  if (milesVals.length) $('m-mile-interval').value = String(Math.min(...milesVals));
+  updateNextDueDisplay();
+}
+
 function applyServiceChip(key) {
   const grid = $('service-chips');
   if (!grid) return;
-  grid.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
   const btn = grid.querySelector(`[data-key="${key}"]`);
-  if (btn) btn.classList.add('active');
+  if (!btn) return;
   if (key === 'other') {
+    // "Other" is exclusive — deselect all other chips
+    grid.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
     $('m-type').value = '';
     $('m-type').style.display = '';
     $('m-interval').value = '';
     $('m-mile-interval').value = '';
     updateNextDueDisplay();
     setTimeout(() => $('m-type').focus(), 50);
-  } else {
-    const tpl = MAINT_TEMPLATES[key];
-    if (tpl) {
-      $('m-type').value = tpl.type;
-      $('m-type').style.display = 'none';
-      $('m-interval').value = tpl.months ? String(tpl.months) : '';
-      $('m-mile-interval').value = tpl.miles ? String(tpl.miles) : '';
-      updateNextDueDisplay();
-    }
+    return;
   }
+  // Deselect "Other" if it was active
+  const otherBtn = grid.querySelector('[data-key="other"]');
+  if (otherBtn) otherBtn.classList.remove('active');
+  $('m-type').style.display = 'none';
+  // Toggle this chip
+  btn.classList.toggle('active');
+  _updateMultiChipResult();
 }
 
 function resetServiceChips() {
@@ -9436,17 +9441,7 @@ function resetServiceChips() {
     grid.addEventListener('click', function(e) {
       const chip = e.target.closest('.maint-chip');
       if (!chip) return;
-      const key = chip.dataset.key;
-      if (chip.classList.contains('active') && key !== 'other') {
-        chip.classList.remove('active');
-        $('m-type').value = '';
-        $('m-type').style.display = 'none';
-        $('m-interval').value = '';
-        $('m-mile-interval').value = '';
-        updateNextDueDisplay();
-      } else {
-        applyServiceChip(key);
-      }
+      applyServiceChip(chip.dataset.key); // always delegate to applyServiceChip (toggle)
     });
   }
 })();
@@ -13553,6 +13548,12 @@ function loadVehicleInfoSection(v) {
   document.querySelectorAll('.vinfo-fuel-btn').forEach(btn => {
     btn.classList.toggle('cheat-gas-active', btn.dataset.fuel === v.vehicleFuelType);
   });
+  // Key count buttons
+  const keyCountHidden = $('vinfo-key-count');
+  if (keyCountHidden) keyCountHidden.value = v.vehicleKeyCount || '';
+  document.querySelectorAll('[data-keycount]').forEach(btn => {
+    btn.classList.toggle('cheat-gas-active', String(btn.dataset.keycount) === String(v.vehicleKeyCount || ''));
+  });
   // Apply dual-tire visibility
   window.toggleDualTire(isDual);
 }
@@ -13577,6 +13578,24 @@ document.addEventListener('click', function(e) {
     b.classList.toggle('cheat-gas-active', b === btn);
   });
 });
+
+// Key count selector (Key & Access tab)
+window._setKeyCount = function(count) {
+  const hidden = $('vinfo-key-count');
+  if (hidden) hidden.value = count;
+  document.querySelectorAll('[data-keycount]').forEach(btn => {
+    btn.classList.toggle('cheat-gas-active', Number(btn.dataset.keycount) === count);
+  });
+  if (!selectedVehicle) return;
+  db.collection('vehicles').doc(selectedVehicle.id).update({ vehicleKeyCount: count })
+    .then(() => {
+      selectedVehicle.vehicleKeyCount = count;
+      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cached) cached.vehicleKeyCount = count;
+      toast(`Key count set to ${count} 🔑`, 'success');
+    })
+    .catch(() => toast('Failed to save key count.', 'error'));
+};
 
 // Wire up fuel-type buttons (Key & Access tab)
 document.addEventListener('click', function(e) {

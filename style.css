@@ -6632,6 +6632,12 @@ body {
 .sched-loc-chip { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; flex-shrink: 0; margin-right: 4px; transition: opacity 0.15s; }
 .sched-loc-chip:hover { opacity: 0.75; text-decoration: underline; }
 
+.photo-needed-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #ef4444; margin-left: 4px; vertical-align: middle; flex-shrink: 0;
+  box-shadow: 0 0 0 2px rgba(239,68,68,0.25);
+}
+
 /* Mileage review panel */
 .mil-rev-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .mil-rev-vehicle { font-size: 0.9rem; }

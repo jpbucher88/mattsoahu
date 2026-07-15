@@ -634,6 +634,7 @@
                   <option value="">No time repeat</option>
                   <option value="1">1 Month</option>
                   <option value="3">3 Months</option>
+                  <option value="4">4 Months</option>
                   <option value="6">6 Months</option>
                   <option value="12">1 Year (12 Months)</option>
                   <option value="24">2 Years (24 Months)</option>
@@ -883,6 +884,15 @@
         <!-- Key placement tab -->
         <div id="vinfo-tab-keys" class="vinfo-panel">
           <p class="hint">Upload a photo showing where the keys are stored / key box location.</p>
+          <div style="margin-bottom:12px;">
+            <p class="hint" style="margin-bottom:7px;">🔑 Number of keys</p>
+            <div style="display:flex;gap:6px;">
+              <button type="button" class="vinfo-fuel-btn" data-keycount="1" id="vinfo-keycount-1" onclick="_setKeyCount(1)">1 Key</button>
+              <button type="button" class="vinfo-fuel-btn" data-keycount="2" id="vinfo-keycount-2" onclick="_setKeyCount(2)">2 Keys</button>
+              <button type="button" class="vinfo-fuel-btn" data-keycount="3" id="vinfo-keycount-3" onclick="_setKeyCount(3)">3 Keys</button>
+            </div>
+            <input type="hidden" id="vinfo-key-count" value="">
+          </div>
           <div id="vinfo-key-img-wrap" class="vinfo-key-img-wrap" style="display:none;">
             <img id="vinfo-key-img" class="vinfo-key-img" alt="Key placement">
             <button class="btn btn-sm btn-outline" onclick="document.getElementById('vinfo-key-upload').click()">Replace Photo</button>
