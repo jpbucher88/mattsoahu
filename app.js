@@ -9540,7 +9540,6 @@ function resetServiceChips() {
   const tpp = $('tire-position-picker');
   if (tpp) { tpp.style.display = 'none'; tpp.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active')); }
 }
-}
 
 (function() {
   const grid = $('service-chips');
