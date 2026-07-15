@@ -6643,6 +6643,33 @@ body {
 .tire-pos-btn:hover { background: #e0f2fe; }
 .tire-pos-active { background: #0369a1 !important; color: #fff !important; border-color: #0369a1 !important; }
 
+/* ================================================================
+   VEHICLE PAGE — ACTIVE ISSUES STRIP
+   ================================================================ */
+.vi-section { margin-bottom: 0; border: none; border-radius: 10px; overflow: hidden; }
+.vi-section-header { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 8px; background: #1e293b; border-radius: 10px 10px 0 0; }
+.vi-section-title { font-size: 0.9rem; font-weight: 800; color: #fff; display: flex; align-items: center; gap: 8px; }
+#vehicle-issues-list { padding: 0 12px; display: flex; flex-direction: column; gap: 8px; margin: 10px 0 4px; }
+.vi-card { border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.vi-card-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vi-priority-pill { font-size: 0.7rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.vi-pipeline { display: flex; align-items: center; gap: 0; overflow-x: auto; }
+.vi-step { font-size: 0.68rem; font-weight: 600; color: #9ca3af; white-space: nowrap; }
+.vi-step-done { color: #15803d; }
+.vi-step-active { color: #1e40af; font-weight: 800; }
+.vi-step-arr { font-size: 0.75rem; color: #d1d5db; padding: 0 3px; }
+.vi-arr-done { color: #86efac; }
+.vi-parts-sub { font-size: 0.65rem; font-weight: 700; color: #854d0e; background: #fef9c3; padding: 1px 5px; border-radius: 999px; margin-left: 6px; }
+.vi-desc { font-size: 0.88rem; font-weight: 600; color: #1e293b; }
+.vi-info-line { font-size: 0.78rem; color: #374151; }
+.vi-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.vi-btn-sched { background: #eff6ff; color: #1e40af; border: 1.5px solid #bfdbfe; font-size: 0.78rem; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+.vi-btn-done  { background: #f0fdf4; color: #15803d; border: 1.5px solid #86efac; font-size: 0.78rem; padding: 3px 10px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+
+/* WO count badge on location chips */
+.chip-wo-badge { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: #dc2626; color: #fff; font-size: 0.6rem; font-weight: 800; margin-left: 4px; vertical-align: middle; flex-shrink: 0; }
+.chip-has-issues { border-color: #fca5a5 !important; }
+
 /* Mileage review panel */
 .mil-rev-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .mil-rev-vehicle { font-size: 0.9rem; }

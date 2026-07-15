@@ -456,6 +456,16 @@
         </div>
       </section>
 
+      <!-- Active Issues strip — open work orders for this vehicle -->
+      <section id="vehicle-open-issues" class="card vi-section" style="display:none;">
+        <div class="vi-section-header">
+          <span class="vi-section-title">🔧 Open Issues <span id="vehicle-issues-count" class="badge" style="background:#dc2626;color:#fff;">0</span></span>
+          <button class="btn btn-sm btn-outline" onclick="openMaintenanceDash();setTimeout(()=>{const b=document.querySelector('[data-mtab=\'mtab-work-orders\']');if(b)switchMaintTab('mtab-work-orders',b);},200)" style="font-size:0.78rem;">View All →</button>
+        </div>
+        <div id="vehicle-issues-list"></div>
+        <button class="btn btn-sm btn-primary" style="margin-top:8px;font-size:0.82rem;" onclick="openNewWorkOrder(selectedVehicle&&selectedVehicle.id)">+ Log New Issue</button>
+      </section>
+
       <!-- Camera / Upload Section -->
       <section id="upload-section" class="card" style="display:none;">
         <div class="upload-section-header">

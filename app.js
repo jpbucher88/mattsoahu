@@ -2020,7 +2020,9 @@ function renderLocationsWidget() {
       for (const v of atHomeClean) {
         const parkBadge = (isKapiolani && v.needsParking) ? '<span class="parking-badge">🅿️</span>' : '';
         const chipSub = [v.color, v.vehicleType].filter(Boolean).map(s => escapeHtml(s)).join(' · ');
-        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}</div>${parkBadge}</div>`;
+        const woCount = _woCountByVehicle[v.id] || 0;
+        const woBadge = woCount > 0 ? `<span class="chip-wo-badge" title="${woCount} open issue${woCount>1?'s':''}">${woCount}</span>` : '';
+        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip${woCount>0?' chip-has-issues':''}" data-vid="${v.id}">${escapeHtml(v.plate)}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${parkBadge}</div>`;
       }
       html += '</div>';
     }
@@ -2984,6 +2986,9 @@ async function openVehiclePage(vid) {
 
   // Show admin button if admin
   $('btn-admin-from-vehicle').style.display = currentUserRole === 'admin' ? '' : 'none';
+
+  // Load open work orders for this vehicle (Active Issues strip)
+  loadVehicleOpenIssues(vid);
 
   // Navigate to vehicle page
   showPage('vehicle');
@@ -7545,6 +7550,86 @@ async function _loadWoUsers() {
 
 let _activeWoCategoryFilter = null; // null = show all
 let _pendingWOResolveId = null;    // set when close-out sends user to maintenance form
+let _woCountByVehicle = {};        // vehicleId → open WO count (updated by _loadWorkOrders)
+
+// ================================================================
+// VEHICLE PAGE — ACTIVE ISSUES STRIP
+// ================================================================
+window.loadVehicleOpenIssues = async function(vehicleId) {
+  const section = $('vehicle-open-issues');
+  const list    = $('vehicle-issues-list');
+  const countEl = $('vehicle-issues-count');
+  if (!section || !list) return;
+
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('vehicleId', '==', vehicleId)
+      .where('workOrder', '==', true)
+      .where('done', '==', false)
+      .get();
+
+    if (snap.empty) { section.style.display = 'none'; _woCountByVehicle[vehicleId] = 0; return; }
+
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    items.sort((a, b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2)-(po[b.repairPriority]||2); });
+
+    _woCountByVehicle[vehicleId] = items.length;
+    if (countEl) countEl.textContent = items.length;
+
+    const today = todayDateString();
+    const PRI = {
+      critical: { color:'#dc2626', bg:'#fef2f2', label:'🔴 Critical' },
+      high:     { color:'#ea580c', bg:'#fff7ed', label:'🟠 High' },
+      standard: { color:'#d97706', bg:'#fffbeb', label:'🟡 Standard' },
+      monitor:  { color:'#16a34a', bg:'#f0fdf4', label:'🟢 Monitor' },
+    };
+    const PIPE = ['Logged','Scheduled','At Shop','Done'];
+
+    list.innerHTML = items.map(item => {
+      const pri = PRI[item.repairPriority] || PRI.standard;
+      const rs  = item.repairStatus || 'open';
+      const stepState = rs==='open' ? 0 : (rs==='scheduled'||rs==='deferred') ? 1 : (rs==='dropped_off'||rs==='awaiting_parts') ? 2 : 3;
+
+      const pipeHtml = PIPE.map((s,i) =>
+        `<span class="vi-step${i<stepState?' vi-step-done':i===stepState?' vi-step-active':''}">${s}</span>`
+        + (i<3 ? `<span class="vi-step-arr${i<stepState?' vi-arr-done':''}">›</span>` : '')
+      ).join('') + (rs==='awaiting_parts' ? '<span class="vi-parts-sub">⏳ Parts</span>' : '');
+
+      let infoLine = '';
+      if (item.scheduledDate) {
+        const dStr = new Date(item.scheduledDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+        const isTod = item.scheduledDate === today;
+        infoLine = `📅 <strong>${isTod?'Today':dStr}</strong>${item.assignedMechanic?' @ '+escapeHtml(item.assignedMechanic):''}`;
+      } else if (item.assignedMechanic) {
+        infoLine = `🏪 ${escapeHtml(item.assignedMechanic)}`;
+      }
+      if (rs==='awaiting_parts' && item.partsEta) {
+        infoLine += (infoLine?' · ':'') + `⏳ Parts ETA ${new Date(item.partsEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+      }
+
+      const schedBtn = rs!=='dropped_off' && rs!=='awaiting_parts'
+        ? `<button class="btn btn-sm vi-btn-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate?'Reschedule':'Schedule'}</button>` : '';
+      const doneBtn = (rs==='dropped_off'||rs==='awaiting_parts')
+        ? `<button class="btn btn-sm vi-btn-done" onclick="openCloseOutWorkOrder('${item.id}','${vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Mark Done</button>`
+        : `<button class="btn btn-sm vi-btn-done" onclick="openCloseOutWorkOrder('${item.id}','${vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>`;
+
+      return `<div class="vi-card" style="border-left:4px solid ${pri.color};background:${pri.bg};">
+        <div class="vi-card-top">
+          <span class="vi-priority-pill" style="background:${pri.color};color:#fff;">${pri.label}</span>
+          <div class="vi-pipeline">${pipeHtml}</div>
+        </div>
+        <div class="vi-desc">${escapeHtml(item.text)}</div>
+        ${infoLine?`<div class="vi-info-line">${infoLine}</div>`:''}
+        <div class="vi-actions">${schedBtn}${doneBtn}</div>
+      </div>`;
+    }).join('');
+
+    section.style.display = '';
+  } catch(e) {
+    console.error('loadVehicleOpenIssues error:', e);
+    section.style.display = 'none';
+  }
+};
 
 async function _loadWorkOrders() {
   const container = $('work-orders-content');
@@ -7564,6 +7649,9 @@ async function _loadWorkOrders() {
     }
 
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Update global WO-per-vehicle count so location chips can show badges
+    _woCountByVehicle = {};
+    items.forEach(i => { if (i.vehicleId) _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId]||0)+1; });
     // Sort newest first client-side (avoids needing a Firestore composite index)
     items.sort((a, b) => {
       const aT = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
