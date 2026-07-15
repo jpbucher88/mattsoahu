@@ -6632,10 +6632,10 @@ body {
 .sched-loc-chip { font-size: 0.68rem; font-weight: 700; padding: 1px 7px; border-radius: 999px; border: 1px solid; white-space: nowrap; flex-shrink: 0; margin-right: 4px; transition: opacity 0.15s; }
 .sched-loc-chip:hover { opacity: 0.75; text-decoration: underline; }
 
-.photo-needed-dot {
-  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-  background: #ef4444; margin-left: 4px; vertical-align: middle; flex-shrink: 0;
-  box-shadow: 0 0 0 2px rgba(239,68,68,0.25);
+.photo-cam-badge {
+  display: inline-block; font-size: 0.68rem; margin-left: 3px;
+  vertical-align: middle; line-height: 1; flex-shrink: 0;
+  filter: drop-shadow(0 0 1px rgba(220,38,38,0.5));
 }
 
 /* Tire position picker */

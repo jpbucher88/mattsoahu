@@ -2003,7 +2003,7 @@ function renderLocationsWidget() {
         else { const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60)); const days = Math.floor(hrs / 24); ageText = days > 0 ? `${days}d ${hrs % 24}h ago` : `${hrs}h ago`; }
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
-            <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}<span class="photo-needed-dot" title="Needs photos"></span></span>
+            <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}<span class="photo-cam-badge" title="Needs photos today">📷</span></span>
             <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
             <span class="photo-age-tag">${ageText}</span>
           </div>
@@ -2269,7 +2269,7 @@ window.checkLocationPhotos = async function(loc) {
     const ageText = !v.lastPhotoDate ? 'No photos yet'
       : `Last: ${v.lastPhotoDate.toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE })}`;
     return `<div class="loc-photo-check-row">
-      <span class="location-vehicle-chip">${escapeHtml(v.plate)}<span class="photo-needed-dot" title="Needs photos"></span></span>
+      <span class="location-vehicle-chip">${escapeHtml(v.plate)}<span class="photo-cam-badge" title="Needs photos today">📷</span></span>
       <span class="loc-photo-age" style="color:#6b7280;">${ageText}</span>
       <button class="btn btn-sm btn-primary" onclick="$('loc-photos-overlay').style.display='none'; openVehiclePage('${v.id}')">📷 Take Photos</button>
     </div>`;
