@@ -6638,6 +6638,11 @@ body {
   box-shadow: 0 0 0 2px rgba(239,68,68,0.25);
 }
 
+/* Tire position picker */
+.tire-pos-btn { font-size: 0.78rem; font-weight: 600; padding: 4px 10px; border-radius: 6px; border: 1.5px solid #bae6fd; background: #fff; color: #0369a1; cursor: pointer; transition: all 0.12s; }
+.tire-pos-btn:hover { background: #e0f2fe; }
+.tire-pos-active { background: #0369a1 !important; color: #fff !important; border-color: #0369a1 !important; }
+
 /* Mileage review panel */
 .mil-rev-row { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
 .mil-rev-vehicle { font-size: 0.9rem; }

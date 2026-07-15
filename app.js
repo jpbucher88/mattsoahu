@@ -2235,13 +2235,8 @@ window.checkLocationPhotos = async function(loc) {
             v.lastPhotoDate = null;
           }
         }
-        if (v.lastPhotoOverrideAt) {
-          const overrideTime = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate().getTime() : new Date(v.lastPhotoOverrideAt).getTime();
-          if (v.lastPhotoAge === Infinity || overrideTime > (now - v.lastPhotoAge)) {
-            v.lastPhotoAge = now - overrideTime;
-            v.lastPhotoDate = new Date(overrideTime);
-          }
-        }
+        // NOTE: Do NOT apply lastPhotoOverrideAt here — we want actual photo status
+        // for the Refresh Photos check, not the soft "timer reset" value.
       } catch (e) { /* use cached value on error */ }
     }));
   }
@@ -9382,6 +9377,8 @@ const MAINT_TEMPLATES = {
   'wash':         { type: 'Wash',                  months: null,miles: null  },
   'wiper':        { type: 'Wiper Blades',          months: 12, miles: null  },
   'alignment':    { type: 'Alignment',             months: 12, miles: null  },
+  'tpms':         { type: 'TPMS',                  months: null,miles: null, tirePicker: true },
+  'nail-in-tire': { type: 'Nail in Tire',          months: null,miles: null, tirePicker: true },
   'other':        { type: 'Other',                 months: null,miles: null  },
 };
 
@@ -9432,6 +9429,17 @@ function applyServiceChip(key) {
   // Toggle this chip
   btn.classList.toggle('active');
   _updateMultiChipResult();
+  // Show tire position picker if any active chip needs it
+  const anyTirePicker = Array.from(grid.querySelectorAll('.maint-chip.active'))
+    .some(b => MAINT_TEMPLATES[b.dataset.key]?.tirePicker);
+  const tpp = $('tire-position-picker');
+  if (tpp) {
+    tpp.style.display = anyTirePicker ? '' : 'none';
+    if (!anyTirePicker) {
+      // clear any selected tire position
+      tpp.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active'));
+    }
+  }
 }
 
 function resetServiceChips() {
@@ -9441,6 +9449,9 @@ function resetServiceChips() {
   if (mType) { mType.value = ''; mType.style.display = 'none'; }
   const pChips = $('provider-chips');
   if (pChips) pChips.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+  const tpp = $('tire-position-picker');
+  if (tpp) { tpp.style.display = 'none'; tpp.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active')); }
+}
 }
 
 (function() {
@@ -9450,6 +9461,26 @@ function resetServiceChips() {
       const chip = e.target.closest('.maint-chip');
       if (!chip) return;
       applyServiceChip(chip.dataset.key); // always delegate to applyServiceChip (toggle)
+    });
+  }
+
+  // Tire position picker — appends position to the service type
+  const tirePicker = $('tire-position-picker');
+  if (tirePicker) {
+    tirePicker.addEventListener('click', function(e) {
+      const btn = e.target.closest('.tire-pos-btn');
+      if (!btn) return;
+      tirePicker.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active'));
+      btn.classList.add('tire-pos-active');
+      const pos = btn.dataset.pos;
+      // Get the base type from all active tire-picker chips
+      const grid2 = $('service-chips');
+      const activeKeys = grid2 ? Array.from(grid2.querySelectorAll('.maint-chip.active')).map(b => b.dataset.key) : [];
+      const baseParts = activeKeys.filter(k => k !== 'other').map(k => MAINT_TEMPLATES[k]?.type).filter(Boolean);
+      const baseType = baseParts.join(' + ');
+      const fullType = pos ? baseType + ' — ' + pos : baseType;
+      const mType = $('m-type');
+      if (mType) mType.value = fullType;
     });
   }
 })();

@@ -583,7 +583,21 @@
                 <button type="button" class="maint-chip" data-key="trans">⚙️ Trans Fluid</button>
                 <button type="button" class="maint-chip" data-key="spark-plugs">⚡ Spark Plugs</button>
                 <button type="button" class="maint-chip" data-key="coolant">💧 Coolant</button>
+                <button type="button" class="maint-chip" data-key="tpms">📡 TPMS</button>
+                <button type="button" class="maint-chip" data-key="nail-in-tire">🔩 Nail in Tire</button>
                 <button type="button" class="maint-chip maint-chip-other" data-key="other">✏️ Other…</button>
+              </div>
+              <!-- Tire position picker — shown when TPMS or Nail in Tire is selected -->
+              <div id="tire-position-picker" style="display:none;margin-top:8px;padding:8px 12px;background:#f0f9ff;border-radius:8px;border:1px solid #bae6fd;">
+                <div style="font-size:0.72rem;font-weight:800;color:#0369a1;letter-spacing:0.05em;margin-bottom:7px;">WHICH TIRE?</div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <button type="button" class="tire-pos-btn" data-pos="Front Left">↖ Front Left</button>
+                  <button type="button" class="tire-pos-btn" data-pos="Front Right">↗ Front Right</button>
+                  <button type="button" class="tire-pos-btn" data-pos="Rear Left">↙ Rear Left</button>
+                  <button type="button" class="tire-pos-btn" data-pos="Rear Right">↘ Rear Right</button>
+                  <button type="button" class="tire-pos-btn" data-pos="Spare">🔄 Spare</button>
+                  <button type="button" class="tire-pos-btn" data-pos="">All Tires</button>
+                </div>
               </div>
               <input type="text" id="m-type" class="form-select" style="display:none;margin-top:8px;" placeholder="Describe the service…" list="service-type-suggestions" maxlength="100" autocomplete="off">
               <datalist id="service-type-suggestions">
