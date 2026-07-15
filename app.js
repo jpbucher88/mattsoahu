@@ -1904,7 +1904,8 @@ function renderLocationsWidget() {
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
     if (isOnTrip || isAtRepair || withinGrace) return false;
-    return v.lastPhotoAge != null && v.lastPhotoAge > MS_24H;
+    // Use calendar-day check (same as Refresh Photos overlay) so both systems agree
+    return !hasPhotosToday(v);
   }
 
   const sortByReturn = (arr) => arr.sort((a, b) => {
