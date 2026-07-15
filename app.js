@@ -1938,7 +1938,7 @@ function renderLocationsWidget() {
       <div class="location-group-header">
         <span class="location-group-name">🏠 ${escapeHtml(loc)}</span>
         <span class="location-group-count">${total}</span>
-        <button class="btn btn-sm btn-outline loc-at-btn" onclick="event.stopPropagation(); checkLocationPhotos('${escapeHtml(loc)}')" title="I'm at this location — check for missing photos">📍 At Location</button>
+        <button class="btn btn-sm btn-outline loc-at-btn" onclick="event.stopPropagation(); checkLocationPhotos('${escapeHtml(loc)}')" title="Refresh photo status for all vehicles at this location">🔄 Refresh Photos</button>
       </div>`;
 
     // Overdue / awaiting return sub-section
@@ -2211,7 +2211,7 @@ let _locPhotoQueueActive = null;
 
 window.checkLocationPhotos = async function(loc) {
   // Refresh photo timestamps for vehicles at this location before checking
-  toast('🔄 Refreshing photo status...', 'info');
+  toast('🔄 Refreshing photo status…', 'info');
   const locVehicles = vehiclesCache.filter(v => (v.homeLocation || '') === loc);
   if (locVehicles.length > 0) {
     const now = Date.now();
@@ -2246,26 +2246,20 @@ window.checkLocationPhotos = async function(loc) {
     }));
   }
 
-  const needsPhotos = vehiclesCache.filter(v => {
-    if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip') return false;
-    if (v.tripStatus === 'repair-shop') return false;
-    if (v.photoExcluded) return false;
-    if ((v.homeLocation || '') !== loc) return false;
-    return !hasPhotosToday(v);
-  });
+  // Categorise all non-excluded, non-trip vehicles at this location
+  const checkVehicles = locVehicles.filter(v =>
+    !v.photoExcluded &&
+    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop'
+  );
+  const needsPhotos = checkVehicles.filter(v => !hasPhotosToday(v));
+  const hasPhotos   = checkVehicles.filter(v => hasPhotosToday(v));
 
   renderFleetDashboard();
   renderLocationsWidget();
 
-  if (needsPhotos.length === 0) {
-    _locPhotoQueueActive = null;
-    toast(`✅ All vehicles at ${loc} have today's photos!`, 'success');
-    return;
-  }
+  _locPhotoQueueActive = needsPhotos.length > 0 ? loc : null;
 
-  // Keep the queue active so returning from vehicle page re-opens this overlay
-  _locPhotoQueueActive = loc;
-
+  // Always show the full list — never just toast and disappear
   let overlay = $('loc-photos-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -2274,30 +2268,43 @@ window.checkLocationPhotos = async function(loc) {
     document.body.appendChild(overlay);
   }
 
-  const rows = needsPhotos.map(v => {
-    const ageText = !v.lastPhotoDate
-      ? 'No photos yet'
-      : `Last: ${v.lastPhotoDate.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}`;
+  const needRows = needsPhotos.map(v => {
+    const ageText = !v.lastPhotoDate ? 'No photos yet'
+      : `Last: ${v.lastPhotoDate.toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE })}`;
     return `<div class="loc-photo-check-row">
-      <span class="location-vehicle-chip">${escapeHtml(v.plate)}</span>
-      <span class="loc-photo-age">${ageText}</span>
+      <span class="location-vehicle-chip">${escapeHtml(v.plate)}<span class="photo-needed-dot" title="Needs photos"></span></span>
+      <span class="loc-photo-age" style="color:#6b7280;">${ageText}</span>
       <button class="btn btn-sm btn-primary" onclick="$('loc-photos-overlay').style.display='none'; openVehiclePage('${v.id}')">📷 Take Photos</button>
     </div>`;
   }).join('');
 
-  const remaining = needsPhotos.length;
+  const doneRows = hasPhotos.map(v => {
+    const ageText = v.lastPhotoDate
+      ? v.lastPhotoDate.toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE })
+      : '';
+    return `<div class="loc-photo-check-row" style="opacity:0.65;">
+      <span class="location-vehicle-chip" style="border-color:#86efac;">${escapeHtml(v.plate)}<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#15803d;margin-left:4px;vertical-align:middle;" title="Photos done"></span></span>
+      <span class="loc-photo-age" style="color:#15803d;">✓ ${ageText}</span>
+    </div>`;
+  }).join('');
+
+  const pending = needsPhotos.length;
+  const total = checkVehicles.length;
   overlay.innerHTML = `
-    <div class="modal-box" style="max-width:440px;">
-      <div class="modal-header">
-        <h3>📍 At Location: ${escapeHtml(loc)}</h3>
-        <button class="modal-close" onclick="$('loc-photos-overlay').style.display='none'; _locPhotoQueueActive=null;">&times;</button>
+    <div class="modal-box" style="max-width:460px;">
+      <div class="modal-header" style="${pending === 0 ? 'background:#15803d;' : 'background:#d97706;'}color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">📍 ${escapeHtml(loc)} — Photo Status</h3>
+        <button class="modal-close" style="color:#fff;" onclick="$('loc-photos-overlay').style.display='none'; _locPhotoQueueActive=null;">&times;</button>
       </div>
-      <div class="modal-body">
-        <p style="color:#d97706;font-weight:600;margin-bottom:12px;">⚠️ ${remaining} vehicle${remaining !== 1 ? 's' : ''} still need${remaining === 1 ? 's' : ''} today's photos:</p>
-        <div class="loc-photo-check-list">${rows}</div>
+      <div class="modal-body" style="padding:14px 16px;">
+        ${pending > 0 ? `<p style="color:#d97706;font-weight:700;margin-bottom:10px;">📷 ${pending} of ${total} vehicle${total!==1?'s':''} still need today's photos</p>` :
+          `<p style="color:#15803d;font-weight:700;margin-bottom:10px;">✅ All ${total} vehicle${total!==1?'s':''} have today's photos!</p>`}
+        ${needRows ? `<div class="loc-photo-check-list">${needRows}</div>` : ''}
+        ${doneRows ? `<div style="margin-top:${needRows?'10px':'0'};">${doneRows}</div>` : ''}
       </div>
     </div>`;
   overlay.style.display = 'flex';
+  overlay.addEventListener('click', e => { if (e.target === overlay) { overlay.style.display = 'none'; _locPhotoQueueActive = null; } });
 };
 // Damage check modal � Pass / Fail per item
 function showDamageCheckModal(vid, plate) {
@@ -7649,6 +7656,7 @@ async function _loadWorkOrders() {
           <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
       } else {
         statusActions = `
+          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>
           <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
           <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
       }
@@ -12255,9 +12263,9 @@ function renderUrgentBanner(items) {
       ? `<button class="btn btn-sm btn-outline urgent-inc-btn" onclick="event.stopPropagation(); openIncidentEditFromDashboard('${item.incidentDocId}', false)" title="View incident report">📋 View Incident</button>`
       : '';
 
-    // Maintenance Concern shortcut — admin/manager can route any task to work orders
-    const maintRouteBtn = (currentUserRole === 'admin' || currentUserRole === 'manager') && !item.workOrder
-      ? `<button class="btn btn-sm urgent-maint-btn" onclick="event.stopPropagation(); convertTaskToWorkOrder('${item.id}','${item.collection}','${item.vehicleId || ''}','${escapeHtml(item.text).replace(/'/g, '&#39;')}')" title="Send to Maintenance">🔧 Maintenance</button>`
+    // "Work Orders" shortcut — vehicle tasks route directly into the CRM pipeline
+    const maintRouteBtn = (currentUserRole === 'admin' || currentUserRole === 'manager') && item.type === 'vehicle' && !item.workOrder
+      ? `<button class="btn btn-sm urgent-maint-btn" onclick="event.stopPropagation(); openUrgentItemInWorkOrders('${item.id}','${item.collection}','${item.vehicleId || ''}')" title="Send to Work Orders">🔧 Work Orders</button>`
       : '';
 
     html += `
@@ -12279,11 +12287,65 @@ function renderUrgentBanner(items) {
   }
   list.innerHTML = html;
 
-  // Click urgent items to open the note edit modal directly
+  // Click urgent items — vehicle items route into Work Orders; general items open edit modal
   list.querySelectorAll('.urgent-banner-item').forEach(el => {
-    el.addEventListener('click', () => openNoteEditModal(el.dataset.id, el.dataset.col));
+    el.addEventListener('click', () => {
+      const vid = el.dataset.vid;
+      if (vid) {
+        openUrgentItemInWorkOrders(el.dataset.id, el.dataset.col, vid);
+      } else {
+        openNoteEditModal(el.dataset.id, el.dataset.col);
+      }
+    });
   });
 }
+
+// ================================================================
+// URGENT ITEM → WORK ORDERS (unified CRM flow)
+// Clicking any vehicle-related urgent notification auto-routes it
+// into the Maintenance Dashboard Work Orders tab.
+// ================================================================
+window.openUrgentItemInWorkOrders = async function(noteId, collection, vehicleId) {
+  try {
+    const col = collection || 'vehicleNotes';
+    const doc = await db.collection(col).doc(noteId).get();
+    if (!doc.exists) { openNoteEditModal(noteId, col); return; }
+    const d = doc.data();
+
+    // Non-vehicle items go to the regular edit modal
+    const vId = d.vehicleId || vehicleId;
+    if (!vId) { openNoteEditModal(noteId, col); return; }
+
+    // If already a work order — just open Work Orders tab
+    if (d.workOrder) {
+      openMaintenanceDash();
+      setTimeout(() => { const b = document.querySelector('[data-mtab="mtab-work-orders"]'); if (b) switchMaintTab('mtab-work-orders', b); }, 200);
+      return;
+    }
+
+    // Auto-convert to work order so it enters the CRM pipeline
+    const progEntry = {
+      by: currentUser ? (currentUser.displayName || currentUser.email) : 'System',
+      at: new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone: APP_TIMEZONE }),
+      text: '⚡ Auto-routed from Urgent Notifications into Work Orders',
+    };
+    await db.collection(col).doc(noteId).update({
+      workOrder: true,
+      repairStatus: 'open',
+      repairPriority: d.urgent ? 'high' : 'standard',
+      scheduledDate: null,
+      progressLog: firebase.firestore.FieldValue.arrayUnion(progEntry),
+    });
+
+    toast('Moved to Work Orders → Maintenance Dashboard', 'success');
+    loadDashboardFollowUps();
+    openMaintenanceDash();
+    setTimeout(() => { const b = document.querySelector('[data-mtab="mtab-work-orders"]'); if (b) switchMaintTab('mtab-work-orders', b); }, 200);
+  } catch(e) {
+    console.error('openUrgentItemInWorkOrders error:', e);
+    openNoteEditModal(noteId, collection);
+  }
+};
 
 // Convert an existing task to a Maintenance Work Order (admin/manager shortcut)
 window.convertTaskToWorkOrder = function(noteId, collection, vehicleId, issueText) {
