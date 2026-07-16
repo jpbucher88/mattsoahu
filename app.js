@@ -1911,8 +1911,8 @@ function renderLocationsWidget() {
       withinGrace = (Date.now() - flagTime) < MS_2H;
     }
     if (isOnTrip || isAtRepair || withinGrace) return false;
-    // Use calendar-day check (same as Refresh Photos overlay) so both systems agree
-    return !hasPhotosToday(v);
+    // Use rolling 24h window from last photo timestamp (or override)
+    return v.lastPhotoAge == null || v.lastPhotoAge > MS_24H;
   }
 
   const sortByReturn = (arr) => arr.sort((a, b) => {
@@ -13016,10 +13016,11 @@ function updateNotifFab(items, badgeCount) {
   fab.classList.toggle('has-urgent', hasUrgent);
 
   // Status bar inside the action sheet
+  const MS_24H_fab = 24 * 60 * 60 * 1000;
   const photosDue = vehiclesCache.filter(v => {
     if (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'repair-shop') return false;
     if (v.needsCleaning || v.photoExcluded) return false;
-    return !hasPhotosToday(v);
+    return v.lastPhotoAge == null || v.lastPhotoAge > MS_24H_fab;
   }).length;
 
   const urgentEl = $('fab-stat-urgent');
