@@ -1379,8 +1379,21 @@ window.openAvailableFleetCheck = async function() {
           (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= 1500)
         )
       );
-      if (overdueNotes.length)        overdue.push({ v, overdueNotes, upcomingNotes });
-      else if (upcomingNotes.length)   dueSoon.push({ v, overdueNotes, upcomingNotes });
+      // Check compliance expiry — expired compliance bumps vehicle into overdue
+      const compExpiredFields = [
+        { field: v.complianceSafety, label: 'Safety' },
+        { field: v.complianceRegistration, label: 'Reg' },
+        { field: v.complianceInsurance, label: 'Ins' },
+      ].filter(({ field }) => {
+        if (!field) return false;
+        const [cy, cm] = field.split('-').map(Number);
+        return Date.UTC(cy, cm, 0, 23, 59, 59) < Date.now();
+      });
+      const compOverdueNotes = compExpiredFields.map(({ label }) => ({ text: `${label} EXPIRED — must renew immediately`, _synthetic: true }));
+      const allOverdue = [...overdueNotes, ...compOverdueNotes];
+
+      if (allOverdue.length)           overdue.push({ v, overdueNotes: allOverdue, upcomingNotes });
+      else if (upcomingNotes.length)   dueSoon.push({ v, overdueNotes: allOverdue, upcomingNotes });
       else if (notes.length || v.mileage) upToDate.push({ v });
       else                              noData.push({ v });
     });
@@ -1411,6 +1424,24 @@ window.openAvailableFleetCheck = async function() {
       } else if (oil.date) {
         oilLine = `<div class="amc-oil amc-oil-ok">⛽ Last oil change: ${oil.date}</div>`;
       }
+      // Compliance flags (safety / registration / insurance)
+      const compChecks = [
+        { field: v.complianceSafety,       label: 'Safety' },
+        { field: v.complianceRegistration,  label: 'Reg' },
+        { field: v.complianceInsurance,     label: 'Ins' },
+      ];
+      const compFlags = compChecks.map(({ field, label }) => {
+        if (!field) return null;
+        const [cy, cm] = field.split('-').map(Number);
+        const expiresMs = Date.UTC(cy, cm, 0, 23, 59, 59); // last millisecond of that month
+        const daysLeft = Math.round((expiresMs - Date.now()) / 86400000);
+        if (daysLeft < 0)   return `<span class="amc-comp amc-comp-expired">🚨 ${label} EXPIRED</span>`;
+        if (daysLeft <= 30) return `<span class="amc-comp amc-comp-due">⚠️ ${label} due in ${daysLeft}d</span>`;
+        return null;
+      }).filter(Boolean);
+      const compLine = compFlags.length
+        ? `<div class="amc-comp-row">${compFlags.join(' ')}</div>`
+        : '';
       return `<div class="amc-row" onclick="document.getElementById('avail-maint-overlay').remove(); openVehiclePage('${v.id}');" title="Open vehicle page">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <strong style="font-size:0.9rem;">${escapeHtml(v.plate)}</strong>
@@ -1419,6 +1450,7 @@ window.openAvailableFleetCheck = async function() {
           ${tag}
         </div>
         ${oilLine}
+        ${compLine}
         ${details ? `<div style="margin-top:2px;">${details}</div>` : ''}
       </div>`;
     }

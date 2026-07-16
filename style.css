@@ -8214,3 +8214,9 @@ body {
 .amc-oil-urgent  { color: #ea580c; font-weight: 600; }
 .amc-oil-overdue { color: #dc2626; font-weight: 700; }
 .amc-oil-missing { color: #9ca3af; font-style: italic; }
+
+/* ── Maintenance Check modal — compliance flags ── */
+.amc-comp-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.amc-comp { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+.amc-comp-expired { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
+.amc-comp-due     { background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; }
