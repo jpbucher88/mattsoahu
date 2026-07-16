@@ -1337,6 +1337,8 @@ window.openAvailableFleetCheck = async function() {
     }
 
     // Categorise each vehicle
+    const thirtyDaysOut = new Date(); thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
+    const thirtyDaysStr = thirtyDaysOut.toISOString().slice(0, 10);
     const overdue = [], dueSoon = [], upToDate = [], noData = [];
     available.forEach(v => {
       const notes = notesByVehicle[v.id] || [];
@@ -1346,7 +1348,7 @@ window.openAvailableFleetCheck = async function() {
       );
       const upcomingNotes = notes.filter(n =>
         !overdueNotes.includes(n) && (
-          (n.dueDate) ||
+          (n.dueDate && n.dueDate <= thirtyDaysStr) ||
           (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= 1500)
         )
       );
