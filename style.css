@@ -8148,3 +8148,61 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 .rsvc-plate-link:hover { color: #1e40af; text-decoration: underline; }
+
+/* ── Vehicle Issues Strip — Quick Resolve / Log & Resolve buttons ── */
+.vi-btn-quick-resolve {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.vi-btn-quick-resolve:hover { background: #15803d; }
+.vi-btn-log-resolve {
+  background: transparent;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.vi-btn-log-resolve:hover { background: #f3f4f6; }
+
+/* ── Recently Resolved collapsible section ── */
+.vi-resolved-details { border-top: 1px solid #e5e7eb; padding-top: 8px; }
+.vi-resolved-summary {
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #6b7280;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  user-select: none;
+}
+.vi-resolved-summary::-webkit-details-marker { display: none; }
+.vi-resolved-count {
+  background: #d1fae5;
+  color: #065f46;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.vi-resolved-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.vi-resolved-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  padding: 5px 8px;
+  background: #f9fafb;
+  border-radius: 6px;
+}
+.vi-priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.vi-resolved-desc { flex: 1; color: #374151; }
+.vi-resolved-meta { font-size: 0.75rem; color: #9ca3af; white-space: nowrap; }

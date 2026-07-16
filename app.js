@@ -7566,23 +7566,32 @@ let _woCountByVehicle = {};        // vehicleId → open WO count (updated by _l
 window.loadVehicleOpenIssues = async function(vehicleId) {
   const section = $('vehicle-open-issues');
   const list    = $('vehicle-issues-list');
+  const resolvedWrap = $('vehicle-issues-resolved');
   const countEl = $('vehicle-issues-count');
   if (!section || !list) return;
 
   try {
-    const snap = await db.collection('vehicleNotes')
+    // Load open issues
+    const openSnap = await db.collection('vehicleNotes')
       .where('vehicleId', '==', vehicleId)
       .where('workOrder', '==', true)
       .where('done', '==', false)
       .get();
 
-    if (snap.empty) { section.style.display = 'none'; _woCountByVehicle[vehicleId] = 0; return; }
+    // Load recently resolved (last 7 days)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const resolvedSnap = await db.collection('vehicleNotes')
+      .where('vehicleId', '==', vehicleId)
+      .where('workOrder', '==', true)
+      .where('done', '==', true)
+      .where('resolutionDate', '>=', sevenDaysAgo)
+      .get();
 
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    items.sort((a, b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2)-(po[b.repairPriority]||2); });
+    const openItems = openSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    openItems.sort((a, b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2)-(po[b.repairPriority]||2); });
 
-    _woCountByVehicle[vehicleId] = items.length;
-    if (countEl) countEl.textContent = items.length;
+    _woCountByVehicle[vehicleId] = openItems.length;
+    if (countEl) countEl.textContent = openItems.length;
 
     const today = todayDateString();
     const PRI = {
@@ -7593,49 +7602,106 @@ window.loadVehicleOpenIssues = async function(vehicleId) {
     };
     const PIPE = ['Logged','Scheduled','At Shop','Done'];
 
-    list.innerHTML = items.map(item => {
-      const pri = PRI[item.repairPriority] || PRI.standard;
-      const rs  = item.repairStatus || 'open';
-      const stepState = rs==='open' ? 0 : (rs==='scheduled'||rs==='deferred') ? 1 : (rs==='dropped_off'||rs==='awaiting_parts') ? 2 : 3;
+    if (openItems.length === 0 && resolvedSnap.empty) {
+      section.style.display = 'none';
+      return;
+    }
 
-      const pipeHtml = PIPE.map((s,i) =>
-        `<span class="vi-step${i<stepState?' vi-step-done':i===stepState?' vi-step-active':''}">${s}</span>`
-        + (i<3 ? `<span class="vi-step-arr${i<stepState?' vi-arr-done':''}">›</span>` : '')
-      ).join('') + (rs==='awaiting_parts' ? '<span class="vi-parts-sub">⏳ Parts</span>' : '');
+    // Render open issues
+    if (openItems.length > 0) {
+      list.innerHTML = openItems.map(item => {
+        const pri = PRI[item.repairPriority] || PRI.standard;
+        const rs  = item.repairStatus || 'open';
+        const stepState = rs==='open' ? 0 : (rs==='scheduled'||rs==='deferred') ? 1 : (rs==='dropped_off'||rs==='awaiting_parts') ? 2 : 3;
 
-      let infoLine = '';
-      if (item.scheduledDate) {
-        const dStr = new Date(item.scheduledDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-        const isTod = item.scheduledDate === today;
-        infoLine = `📅 <strong>${isTod?'Today':dStr}</strong>${item.assignedMechanic?' @ '+escapeHtml(item.assignedMechanic):''}`;
-      } else if (item.assignedMechanic) {
-        infoLine = `🏪 ${escapeHtml(item.assignedMechanic)}`;
+        const pipeHtml = PIPE.map((s,i) =>
+          `<span class="vi-step${i<stepState?' vi-step-done':i===stepState?' vi-step-active':''}">${s}</span>`
+          + (i<3 ? `<span class="vi-step-arr${i<stepState?' vi-arr-done':''}">›</span>` : '')
+        ).join('') + (rs==='awaiting_parts' ? '<span class="vi-parts-sub">⏳ Parts</span>' : '');
+
+        let infoLine = '';
+        if (item.scheduledDate) {
+          const dStr = new Date(item.scheduledDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+          const isTod = item.scheduledDate === today;
+          infoLine = `📅 <strong>${isTod?'Today':dStr}</strong>${item.assignedMechanic?' @ '+escapeHtml(item.assignedMechanic):''}`;
+        } else if (item.assignedMechanic) {
+          infoLine = `🏪 ${escapeHtml(item.assignedMechanic)}`;
+        }
+        if (rs==='awaiting_parts' && item.partsEta) {
+          infoLine += (infoLine?' · ':'') + `⏳ Parts ETA ${new Date(item.partsEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
+        }
+
+        const schedBtn = rs!=='dropped_off' && rs!=='awaiting_parts'
+          ? `<button class="btn btn-sm vi-btn-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate?'Reschedule':'Schedule'}</button>` : '';
+        // Quick resolve (instant) + Log & Resolve (maintenance form)
+        const quickBtn = `<button class="btn btn-sm vi-btn-quick-resolve" onclick="quickResolveIssue('${item.id}','${vehicleId}')">✅ Mark Done</button>`;
+        const logBtn = `<button class="btn btn-sm vi-btn-log-resolve" onclick="openCloseOutWorkOrder('${item.id}','${vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">📋 Log &amp; Resolve</button>`;
+
+        return `<div class="vi-card" style="border-left:4px solid ${pri.color};background:${pri.bg};">
+          <div class="vi-card-top">
+            <span class="vi-priority-pill" style="background:${pri.color};color:#fff;">${pri.label}</span>
+            <div class="vi-pipeline">${pipeHtml}</div>
+          </div>
+          <div class="vi-desc">${escapeHtml(item.text)}</div>
+          ${infoLine?`<div class="vi-info-line">${infoLine}</div>`:''}
+          <div class="vi-actions">${schedBtn}${quickBtn}${logBtn}</div>
+        </div>`;
+      }).join('');
+    } else {
+      list.innerHTML = '';
+    }
+
+    // Render recently resolved collapsible section
+    if (resolvedWrap) {
+      const resolvedItems = resolvedSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+      resolvedItems.sort((a, b) => (b.resolutionDate || '').localeCompare(a.resolutionDate || ''));
+      if (resolvedItems.length > 0) {
+        const resolvedHtml = resolvedItems.map(item => {
+          const pri = PRI[item.repairPriority] || PRI.standard;
+          const dateLabel = item.resolutionDate ? new Date(item.resolutionDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}) : '';
+          const byLabel = item.resolvedByName ? ` · ${escapeHtml(item.resolvedByName)}` : '';
+          return `<div class="vi-resolved-item">
+            <span class="vi-priority-dot" style="background:${pri.color};"></span>
+            <span class="vi-resolved-desc">${escapeHtml(item.text)}</span>
+            <span class="vi-resolved-meta">${dateLabel}${byLabel}</span>
+          </div>`;
+        }).join('');
+        resolvedWrap.innerHTML = `<details class="vi-resolved-details">
+          <summary class="vi-resolved-summary">✅ Recently Resolved <span class="vi-resolved-count">${resolvedItems.length}</span></summary>
+          <div class="vi-resolved-list">${resolvedHtml}</div>
+        </details>`;
+        resolvedWrap.style.display = '';
+      } else {
+        resolvedWrap.style.display = 'none';
       }
-      if (rs==='awaiting_parts' && item.partsEta) {
-        infoLine += (infoLine?' · ':'') + `⏳ Parts ETA ${new Date(item.partsEta+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}`;
-      }
+    }
 
-      const schedBtn = rs!=='dropped_off' && rs!=='awaiting_parts'
-        ? `<button class="btn btn-sm vi-btn-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate?'Reschedule':'Schedule'}</button>` : '';
-      const doneBtn = (rs==='dropped_off'||rs==='awaiting_parts')
-        ? `<button class="btn btn-sm vi-btn-done" onclick="openCloseOutWorkOrder('${item.id}','${vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Mark Done</button>`
-        : `<button class="btn btn-sm vi-btn-done" onclick="openCloseOutWorkOrder('${item.id}','${vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>`;
-
-      return `<div class="vi-card" style="border-left:4px solid ${pri.color};background:${pri.bg};">
-        <div class="vi-card-top">
-          <span class="vi-priority-pill" style="background:${pri.color};color:#fff;">${pri.label}</span>
-          <div class="vi-pipeline">${pipeHtml}</div>
-        </div>
-        <div class="vi-desc">${escapeHtml(item.text)}</div>
-        ${infoLine?`<div class="vi-info-line">${infoLine}</div>`:''}
-        <div class="vi-actions">${schedBtn}${doneBtn}</div>
-      </div>`;
-    }).join('');
-
-    section.style.display = '';
+    section.style.display = openItems.length > 0 || !resolvedSnap.empty ? '' : 'none';
   } catch(e) {
     console.error('loadVehicleOpenIssues error:', e);
     section.style.display = 'none';
+  }
+};
+
+// Quick resolve — marks done immediately without requiring maintenance log
+window.quickResolveIssue = async function(noteId, vehicleId) {
+  const ok = await confirm('Mark as Done', 'Mark this issue as resolved?');
+  if (!ok) return;
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      done: true,
+      repairStatus: 'resolved',
+      resolutionDate: todayDateString(),
+      resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast('✅ Issue marked as done', 'success');
+    loadVehicleOpenIssues(vehicleId);
+    _loadWorkOrders && _loadWorkOrders();
+    loadDashboardFollowUps && loadDashboardFollowUps();
+  } catch(e) {
+    console.error('quickResolveIssue error:', e);
+    toast('Failed to resolve issue.', 'error');
   }
 };
 
