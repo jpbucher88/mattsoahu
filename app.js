@@ -1368,14 +1368,14 @@ window.openAvailableFleetCheck = async function() {
         : [];
       const overdueNotes = [
         ...notes.filter(n =>
-          (n.dueDate && n.dueDate <= today) ||
+          // Overdue = only mileage-based (time is a failsafe, handled in dueSoon)
           (n.nextDueMileage && v.mileage && n.nextDueMileage <= v.mileage)
         ),
         ...syntheticOilNote,
       ];
       const upcomingNotes = notes.filter(n =>
         !overdueNotes.includes(n) && (
-          (n.dueDate && n.dueDate <= thirtyDaysStr) ||
+          (n.dueDate && n.dueDate <= thirtyDaysStr) ||   // time-based: past due OR within 30 days
           (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= 1500)
         )
       );
