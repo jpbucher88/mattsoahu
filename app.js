@@ -1336,16 +1336,38 @@ window.openAvailableFleetCheck = async function() {
       });
     }
 
+    // Check which vehicles have an oil change recorded in maintenance history
+    const oilChangeByVehicle = {}; // vehicleId → true if any oil change found
+    for (const chunk of chunks) {
+      const oilSnap = await db.collection('maintenance')
+        .where('vehicleId', 'in', chunk)
+        .get();
+      oilSnap.forEach(doc => {
+        const d = doc.data();
+        if ((d.serviceType || '').toLowerCase().includes('oil')) {
+          oilChangeByVehicle[d.vehicleId] = true;
+        }
+      });
+    }
+
     // Categorise each vehicle
     const thirtyDaysOut = new Date(); thirtyDaysOut.setDate(thirtyDaysOut.getDate() + 30);
     const thirtyDaysStr = thirtyDaysOut.toISOString().slice(0, 10);
     const overdue = [], dueSoon = [], upToDate = [], noData = [];
     available.forEach(v => {
       const notes = notesByVehicle[v.id] || [];
-      const overdueNotes = notes.filter(n =>
-        (n.dueDate && n.dueDate <= today) ||
-        (n.nextDueMileage && v.mileage && n.nextDueMileage <= v.mileage)
-      );
+      // If no oil change has ever been recorded, inject a synthetic overdue note
+      const noOilChange = !oilChangeByVehicle[v.id];
+      const syntheticOilNote = noOilChange
+        ? [{ text: 'No oil change on record — service history unknown', _synthetic: true }]
+        : [];
+      const overdueNotes = [
+        ...notes.filter(n =>
+          (n.dueDate && n.dueDate <= today) ||
+          (n.nextDueMileage && v.mileage && n.nextDueMileage <= v.mileage)
+        ),
+        ...syntheticOilNote,
+      ];
       const upcomingNotes = notes.filter(n =>
         !overdueNotes.includes(n) && (
           (n.dueDate && n.dueDate <= thirtyDaysStr) ||
