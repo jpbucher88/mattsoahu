@@ -1304,14 +1304,11 @@ window.openAvailableFleetCheck = async function() {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
   const today = todayDateString();
-  // Available = at home, not on trip, not repair shop, no scheduled trip
-  const available = vehiclesCache.filter(v =>
-    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' &&
-    v.tripStatus !== 'repair-shop' && v.tripStatus !== 'scheduled'
-  );
+  // Show entire fleet
+  const available = [...vehiclesCache].sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
 
   if (!available.length) {
-    document.getElementById('avail-maint-body').innerHTML = '<p style="text-align:center;color:#9ca3af;padding:24px 0;">No vehicles currently available.</p>';
+    document.getElementById('avail-maint-body').innerHTML = '<p style="text-align:center;color:#9ca3af;padding:24px 0;">No vehicles in fleet.</p>';
     return;
   }
 
@@ -1336,8 +1333,8 @@ window.openAvailableFleetCheck = async function() {
       });
     }
 
-    // Check which vehicles have an oil change recorded in maintenance history
-    const oilChangeByVehicle = {}; // vehicleId → true if any oil change found
+    // Check which vehicles have an oil change recorded; capture latest for mileage calc
+    const oilChangeByVehicle = {}; // vehicleId → { mileage, intervalMiles, date }
     for (const chunk of chunks) {
       const oilSnap = await db.collection('maintenance')
         .where('vehicleId', 'in', chunk)
@@ -1345,7 +1342,16 @@ window.openAvailableFleetCheck = async function() {
       oilSnap.forEach(doc => {
         const d = doc.data();
         if ((d.serviceType || '').toLowerCase().includes('oil')) {
-          oilChangeByVehicle[d.vehicleId] = true;
+          const existing = oilChangeByVehicle[d.vehicleId];
+          // Keep the most recent record (highest mileage)
+          if (!existing || (d.mileage && (!existing.mileage || d.mileage > existing.mileage))) {
+            oilChangeByVehicle[d.vehicleId] = {
+              mileage: d.mileage || null,
+              intervalMiles: d.intervalMiles || d.nextDueMileage ? (d.nextDueMileage - (d.mileage || 0)) || null : null,
+              nextDueMileage: d.nextDueMileage || null,
+              date: d.date || null,
+            };
+          }
         }
       });
     }
@@ -1357,8 +1363,7 @@ window.openAvailableFleetCheck = async function() {
     available.forEach(v => {
       const notes = notesByVehicle[v.id] || [];
       // If no oil change has ever been recorded, inject a synthetic overdue note
-      const noOilChange = !oilChangeByVehicle[v.id];
-      const syntheticOilNote = noOilChange
+      const noOilChange = !oilChangeByVehicle[v.id];      const syntheticOilNote = noOilChange
         ? [{ text: 'No oil change on record — service history unknown', _synthetic: true }]
         : [];
       const overdueNotes = [
@@ -1391,6 +1396,21 @@ window.openAvailableFleetCheck = async function() {
       const details = [...overdueNotes.slice(0,3), ...upcomingNotes.slice(0,2)].map(n =>
         `<div class="amc-note">• ${escapeHtml((n.text||'').slice(0,60))}${(n.text||'').length>60?'…':''}</div>`
       ).join('');
+      // Oil change miles info
+      const oil = oilChangeByVehicle[v.id];
+      let oilLine = '';
+      if (!oil) {
+        oilLine = `<div class="amc-oil amc-oil-missing">⛽ No oil change on record</div>`;
+      } else if (oil.nextDueMileage && v.mileage) {
+        const miLeft = oil.nextDueMileage - v.mileage;
+        const cls = miLeft <= 0 ? 'amc-oil-overdue' : miLeft <= 500 ? 'amc-oil-urgent' : miLeft <= 1500 ? 'amc-oil-warn' : 'amc-oil-ok';
+        const label = miLeft <= 0
+          ? `Oil change overdue by ${Math.abs(miLeft).toLocaleString()} mi`
+          : `⛽ Oil change in ${miLeft.toLocaleString()} mi`;
+        oilLine = `<div class="amc-oil ${cls}">${label} <span style="color:#9ca3af;font-size:0.72rem;">(due at ${oil.nextDueMileage.toLocaleString()} mi)</span></div>`;
+      } else if (oil.date) {
+        oilLine = `<div class="amc-oil amc-oil-ok">⛽ Last oil change: ${oil.date}</div>`;
+      }
       return `<div class="amc-row" onclick="document.getElementById('avail-maint-overlay').remove(); openVehiclePage('${v.id}');" title="Open vehicle page">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <strong style="font-size:0.9rem;">${escapeHtml(v.plate)}</strong>
@@ -1398,7 +1418,8 @@ window.openAvailableFleetCheck = async function() {
           <span style="color:#9ca3af;font-size:0.75rem;">${mi}</span>
           ${tag}
         </div>
-        ${details ? `<div style="margin-top:4px;">${details}</div>` : ''}
+        ${oilLine}
+        ${details ? `<div style="margin-top:2px;">${details}</div>` : ''}
       </div>`;
     }
 

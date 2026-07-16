@@ -8206,3 +8206,11 @@ body {
 .vi-priority-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .vi-resolved-desc { flex: 1; color: #374151; }
 .vi-resolved-meta { font-size: 0.75rem; color: #9ca3af; white-space: nowrap; }
+
+/* ── Maintenance Check modal — oil change line ── */
+.amc-oil { font-size: 0.78rem; margin-top: 3px; }
+.amc-oil-ok      { color: #15803d; }
+.amc-oil-warn    { color: #d97706; }
+.amc-oil-urgent  { color: #ea580c; font-weight: 600; }
+.amc-oil-overdue { color: #dc2626; font-weight: 700; }
+.amc-oil-missing { color: #9ca3af; font-style: italic; }
