@@ -1697,22 +1697,47 @@
     <div class="maint-dash-panel">
       <div class="maint-dash-header">
         <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:1.5rem;">🔧</span>
-          <h3 style="margin:0;font-size:1.1rem;font-weight:700;">Maintenance Dashboard</h3>
-          <button class="btn btn-sm btn-primary" style="margin-left:8px;font-size:0.8rem;padding:4px 12px;" onclick="openNewWorkOrder()">+ Log Concern</button>
+          <span style="font-size:1.3rem;">🔧</span>
+          <h3 style="margin:0;font-size:1rem;font-weight:700;">Fleet Operations</h3>
         </div>
-        <button class="maint-dash-close" onclick="closeMaintenanceDash()">&times;</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-sm btn-primary" onclick="openNewWorkOrder()">+ Log Issue</button>
+          <button class="maint-dash-close" onclick="closeMaintenanceDash()">&times;</button>
+        </div>
       </div>
+
+      <!-- Fleet Health Summary Cards -->
+      <div id="fleet-health-bar" class="fleet-health-bar">
+        <div class="fh-card fh-action" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='action'">
+          <div class="fh-num" id="fh-num-action">—</div>
+          <div class="fh-label">🚨 Need Action</div>
+        </div>
+        <div class="fh-card fh-shop" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='shop'">
+          <div class="fh-num" id="fh-num-shop">—</div>
+          <div class="fh-label">🔧 At Shop</div>
+        </div>
+        <div class="fh-card fh-parts" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='parts'">
+          <div class="fh-num" id="fh-num-parts">—</div>
+          <div class="fh-label">⏳ Parts Wait</div>
+        </div>
+        <div class="fh-card fh-ready" onclick="switchMaintTab('mtab-fleet',document.querySelector('[data-mtab=mtab-fleet]'))">
+          <div class="fh-num" id="fh-num-ready">—</div>
+          <div class="fh-label">🟢 Fleet Ready</div>
+        </div>
+        <div class="fh-card fh-returns" onclick="switchMaintTab('mtab-return-queue',document.querySelector('[data-mtab=mtab-return-queue]'))">
+          <div class="fh-num" id="fh-num-returns">—</div>
+          <div class="fh-label">🔁 Returns</div>
+        </div>
+      </div>
+
       <div class="maint-dash-tabs">
-        <button class="maint-tab-btn active" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">📊 Overview</button>
-        <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 By Vehicle</button>
-        <button class="maint-tab-btn" data-mtab="mtab-location" onclick="switchMaintTab('mtab-location',this)">📍 By Location</button>
-        <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
-        <button class="maint-tab-btn" data-mtab="mtab-tasks" onclick="switchMaintTab('mtab-tasks',this)">📌 Open Tasks</button>
-        <button class="maint-tab-btn" data-mtab="mtab-return-queue" onclick="switchMaintTab('mtab-return-queue',this)">🔁 Return Queue</button>
-        <button class="maint-tab-btn" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🔧 Work Orders</button>
-        <button class="maint-tab-btn" data-mtab="mtab-completed-wo" onclick="switchMaintTab('mtab-completed-wo',this)">✅ Completed</button>
+        <button class="maint-tab-btn active" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🚨 Open Issues</button>
+        <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Vehicles</button>
         <button class="maint-tab-btn" data-mtab="mtab-vendors" onclick="switchMaintTab('mtab-vendors',this)">🔧 Vendors</button>
+        <button class="maint-tab-btn" data-mtab="mtab-completed-wo" onclick="switchMaintTab('mtab-completed-wo',this)">✅ Completed</button>
+        <button class="maint-tab-btn" data-mtab="mtab-history" onclick="switchMaintTab('mtab-history',this)">📋 History</button>
+        <button class="maint-tab-btn" data-mtab="mtab-return-queue" onclick="switchMaintTab('mtab-return-queue',this)">🔁 Return Queue</button>
+        <button class="maint-tab-btn" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">⚙️ Overview</button>
       </div>
       <div class="maint-dash-body">
 

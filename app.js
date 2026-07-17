@@ -7011,10 +7011,10 @@ window.openMaintenanceDash = function() {
   }
   if (!_maintDashLoaded) {
     _maintDashLoaded = true;
-    // Open to the By Vehicle tab by default
-    const fleetBtn = document.querySelector('[data-mtab="mtab-fleet"]');
-    if (fleetBtn) switchMaintTab('mtab-fleet', fleetBtn);
-    else _loadMaintOverview();
+    // Default to Open Issues (work orders) tab
+    const woBtn = document.querySelector('[data-mtab="mtab-work-orders"]');
+    if (woBtn) switchMaintTab('mtab-work-orders', woBtn);
+    else _loadWorkOrders();
   }
 };
 
@@ -7932,6 +7932,19 @@ async function _loadWorkOrders() {
     // Update global WO-per-vehicle count (active only)
     _woCountByVehicle = {};
     activeItems.forEach(i => { if (i.vehicleId) _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId]||0)+1; });
+
+    // ── Populate Fleet Health Bar ──
+    const fhAction  = activeItems.filter(i => !i.repairStatus || i.repairStatus === 'open' || i.repairStatus === 'scheduled');
+    const fhShop    = activeItems.filter(i => i.repairStatus === 'dropped_off');
+    const fhParts   = activeItems.filter(i => i.repairStatus === 'awaiting_parts');
+    const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woCountByVehicle[v.id] > 0));
+    const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
+    const setFH = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+    setFH('fh-num-action', fhAction.length);
+    setFH('fh-num-shop',   fhShop.length);
+    setFH('fh-num-parts',  fhParts.length);
+    setFH('fh-num-ready',  fhReady.length);
+    setFH('fh-num-returns',fhReturns.length);
     // Sort newest first client-side (avoids needing a Firestore composite index)
     items.sort((a, b) => {
       const aT = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
@@ -8169,26 +8182,105 @@ async function _loadWorkOrders() {
 
       // Invoice button — always visible
       const invBadge = item.invoiceNumber ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;margin-left:4px;">📄 Inv #${escapeHtml(item.invoiceNumber)}</span>` : '';
-      const invBtn = `<button class="btn btn-sm btn-outline wo-btn-invoice" onclick="window.openInvoiceModal('${item.id}')" title="Add/view invoice">📄 Invoice${invBadge ? ' ✓' : ''}</button>`;
 
-      return '<div class="wo-card' + (isMyTask ? ' wo-card-my-task' : '') + '" style="border-color:' + p.color + '40;background:' + p.bg + ';">'
-        + pipelineHtml
-        + '<div class="wo-card-top">'
-        + '<div class="wo-priority-pill" style="background:' + p.color + ';color:#fff;">' + p.icon + ' ' + p.label + '</div>'
-        + '<span class="wo-status-pill ' + st.cls + '">' + st.icon + ' ' + st.label + '</span>'
-        + maintSourceBadge
-        + catBadge
-        + '<div class="wo-vehicle-info"><span class="wo-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage(\'' + item.vehicleId + '\'),80)">' + plate + '</span><span class="wo-vmeta">' + vInfo + '</span></div>'
-        + '<div class="wo-avail-group">' + availBadge + returnNote + '</div>'
-        + '</div>'
-        + '<div class="wo-description">' + escapeHtml(item.text) + '</div>'
-        + supplierLine + instrLine + partsLine
-        + maintDueLine
-        + assigneeLine + tripConflict
-        + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
-        + progressSection
-        + '<div class="wo-actions">' + myTaskAction + statusActions + invBtn + '<button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder(\'' + item.id + '\')">✏️ Edit</button>' + deleteBtn + '</div>'
-        + '</div>';
+      // ── Rentability indicator ──
+      const rentability = item.repairPriority === 'critical'
+        ? '<span class="wo-rent wo-rent-no">🔴 Do Not Rent</span>'
+        : item.repairPriority === 'high'
+        ? '<span class="wo-rent wo-rent-caution">🟡 Rentable Until Repair</span>'
+        : '<span class="wo-rent wo-rent-ok">🟢 Rentable</span>';
+
+      // ── Days open ──
+      const daysOpen = item.createdAt
+        ? Math.max(0, Math.floor((Date.now() - (item.createdAt.toDate ? item.createdAt.toDate() : new Date(item.createdAt)).getTime()) / 86400000))
+        : null;
+      const daysOpenBadge = daysOpen != null
+        ? `<span class="wo-days-open${daysOpen >= 7 ? ' wo-days-old' : ''}">${daysOpen}d open</span>`
+        : '';
+
+      // ── Vehicle thumbnail ──
+      const thumbUrl = v && v.defaultImageUrl ? v.defaultImageUrl : null;
+      const thumbHtml = thumbUrl
+        ? `<img src="${escapeHtml(thumbUrl)}" class="wo-vehicle-thumb" alt="${escapeHtml(v.plate)}" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${item.vehicleId}'),80)">`
+        : `<div class="wo-vehicle-thumb wo-thumb-placeholder" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${item.vehicleId}'),80)">🚗</div>`;
+
+      // ── Primary / Secondary / More actions ──
+      let primaryBtn = '', secondaryBtn = '', moreActions = '';
+      const isMaintAuto2 = !!(item.autoCreated && item.sourceType === 'maintenance');
+      if (rs === 'dropped_off') {
+        primaryBtn   = `<button class="wo-primary-btn" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Complete</button>`;
+        secondaryBtn = `<button class="wo-secondary-btn" onclick="window.openAwaitingPartsModal('${item.id}')">⏳ Awaiting Parts</button>`;
+        moreActions  = `<li onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found.')">🔍 No Fault Found</li>
+          <li onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</li>`;
+      } else if (rs === 'awaiting_parts') {
+        primaryBtn   = `<button class="wo-primary-btn" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Parts Arrived</button>`;
+        secondaryBtn = `<button class="wo-secondary-btn" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Complete</button>`;
+        moreActions  = `<li onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</li>`;
+      } else if (item.scheduledDate && item.scheduledDate >= today) {
+        primaryBtn   = `<button class="wo-primary-btn" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>`;
+        secondaryBtn = `<button class="wo-secondary-btn" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
+        moreActions  = isMaintAuto2
+          ? `<li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</li>`
+          : `<li onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</li>
+             <li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</li>`;
+      } else if (isMaintAuto2) {
+        primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
+        secondaryBtn = `<button class="wo-secondary-btn" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</button>`;
+        moreActions  = `<li onclick="window.snoozeWorkOrder('${item.id}',30)">⏸️ Snooze 30d</li>`;
+      } else {
+        primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
+        secondaryBtn = `<button class="wo-secondary-btn" onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</button>`;
+        moreActions  = `<li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</li>
+          <li onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</li>
+          <li onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found.')">🔍 No Fault</li>`;
+      }
+      if (myTaskAction) primaryBtn = `<button class="wo-primary-btn" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">⭐ Complete My Task</button>`;
+      const menuId = 'wo-menu-' + item.id;
+      const moreMenuHtml = `<div class="wo-more-wrap">
+        <button class="wo-more-btn" onclick="var m=document.getElementById('${menuId}');m.style.display=m.style.display==='none'?'block':'none';event.stopPropagation()">⋮</button>
+        <ul class="wo-more-menu" id="${menuId}" style="display:none;" onclick="document.getElementById('${menuId}').style.display='none'">
+          ${moreActions}
+          <li onclick="window.openInvoiceModal('${item.id}')">📄 Invoice${item.invoiceNumber?' ✓':''}</li>
+          <li onclick="openEditWorkOrder('${item.id}')">✏️ Edit</li>
+          ${currentUserRole==='admin'?`<li class="wo-menu-danger" onclick="window.deleteWorkOrder('${item.id}')">🗑 Delete</li>`:''}
+        </ul>
+      </div>`;
+
+      // ── NEW MODERN CARD LAYOUT ──
+      const cardBorderColor = p.color;
+      const priorityDot = `<span class="wo-priority-dot" style="background:${p.color};" title="${p.label} priority"></span>`;
+      const assigneeChip = item.assignedUserName
+        ? `<span class="wo-detail-chip">👤 ${escapeHtml(item.assignedUserName)}</span>`
+        : item.assignedMechanic
+        ? `<span class="wo-detail-chip">🔧 ${escapeHtml(item.assignedMechanic)}</span>`
+        : '';
+      const milesChip = v && v.mileage ? `<span class="wo-detail-chip">🛣️ ${v.mileage.toLocaleString()} mi</span>` : '';
+      const schedChip = item.scheduledDate
+        ? `<span class="wo-detail-chip ${item.scheduledDate < today ? 'wo-chip-missed' : 'wo-chip-sched'}">📅 ${new Date(item.scheduledDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`
+        : '';
+      const dueLine = maintDueLine ? `<div class="wo-due-compact">${maintDueLine}</div>` : '';
+
+      return `<div class="wo-card-v2${isMyTask?' wo-card-my-task':''}" style="border-left:4px solid ${cardBorderColor};" data-id="${item.id}">
+        <div class="wo-card-v2-main">
+          ${thumbHtml}
+          <div class="wo-card-v2-body">
+            <div class="wo-card-v2-header">
+              ${priorityDot}
+              <span class="wo-v2-plate" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${item.vehicleId}'),80)">${plate}</span>
+              <span class="wo-v2-vehicle">${v ? escapeHtml(v.make+' '+v.model+(v.color?' · '+v.color:'')) : ''}</span>
+              <div class="wo-v2-badges">${rentability}${daysOpenBadge}</div>
+            </div>
+            <div class="wo-v2-issue">${escapeHtml(item.text)}</div>
+            ${dueLine}
+            <div class="wo-v2-pipeline">${pipelineHtml}</div>
+            <div class="wo-v2-details">${assigneeChip}${milesChip}${schedChip}${tripConflict?'<span class="wo-chip-conflict">⚠️ Trip Conflict</span>':''}</div>
+          </div>
+        </div>
+        <div class="wo-card-v2-actions">
+          ${primaryBtn}${secondaryBtn}${moreMenuHtml}
+        </div>
+        ${progressSection}
+      </div>`;
     }
 
     // Build category breakdown chips

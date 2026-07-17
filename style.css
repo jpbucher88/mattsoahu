@@ -8300,3 +8300,209 @@ body {
 .vend-events-details { font-size: 0.82rem; }
 .vend-events-summary { cursor: pointer; color: #4b5563; font-weight: 600; padding: 2px 0; }
 .vend-events-list { margin-top: 6px; }
+
+/* ================================================================
+   FLEET OPERATIONS COMMAND CENTER — New Maintenance Dashboard CSS
+   ================================================================ */
+
+/* ── Fleet Health Bar ── */
+.fleet-health-bar {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #0f172a;
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+.fh-card {
+  flex: 1;
+  min-width: 90px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: center;
+}
+.fh-card:hover { background: rgba(255,255,255,0.14); }
+.fh-num { font-size: 1.6rem; font-weight: 800; color: #fff; line-height: 1; }
+.fh-label { font-size: 0.68rem; color: rgba(255,255,255,0.65); margin-top: 3px; white-space: nowrap; }
+.fh-action .fh-num { color: #f87171; }
+.fh-shop   .fh-num { color: #fb923c; }
+.fh-parts  .fh-num { color: #fbbf24; }
+.fh-ready  .fh-num { color: #4ade80; }
+.fh-returns .fh-num { color: #60a5fa; }
+
+/* ── Modern Card v2 ── */
+.wo-card-v2 {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  transition: box-shadow 0.15s;
+}
+.wo-card-v2:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.10); }
+.wo-card-v2-main {
+  display: flex;
+  gap: 0;
+  padding: 14px 16px 10px;
+  align-items: flex-start;
+}
+.wo-vehicle-thumb {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+  margin-right: 12px;
+  cursor: pointer;
+}
+.wo-thumb-placeholder {
+  width: 52px;
+  height: 52px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  flex-shrink: 0;
+  margin-right: 12px;
+  cursor: pointer;
+}
+.wo-card-v2-body { flex: 1; min-width: 0; }
+.wo-card-v2-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.wo-priority-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.wo-v2-plate {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+}
+.wo-v2-plate:hover { color: #1d4ed8; text-decoration: underline; }
+.wo-v2-vehicle {
+  font-size: 0.82rem;
+  color: #64748b;
+}
+.wo-v2-badges { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-left: auto; }
+.wo-v2-issue {
+  font-size: 0.98rem;
+  font-weight: 650;
+  color: #1e293b;
+  margin-bottom: 6px;
+  line-height: 1.35;
+}
+.wo-due-compact { font-size: 0.8rem; color: #6b7280; margin-bottom: 5px; }
+.wo-v2-pipeline { margin-bottom: 6px; }
+.wo-v2-details { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+.wo-detail-chip {
+  font-size: 0.75rem;
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+}
+.wo-chip-missed { background: #fef2f2; color: #dc2626; border-color: #fca5a5; }
+.wo-chip-sched  { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.wo-chip-conflict { background: #fff7ed; color: #c2410c; border-color: #fdba74; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid; }
+
+/* ── Rentability ── */
+.wo-rent { font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.wo-rent-ok      { background: #d1fae5; color: #065f46; }
+.wo-rent-caution { background: #fef9c3; color: #854d0e; }
+.wo-rent-no      { background: #fee2e2; color: #991b1b; }
+
+/* ── Days Open ── */
+.wo-days-open { font-size: 0.72rem; color: #9ca3af; padding: 2px 7px; border-radius: 999px; background: #f9fafb; border: 1px solid #e5e7eb; }
+.wo-days-old  { color: #dc2626; background: #fef2f2; border-color: #fca5a5; }
+
+/* ── Action buttons ── */
+.wo-card-v2-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 12px;
+  border-top: 1px solid #f1f5f9;
+  background: #fafafa;
+}
+.wo-primary-btn {
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 18px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.wo-primary-btn:hover { background: #1e40af; }
+.wo-primary-sched { background: #059669; }
+.wo-primary-sched:hover { background: #047857; }
+.wo-secondary-btn {
+  background: transparent;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.wo-secondary-btn:hover { background: #f3f4f6; }
+
+/* ── ⋮ More menu ── */
+.wo-more-wrap { position: relative; margin-left: auto; }
+.wo-more-btn {
+  background: transparent;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  width: 36px;
+  height: 36px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.wo-more-btn:hover { background: #f3f4f6; }
+.wo-more-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.14);
+  min-width: 180px;
+  padding: 6px 0;
+  z-index: 9999;
+  list-style: none;
+  margin: 0;
+}
+.wo-more-menu li {
+  padding: 9px 16px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #374151;
+  transition: background 0.1s;
+}
+.wo-more-menu li:hover { background: #f3f4f6; }
+.wo-more-menu .wo-menu-danger { color: #dc2626; }
+.wo-more-menu .wo-menu-danger:hover { background: #fef2f2; }
