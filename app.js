@@ -8226,7 +8226,12 @@ async function _loadWorkOrders() {
         <div class="wo-section-header wo-section-missed wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-missed',this)">
           ⚠️ Missed Schedule <span class="wo-sec-count">${missedList.length}</span><span class="wo-sect-arrow">▼</span>
         </div>
-        <div id="wo-sect-missed">${missedList.map(renderCard).join('')}</div>
+        <div id="wo-sect-missed">${missedList.map(i => {
+          const card = renderCard(i);
+          // Inject "Missed Appt" button before the first action button
+          const missedBtn = `<button class="btn btn-sm wo-btn-missed" onclick="event.stopPropagation();window.logMissedAppointment('${i.id}','${escapeHtml(i.assignedMechanic||'').replace(/'/g,"&#39;")}','${i.scheduledDate||''}')">⚠️ Missed Appt</button>`;
+          return card.replace('<div class="wo-actions">', `<div class="wo-actions">${missedBtn}`);
+        }).join('')}</div>
       </div>`;
     }
     if (open.length) {
@@ -8431,17 +8436,25 @@ window._loadVendorsTab = async function() {
   if (!container) return;
   container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
   try {
-    const snap = await db.collection('vehicleNotes')
-      .where('workOrder', '==', true)
-      .where('done', '==', false)
-      .get();
-    const allSnap = await db.collection('vehicleNotes')
-      .where('workOrder', '==', true)
-      .where('done', '==', true)
-      .where('resolutionDate', '>=', new Date(Date.now()-90*86400000).toISOString().slice(0,10))
-      .get();
-    const allItems = [...snap.docs, ...allSnap.docs].map(d => ({ id: d.id, ...d.data() }));
-    // Group by mechanic
+    const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+    const [openSnap, closedSnap, eventsSnap] = await Promise.all([
+      db.collection('vehicleNotes').where('workOrder','==',true).where('done','==',false).get(),
+      db.collection('vehicleNotes').where('workOrder','==',true).where('done','==',true)
+        .where('resolutionDate','>=',new Date(Date.now()-90*86400000).toISOString().slice(0,10)).get(),
+      isAdmin ? db.collection('vendorEvents').orderBy('createdAt','desc').limit(500).get() : Promise.resolve({docs:[]}),
+    ]);
+    const allItems = [...openSnap.docs, ...closedSnap.docs].map(d => ({ id: d.id, ...d.data() }));
+    const events = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Build reliability stats
+    const vendorStats = {};
+    events.forEach(e => {
+      if (!e.vendorName) return;
+      if (!vendorStats[e.vendorName]) vendorStats[e.vendorName] = { missed:0, completed:0, events:[] };
+      vendorStats[e.vendorName].events.push(e);
+      if (e.type === 'missed') vendorStats[e.vendorName].missed++;
+      if (e.type === 'completed') vendorStats[e.vendorName].completed++;
+    });
+    // Group by vendor
     const byVendor = {};
     allItems.forEach(i => {
       const vendor = i.assignedMechanic || i.invoiceVendor || null;
@@ -8449,10 +8462,18 @@ window._loadVendorsTab = async function() {
       if (!byVendor[vendor]) byVendor[vendor] = [];
       byVendor[vendor].push(i);
     });
-    const unassigned = allItems.filter(i => !i.assignedMechanic && !i.invoiceVendor);
+    const unassigned = allItems.filter(i => !i.assignedMechanic && !i.invoiceVendor && !i.done);
     if (Object.keys(byVendor).length === 0 && unassigned.length === 0) {
-      container.innerHTML = '<div class="maint-tab-empty"><span>🔧</span><p>No work orders assigned to vendors yet. Use the Invoice or Schedule buttons on a work order to assign a mechanic.</p></div>';
+      container.innerHTML = '<div class="maint-tab-empty"><span>🔧</span><p>No work orders assigned to vendors yet.</p></div>';
       return;
+    }
+    function reliabilityBadge(stats) {
+      if (!stats || (stats.missed + stats.completed) === 0) return '<span class="vend-rel vend-rel-new">🆕 New</span>';
+      const total = stats.missed + stats.completed;
+      const rate = Math.round((stats.completed / total) * 100);
+      if (rate >= 90) return `<span class="vend-rel vend-rel-great">✅ ${rate}% reliable</span>`;
+      if (rate >= 70) return `<span class="vend-rel vend-rel-ok">🟡 ${rate}% reliable</span>`;
+      return `<span class="vend-rel vend-rel-poor">🔴 ${rate}% reliable (${stats.missed} missed)</span>`;
     }
     let html = '';
     for (const [vendor, items] of Object.entries(byVendor).sort()) {
@@ -8460,41 +8481,60 @@ window._loadVendorsTab = async function() {
       const closed = items.filter(i => i.done);
       const invoiced = items.filter(i => i.invoiceNumber);
       const approved = items.filter(i => i.invoiceApproved);
-      const totalAmt = items.reduce((s, i) => s + (i.invoiceAmount || 0), 0);
-      const pendingAmt = items.filter(i => !i.invoiceApproved).reduce((s, i) => s + (i.invoiceAmount || 0), 0);
+      const totalAmt = items.reduce((s,i) => s+(i.invoiceAmount||0), 0);
+      const pendingAmt = items.filter(i => !i.invoiceApproved).reduce((s,i) => s+(i.invoiceAmount||0), 0);
+      const stats = vendorStats[vendor];
+      const relBadge = isAdmin ? reliabilityBadge(stats) : '';
+      const missWarn = isAdmin && stats && stats.missed >= 2 ? `<span class="vend-miss-warn">⚠️ ${stats.missed} missed</span>` : '';
+      let eventsHtml = '';
+      if (isAdmin && stats && stats.events.length > 0) {
+        eventsHtml = `<details class="vend-events-details"><summary class="vend-events-summary">📋 Appointment History (${stats.events.length})</summary>
+          <div class="vend-events-list">${stats.events.slice(0,6).map(e => {
+            const cls = e.type==='missed'?'color:#dc2626;':e.type==='completed'?'color:#15803d;':'color:#d97706;';
+            const icon = e.type==='missed'?'⚠️':e.type==='completed'?'✅':'📅';
+            return `<div style="font-size:0.78rem;padding:4px 0;border-bottom:1px solid #f1f5f9;">
+              <span style="${cls}font-weight:600;">${icon} ${e.type}</span>
+              <span style="color:#6b7280;margin-left:6px;">${e.date||''} · ${escapeHtml(e.plate||'')} · ${escapeHtml((e.issue||'').slice(0,40))}</span>
+              ${e.reason?`<span style="color:#9ca3af;margin-left:4px;">(${escapeHtml(e.reason)})</span>`:''}
+            </div>`;
+          }).join('')}</div></details>`;
+      }
       html += `<div class="vendor-group">
         <div class="vendor-group-header">
-          <div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
             <strong style="font-size:1rem;">🔧 ${escapeHtml(vendor)}</strong>
-            <span style="font-size:0.8rem;color:#6b7280;margin-left:8px;">${open.length} open · ${closed.length} completed (last 90d)</span>
+            ${relBadge}${missWarn}
+            <span style="font-size:0.8rem;color:#6b7280;">${open.length} open · ${closed.length} done (90d)</span>
           </div>
           <div style="text-align:right;font-size:0.82rem;">
-            ${totalAmt > 0 ? `<div>Total: <strong>$${totalAmt.toFixed(2)}</strong></div>` : ''}
-            ${pendingAmt > 0 ? `<div style="color:#d97706;">Awaiting approval: <strong>$${pendingAmt.toFixed(2)}</strong></div>` : ''}
+            ${totalAmt>0?`<div>Total: <strong>$${totalAmt.toFixed(2)}</strong></div>`:''}
+            ${pendingAmt>0?`<div style="color:#d97706;">Pending: <strong>$${pendingAmt.toFixed(2)}</strong></div>`:''}
             <div style="color:#6b7280;">${invoiced.length}/${items.length} invoiced · ${approved.length} approved</div>
           </div>
         </div>
+        ${isAdmin&&eventsHtml?`<div style="padding:6px 16px;background:#fafafa;border-bottom:1px solid #e5e7eb;">${eventsHtml}</div>`:''}
         <div class="vendor-items">`;
       items.slice(0,10).forEach(i => {
-        const v = vehiclesCache.find(x => x.id === i.vehicleId);
-        const plate = v ? escapeHtml(v.plate) : '—';
+        const veh = vehiclesCache.find(x => x.id === i.vehicleId);
+        const plate = veh ? escapeHtml(veh.plate) : '—';
         const statusCls = i.done ? 'color:#15803d;' : 'color:#d97706;';
-        const invStatus = i.invoiceApproved ? '✅ Approved' : i.invoiceNumber ? `📄 Inv #${escapeHtml(i.invoiceNumber)}${i.invoiceAmount ? ' ($' + i.invoiceAmount.toFixed(2) + ')' : ''}` : '⚠️ No invoice';
+        const invStatus = i.invoiceApproved ? '✅ Approved' : i.invoiceNumber ? `📄 #${escapeHtml(i.invoiceNumber)}${i.invoiceAmount!=null?' ($'+i.invoiceAmount.toFixed(2)+')':''}` : '<span style="color:#9ca3af;">No invoice</span>';
         html += `<div class="vendor-item">
-          <span style="font-weight:700;">${plate}</span>
-          <span style="flex:1;color:#374151;font-size:0.82rem;">${escapeHtml((i.text||'').slice(0,60))}</span>
-          <span style="font-size:0.75rem;${statusCls}">${i.done ? '✓ Done' : '● Open'}</span>
+          <span style="font-weight:700;min-width:55px;">${plate}</span>
+          <span style="flex:1;color:#374151;font-size:0.82rem;">${escapeHtml((i.text||'').slice(0,55))}</span>
+          <span style="font-size:0.75rem;${statusCls}">${i.done?'✓ Done':'● Open'}</span>
           <span style="font-size:0.75rem;color:#4b5563;">${invStatus}</span>
           <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:2px 8px;" onclick="window.openInvoiceModal('${i.id}')">📄 Invoice</button>
         </div>`;
       });
-      if (items.length > 10) html += `<p style="font-size:0.78rem;color:#6b7280;padding:6px 0;">+ ${items.length-10} more…</p>`;
+      if (items.length > 10) html += `<p style="font-size:0.78rem;color:#6b7280;padding:6px 0;">+${items.length-10} more…</p>`;
       html += '</div></div>';
     }
     if (unassigned.length > 0) {
-      html += `<div class="vendor-group">
-        <div class="vendor-group-header"><strong>⚪ Unassigned (${unassigned.length})</strong><span style="font-size:0.8rem;color:#6b7280;margin-left:8px;">Use Invoice button to assign a mechanic</span></div>
-      </div>`;
+      html += `<div class="vendor-group"><div class="vendor-group-header">
+        <strong>⚪ Unassigned (${unassigned.length})</strong>
+        <span style="font-size:0.8rem;color:#6b7280;">Use Invoice or Schedule to assign a mechanic</span>
+      </div></div>`;
     }
     container.innerHTML = html;
   } catch(e) {
@@ -8628,6 +8668,8 @@ window._saveAwaitingParts = async function(noteId) {
 window.quickResolveWorkOrder = async function(noteId, resStatus, resText) {
   if (!await confirm('Confirm Resolution', `Mark as "${resStatus === 'no_fault' ? 'No Fault Found' : resStatus}"?\n\n${resText}`)) return;
   try {
+    const noteSnap = await db.collection('vehicleNotes').doc(noteId).get().catch(() => null);
+    const nd = noteSnap && noteSnap.exists ? noteSnap.data() : {};
     await db.collection('vehicleNotes').doc(noteId).update({
       done: true,
       repairStatus: resStatus,
@@ -8636,6 +8678,30 @@ window.quickResolveWorkOrder = async function(noteId, resStatus, resText) {
       resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
       completedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
+    // Log vendor "completed" event if assigned
+    const vendor = nd.assignedMechanic || nd.invoiceVendor || null;
+    if (vendor) {
+      db.collection('vendorEvents').add({
+        vendorName: vendor, type: 'completed', date: todayDateString(),
+        noteId, vehicleId: nd.vehicleId||null, plate: nd.plate||(vehiclesCache.find(x=>x.id===nd.vehicleId)||{}).plate||null,
+        issue: (nd.text||'').slice(0,100),
+        loggedBy: currentUser?(currentUser.displayName||currentUser.email):'Unknown',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }).catch(()=>{});
+    }
+    // Create 7-day repair-confirm follow-up
+    const followUpDate = new Date(); followUpDate.setDate(followUpDate.getDate()+7);
+    if (nd.vehicleId) {
+      db.collection('vehicleNotes').add({
+        vehicleId: nd.vehicleId,
+        text: `✅ Verify repair complete: "${(nd.text||'').slice(0,60)}"`,
+        isFollowUp: true, returnQueue: false, workOrder: false,
+        done: false, urgent: false,
+        dueDate: followUpDate.toISOString().slice(0,10),
+        createdByName: 'System (auto follow-up)',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      }).catch(()=>{});
+    }
     toast(`✅ Marked as "${resStatus === 'no_fault' ? 'No Fault Found' : resStatus}"`, 'success');
     _loadWorkOrders();
     loadDashboardFollowUps();
@@ -8661,6 +8727,78 @@ window.unsnoozeWorkOrder = async function(noteId) {
     toast('↩️ Item moved back to active list.', 'info');
     _loadWorkOrders();
   } catch(e) { toast('Failed to wake up item.', 'error'); }
+};
+
+// Log a missed appointment — records it on vendorEvents and prompts reschedule
+window.logMissedAppointment = async function(noteId, vendorName, scheduledDate) {
+  const noteSnap = await db.collection('vehicleNotes').doc(noteId).get().catch(() => null);
+  const d = noteSnap && noteSnap.exists ? noteSnap.data() : {};
+  const v = vehiclesCache.find(x => x.id === d.vehicleId);
+  const plate = v ? v.plate : '';
+  const vendor = vendorName || d.assignedMechanic || '';
+
+  // Quick reason modal
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+  overlay.innerHTML = `<div class="modal-box" style="max-width:380px;">
+    <div class="modal-header" style="background:#d97706;color:#fff;border-radius:10px 10px 0 0;">
+      <h3 style="color:#fff;margin:0;">⚠️ Missed Appointment${plate ? ' — ' + escapeHtml(plate) : ''}</h3>
+      <button class="modal-close" style="color:#fff;" onclick="this.closest('.modal-overlay').remove()">&times;</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:10px;">
+      ${vendor ? `<p style="margin:0;font-size:0.85rem;color:#6b7280;">Vendor: <strong>${escapeHtml(vendor)}</strong></p>` : ''}
+      <div><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Reason (optional)</label>
+        <select id="miss-reason" class="vehicle-location-custom">
+          <option value="">-- Select reason --</option>
+          <option value="No show">No show</option>
+          <option value="Got another job">Got another job</option>
+          <option value="Rescheduled by vendor">Rescheduled by vendor</option>
+          <option value="Parts not available">Parts not available</option>
+          <option value="Vehicle not available">Vehicle not available</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+      <div><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Notes</label>
+        <input id="miss-notes" type="text" class="vehicle-location-custom" placeholder="Any additional context…"></div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-sm btn-outline" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="miss-save-btn">Log & Reschedule</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#miss-save-btn').onclick = async () => {
+    const reason = overlay.querySelector('#miss-reason').value;
+    const notes  = overlay.querySelector('#miss-notes').value.trim();
+    overlay.remove();
+    try {
+      // Log to vendorEvents
+      await db.collection('vendorEvents').add({
+        vendorName: vendor || null,
+        type: 'missed',
+        reason: reason || null,
+        notes: notes || null,
+        date: todayDateString(),
+        scheduledDate: scheduledDate || null,
+        noteId,
+        vehicleId: d.vehicleId || null,
+        plate: plate || null,
+        issue: (d.text || '').slice(0, 100),
+        loggedBy: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      // Clear the old scheduled date so it falls back to "Open — Needs Scheduling"
+      await db.collection('vehicleNotes').doc(noteId).update({
+        scheduledDate: firebase.firestore.FieldValue.delete(),
+        repairStatus: 'open',
+      });
+      toast(`⚠️ Missed appointment logged${vendor ? ' for ' + vendor : ''}. Opening reschedule…`, 'warning');
+      _loadWorkOrders();
+      // Open schedule dialog after a moment
+      setTimeout(() => openScheduleWorkOrder(noteId, '', vendor), 400);
+    } catch(e) { console.error('logMissedAppointment error:', e); toast('Failed to log missed appointment.', 'error'); }
+  };
 };
 
 window.openNewWorkOrder = function(vehicleId) {

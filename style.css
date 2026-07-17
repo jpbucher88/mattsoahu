@@ -8274,3 +8274,29 @@ body {
 .vendor-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.82rem; flex-wrap: wrap; }
 .vendor-item:last-child { border-bottom: none; }
 .wo-btn-invoice { font-size: 0.75rem; padding: 3px 8px; }
+
+/* ── Missed Appointment button ── */
+.wo-btn-missed {
+  background: #fff7ed;
+  color: #c2410c;
+  border: 1px solid #fdba74;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.wo-btn-missed:hover { background: #ffedd5; }
+
+/* ── Vendor reliability badges ── */
+.vend-rel { font-size: 0.75rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; }
+.vend-rel-great { background: #d1fae5; color: #065f46; }
+.vend-rel-ok    { background: #fef9c3; color: #854d0e; }
+.vend-rel-poor  { background: #fee2e2; color: #991b1b; }
+.vend-rel-new   { background: #e0e7ff; color: #3730a3; }
+.vend-miss-warn { font-size: 0.75rem; font-weight: 700; color: #dc2626; background: #fef2f2; padding: 2px 8px; border-radius: 999px; }
+
+/* ── Vendor event history ── */
+.vend-events-details { font-size: 0.82rem; }
+.vend-events-summary { cursor: pointer; color: #4b5563; font-weight: 600; padding: 2px 0; }
+.vend-events-list { margin-top: 6px; }
