@@ -9202,6 +9202,8 @@ window.openScheduleWorkOrder = function(noteId, currentDate, currentMechanic) {
             <button type="button" class="wo-nextstep-pill" data-step="shop_pickup" onclick="_woSelectNextStep(this)">🏪 Shop Will Pick Up</button>
             <button type="button" class="wo-nextstep-pill" data-step="waiting_parts" onclick="_woSelectNextStep(this)">⏳ Waiting for Parts</button>
             <button type="button" class="wo-nextstep-pill" data-step="remote_fix" onclick="_woSelectNextStep(this)">📞 Quick / Remote Fix</button>
+            <button type="button" class="wo-nextstep-pill" data-step="mobile_fix" onclick="_woSelectNextStep(this)">🔧 Mobile Fix (mechanic comes to us)</button>
+            <button type="button" class="wo-nextstep-pill" data-step="self_repaired" onclick="_woSelectNextStep(this)">🙋 Self Repaired</button>
           </div>
           <input type="hidden" id="wo-sched-nextstep" value="drop_off">
         </div>
@@ -9270,14 +9272,39 @@ window._saveScheduleWorkOrder = async function(noteId) {
 
   if (!newDate) { toast('Pick a service date.', 'warning'); return; }
 
+  // Self-repaired: close the ticket immediately
+  if (nextStep === 'self_repaired') {
+    const progEntry = {
+      by: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      at: new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone: APP_TIMEZONE }),
+      text: '🙋 Self repaired' + (notes ? ' — ' + notes : '') + ' (' + newDate + ')',
+    };
+    try {
+      await db.collection('vehicleNotes').doc(noteId).update({
+        done: true, repairStatus: 'resolved',
+        resolution: notes || 'Self repaired',
+        resolutionDate: newDate,
+        resolvedByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        progressLog: firebase.firestore.FieldValue.arrayUnion(progEntry),
+      });
+      document.getElementById('wo-sched-overlay')?.remove();
+      toast('🙋 Marked as self repaired ✓', 'success');
+      _loadWorkOrders(); loadDashboardFollowUps();
+    } catch(e) { toast('Failed to save.', 'error'); }
+    return;
+  }
+
   // Determine status based on next step
-  const newStatus = nextStep === 'waiting_parts' ? 'awaiting_parts' : 'scheduled';
+  const newStatus = nextStep === 'waiting_parts' ? 'awaiting_parts'
+    : nextStep === 'mobile_fix' ? 'dropped_off'   // mechanic coming to us = in progress
+    : 'scheduled';
 
   // Build a progress log entry for this schedule action
   const progEntry = {
     by: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
     at: new Date().toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone: APP_TIMEZONE }),
-    text: '📅 Scheduled: ' + newDate + (supplier ? ' @ ' + supplier : '') + (timeSlot ? ' (' + timeSlot + ')' : '') + (notes ? ' — ' + notes : ''),
+    text: (nextStep === 'mobile_fix' ? '🔧 Mobile fix scheduled: ' : '📅 Scheduled: ') + newDate + (supplier ? ' @ ' + supplier : '') + (timeSlot ? ' (' + timeSlot + ')' : '') + (notes ? ' — ' + notes : ''),
   };
 
   try {
