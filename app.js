@@ -1379,23 +1379,29 @@ window.openAvailableFleetCheck = async function() {
           (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= 1500)
         )
       );
-      // Check compliance expiry — expired compliance bumps vehicle into overdue
-      const compExpiredFields = [
-        { field: v.complianceSafety, label: 'Safety' },
+      // Check compliance — expired → overdue; ≤15 days → overdue; ≤30 days → due soon
+      const compFields = [
+        { field: v.complianceSafety,      label: 'Safety' },
         { field: v.complianceRegistration, label: 'Reg' },
-        { field: v.complianceInsurance, label: 'Ins' },
-      ].filter(({ field }) => {
-        if (!field) return false;
+        { field: v.complianceInsurance,    label: 'Ins' },
+      ];
+      const compOverdueNotes = [], compSoonNotes = [];
+      compFields.forEach(({ field, label }) => {
+        if (!field) return;
         const [cy, cm] = field.split('-').map(Number);
-        return Date.UTC(cy, cm, 0, 23, 59, 59) < Date.now();
+        const expiresMs = Date.UTC(cy, cm, 0, 23, 59, 59);
+        const daysLeft = Math.round((expiresMs - Date.now()) / 86400000);
+        if (daysLeft < 0)   compOverdueNotes.push({ text: `${label} EXPIRED — must renew immediately`, _synthetic: true });
+        else if (daysLeft <= 15) compOverdueNotes.push({ text: `${label} expires in ${daysLeft}d — urgent renewal needed`, _synthetic: true });
+        else if (daysLeft <= 30) compSoonNotes.push({ text: `${label} due in ${daysLeft}d`, _synthetic: true });
       });
-      const compOverdueNotes = compExpiredFields.map(({ label }) => ({ text: `${label} EXPIRED — must renew immediately`, _synthetic: true }));
       const allOverdue = [...overdueNotes, ...compOverdueNotes];
+      const allUpcoming = [...upcomingNotes, ...compSoonNotes];
 
-      if (allOverdue.length)           overdue.push({ v, overdueNotes: allOverdue, upcomingNotes });
-      else if (upcomingNotes.length)   dueSoon.push({ v, overdueNotes: allOverdue, upcomingNotes });
+      if (allOverdue.length)            overdue.push({ v, overdueNotes: allOverdue, upcomingNotes: allUpcoming });
+      else if (allUpcoming.length)      dueSoon.push({ v, overdueNotes: allOverdue, upcomingNotes: allUpcoming });
       else if (notes.length || v.mileage) upToDate.push({ v });
-      else                              noData.push({ v });
+      else                               noData.push({ v });
     });
 
     function makeRow(entry, urgency) {
