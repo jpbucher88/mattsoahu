@@ -8115,26 +8115,33 @@ async function _loadWorkOrders() {
         }
       }
 
-      // Progress log — pure string concat, no nested templates
+      // Progress timeline — rendered as a proper visual timeline
       const progLog = item.progressLog || [];
-      let progEntries = '';
-      for (let pi = 0; pi < progLog.length; pi++) {
-        const pe = progLog[pi];
-        progEntries += '<div class="wo-log-entry"><span class="wo-log-by">' + escapeHtml(pe.by || '') + '</span> <span class="wo-log-at">' + (pe.at || '') + '</span><div class="wo-log-text">' + escapeHtml(pe.text || '') + '</div></div>';
-      }
       const canManageWO = currentUserRole === 'admin' || currentUserRole === 'manager';
       const progBodyId = 'wo-prog-body-' + item.id;
-      const progCount = progLog.length ? ' (' + progLog.length + ')' : '';
+      let timelineEntries = '';
+      for (let pi = 0; pi < progLog.length; pi++) {
+        const pe = progLog[pi];
+        const isLast = pi === progLog.length - 1;
+        timelineEntries += `<div class="wo-tl-entry${isLast?' wo-tl-latest':''}">
+          <div class="wo-tl-dot"></div>
+          <div class="wo-tl-content">
+            <div class="wo-tl-meta">${escapeHtml(pe.by||'')} · ${pe.at||''}</div>
+            <div class="wo-tl-text">${escapeHtml(pe.text||'')}</div>
+          </div>
+        </div>`;
+      }
       const addRowHtml = canManageWO
-        ? '<div class="wo-log-add-row"><input type="text" id="wo-prog-input-' + item.id + '" class="wo-log-input" placeholder="Add progress update\u2026"><button class="btn btn-sm wo-btn-schedule" onclick="window.addWorkOrderProgress(\'' + item.id + '\',document.getElementById(\'wo-prog-input-' + item.id + '\').value)">Add</button></div>'
+        ? `<div class="wo-log-add-row"><input type="text" id="wo-prog-input-${item.id}" class="wo-log-input" placeholder="Add update…"><button class="btn btn-sm wo-btn-schedule" onclick="window.addWorkOrderProgress('${item.id}',document.getElementById('wo-prog-input-${item.id}').value)">Post</button></div>`
         : '';
       const toggleFn = 'var b=document.getElementById(\'' + progBodyId + '\');b.style.display=b.style.display===\'none\'?\'block\':\'none\'';
-      const progressSection = '<div class="wo-progress-section">'
-        + '<button class="wo-progress-toggle" onclick="' + toggleFn + '">\uD83D\uDCCB Progress Log' + progCount + '</button>'
-        + '<div id="' + progBodyId + '" style="display:' + (rs === 'dropped_off' ? 'block' : 'none') + ';">'
-        + (progEntries || '<div class="wo-log-empty">No updates yet.</div>')
-        + addRowHtml
-        + '</div></div>';
+      const progressSection = `<div class="wo-tl-section">
+        <button class="wo-tl-toggle" onclick="${toggleFn}">📋 Timeline${progLog.length?' ('+progLog.length+')':''}</button>
+        <div id="${progBodyId}" class="wo-tl-body" style="display:${rs==='dropped_off'?'block':'none'};">
+          <div class="wo-timeline">${timelineEntries||'<div class="wo-tl-empty">No activity yet.</div>'}</div>
+          ${addRowHtml}
+        </div>
+      </div>`;
 
       // Delete button — admin only
       const deleteBtn = currentUserRole === 'admin'
@@ -8893,171 +8900,202 @@ window.logMissedAppointment = async function(noteId, vendorName, scheduledDate) 
   };
 };
 
+// ================================================================
+// 5-STEP ISSUE LOGGING WIZARD
+// ================================================================
+const _WO_AUTO_PRIORITY = {
+  brakes:'critical', check_engine:'critical', low_oil:'critical',
+  battery:'critical', seat_belts:'critical', body_damage:'high',
+  low_tire_pressure:'high', low_tire_tread:'high', windshield:'high',
+  noise:'high', wipers:'standard', ac_heat:'standard', lights:'standard',
+  mirrors:'standard', interior:'standard', other:'standard',
+};
+const _WO_OUT_OF_SERVICE = new Set(['brakes','check_engine','battery','seat_belts']);
+
 window.openNewWorkOrder = function(vehicleId) {
-  const existing = document.getElementById('wo-modal-overlay');
-  if (existing) existing.remove();
-  const v = vehicleId && vehiclesCache.find(x => x.id === vehicleId);
+  document.getElementById('wo-modal-overlay')?.remove();
+  const wiz = { step: 1, vehicleId: vehicleId || null, catKey: null, catLabel: null, description: '', priority: 'standard', scheduleDate: '', mechanic: '', assigneeUid: '', assigneeName: '', photos: [] };
+
   const overlay = document.createElement('div');
   overlay.id = 'wo-modal-overlay';
   overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
-  let availHint = '';
-  if (v) {
-    const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
-    if (isOnTrip && v.tripReturnDate) {
-      const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-      const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
-      const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
-      availHint = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now, schedule for that date or later. <button type="button" class="wo-date-fill-btn" onclick="document.getElementById('wo-schedule-date').value='${rdLocal}'">📅 Use ${rdLabel}</button></div>`;
-    } else {
-      availHint = `<div class="wo-avail-hint">✅ <strong>${escapeHtml(v.plate)}</strong> is currently available — schedule a date or leave blank to schedule later.</div>`;
+  function render() {
+    const steps = ['Vehicle','Issue','Details','Photos','Review'];
+    const stepBar = steps.map((s,i) =>
+      `<div class="wiz-step${wiz.step===i+1?' wiz-step-active':wiz.step>i+1?' wiz-step-done':''}">${wiz.step>i+1?'✓':i+1} ${s}</div>`
+    ).join('<div class="wiz-step-sep">›</div>');
+
+    let body = '';
+    if (wiz.step === 1) {
+      const sortedVehicles = [...vehiclesCache].sort((a,b) => (a.plate||'').localeCompare(b.plate||''));
+      body = `<div class="wiz-vehicle-grid">${sortedVehicles.map(v => {
+        const isSelected = wiz.vehicleId === v.id;
+        const statusDot = v.tripStatus==='on-trip'?'🔴':v.tripStatus==='repair-shop'?'🟠':v.needsCleaning?'🟡':'🟢';
+        const thumb = v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="wiz-vthumb">` : `<div class="wiz-vthumb wiz-vthumb-ph">🚗</div>`;
+        return `<div class="wiz-vcard${isSelected?' wiz-vcard-sel':''}" onclick="window._wizSelectVehicle('${v.id}')">
+          ${thumb}
+          <div class="wiz-vcard-plate">${escapeHtml(v.plate)}</div>
+          <div class="wiz-vcard-desc">${escapeHtml(v.make+' '+v.model)}</div>
+          <div class="wiz-vcard-status">${statusDot} ${escapeHtml(v.color||'')}</div>
+        </div>`;
+      }).join('')}</div>`;
+    } else if (wiz.step === 2) {
+      body = `<div class="wiz-issue-grid">${WO_PROBLEM_CATEGORIES.map(c => `
+        <div class="wiz-issue-tile${wiz.catKey===c.key?' wiz-issue-sel':''}" onclick="window._wizSelectIssue('${c.key}','${escapeHtml(c.label)}')">
+          <span class="wiz-issue-icon">${c.icon}</span>
+          <span class="wiz-issue-label">${escapeHtml(c.label)}</span>
+        </div>`).join('')}</div>`;
+    } else if (wiz.step === 3) {
+      const autoPri = wiz.catKey ? (_WO_AUTO_PRIORITY[wiz.catKey]||'standard') : 'standard';
+      const outOfService = wiz.catKey && _WO_OUT_OF_SERVICE.has(wiz.catKey);
+      body = `
+        ${outOfService ? '<div class="wiz-oos-warn">🔴 This issue type typically requires removing the vehicle from service until repaired.</div>' : ''}
+        <div class="wiz-field"><label class="wiz-label">Describe the issue</label>
+          <textarea id="wiz-desc" rows="4" class="wiz-textarea" placeholder="What did you notice? Any sounds, warning lights, or symptoms…">${escapeHtml(wiz.description)}</textarea></div>
+        <div class="wiz-field"><label class="wiz-label">Priority <span style="color:#9ca3af;font-size:0.78rem;">— auto-suggested based on issue type</span></label>
+          <div class="wiz-priority-row">
+            ${['critical','high','standard','monitor'].map(p => {
+              const labels = {critical:'🔴 Critical',high:'🟠 High',standard:'🟡 Standard',monitor:'🟢 Monitor'};
+              const sel = (wiz.priority||autoPri)===p;
+              return `<button class="wiz-pri-btn${sel?' wiz-pri-sel':''}" data-pri="${p}" onclick="window._wizSetPriority('${p}')">${labels[p]}</button>`;
+            }).join('')}
+          </div></div>
+        <div class="wiz-field"><label class="wiz-label">Assign to <span style="color:#9ca3af;font-size:0.78rem;">(optional)</span></label>
+          <input id="wiz-mechanic" type="text" class="wiz-input" placeholder="Dennis, DJ, TJ, or shop name…" value="${escapeHtml(wiz.mechanic)}"></div>
+        <div class="wiz-field"><label class="wiz-label">Schedule date <span style="color:#9ca3af;font-size:0.78rem;">(optional)</span></label>
+          <input id="wiz-date" type="date" class="wiz-input" value="${escapeHtml(wiz.scheduleDate)}"></div>`;
+    } else if (wiz.step === 4) {
+      body = `<div class="wiz-photos-wrap">
+        <p style="color:#6b7280;font-size:0.88rem;margin:0 0 12px;">Photos help mechanics diagnose faster and protect against disputes. <strong>Skip if none available.</strong></p>
+        <label class="wiz-photo-upload-btn">📷 Take Photo / Upload<input type="file" id="wiz-photo-input" accept="image/*" multiple style="display:none;" onchange="window._wizAddPhotos(this.files)"></label>
+        <div id="wiz-photo-previews" class="wiz-photo-previews">${wiz.photos.map((p,i) =>
+          `<div class="wiz-photo-thumb"><span>${escapeHtml(p.name||'photo')}</span><button onclick="window._wizRemovePhoto(${i})">✕</button></div>`
+        ).join('')}</div>
+      </div>`;
+    } else if (wiz.step === 5) {
+      const v = vehiclesCache.find(x => x.id === wiz.vehicleId);
+      const PRI_LABEL = {critical:'🔴 Critical',high:'🟠 High',standard:'🟡 Standard',monitor:'🟢 Monitor'};
+      const outOfService = wiz.catKey && _WO_OUT_OF_SERVICE.has(wiz.catKey);
+      body = `<div class="wiz-review">
+        <div class="wiz-review-vehicle">
+          ${v && v.defaultImageUrl ? `<img src="${escapeHtml(v.defaultImageUrl)}" class="wiz-rv-thumb">` : '<div class="wiz-rv-thumb wiz-vthumb-ph">🚗</div>'}
+          <div><div class="wiz-rv-plate">${v?escapeHtml(v.plate):'—'}</div><div class="wiz-rv-desc">${v?escapeHtml(v.make+' '+v.model):''}</div></div>
+        </div>
+        <div class="wiz-review-row"><span class="wiz-rev-label">Issue</span><span>${escapeHtml(wiz.catLabel||'—')}</span></div>
+        <div class="wiz-review-row"><span class="wiz-rev-label">Description</span><span>${escapeHtml(wiz.description||'—')}</span></div>
+        <div class="wiz-review-row"><span class="wiz-rev-label">Priority</span><span>${PRI_LABEL[wiz.priority]||wiz.priority}</span></div>
+        ${wiz.mechanic?`<div class="wiz-review-row"><span class="wiz-rev-label">Assigned to</span><span>${escapeHtml(wiz.mechanic)}</span></div>`:''}
+        ${wiz.scheduleDate?`<div class="wiz-review-row"><span class="wiz-rev-label">Schedule date</span><span>${wiz.scheduleDate}</span></div>`:''}
+        ${wiz.photos.length?`<div class="wiz-review-row"><span class="wiz-rev-label">Photos</span><span>${wiz.photos.length} attached</span></div>`:''}
+        ${outOfService?'<div class="wiz-oos-warn" style="margin-top:10px;">🔴 Recommendation: Remove this vehicle from active rentals until repaired.</div>':''}
+      </div>`;
     }
-  } else {
-    availHint = `<div class="wo-avail-hint" style="color:#9ca3af;">Select a vehicle above to see availability.</div>`;
-  }
 
-  const vehicleOptions = vehiclesCache.map(x =>
-    `<option value="${x.id}"${x.id === vehicleId ? ' selected' : ''}>${escapeHtml(x.plate)} — ${escapeHtml(x.make)} ${escapeHtml(x.model)}</option>`
-  ).join('');
-
-  const catChips = WO_PROBLEM_CATEGORIES.map(c =>
-    `<button type="button" class="wo-cat-chip" data-key="${c.key}" data-label="${escapeHtml(c.label)}" onclick="_woSelectCategory(this)">${c.icon} ${escapeHtml(c.label)}</button>`
-  ).join('');
-
-  overlay.innerHTML = `
-    <div class="modal-box" style="max-width:560px;">
-      <div class="modal-header" style="background:#1e293b;color:#fff;border-radius:10px 10px 0 0;">
-        <h3 style="color:#fff;margin:0;">🔧 Log Issue — Record</h3>
+    const canNext = (wiz.step===1&&wiz.vehicleId)||(wiz.step===2&&wiz.catKey)||wiz.step===3||wiz.step===4||wiz.step===5;
+    overlay.innerHTML = `<div class="modal-box wiz-modal">
+      <div class="wiz-header">
+        <div class="wiz-header-title">🔧 Log Issue <span style="font-size:0.8rem;font-weight:400;opacity:0.7;">Step ${wiz.step} of 5</span></div>
         <button class="modal-close" style="color:#fff;" onclick="document.getElementById('wo-modal-overlay').remove()">&times;</button>
       </div>
-      <div class="modal-body" style="padding:16px;display:flex;flex-direction:column;gap:14px;max-height:78vh;overflow-y:auto;">
-        <div class="form-group">
-          <label class="wo-modal-label">VEHICLE</label>
-          <select id="wo-vehicle-sel" class="vehicle-location-select" style="width:100%;margin-top:4px;" onchange="window._woVehicleChange(this.value)">${vehicleOptions}</select>
-        </div>
-        <div id="wo-avail-hint-area">${availHint}</div>
-        <div class="form-group">
-          <label class="wo-modal-label">PROBLEM CATEGORY <span style="font-weight:400;color:#9ca3af;">— tap to select</span></label>
-          <div id="wo-category-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;">${catChips}</div>
-          <input type="hidden" id="wo-cat-key" value="">
-          <input type="hidden" id="wo-cat-label" value="">
-        </div>
-        <div class="form-group">
-          <label class="wo-modal-label">PROBLEM / ISSUE DESCRIPTION</label>
-          <textarea id="wo-description" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="Describe what's wrong, what was noticed, symptoms…"></textarea>
-        </div>
-        <div class="form-group">
-          <label class="wo-modal-label">PRIORITY LEVEL</label>
-          <div class="wo-priority-select" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;">
-            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="critical"> <span style="background:#fef2f2;color:#dc2626;border:1.5px solid #fca5a5;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🔴 Critical</span></label>
-            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="high"> <span style="background:#fff7ed;color:#ea580c;border:1.5px solid #fed7aa;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟠 High</span></label>
-            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="standard" checked> <span style="background:#fffbeb;color:#d97706;border:1.5px solid #fde68a;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟡 Standard</span></label>
-            <label class="wo-pri-opt"><input type="radio" name="wo-priority" value="monitor"> <span style="background:#f0fdf4;color:#16a34a;border:1.5px solid #86efac;padding:4px 10px;border-radius:6px;font-weight:700;font-size:0.82rem;cursor:pointer;">🟢 Monitor</span></label>
-          </div>
-        </div>
-        <div class="form-group">
-          <label class="wo-modal-label">SCHEDULE DATE <span style="font-weight:400;color:#9ca3af;">(optional — leave blank to schedule later)</span></label>
-          <input type="date" id="wo-schedule-date" style="margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;width:auto;" value="">
-        </div>
-        <div class="form-group">
-          <label class="wo-modal-label">ASSIGN TO <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
-          <div id="wo-assignee-area" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;min-height:34px;">
-            <span style="font-size:0.8rem;color:#9ca3af;padding:6px 0;">Loading staff…</span>
-          </div>
-          <input type="hidden" id="wo-assignee-uid" value="">
-          <input type="hidden" id="wo-assignee-name" value="">
-          <input type="text" id="wo-mechanic" placeholder="Or type external shop / mechanic (e.g. Firestone, Joe Auto)…" style="margin-top:6px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.85rem;width:100%;">
-        </div>
-      </div>
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
-        <button class="btn btn-outline" onclick="document.getElementById('wo-schedule-date').value=''; _saveWorkOrder()" style="font-size:0.82rem;">Save without date →</button>
-        <div style="display:flex;gap:8px;">
-          <button class="btn btn-outline" onclick="document.getElementById('wo-modal-overlay').remove()">Cancel</button>
-          <button class="btn btn-primary" onclick="_saveWorkOrder()">✓ Save</button>
+      <div class="wiz-stepbar">${stepBar}</div>
+      <div class="wiz-body">${body}</div>
+      <div class="wiz-footer">
+        ${wiz.step>1?`<button class="wiz-back-btn" onclick="window._wizBack()">← Back</button>`:'<span></span>'}
+        <div style="display:flex;gap:8px;align-items:center;">
+          ${wiz.step===4?`<button class="wiz-skip-btn" onclick="window._wizSkipPhotos()">Skip Photos →</button>`:''}
+          ${wiz.step===5
+            ? `<button class="wiz-create-btn" onclick="window._wizCreate()">✅ Create Ticket</button>`
+            : `<button class="wiz-next-btn${canNext?'':' wiz-btn-disabled'}" onclick="window._wizNext()" ${canNext?'':'disabled'}>Next →</button>`}
         </div>
       </div>
     </div>`;
-  document.body.appendChild(overlay);
-  overlay.style.display = 'flex';
-  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  setTimeout(() => { const t = document.getElementById('wo-description'); if (t) t.focus(); }, 80);
+  }
 
-  // Async-load staff/manager users for the assignee picker
-  _loadWoUsers().then(users => {
-    const area = document.getElementById('wo-assignee-area');
-    if (!area) return;
-    if (!users.length) {
-      area.innerHTML = '<span style="font-size:0.8rem;color:#9ca3af;">No managers found — use the text field below.</span>';
-      return;
+  window._wizSelectVehicle = id => { wiz.vehicleId = id; render(); };
+  window._wizSelectIssue = (key, label) => {
+    wiz.catKey = key; wiz.catLabel = label;
+    wiz.priority = _WO_AUTO_PRIORITY[key] || 'standard';
+    render();
+  };
+  window._wizSetPriority = p => { wiz.priority = p; render(); };
+  window._wizAddPhotos = files => {
+    wiz.photos = [...wiz.photos, ...Array.from(files)];
+    render();
+    // Re-trigger file listener after re-render
+    const inp = document.getElementById('wiz-photo-input');
+    if (inp) inp.onchange = e => window._wizAddPhotos(e.target.files);
+  };
+  window._wizRemovePhoto = i => { wiz.photos.splice(i, 1); render(); };
+  window._wizSkipPhotos = () => { wiz.step = 5; render(); };
+
+  window._wizBack = () => { wiz.step = Math.max(1, wiz.step - 1); render(); };
+  window._wizNext = () => {
+    if (wiz.step === 3) {
+      wiz.description = document.getElementById('wiz-desc')?.value.trim() || wiz.description;
+      wiz.mechanic    = document.getElementById('wiz-mechanic')?.value.trim() || '';
+      wiz.scheduleDate= document.getElementById('wiz-date')?.value || '';
     }
-    area.innerHTML = users.map(u => {
-      const initials = (u.displayName || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
-      return `<button type="button" class="wo-assignee-pill" data-uid="${u.uid}" data-name="${escapeHtml(u.displayName || u.email)}" onclick="_woSelectAssignee(this)"><span class="wo-assignee-avatar">${initials}</span>${escapeHtml(u.displayName || u.email)}</button>`;
-    }).join('');
-  });
-};
+    wiz.step = Math.min(5, wiz.step + 1);
+    render();
+  };
 
-// Category chip toggle
-window._woSelectCategory = function(btn) {
-  const chips = document.querySelectorAll('#wo-category-chips .wo-cat-chip');
-  const isActive = btn.classList.contains('wo-cat-chip-active');
-  chips.forEach(c => c.classList.remove('wo-cat-chip-active'));
-  const keyEl = document.getElementById('wo-cat-key');
-  const labelEl = document.getElementById('wo-cat-label');
-  const descEl = document.getElementById('wo-description');
-  if (isActive) {
-    if (keyEl) keyEl.value = '';
-    if (labelEl) labelEl.value = '';
-  } else {
-    btn.classList.add('wo-cat-chip-active');
-    if (keyEl) keyEl.value = btn.dataset.key;
-    if (labelEl) labelEl.value = btn.dataset.label;
-    // Pre-fill description only if still empty
-    if (descEl && !descEl.value.trim()) descEl.value = btn.dataset.label;
-  }
-};
+  window._wizCreate = async () => {
+    const btn = overlay.querySelector('.wiz-create-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Creating…'; }
+    const v = vehiclesCache.find(x => x.id === wiz.vehicleId);
+    try {
+      const noteData = {
+        vehicleId: wiz.vehicleId,
+        plate: v ? v.plate : '',
+        text: wiz.description || wiz.catLabel || 'Issue logged',
+        workOrder: true,
+        repairPriority: wiz.priority,
+        repairStatus: wiz.scheduleDate ? 'scheduled' : 'open',
+        repairCategory: wiz.catKey || null,
+        repairCategoryLabel: wiz.catLabel || null,
+        scheduledDate: wiz.scheduleDate || null,
+        assignedMechanic: wiz.mechanic || null,
+        done: false,
+        createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        progressLog: [{
+          by: currentUser ? (currentUser.displayName || currentUser.email) : 'System',
+          at: new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true,timeZone:APP_TIMEZONE}),
+          text: `🎫 Ticket created — ${wiz.catLabel||'Issue'}${wiz.mechanic?' · Assigned to '+wiz.mechanic:''}`,
+        }],
+      };
+      // Upload photos if any
+      if (wiz.photos.length > 0 && getStorage()) {
+        const urls = await Promise.all(wiz.photos.map(async (file, i) => {
+          const path = `workOrderPhotos/${wiz.vehicleId}/${Date.now()}_${i}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+          const ref = getStorage().ref(path);
+          await ref.put(file);
+          return ref.getDownloadURL();
+        }));
+        noteData.photoUrls = urls;
+      }
+      const ref = await db.collection('vehicleNotes').add(noteData);
+      overlay.remove();
+      toast(`🎫 Ticket created${v?' for '+v.plate:''}!`, 'success');
+      _loadWorkOrders();
+      loadDashboardFollowUps();
+    } catch(e) {
+      console.error('_wizCreate error:', e);
+      toast('Failed to create ticket.', 'error');
+      if (btn) { btn.disabled=false; btn.textContent='✅ Create Ticket'; }
+    }
+  };
 
-// Assignee user pill toggle
-window._woSelectAssignee = function(btn) {
-  const pills = document.querySelectorAll('#wo-assignee-area .wo-assignee-pill');
-  const isActive = btn.classList.contains('wo-assignee-pill-active');
-  pills.forEach(p => p.classList.remove('wo-assignee-pill-active'));
-  const uidEl = document.getElementById('wo-assignee-uid');
-  const nameEl = document.getElementById('wo-assignee-name');
-  if (isActive) {
-    if (uidEl) uidEl.value = '';
-    if (nameEl) nameEl.value = '';
-  } else {
-    btn.classList.add('wo-assignee-pill-active');
-    if (uidEl) uidEl.value = btn.dataset.uid;
-    if (nameEl) nameEl.value = btn.dataset.name;
-    // Clear external mechanic text if a user is selected
-    const mechEl = document.getElementById('wo-mechanic');
-    if (mechEl) mechEl.placeholder = 'User selected above — or override with external shop name';
-  }
-};
-
-window._woVehicleChange = function(vid) {
-  const v = vehiclesCache.find(x => x.id === vid);
-  const hint = document.getElementById('wo-avail-hint-area');
-  const dateInput = document.getElementById('wo-schedule-date');
-  if (!hint || !v) return;
-  const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
-  if (isOnTrip && v.tripReturnDate) {
-    const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-    const rdLabel = rd.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone:APP_TIMEZONE });
-    const rdLocal = rd.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
-    hint.innerHTML = `<div class="wo-avail-hint">🚗 On a trip — returns <strong>${rdLabel}</strong>. Log now, schedule for that date or later. <button type="button" class="wo-date-fill-btn" onclick="document.getElementById('wo-schedule-date').value='${rdLocal}'">📅 Use ${rdLabel}</button></div>`;
-    // Do NOT auto-fill — user clicks the button if they want the return date
-  } else {
-    hint.innerHTML = `<div class="wo-avail-hint">✅ Currently <strong>available</strong> — schedule or leave blank for later.</div>`;
-  }
+  render();
 };
 
 window._saveWorkOrder = async function() {
   const saveBtn = document.querySelector('#wo-modal-overlay .btn-primary');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
-
   const vid = document.getElementById('wo-vehicle-sel')?.value;
   const text = (document.getElementById('wo-description')?.value || '').trim();
   const priority = document.querySelector('input[name="wo-priority"]:checked')?.value || 'standard';
