@@ -7955,7 +7955,19 @@ async function _loadWorkOrders() {
     const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
     const missedList = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate < today);
     const scheduled  = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate >= today);
-    const open       = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
+
+    // Auto-created monitor items with dueDate > 60 days are "future maintenance" — hide from urgent list
+    const sixtyDaysOut = new Date(); sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
+    const sixtyDaysStr = sixtyDaysOut.toISOString().slice(0, 10);
+    const openAll    = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
+    const open       = openAll.filter(i => {
+      // Keep manual / urgent / anything without a far-future dueDate
+      if (!i.autoCreated || i.sourceType !== 'maintenance') return true;
+      if (i.repairPriority !== 'monitor') return true;
+      if (!i.dueDate) return true;
+      return i.dueDate <= sixtyDaysStr; // only show if due within 60 days
+    });
+    const openFuture = openAll.filter(i => !open.includes(i)); // far-future auto-maintenance
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
@@ -8009,6 +8021,7 @@ async function _loadWorkOrders() {
           <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
       } else {
         statusActions = `
+          <button class="btn btn-sm wo-btn-quick-done" onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</button>
           <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>
           <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
           <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
@@ -8191,6 +8204,15 @@ async function _loadWorkOrders() {
           ⚪ Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span><span class="wo-sect-arrow">▼</span>
         </div>
         <div id="wo-sect-open">${open.map(renderCard).join('')}</div>
+      </div>`;
+    }
+    if (openFuture.length) {
+      openFuture.sort((a,b) => (a.dueDate||'').localeCompare(b.dueDate||''));
+      html += `<div class="wo-section-group">
+        <div class="wo-section-header wo-sect-toggle-btn" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;" onclick="_woToggleSection('wo-sect-future',this)">
+          📅 Future Scheduled Maintenance <span class="wo-sec-count" style="background:#16a34a;">${openFuture.length}</span><span class="wo-sect-arrow">▶</span>
+        </div>
+        <div id="wo-sect-future" style="display:none;">${openFuture.map(renderCard).join('')}</div>
       </div>`;
     }
     if (scheduled.length) {

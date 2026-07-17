@@ -8234,3 +8234,16 @@ body {
   vertical-align: middle;
   letter-spacing: 0.03em;
 }
+
+/* ── Work Orders — Quick Done button ── */
+.wo-btn-quick-done {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.wo-btn-quick-done:hover { background: #15803d; }
