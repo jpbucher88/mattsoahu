@@ -1,4 +1,4 @@
-{
+﻿{
   "indexes": [
     {
       "collectionGroup": "photos",
@@ -103,7 +103,18 @@
         { "fieldPath": "inspectionKey", "order": "ASCENDING" },
         { "fieldPath": "status", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "vehicleNotes",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "vehicleId", "order": "ASCENDING" },
+        { "fieldPath": "workOrder", "order": "ASCENDING" },
+        { "fieldPath": "done", "order": "ASCENDING" },
+        { "fieldPath": "resolutionDate", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
 }
+

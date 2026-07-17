@@ -1347,7 +1347,7 @@ window.openAvailableFleetCheck = async function() {
           if (!existing || (d.mileage && (!existing.mileage || d.mileage > existing.mileage))) {
             oilChangeByVehicle[d.vehicleId] = {
               mileage: d.mileage || null,
-              intervalMiles: d.intervalMiles || d.nextDueMileage ? (d.nextDueMileage - (d.mileage || 0)) || null : null,
+              intervalMiles: d.intervalMiles || null,
               nextDueMileage: d.nextDueMileage || null,
               date: d.date || null,
             };
@@ -3587,16 +3587,17 @@ async function handlePhotoFiles(e) {
           }).then(ref => { fsMarkerId = ref.id; }).catch(e => console.warn('Pending marker write failed:', e))
         : Promise.resolve();
 
-      // Upload with 1 retry on transient network failure (runs in parallel with marker write)
+      // Upload with up to 3 retries on transient network failure
       let uploadErr = null;
-      for (let attempt = 1; attempt <= 2; attempt++) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
         try {
           await uploadPhoto(compressed, capturedVehicle, capturedDate);
           uploadErr = null;
           break;
         } catch (err) {
           uploadErr = err;
-          if (attempt < 2) await new Promise(r => setTimeout(r, 3000));
+          console.warn(`Upload attempt ${attempt} failed for ${capturedVehicle.plate}:`, err.message);
+          if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 4000)); // 4s, 8s
         }
       }
       // Ensure marker write has settled before we try to delete it
@@ -3621,7 +3622,7 @@ async function handlePhotoFiles(e) {
     }
   });
 
-  const allDone = _runWithConcurrency(tasks, 6);
+  const allDone = _runWithConcurrency(tasks, 4); // 4 workers — balances speed vs. network strain
 
   // Refresh photos for the current date when all uploads finish
   // Also schedule a second refresh after 2.5s to catch any Firestore indexing delay
@@ -3654,7 +3655,13 @@ async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
   const storagePath = `vehicles/${plate}/${date}/${fileName}`;
 
   const ref = st.ref(storagePath);
-  await ref.put(blobOrFile, { contentType: 'image/jpeg' });
+
+  // Wrap put() in a 90-second timeout — a hung connection should not block forever
+  const putWithTimeout = (blob, meta) => Promise.race([
+    ref.put(blob, meta),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Upload timed out after 90s — check your connection')), 90000)),
+  ]);
+  await putWithTimeout(blobOrFile, { contentType: 'image/jpeg' });
 
   // getDownloadURL can transiently fail even after a successful put — retry up to 3x
   let downloadURL = null;
