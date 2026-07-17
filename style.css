@@ -8266,3 +8266,11 @@ body {
   color: #fff;
   border-color: #1d4ed8;
 }
+
+/* ── Vendors Tab ── */
+.vendor-group { border: 1px solid #e5e7eb; border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+.vendor-group-header { display: flex; justify-content: space-between; align-items: center; background: #f8fafc; padding: 12px 16px; border-bottom: 1px solid #e5e7eb; flex-wrap: wrap; gap: 8px; }
+.vendor-items { padding: 0 12px; }
+.vendor-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 0.82rem; flex-wrap: wrap; }
+.vendor-item:last-child { border-bottom: none; }
+.wo-btn-invoice { font-size: 0.75rem; padding: 3px 8px; }

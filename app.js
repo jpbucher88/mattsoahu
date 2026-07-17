@@ -7295,8 +7295,8 @@ async function _loadMaintFleet() {
 
       // Oil change check
       if (!oil) {
-        priority = 2;
-        flags.push({ level: 'critical', msg: '⚠️ No oil change on record — needs immediate attention' });
+        priority = Math.max(priority, 1); // Needs Attention, not Critical — record may just be missing
+        flags.push({ level: 'warn', msg: '⚠️ No oil change on record — needs immediate attention' });
       } else {
         const mo = Math.floor((Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30));
         const mStr = oil.mileage ? ` · ${oil.mileage.toLocaleString()} mi` : '';
@@ -7320,8 +7320,13 @@ async function _loadMaintFleet() {
       });
 
       // Mileage-based alerts from maintenance records with nextDueMileage
+      // Skip services already covered by miIntervals to avoid duplicates
+      const miIntervalServices = new Set((miIntervals || []).map(s => (s.service || '').toLowerCase()));
       if (v.mileage) {
         mileBasedMaint.forEach(s => {
+          const svcKey = (s.serviceType || '').toLowerCase();
+          // Skip if miIntervals already has this service (avoids double-flagging oil changes etc.)
+          if ([...miIntervalServices].some(k => k.includes(svcKey) || svcKey.includes(k))) return;
           const left = s.nextDueMileage - v.mileage;
           if (left <= 0) {
             priority = 2;
@@ -7710,6 +7715,7 @@ window.switchMaintTab = function(tabId, btn) {
   if (tabId === 'mtab-location') _loadMaintByLocation();
   if (tabId === 'mtab-work-orders') _loadWorkOrders();
   if (tabId === 'mtab-completed-wo') window._loadCompletedWO(30);
+  if (tabId === 'mtab-vendors') window._loadVendorsTab();
 };
 
 // ================================================================
@@ -8161,6 +8167,10 @@ async function _loadWorkOrders() {
         myTaskAction = '<button class="btn btn-sm wo-btn-resolve wo-btn-my-task" onclick="openCloseOutWorkOrder(\'' + item.id + '\',\'' + item.vehicleId + '\',\'' + escapeHtml(item.text).replace(/'/g, '&#39;') + '\')">✅ Complete My Task</button>';
       }
 
+      // Invoice button — always visible
+      const invBadge = item.invoiceNumber ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;margin-left:4px;">📄 Inv #${escapeHtml(item.invoiceNumber)}</span>` : '';
+      const invBtn = `<button class="btn btn-sm btn-outline wo-btn-invoice" onclick="window.openInvoiceModal('${item.id}')" title="Add/view invoice">📄 Invoice${invBadge ? ' ✓' : ''}</button>`;
+
       return '<div class="wo-card' + (isMyTask ? ' wo-card-my-task' : '') + '" style="border-color:' + p.color + '40;background:' + p.bg + ';">'
         + pipelineHtml
         + '<div class="wo-card-top">'
@@ -8177,7 +8187,7 @@ async function _loadWorkOrders() {
         + assigneeLine + tripConflict
         + '<div class="wo-meta-row">' + schedBadge + '<span class="wo-added">' + addedBy + addedDate + '</span></div>'
         + progressSection
-        + '<div class="wo-actions">' + myTaskAction + statusActions + '<button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder(\'' + item.id + '\')">✏️ Edit</button>' + deleteBtn + '</div>'
+        + '<div class="wo-actions">' + myTaskAction + statusActions + invBtn + '<button class="btn btn-sm btn-outline wo-btn-edit" onclick="openEditWorkOrder(\'' + item.id + '\')">✏️ Edit</button>' + deleteBtn + '</div>'
         + '</div>';
     }
 
@@ -8316,7 +8326,182 @@ window._loadCompletedWO = async function(days, btn) {
     container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load. Check console.</p>';
   }
 };
-window._woToggleSection = function(bodyId, headerEl) {
+
+// ================================================================
+// INVOICE MODAL — attach invoice info to a work order
+// ================================================================
+window.openInvoiceModal = async function(noteId) {
+  const snap = await db.collection('vehicleNotes').doc(noteId).get().catch(() => null);
+  const d = snap && snap.exists ? snap.data() : {};
+  const existing = document.getElementById('invoice-modal-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'invoice-modal-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+  const v = vehiclesCache.find(x => x.id === d.vehicleId);
+  const plate = v ? escapeHtml(v.plate) : '—';
+  overlay.innerHTML = `<div class="modal-box" style="max-width:480px;">
+    <div class="modal-header" style="background:#1d4ed8;color:#fff;border-radius:10px 10px 0 0;">
+      <h3 style="color:#fff;margin:0;">📄 Invoice — ${plate}</h3>
+      <button class="modal-close" style="color:#fff;" onclick="document.getElementById('invoice-modal-overlay').remove()">&times;</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+      <p style="margin:0;font-size:0.82rem;color:#6b7280;">${escapeHtml(d.text || '')}</p>
+      <div style="display:flex;gap:10px;">
+        <div style="flex:1;"><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Invoice #</label>
+          <input id="inv-number" type="text" class="vehicle-location-custom" value="${escapeHtml(d.invoiceNumber || '')}" placeholder="e.g. INV-2026-001"></div>
+        <div style="flex:1;"><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Amount ($)</label>
+          <input id="inv-amount" type="number" min="0" step="0.01" class="vehicle-location-custom" value="${d.invoiceAmount != null ? d.invoiceAmount : ''}" placeholder="0.00"></div>
+      </div>
+      <div><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Vendor / Mechanic</label>
+        <input id="inv-vendor" type="text" class="vehicle-location-custom" value="${escapeHtml(d.assignedMechanic || d.invoiceVendor || '')}" placeholder="Dennis, DJ, TJ…"></div>
+      <div><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Notes</label>
+        <textarea id="inv-notes" class="vehicle-location-custom" rows="2" placeholder="Parts list, warranty info…">${escapeHtml(d.invoiceNotes || '')}</textarea></div>
+      <div>
+        <label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">📎 Upload Invoice / Receipt</label>
+        <input type="file" id="inv-file" accept="image/*,.pdf" style="font-size:0.82rem;">
+        ${d.invoicePhotoUrl ? `<div style="margin-top:6px;"><a href="${escapeHtml(d.invoicePhotoUrl)}" target="_blank" style="font-size:0.8rem;color:#1d4ed8;">📄 View existing invoice</a></div>` : ''}
+      </div>
+      ${d.invoiceApproved ? '<div style="color:#15803d;font-weight:600;font-size:0.85rem;">✅ Invoice approved by ' + escapeHtml(d.invoiceApprovedBy||'') + '</div>' : ''}
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
+      ${(currentUserRole === 'admin' || currentUserRole === 'manager') && d.invoiceNumber && !d.invoiceApproved ? `<button class="btn btn-sm btn-outline" onclick="window._approveInvoice('${noteId}')">✅ Approve Invoice</button>` : ''}
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('invoice-modal-overlay').remove()">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="window._saveInvoice('${noteId}')">💾 Save Invoice</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+};
+
+window._saveInvoice = async function(noteId) {
+  const invNumber = (document.getElementById('inv-number')?.value || '').trim();
+  const invAmount = parseFloat(document.getElementById('inv-amount')?.value) || null;
+  const invVendor = (document.getElementById('inv-vendor')?.value || '').trim();
+  const invNotes  = (document.getElementById('inv-notes')?.value || '').trim();
+  const invFile   = document.getElementById('inv-file')?.files?.[0];
+  const saveBtn   = document.querySelector('#invoice-modal-overlay .btn-primary');
+  if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+  try {
+    const updateData = {
+      invoiceNumber: invNumber || firebase.firestore.FieldValue.delete(),
+      invoiceAmount: invAmount != null ? invAmount : firebase.firestore.FieldValue.delete(),
+      invoiceVendor: invVendor || firebase.firestore.FieldValue.delete(),
+      invoiceNotes:  invNotes  || firebase.firestore.FieldValue.delete(),
+      invoiceDate:   todayDateString(),
+    };
+    if (invVendor) updateData.assignedMechanic = invVendor; // keep in sync
+    // Upload invoice photo/PDF if provided
+    if (invFile && getStorage()) {
+      const path = `invoices/${noteId}/${Date.now()}_${invFile.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+      const ref = getStorage().ref(path);
+      await ref.put(invFile);
+      updateData.invoicePhotoUrl = await ref.getDownloadURL();
+    }
+    await db.collection('vehicleNotes').doc(noteId).update(updateData);
+    document.getElementById('invoice-modal-overlay')?.remove();
+    toast('📄 Invoice saved!', 'success');
+    _loadWorkOrders();
+  } catch(e) {
+    console.error('_saveInvoice error:', e);
+    toast('Failed to save invoice.', 'error');
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Save Invoice'; }
+  }
+};
+
+window._approveInvoice = async function(noteId) {
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      invoiceApproved: true,
+      invoiceApprovedBy: currentUser ? (currentUser.displayName || currentUser.email) : 'Unknown',
+      invoiceApprovedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    document.getElementById('invoice-modal-overlay')?.remove();
+    toast('✅ Invoice approved!', 'success');
+    _loadWorkOrders();
+  } catch(e) { toast('Failed to approve.', 'error'); }
+};
+
+// ================================================================
+// VENDORS TAB — work grouped by mechanic with invoice status
+// ================================================================
+window._loadVendorsTab = async function() {
+  const container = $('vendors-tab-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  try {
+    const snap = await db.collection('vehicleNotes')
+      .where('workOrder', '==', true)
+      .where('done', '==', false)
+      .get();
+    const allSnap = await db.collection('vehicleNotes')
+      .where('workOrder', '==', true)
+      .where('done', '==', true)
+      .where('resolutionDate', '>=', new Date(Date.now()-90*86400000).toISOString().slice(0,10))
+      .get();
+    const allItems = [...snap.docs, ...allSnap.docs].map(d => ({ id: d.id, ...d.data() }));
+    // Group by mechanic
+    const byVendor = {};
+    allItems.forEach(i => {
+      const vendor = i.assignedMechanic || i.invoiceVendor || null;
+      if (!vendor) return;
+      if (!byVendor[vendor]) byVendor[vendor] = [];
+      byVendor[vendor].push(i);
+    });
+    const unassigned = allItems.filter(i => !i.assignedMechanic && !i.invoiceVendor);
+    if (Object.keys(byVendor).length === 0 && unassigned.length === 0) {
+      container.innerHTML = '<div class="maint-tab-empty"><span>🔧</span><p>No work orders assigned to vendors yet. Use the Invoice or Schedule buttons on a work order to assign a mechanic.</p></div>';
+      return;
+    }
+    let html = '';
+    for (const [vendor, items] of Object.entries(byVendor).sort()) {
+      const open = items.filter(i => !i.done);
+      const closed = items.filter(i => i.done);
+      const invoiced = items.filter(i => i.invoiceNumber);
+      const approved = items.filter(i => i.invoiceApproved);
+      const totalAmt = items.reduce((s, i) => s + (i.invoiceAmount || 0), 0);
+      const pendingAmt = items.filter(i => !i.invoiceApproved).reduce((s, i) => s + (i.invoiceAmount || 0), 0);
+      html += `<div class="vendor-group">
+        <div class="vendor-group-header">
+          <div>
+            <strong style="font-size:1rem;">🔧 ${escapeHtml(vendor)}</strong>
+            <span style="font-size:0.8rem;color:#6b7280;margin-left:8px;">${open.length} open · ${closed.length} completed (last 90d)</span>
+          </div>
+          <div style="text-align:right;font-size:0.82rem;">
+            ${totalAmt > 0 ? `<div>Total: <strong>$${totalAmt.toFixed(2)}</strong></div>` : ''}
+            ${pendingAmt > 0 ? `<div style="color:#d97706;">Awaiting approval: <strong>$${pendingAmt.toFixed(2)}</strong></div>` : ''}
+            <div style="color:#6b7280;">${invoiced.length}/${items.length} invoiced · ${approved.length} approved</div>
+          </div>
+        </div>
+        <div class="vendor-items">`;
+      items.slice(0,10).forEach(i => {
+        const v = vehiclesCache.find(x => x.id === i.vehicleId);
+        const plate = v ? escapeHtml(v.plate) : '—';
+        const statusCls = i.done ? 'color:#15803d;' : 'color:#d97706;';
+        const invStatus = i.invoiceApproved ? '✅ Approved' : i.invoiceNumber ? `📄 Inv #${escapeHtml(i.invoiceNumber)}${i.invoiceAmount ? ' ($' + i.invoiceAmount.toFixed(2) + ')' : ''}` : '⚠️ No invoice';
+        html += `<div class="vendor-item">
+          <span style="font-weight:700;">${plate}</span>
+          <span style="flex:1;color:#374151;font-size:0.82rem;">${escapeHtml((i.text||'').slice(0,60))}</span>
+          <span style="font-size:0.75rem;${statusCls}">${i.done ? '✓ Done' : '● Open'}</span>
+          <span style="font-size:0.75rem;color:#4b5563;">${invStatus}</span>
+          <button class="btn btn-sm btn-outline" style="font-size:0.72rem;padding:2px 8px;" onclick="window.openInvoiceModal('${i.id}')">📄 Invoice</button>
+        </div>`;
+      });
+      if (items.length > 10) html += `<p style="font-size:0.78rem;color:#6b7280;padding:6px 0;">+ ${items.length-10} more…</p>`;
+      html += '</div></div>';
+    }
+    if (unassigned.length > 0) {
+      html += `<div class="vendor-group">
+        <div class="vendor-group-header"><strong>⚪ Unassigned (${unassigned.length})</strong><span style="font-size:0.8rem;color:#6b7280;margin-left:8px;">Use Invoice button to assign a mechanic</span></div>
+      </div>`;
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    console.error('_loadVendorsTab error:', e);
+    container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load vendors.</p>';
+  }
+};
   const body = document.getElementById(bodyId);
   if (!body) return;
   const isOpen = body.style.display !== 'none';

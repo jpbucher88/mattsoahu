@@ -1712,6 +1712,7 @@
         <button class="maint-tab-btn" data-mtab="mtab-return-queue" onclick="switchMaintTab('mtab-return-queue',this)">🔁 Return Queue</button>
         <button class="maint-tab-btn" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🔧 Work Orders</button>
         <button class="maint-tab-btn" data-mtab="mtab-completed-wo" onclick="switchMaintTab('mtab-completed-wo',this)">✅ Completed</button>
+        <button class="maint-tab-btn" data-mtab="mtab-vendors" onclick="switchMaintTab('mtab-vendors',this)">🔧 Vendors</button>
       </div>
       <div class="maint-dash-body">
 
@@ -1751,7 +1752,13 @@
           </div>
           <div id="work-orders-content"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
         </div>
-        <div id="mtab-completed-wo" class="maint-tab-content" style="display:none;">
+        <div id="mtab-vendors" class="maint-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Open work orders grouped by assigned mechanic/vendor. Click a row to view invoice status.</p>
+            <button class="btn btn-sm btn-outline" onclick="window._loadVendorsTab()">↻ Refresh</button>
+          </div>
+          <div id="vendors-tab-content"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
             <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button class="btn btn-sm btn-outline wo-comp-filter-btn active" data-days="30" onclick="window._loadCompletedWO(30,this)">Last 30d</button>
