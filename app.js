@@ -7709,6 +7709,7 @@ window.switchMaintTab = function(tabId, btn) {
   if (tabId === 'mtab-return-queue') _loadReturnQueue();
   if (tabId === 'mtab-location') _loadMaintByLocation();
   if (tabId === 'mtab-work-orders') _loadWorkOrders();
+  if (tabId === 'mtab-completed-wo') window._loadCompletedWO(30);
 };
 
 // ================================================================
@@ -7919,9 +7920,12 @@ async function _loadWorkOrders() {
     }
 
     const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    // Update global WO-per-vehicle count so location chips can show badges
+    // Filter out snoozed items (snoozedUntil set and in the future)
+    const activeItems = items.filter(i => !i.snoozedUntil || i.snoozedUntil <= today);
+    const snoozedItems = items.filter(i => i.snoozedUntil && i.snoozedUntil > today);
+    // Update global WO-per-vehicle count (active only)
     _woCountByVehicle = {};
-    items.forEach(i => { if (i.vehicleId) _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId]||0)+1; });
+    activeItems.forEach(i => { if (i.vehicleId) _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId]||0)+1; });
     // Sort newest first client-side (avoids needing a Firestore composite index)
     items.sort((a, b) => {
       const aT = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
@@ -7941,15 +7945,15 @@ async function _loadWorkOrders() {
 
     // Category breakdown counts (across ALL items, before filter)
     const catCounts = {};
-    items.forEach(i => {
+    activeItems.forEach(i => {
       const k = i.repairCategory || '__none__';
       catCounts[k] = (catCounts[k] || 0) + 1;
     });
 
     // Apply active category filter
     const filteredItems = _activeWoCategoryFilter
-      ? items.filter(i => (_activeWoCategoryFilter === '__none__' ? !i.repairCategory : i.repairCategory === _activeWoCategoryFilter))
-      : items;
+      ? activeItems.filter(i => (_activeWoCategoryFilter === '__none__' ? !i.repairCategory : i.repairCategory === _activeWoCategoryFilter))
+      : activeItems;
 
     // Group: dropped off gets its own section; missed/open/scheduled as before
     const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
@@ -7961,13 +7965,22 @@ async function _loadWorkOrders() {
     const sixtyDaysStr = sixtyDaysOut.toISOString().slice(0, 10);
     const openAll    = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
     const open       = openAll.filter(i => {
-      // Keep manual / urgent / anything without a far-future dueDate
+      // Always show manual / non-monitor items
       if (!i.autoCreated || i.sourceType !== 'maintenance') return true;
       if (i.repairPriority !== 'monitor') return true;
-      if (!i.dueDate) return true;
-      return i.dueDate <= sixtyDaysStr; // only show if due within 60 days
+      // Time-based: hide if due > 60 days away
+      if (i.dueDate) return i.dueDate <= sixtyDaysStr;
+      // Mileage-based: hide if vehicle still has >1500 mi before it's due
+      if (i.nextDueMileage) {
+        const veh = vehiclesCache.find(x => x.id === i.vehicleId);
+        const miLeft = veh && veh.mileage ? i.nextDueMileage - veh.mileage : null;
+        if (miLeft !== null && miLeft > 1500) return false;
+      }
+      return true;
     });
     const openFuture = openAll.filter(i => !open.includes(i)); // far-future auto-maintenance
+    // Also add snoozed items to future (shown collapsed)
+    const allFuture = [...openFuture, ...snoozedItems];
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
@@ -8020,11 +8033,20 @@ async function _loadWorkOrders() {
           <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Completed</button>
           <button class="btn btn-sm wo-btn-defer" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
       } else {
-        statusActions = `
-          <button class="btn btn-sm wo-btn-quick-done" onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</button>
-          <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>
-          <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
-          <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
+        const isMaintAuto2 = !!(item.autoCreated && item.sourceType === 'maintenance');
+        if (isMaintAuto2) {
+          // Auto-maintenance: Quick Done would lose the service record — use Log Service + Snooze instead
+          statusActions = `
+            <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</button>
+            <button class="btn btn-sm wo-btn-snooze" onclick="window.snoozeWorkOrder('${item.id}',30)" title="Hide this item for 30 days">⏸️ Snooze 30d</button>
+            <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
+        } else {
+          statusActions = `
+            <button class="btn btn-sm wo-btn-quick-done" onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</button>
+            <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>
+            <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
+            <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
+        }
       }
 
       const plate = v ? escapeHtml(v.plate) : 'Unknown';
@@ -8206,13 +8228,16 @@ async function _loadWorkOrders() {
         <div id="wo-sect-open">${open.map(renderCard).join('')}</div>
       </div>`;
     }
-    if (openFuture.length) {
-      openFuture.sort((a,b) => (a.dueDate||'').localeCompare(b.dueDate||''));
+    if (allFuture.length) {
+      allFuture.sort((a,b) => (a.dueDate||a.snoozedUntil||'').localeCompare(b.dueDate||b.snoozedUntil||''));
       html += `<div class="wo-section-group">
         <div class="wo-section-header wo-sect-toggle-btn" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;" onclick="_woToggleSection('wo-sect-future',this)">
-          📅 Future Scheduled Maintenance <span class="wo-sec-count" style="background:#16a34a;">${openFuture.length}</span><span class="wo-sect-arrow">▶</span>
+          📅 Future / Snoozed <span class="wo-sec-count" style="background:#16a34a;">${allFuture.length}</span><span class="wo-sect-arrow">▶</span>
         </div>
-        <div id="wo-sect-future" style="display:none;">${openFuture.map(renderCard).join('')}</div>
+        <div id="wo-sect-future" style="display:none;">${allFuture.map(i => {
+          const snoozeNote = i.snoozedUntil ? `<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">⏸️ Snoozed until ${new Date(i.snoozedUntil+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} — <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 6px;background:transparent;border:1px solid #d1d5db;cursor:pointer;" onclick="window.unsnoozeWorkOrder('${i.id}')">Wake up</button></div>` : '';
+          return snoozeNote + renderCard(i);
+        }).join('')}</div>
       </div>`;
     }
     if (scheduled.length) {
@@ -8239,6 +8264,58 @@ window._woFilterByCategory = function(catKey) {
   _loadWorkOrders();
 };
 
+let _completedWODays = 30;
+window._loadCompletedWO = async function(days, btn) {
+  if (days) _completedWODays = days;
+  // Update active filter button
+  if (btn) {
+    document.querySelectorAll('.wo-comp-filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const container = $('completed-wo-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  try {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - _completedWODays);
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
+    const snap = await db.collection('vehicleNotes')
+      .where('workOrder', '==', true)
+      .where('done', '==', true)
+      .where('resolutionDate', '>=', cutoffStr)
+      .orderBy('resolutionDate', 'desc')
+      .limit(200)
+      .get();
+    if (snap.empty) {
+      container.innerHTML = '<div class="maint-tab-empty"><span>📭</span><p>No completed work orders in this period.</p></div>';
+      return;
+    }
+    const PRI_COLOR = { critical:'#dc2626', high:'#ea580c', standard:'#d97706', monitor:'#16a34a' };
+    let html = `<p style="font-size:0.82rem;color:#6b7280;margin:0 0 10px;">${snap.size} completed in last ${_completedWODays} days</p>`;
+    snap.forEach(doc => {
+      const d = doc.data();
+      const v = vehiclesCache.find(x => x.id === d.vehicleId);
+      const plate = v ? escapeHtml(v.plate) : '—';
+      const vDesc = v ? `${escapeHtml(v.make)} ${escapeHtml(v.model)}` : '';
+      const priColor = PRI_COLOR[d.repairPriority] || '#d97706';
+      const dateLabel = d.resolutionDate ? new Date(d.resolutionDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : '';
+      const byLabel = d.resolvedByName ? ` · ${escapeHtml(d.resolvedByName)}` : '';
+      const resLabel = d.resolution ? `<div style="font-size:0.8rem;color:#4b5563;margin-top:3px;">💬 ${escapeHtml(d.resolution.slice(0,120))}${d.resolution.length>120?'…':''}</div>` : '';
+      html += `<div class="amc-row" style="border-left:3px solid ${priColor};" onclick="openVehiclePage && openVehiclePage('${d.vehicleId}')">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong>${plate}</strong>
+          <span style="color:#6b7280;font-size:0.8rem;">${vDesc}</span>
+          <span style="color:#15803d;font-size:0.78rem;font-weight:600;">✅ ${dateLabel}${byLabel}</span>
+        </div>
+        <div style="font-size:0.85rem;color:#374151;margin-top:2px;">${escapeHtml(d.text || '')}</div>
+        ${resLabel}
+      </div>`;
+    });
+    container.innerHTML = html;
+  } catch(e) {
+    console.error('_loadCompletedWO error:', e);
+    container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load. Check console.</p>';
+  }
+};
 window._woToggleSection = function(bodyId, headerEl) {
   const body = document.getElementById(bodyId);
   if (!body) return;
@@ -8378,6 +8455,25 @@ window.quickResolveWorkOrder = async function(noteId, resStatus, resText) {
   } catch(e) {
     toast('Failed to update.', 'error');
   }
+};
+
+// Snooze a work order — hides it from the main list until the snooze date
+window.snoozeWorkOrder = async function(noteId, days) {
+  const until = new Date(); until.setDate(until.getDate() + days);
+  const untilStr = until.toISOString().slice(0, 10);
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({ snoozedUntil: untilStr });
+    toast(`⏸️ Snoozed for ${days} days — will resurface on ${until.toLocaleDateString('en-US',{month:'short',day:'numeric'})}`, 'info');
+    _loadWorkOrders();
+  } catch(e) { toast('Failed to snooze.', 'error'); }
+};
+
+window.unsnoozeWorkOrder = async function(noteId) {
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({ snoozedUntil: firebase.firestore.FieldValue.delete() });
+    toast('↩️ Item moved back to active list.', 'info');
+    _loadWorkOrders();
+  } catch(e) { toast('Failed to wake up item.', 'error'); }
 };
 
 window.openNewWorkOrder = function(vehicleId) {

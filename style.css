@@ -8247,3 +8247,22 @@ body {
   font-weight: 600;
 }
 .wo-btn-quick-done:hover { background: #15803d; }
+
+/* ── Work Orders snooze button ── */
+.wo-btn-snooze {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  font-size: 0.78rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.wo-btn-snooze:hover { background: #e5e7eb; }
+
+/* ── Completed tab filter buttons ── */
+.wo-comp-filter-btn.active {
+  background: #1d4ed8;
+  color: #fff;
+  border-color: #1d4ed8;
+}
