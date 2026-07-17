@@ -8502,6 +8502,8 @@ window._loadVendorsTab = async function() {
     container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load vendors.</p>';
   }
 };
+
+window._woToggleSection = function(bodyId, headerEl) {
   const body = document.getElementById(bodyId);
   if (!body) return;
   const isOpen = body.style.display !== 'none';
