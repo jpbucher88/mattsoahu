@@ -8220,3 +8220,17 @@ body {
 .amc-comp { font-size: 0.75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
 .amc-comp-expired { background: #fef2f2; color: #dc2626; border: 1px solid #fca5a5; }
 .amc-comp-due     { background: #fffbeb; color: #d97706; border: 1px solid #fcd34d; }
+
+/* ── HNL parking slot badge on vehicle chips (e.g. "J7") ── */
+.hnl-slot-badge {
+  display: inline-block;
+  background: #1e3a5f;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  margin-left: 5px;
+  vertical-align: middle;
+  letter-spacing: 0.03em;
+}

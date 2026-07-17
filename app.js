@@ -2102,12 +2102,16 @@ function renderLocationsWidget() {
     if (atHomeClean.length > 0) {
       html += `<div class="loc-sub-header loc-sub-home">✅ Ready <span class="loc-sub-count">${atHomeClean.length}</span></div>
         <div class="location-group-vehicles">`;
+      const isHNL = loc === 'HNL';
       for (const v of atHomeClean) {
         const parkBadge = (isKapiolani && v.needsParking) ? '<span class="parking-badge">🅿️</span>' : '';
         const chipSub = [v.color, v.vehicleType].filter(Boolean).map(s => escapeHtml(s)).join(' · ');
         const woCount = _woCountByVehicle[v.id] || 0;
         const woBadge = woCount > 0 ? `<span class="chip-wo-badge" title="${woCount} open issue${woCount>1?'s':''}">${woCount}</span>` : '';
-        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip${woCount>0?' chip-has-issues':''}" data-vid="${v.id}">${escapeHtml(v.plate)}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${parkBadge}</div>`;
+        const slotBadge = isHNL && (v.parkingRow || v.parkingLevel)
+          ? `<span class="hnl-slot-badge">${escapeHtml((v.parkingRow || '') + (v.parkingLevel || ''))}</span>`
+          : '';
+        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip${woCount>0?' chip-has-issues':''}" data-vid="${v.id}">${escapeHtml(v.plate)}${slotBadge}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${parkBadge}</div>`;
       }
       html += '</div>';
     }
@@ -3779,6 +3783,19 @@ async function _idbCount() {
     });
   } catch(e) { return 0; }
 }
+
+// Delete ALL entries from the pending-photos IDB store (used by the Clear button)
+async function _idbClearAll() {
+  try {
+    const db = await _openPhotoDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(_PHOTO_STORE, 'readwrite');
+      const req = tx.objectStore(_PHOTO_STORE).clear();
+      tx.oncomplete = resolve;
+      tx.onerror    = e => reject(e.target.error);
+    });
+  } catch(e) { console.warn('IDB clearAll failed:', e); }
+}
 // ─────────────────────────────────────────────────────────────
 
 let cameraStream = null;
@@ -4154,11 +4171,17 @@ async function _checkOrphanedPendingUploads() {
       clearBtn.disabled = true;
       clearBtn.textContent = 'Clearing…';
       try {
+        // Clear Firestore markers
         await Promise.all(orphaned.map(doc =>
           db.collection('_pendingPhotoUploads').doc(doc.id).delete()
         ));
+        // Also clear IndexedDB so the queue doesn't re-add them on next focus
+        await _idbClearAll();
+        // Drain the in-memory queue so active retries stop
+        cameraUploadQueue.length = 0;
+        cameraUploading = false;
         banner.remove();
-        toast('Upload notifications cleared. Please retake the photos.', 'info');
+        toast('Upload queue cleared. Please retake the photos.', 'info');
       } catch(err) {
         banner.remove();
         console.warn('Clear orphaned error:', err);
