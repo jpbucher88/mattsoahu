@@ -1967,7 +1967,7 @@ function renderLocationsWidget() {
     const rt = getReturnTime(v);
     return rt !== null && rt < now;
   }
-  const onTripAll = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
+  const onTripAll = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'scheduled');
   const onTrip = onTripAll.filter(v => !isOverdue(v));
   const overdueTrip = onTripAll.filter(v => isOverdue(v));
   const atRepairAll = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
@@ -1976,11 +1976,11 @@ function renderLocationsWidget() {
 
   function isAtHome(v) {
     // photoExcluded only suppresses photo/cleaning prompts — vehicle is still treated as at-home for all other ops
-    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop';
+    return v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'scheduled' && v.tripStatus !== 'repair-shop';
   }
   function needsPhotosCheck(v) {
     if (v.photoExcluded) return false;
-    const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip';
+    const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'scheduled';
     const isAtRepair = v.tripStatus === 'repair-shop';
     let withinGrace = false;
     if (v.cleaningFlaggedAt) {
@@ -2161,7 +2161,16 @@ function renderLocationsWidget() {
       <div class="location-group-vehicles trip-list">`;
     for (const v of onTrip) {
       let returnLabel = '';
-      if (v.tripReturnDate) {
+      if (v.tripStatus === 'scheduled') {
+        // Show pickup start time for scheduled trips
+        const ss = v.tripScheduledStart ? (v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart)) : null;
+        const startStr = ss ? ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }) : '';
+        returnLabel = `<span class="trip-return-label" style="color:#7c3aed;">⏰ Starts ${startStr || '—'}</span>`;
+        if (v.tripReturnDate) {
+          const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+          returnLabel += ` <span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
+        }
+      } else if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
         returnLabel = `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
       }
@@ -2335,7 +2344,8 @@ window.checkLocationPhotos = async function(loc) {
   // Categorise all non-excluded, non-trip vehicles at this location
   const checkVehicles = locVehicles.filter(v =>
     !v.photoExcluded &&
-    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'repair-shop'
+    v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' &&
+    v.tripStatus !== 'scheduled' && v.tripStatus !== 'repair-shop'
   );
   const needsPhotos = checkVehicles.filter(v => !hasPhotosToday(v));
   const hasPhotos   = checkVehicles.filter(v => hasPhotosToday(v));
@@ -2357,8 +2367,11 @@ window.checkLocationPhotos = async function(loc) {
   const needRows = needsPhotos.map(v => {
     const ageText = !v.lastPhotoDate ? 'No photos yet'
       : `Last: ${v.lastPhotoDate.toLocaleString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE })}`;
+    const slotBadge = loc === 'HNL' && (v.parkingRow || v.parkingLevel)
+      ? `<span class="hnl-slot-badge" style="margin-left:5px;">${escapeHtml((v.parkingRow||'')+(v.parkingLevel||''))}</span>`
+      : '';
     return `<div class="loc-photo-check-row">
-      <span class="location-vehicle-chip">${escapeHtml(v.plate)}<span class="photo-cam-badge" title="Needs photos today">📷</span></span>
+      <span class="location-vehicle-chip">${escapeHtml(v.plate)}${slotBadge}<span class="photo-cam-badge" title="Needs photos today">📷</span></span>
       <span class="loc-photo-age" style="color:#6b7280;">${ageText}</span>
       <button class="btn btn-sm btn-primary" onclick="$('loc-photos-overlay').style.display='none'; openVehiclePage('${v.id}')">📷 Take Photos</button>
     </div>`;
@@ -3015,6 +3028,9 @@ async function openVehiclePage(vid) {
   $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
+  // Protect-date button visible to admin/manager only
+  const protBtn = $('btn-protect-date');
+  if (protBtn) protBtn.style.display = canUpload ? '' : 'none';
 
   // Photo override button — show when stale and admin/manager (top of info card)
   const photoOverrideWrap = $('photo-override-wrap');
@@ -4574,6 +4590,15 @@ function formatDisplayDate(dateStr) {
 function updateDateDisplay() {
   $('btn-date-display').textContent = formatDisplayDate(selectedDate);
   $('btn-date-today').style.display = selectedDate === todayDateString() ? 'none' : '';
+  // Update protect button state for the displayed date
+  const protBtn = $('btn-protect-date');
+  if (protBtn && selectedVehicle) {
+    const protected_ = (selectedVehicle.protectedPhotoDates || []).includes(selectedDate);
+    protBtn.textContent = protected_ ? '🔒 Protected' : '🔓 Protect';
+    protBtn.title = protected_ ? 'Photos on this date are protected from auto-deletion — click to unprotect' : 'Protect photos on this date from auto-deletion';
+    protBtn.classList.toggle('btn-primary', protected_);
+    protBtn.classList.toggle('btn-outline', !protected_);
+  }
 }
 
 function shiftDate(days) {
@@ -4597,6 +4622,27 @@ $('btn-date-today').addEventListener('click', () => {
     loadPhotosForDate(selectedVehicle.id, selectedDate);
     loadPhotoDates(selectedVehicle.id, selectedDate);
   }
+});
+
+// Protect / unprotect a photo date from auto-deletion
+$('btn-protect-date') && $('btn-protect-date').addEventListener('click', async () => {
+  if (!selectedVehicle) return;
+  const dates = [...(selectedVehicle.protectedPhotoDates || [])];
+  const idx = dates.indexOf(selectedDate);
+  if (idx === -1) {
+    dates.push(selectedDate);
+    toast(`🔒 ${selectedDate} protected — photos on this date won't be auto-deleted.`, 'success');
+  } else {
+    dates.splice(idx, 1);
+    toast(`🔓 ${selectedDate} unprotected.`, 'info');
+  }
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ protectedPhotoDates: dates });
+    selectedVehicle.protectedPhotoDates = dates;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.protectedPhotoDates = dates;
+    updateDateDisplay();
+  } catch(e) { toast('Failed to update protection.', 'error'); }
 });
 
 // Toggle mini calendar on date display click
@@ -5642,6 +5688,39 @@ window.vehicleReturned = async function(vehicleId) {
   const plate = v.plate || vehicleId;
   const ok = await confirm('Vehicle Returned', `Mark ${plate} as returned to ${v.homeLocation || 'home'}? This will prompt for cleaning and photos.`);
   if (!ok) return;
+
+  // For HNL vehicles, prompt for the new parking slot before saving
+  let newParkingRow = v.parkingRow || '';
+  let newParkingLevel = v.parkingLevel || '';
+  if (v.homeLocation === 'HNL') {
+    const slotOverlay = document.createElement('div');
+    slotOverlay.className = 'modal-overlay';
+    slotOverlay.style.cssText = 'display:flex;z-index:10000;';
+    slotOverlay.innerHTML = `<div class="modal-box" style="max-width:320px;padding:20px;">
+      <h3 style="margin:0 0 14px;font-size:1rem;">📍 HNL Parking Slot</h3>
+      <p style="font-size:0.85rem;color:#6b7280;margin:0 0 12px;">Where is ${escapeHtml(plate)} parked?</p>
+      <div style="display:flex;gap:10px;margin-bottom:14px;">
+        <div style="flex:1;"><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Row</label>
+          <input id="ret-row-input" type="text" maxlength="5" class="vehicle-location-custom" placeholder="e.g. J" value="${escapeHtml(newParkingRow)}" style="text-transform:uppercase;"></div>
+        <div style="flex:1;"><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Level</label>
+          <input id="ret-level-input" type="text" maxlength="5" class="vehicle-location-custom" placeholder="e.g. 7" value="${escapeHtml(newParkingLevel)}"></div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button id="ret-slot-save" class="btn btn-primary" style="flex:1;">Save & Continue</button>
+        <button id="ret-slot-skip" class="btn btn-outline" style="flex:1;">Skip</button>
+      </div>
+    </div>`;
+    document.body.appendChild(slotOverlay);
+    await new Promise(resolve => {
+      slotOverlay.querySelector('#ret-slot-save').onclick = () => {
+        newParkingRow = (slotOverlay.querySelector('#ret-row-input').value.trim().toUpperCase()) || null;
+        newParkingLevel = (slotOverlay.querySelector('#ret-level-input').value.trim()) || null;
+        slotOverlay.remove(); resolve();
+      };
+      slotOverlay.querySelector('#ret-slot-skip').onclick = () => { slotOverlay.remove(); resolve(); };
+    });
+  }
+
   try {
     const updateData = {
       tripStatus: 'home',
@@ -5651,8 +5730,11 @@ window.vehicleReturned = async function(vehicleId) {
       cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
     if (v.homeLocation === '1585 Kapiolani') updateData.needsParking = true;
+    if (v.homeLocation === 'HNL') {
+      updateData.parkingRow   = newParkingRow   || firebase.firestore.FieldValue.delete();
+      updateData.parkingLevel = newParkingLevel || firebase.firestore.FieldValue.delete();
+    }
     await db.collection('vehicles').doc(vehicleId).update(updateData);
-    // Update local cache
     Object.assign(v, {
       tripStatus: 'home',
       needsCleaning: true,
@@ -5660,6 +5742,7 @@ window.vehicleReturned = async function(vehicleId) {
       cleaningFlaggedAt: { toDate: () => new Date() }
     });
     if (v.homeLocation === '1585 Kapiolani') v.needsParking = true;
+    if (v.homeLocation === 'HNL') { v.parkingRow = newParkingRow; v.parkingLevel = newParkingLevel; }
     delete v.tripReturnDate;
     toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
     renderFleetDashboard();
