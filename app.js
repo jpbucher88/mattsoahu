@@ -7935,7 +7935,7 @@ async function _loadWorkOrders() {
 
     // ── Populate Fleet Health Bar ──
     const fhAction  = activeItems.filter(i => !i.repairStatus || i.repairStatus === 'open' || i.repairStatus === 'scheduled');
-    const fhShop    = activeItems.filter(i => i.repairStatus === 'dropped_off');
+    const fhShop    = activeItems.filter(i => i.repairStatus === 'dropped_off' || (i.repairStatus === 'scheduled' && i.assignedMechanic));
     const fhParts   = activeItems.filter(i => i.repairStatus === 'awaiting_parts');
     const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woCountByVehicle[v.id] > 0));
     const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
@@ -9785,7 +9785,6 @@ async function _loadReturnQueue() {
     const snap = await db.collection('vehicleNotes')
       .where('returnQueue', '==', true)
       .where('done', '==', false)
-      .orderBy('createdAt', 'desc')
       .limit(200)
       .get();
 
