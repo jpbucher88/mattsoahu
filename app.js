@@ -7761,7 +7761,8 @@ async function _loadWoUsers() {
 
 let _activeWoCategoryFilter = null; // null = show all
 let _pendingWOResolveId = null;    // set when close-out sends user to maintenance form
-let _woCountByVehicle = {};        // vehicleId → open WO count (updated by _loadWorkOrders)
+let _woCountByVehicle = {};        // vehicleId → ALL open WO count (for red badge on vehicle chips)
+let _woUrgentCountByVehicle = {};  // vehicleId → non-monitor WO count (blocks Fleet Ready)
 
 // ================================================================
 // VEHICLE PAGE — ACTIVE ISSUES STRIP
@@ -7929,9 +7930,18 @@ async function _loadWorkOrders() {
     // Filter out snoozed items (snoozedUntil set and in the future)
     const activeItems = items.filter(i => !i.snoozedUntil || i.snoozedUntil <= today);
     const snoozedItems = items.filter(i => i.snoozedUntil && i.snoozedUntil > today);
-    // Update global WO-per-vehicle count (active only)
+    // Update global WO-per-vehicle counts (active only)
     _woCountByVehicle = {};
-    activeItems.forEach(i => { if (i.vehicleId) _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId]||0)+1; });
+    _woUrgentCountByVehicle = {};
+    activeItems.forEach(i => {
+      if (i.vehicleId) {
+        _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId] || 0) + 1;
+        // Only non-monitor items block Fleet Ready
+        if (i.repairPriority !== 'monitor') {
+          _woUrgentCountByVehicle[i.vehicleId] = (_woUrgentCountByVehicle[i.vehicleId] || 0) + 1;
+        }
+      }
+    });
 
     // ── Populate Fleet Health Bar ──
     // Need Action: open work orders with real priority (critical / high / standard)
@@ -7988,7 +7998,9 @@ async function _loadWorkOrders() {
       noOilCount = allVIds.filter(id => !oilSet.has(id)).length;
     } catch(e) { console.warn('Oil check error:', e); }
 
-    const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woCountByVehicle[v.id] > 0));
+    // Fleet Ready: home + clean + no critical/high/standard open issues
+    // Monitor-only vehicles (oil reminders, upcoming services) still count as ready
+    const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woUrgentCountByVehicle[v.id] > 0));
     const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
     const setFH = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
     setFH('fh-num-action',  fhAction.length + compDueSet.size + noOilCount);
@@ -8313,6 +8325,11 @@ async function _loadWorkOrders() {
         : item.assignedMechanic
         ? `<span class="wo-detail-chip">🔧 ${escapeHtml(item.assignedMechanic)}</span>`
         : '';
+      // Show Claim button only on open unassigned items
+      const isUnassigned = !item.assignedMechanic && !item.assignedUserName;
+      const claimBtn = (isUnassigned && (!item.repairStatus || item.repairStatus === 'open'))
+        ? `<button class="wo-claim-btn" onclick="event.stopPropagation();window._claimWorkOrder('${item.id}')">\ud83d\ude4b\u200d Claim It</button>`
+        : '';
       const milesChip = v && v.mileage ? `<span class="wo-detail-chip">🛣️ ${v.mileage.toLocaleString()} mi</span>` : '';
       const schedChip = item.scheduledDate
         ? `<span class="wo-detail-chip ${item.scheduledDate < today ? 'wo-chip-missed' : 'wo-chip-sched'}">📅 ${new Date(item.scheduledDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`
@@ -8332,7 +8349,7 @@ async function _loadWorkOrders() {
             <div class="wo-v2-issue">${escapeHtml(item.text)}</div>
             ${dueLine}
             <div class="wo-v2-pipeline">${pipelineHtml}</div>
-            <div class="wo-v2-details">${assigneeChip}${milesChip}${schedChip}${tripConflict?'<span class="wo-chip-conflict">⚠️ Trip Conflict</span>':''}</div>
+            <div class="wo-v2-details">${assigneeChip}${claimBtn}${milesChip}${schedChip}${tripConflict?'<span class="wo-chip-conflict">⚠️ Trip Conflict</span>':''}</div>
           </div>
         </div>
         <div class="wo-card-v2-actions">
@@ -8878,6 +8895,25 @@ window.unsnoozeWorkOrder = async function(noteId) {
     toast('↩️ Item moved back to active list.', 'info');
     _loadWorkOrders();
   } catch(e) { toast('Failed to wake up item.', 'error'); }
+};
+
+// Claim an unassigned work order — assigns it to the current user in one tap
+window._claimWorkOrder = async function(noteId) {
+  if (!currentUser) return;
+  const myName = currentUser.displayName || currentUser.email || 'Unknown';
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      assignedMechanic: myName,
+      assigneeUid: currentUser.uid,
+      assignedUserName: myName,
+    });
+    toast(`✅ Claimed — assigned to ${myName}`, 'success');
+    _loadWorkOrders();
+    loadDashboardFollowUps();
+  } catch(e) {
+    console.error('Claim error:', e);
+    toast('Failed to claim task.', 'error');
+  }
 };
 
 // Log a missed appointment — records it on vendorEvents and prompts reschedule
