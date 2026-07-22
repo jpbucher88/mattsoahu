@@ -7934,7 +7934,7 @@ async function _loadWorkOrders() {
     activeItems.forEach(i => { if (i.vehicleId) _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId]||0)+1; });
 
     // ── Populate Fleet Health Bar ──
-    // Need Action: open status (not yet scheduled/in-shop) with priority critical/high/standard
+    // Need Action: open work orders with real priority (critical / high / standard)
     const fhAction  = activeItems.filter(i =>
       (!i.repairStatus || i.repairStatus === 'open') &&
       i.repairPriority !== 'monitor'
@@ -7944,15 +7944,54 @@ async function _loadWorkOrders() {
       i.repairStatus === 'dropped_off' || i.repairStatus === 'scheduled'
     );
     const fhParts   = activeItems.filter(i => i.repairStatus === 'awaiting_parts');
-    // Monitor: auto-created maintenance reminders — open but low priority (won't clog Need Action)
-    const fhMonitor = activeItems.filter(i =>
-      (!i.repairStatus || i.repairStatus === 'open') &&
-      i.repairPriority === 'monitor'
-    );
+
+    // Monitor: only items CLOSE to due — within 1000 miles (mileage) or 30 days (time).
+    // Far-future reminders are silently tracked but don't clog the counter.
+    const mon30str = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    const fhMonitor = activeItems.filter(i => {
+      if (i.repairPriority !== 'monitor') return false;
+      if (i.repairStatus && i.repairStatus !== 'open') return false;
+      if (i.nextDueMileage) {
+        const v = vehiclesCache.find(x => x.id === i.vehicleId);
+        const milesLeft = v && v.mileage ? i.nextDueMileage - v.mileage : null;
+        return milesLeft !== null && milesLeft <= 1000;
+      }
+      if (i.dueDate) return i.dueDate <= mon30str;
+      return false;
+    });
+
+    // Extra Need Action: compliance (Safety / Reg / Insurance) expiring within 15 days
+    const comp15ms = Date.now() + 15 * 86400000;
+    const compDueSet = new Set();
+    vehiclesCache.forEach(v => {
+      const fields = [v.complianceSafety, v.complianceRegistration, v.complianceInsurance];
+      if (fields.some(f => {
+        if (!f) return false;
+        const [cy, cm] = f.split('-').map(Number);
+        return Date.UTC(cy, cm, 0, 23, 59, 59) <= comp15ms;
+      })) compDueSet.add(v.id);
+    });
+
+    // Extra Need Action: vehicles with NO oil change on record
+    let noOilCount = 0;
+    try {
+      const allVIds = vehiclesCache.map(v => v.id).filter(Boolean);
+      const oilSet = new Set();
+      for (let i = 0; i < allVIds.length; i += 10) {
+        const chunk = allVIds.slice(i, i + 10);
+        const oilSnap = await db.collection('maintenance').where('vehicleId', 'in', chunk).get();
+        oilSnap.forEach(doc => {
+          if ((doc.data().serviceType || '').toLowerCase().includes('oil'))
+            oilSet.add(doc.data().vehicleId);
+        });
+      }
+      noOilCount = allVIds.filter(id => !oilSet.has(id)).length;
+    } catch(e) { console.warn('Oil check error:', e); }
+
     const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woCountByVehicle[v.id] > 0));
     const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
     const setFH = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    setFH('fh-num-action',  fhAction.length);
+    setFH('fh-num-action',  fhAction.length + compDueSet.size + noOilCount);
     setFH('fh-num-shop',    fhShop.length);
     setFH('fh-num-parts',   fhParts.length);
     setFH('fh-num-monitor', fhMonitor.length);
