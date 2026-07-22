@@ -8331,7 +8331,8 @@ body {
 .fh-action .fh-num { color: #f87171; }
 .fh-shop   .fh-num { color: #fb923c; }
 .fh-parts  .fh-num { color: #fbbf24; }
-.fh-ready  .fh-num { color: #4ade80; }
+.fh-ready   .fh-num { color: #4ade80; }
+.fh-monitor .fh-num { color: #a3e635; }
 .fh-returns .fh-num { color: #60a5fa; }
 
 /* ── Modern Card v2 ── */
