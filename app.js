@@ -7763,6 +7763,8 @@ let _activeWoCategoryFilter = null; // null = show all
 let _pendingWOResolveId = null;    // set when close-out sends user to maintenance form
 let _woCountByVehicle = {};        // vehicleId → ALL open WO count (for red badge on vehicle chips)
 let _woUrgentCountByVehicle = {};  // vehicleId → non-monitor WO count (blocks Fleet Ready)
+let _woGroupByLocation = false;    // toggle: group by vehicle home location vs priority
+let _woGroupByLocation = false;    // toggle: group by vehicle home location vs priority
 
 // ================================================================
 // VEHICLE PAGE — ACTIVE ISSUES STRIP
@@ -8178,6 +8180,18 @@ async function _loadWorkOrders() {
           tripConflict = '<div class="wo-conflict">⚠️ Schedule conflict — vehicle is on trip until ' + rd2.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', timeZone: APP_TIMEZONE }) + '</div>';
         }
       }
+      // Chip for trip status — shows return date so mechanic knows when the vehicle is back
+      const tripStatusChip = (() => {
+        if (!isOnTrip || !v) return '';
+        if (v.tripReturnDate) {
+          const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+          const isOverdueTrip = rd.getTime() < Date.now();
+          const rdFmt = rd.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: APP_TIMEZONE });
+          if (tripConflict) return `<span class="wo-chip-conflict">⚠️ Schedule conflict · returns ${rdFmt}</span>`;
+          return `<span class="wo-chip-ontrip${isOverdueTrip ? ' wo-chip-overdue-trip' : ''}">🚗 Returns ${rdFmt}${isOverdueTrip ? ' OVERDUE' : ''}</span>`;
+        }
+        return tripConflict ? '<span class="wo-chip-conflict">⚠️ Trip Conflict</span>' : '<span class="wo-chip-ontrip">🚗 On Trip</span>';
+      })();
 
       // Progress timeline — rendered as a proper visual timeline
       const progLog = item.progressLog || [];
@@ -8349,7 +8363,7 @@ async function _loadWorkOrders() {
             <div class="wo-v2-issue">${escapeHtml(item.text)}</div>
             ${dueLine}
             <div class="wo-v2-pipeline">${pipelineHtml}</div>
-            <div class="wo-v2-details">${assigneeChip}${claimBtn}${milesChip}${schedChip}${tripConflict?'<span class="wo-chip-conflict">⚠️ Trip Conflict</span>':''}</div>
+            <div class="wo-v2-details">${assigneeChip}${claimBtn}${milesChip}${schedChip}${tripStatusChip}</div>
           </div>
         </div>
         <div class="wo-card-v2-actions">
@@ -8378,63 +8392,110 @@ async function _loadWorkOrders() {
       ${open.length ? `<span class="wo-pip-chip wo-pip-open">⚪ Open: ${open.length}</span>` : ''}
       ${scheduled.length ? `<span class="wo-pip-chip wo-pip-sched">📅 Scheduled: ${scheduled.length}</span>` : ''}
       ${_activeWoCategoryFilter ? `<button class="wo-bdc-clear" onclick="window._woFilterByCategory(null)">✕ Clear filter</button>` : ''}
+      <button class="wo-loc-toggle${_woGroupByLocation ? ' wo-loc-toggle-active' : ''}" onclick="window._toggleWoLocationView()">📍 ${_woGroupByLocation ? 'By Priority' : 'By Location'}</button>
     </div>`;
 
-    if (droppedOff.length) {
-      html += `<div class="wo-section-group">
-        <div class="wo-section-header wo-sect-toggle-btn" style="background:#eff6ff;color:#1e40af;" onclick="_woToggleSection('wo-sect-inprog',this)">
-          🔧 In Progress — At Shop <span class="wo-sec-count">${droppedOff.length}</span><span class="wo-sect-arrow">▼</span>
-        </div>
-        <div id="wo-sect-inprog">${droppedOff.map(renderCard).join('')}</div>
-      </div>`;
-    }
-    if (missedList.length) {
-      missedList.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
-      html += `<div class="wo-section-group">
-        <div class="wo-section-header wo-section-missed wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-missed',this)">
-          ⚠️ Missed Schedule <span class="wo-sec-count">${missedList.length}</span><span class="wo-sect-arrow">▼</span>
-        </div>
-        <div id="wo-sect-missed">${missedList.map(i => {
-          const card = renderCard(i);
-          // Inject "Missed Appt" button before the first action button
-          const missedBtn = `<button class="btn btn-sm wo-btn-missed" onclick="event.stopPropagation();window.logMissedAppointment('${i.id}','${escapeHtml(i.assignedMechanic||'').replace(/'/g,"&#39;")}','${i.scheduledDate||''}')">⚠️ Missed Appt</button>`;
-          return card.replace('<div class="wo-actions">', `<div class="wo-actions">${missedBtn}`);
-        }).join('')}</div>
-      </div>`;
-    }
-    if (open.length) {
-      open.sort((a,b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2) - (po[b.repairPriority]||2); });
-      html += `<div class="wo-section-group">
-        <div class="wo-section-header wo-section-open wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-open',this)">
-          ⚪ Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span><span class="wo-sect-arrow">▼</span>
-        </div>
-        <div id="wo-sect-open">${open.map(renderCard).join('')}</div>
-      </div>`;
-    }
-    if (allFuture.length) {
-      allFuture.sort((a,b) => (a.dueDate||a.snoozedUntil||'').localeCompare(b.dueDate||b.snoozedUntil||''));
-      html += `<div class="wo-section-group">
-        <div class="wo-section-header wo-sect-toggle-btn" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;" onclick="_woToggleSection('wo-sect-future',this)">
-          📅 Future / Snoozed <span class="wo-sec-count" style="background:#16a34a;">${allFuture.length}</span><span class="wo-sect-arrow">▶</span>
-        </div>
-        <div id="wo-sect-future" style="display:none;">${allFuture.map(i => {
-          const snoozeNote = i.snoozedUntil ? `<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">⏸️ Snoozed until ${new Date(i.snoozedUntil+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} — <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 6px;background:transparent;border:1px solid #d1d5db;cursor:pointer;" onclick="window.unsnoozeWorkOrder('${i.id}')">Wake up</button></div>` : '';
-          return snoozeNote + renderCard(i);
-        }).join('')}</div>
-      </div>`;
-    }
-    if (scheduled.length) {
-      scheduled.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
-      html += `<div class="wo-section-group">
-        <div class="wo-section-header wo-section-sched wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-sched',this)">
-          📅 Scheduled <span class="wo-sec-count">${scheduled.length}</span><span class="wo-sect-arrow">▼</span>
-        </div>
-        <div id="wo-sect-sched">${scheduled.map(renderCard).join('')}</div>
-      </div>`;
-    }
-    if (!html.replace(/<div class="wo-pipeline-bar">[\s\S]*?<\/div>/, '').trim()) {
-      html += '<div class="maint-tab-empty"><span>✅</span><p>No open work orders!</p></div>';
-    }
+    if (_woGroupByLocation) {
+      // ── Location-grouped view ──────────────────────────────────────────────────────────────────────────
+      // Combine all active items across status groups
+      const allActiveForLoc = [...droppedOff, ...missedList, ...open, ...scheduled];
+      const byLoc = {};
+      allActiveForLoc.forEach(i => {
+        const veh = vehiclesCache.find(x => x.id === i.vehicleId);
+        const loc = (veh && veh.homeLocation) ? veh.homeLocation : 'No Location Set';
+        if (!byLoc[loc]) byLoc[loc] = [];
+        byLoc[loc].push(i);
+      });
+      const locKeys = Object.keys(byLoc).sort((a, b) => {
+        if (a === 'No Location Set') return 1;
+        if (b === 'No Location Set') return -1;
+        return a.localeCompare(b);
+      });
+      if (!locKeys.length) {
+        html += '<div class="maint-tab-empty"><span>\u2705</span><p>No open work orders!</p></div>';
+      } else {
+        for (const loc of locKeys) {
+          const locItems = byLoc[loc];
+          // Sort by priority within each location
+          locItems.sort((a, b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2)-(po[b.repairPriority]||2); });
+          // Service type breakdown chips for this location
+          const locCatCounts = {};
+          locItems.forEach(i => { const k = i.repairCategory||'__none__'; locCatCounts[k]=(locCatCounts[k]||0)+1; });
+          const catChips = Object.entries(locCatCounts).sort((a,b)=>b[1]-a[1]).map(([key,cnt]) => {
+            const cat = WO_PROBLEM_CATEGORIES.find(c => c.key === key);
+            const lbl = cat ? `${cat.icon} ${cat.label}` : '📋 Other';
+            const isActive = _activeWoCategoryFilter === key;
+            return `<button class="wo-loc-cat-btn${isActive?' wo-loc-cat-active':''}" onclick="window._woFilterByCategory('${key}')">${escapeHtml(lbl)} <span class="wo-loc-cat-count">${cnt}</span></button>`;
+          }).join('');
+          html += `<div class="wo-location-group">
+            <div class="wo-location-header">
+              <div class="wo-loc-title">
+                <span class="wo-loc-name">🏠 ${escapeHtml(loc)}</span>
+                <span class="wo-loc-count">${locItems.length} issue${locItems.length!==1?'s':''}</span>
+              </div>
+              ${catChips ? `<div class="wo-loc-cat-chips">${catChips}</div>` : ''}
+            </div>
+            <div class="wo-location-cards">${locItems.map(renderCard).join('')}</div>
+          </div>`;
+        }
+      }
+    } else {
+      // ── Default priority-based view ─────────────────────────────────────────────────────────────────────
+      if (droppedOff.length) {
+        html += `<div class="wo-section-group">
+          <div class="wo-section-header wo-sect-toggle-btn" style="background:#eff6ff;color:#1e40af;" onclick="_woToggleSection('wo-sect-inprog',this)">
+            🔧 In Progress — At Shop <span class="wo-sec-count">${droppedOff.length}</span><span class="wo-sect-arrow">▼</span>
+          </div>
+          <div id="wo-sect-inprog">${droppedOff.map(renderCard).join('')}</div>
+        </div>`;
+      }
+      if (missedList.length) {
+        missedList.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
+        html += `<div class="wo-section-group">
+          <div class="wo-section-header wo-section-missed wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-missed',this)">
+            ⚠️ Missed Schedule <span class="wo-sec-count">${missedList.length}</span><span class="wo-sect-arrow">▼</span>
+          </div>
+          <div id="wo-sect-missed">${missedList.map(i => {
+            const card = renderCard(i);
+            const missedBtn = `<button class="btn btn-sm wo-btn-missed" onclick="event.stopPropagation();window.logMissedAppointment('${i.id}','${escapeHtml(i.assignedMechanic||'').replace(/'/g,"&#39;")}','${i.scheduledDate||''}')">⚠️ Missed Appt</button>`;
+            return card.replace('<div class="wo-actions">', `<div class="wo-actions">${missedBtn}`);
+          }).join('')}</div>
+        </div>`;
+      }
+      if (open.length) {
+        open.sort((a,b) => { const po = {critical:0,high:1,standard:2,monitor:3}; return (po[a.repairPriority]||2) - (po[b.repairPriority]||2); });
+        html += `<div class="wo-section-group">
+          <div class="wo-section-header wo-section-open wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-open',this)">
+            ⚪ Open — Needs Scheduling <span class="wo-sec-count">${open.length}</span><span class="wo-sect-arrow">▼</span>
+          </div>
+          <div id="wo-sect-open">${open.map(renderCard).join('')}</div>
+        </div>`;
+      }
+      if (allFuture.length) {
+        allFuture.sort((a,b) => (a.dueDate||a.snoozedUntil||'').localeCompare(b.dueDate||b.snoozedUntil||''));
+        html += `<div class="wo-section-group">
+          <div class="wo-section-header wo-sect-toggle-btn" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;" onclick="_woToggleSection('wo-sect-future',this)">
+            📅 Future / Snoozed <span class="wo-sec-count" style="background:#16a34a;">${allFuture.length}</span><span class="wo-sect-arrow">▶</span>
+          </div>
+          <div id="wo-sect-future" style="display:none;">${allFuture.map(i => {
+            const snoozeNote = i.snoozedUntil ? `<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">⏸️ Snoozed until ${new Date(i.snoozedUntil+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} — <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 6px;background:transparent;border:1px solid #d1d5db;cursor:pointer;" onclick="window.unsnoozeWorkOrder('${i.id}')">Wake up</button></div>` : '';
+            return snoozeNote + renderCard(i);
+          }).join('')}</div>
+        </div>`;
+      }
+      if (scheduled.length) {
+        scheduled.sort((a,b) => a.scheduledDate < b.scheduledDate ? -1 : 1);
+        html += `<div class="wo-section-group">
+          <div class="wo-section-header wo-section-sched wo-sect-toggle-btn" onclick="_woToggleSection('wo-sect-sched',this)">
+            📅 Scheduled <span class="wo-sec-count">${scheduled.length}</span><span class="wo-sect-arrow">▼</span>
+          </div>
+          <div id="wo-sect-sched">${scheduled.map(renderCard).join('')}</div>
+        </div>`;
+      }
+      if (!html.replace(/<div class="wo-pipeline-bar">[\s\S]*?<\/div>/, '').trim()) {
+        html += '<div class="maint-tab-empty"><span>✅</span><p>No open work orders!</p></div>';
+      }
+    } // end else (priority view)
     container.innerHTML = html;
   } catch(e) {
     container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load work orders.</p>';
@@ -8444,6 +8505,11 @@ async function _loadWorkOrders() {
 
 window._woFilterByCategory = function(catKey) {
   _activeWoCategoryFilter = catKey || null;
+  _loadWorkOrders();
+};
+
+window._toggleWoLocationView = function() {
+  _woGroupByLocation = !_woGroupByLocation;
   _loadWorkOrders();
 };
 
