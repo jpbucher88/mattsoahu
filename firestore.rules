@@ -140,5 +140,27 @@ service cloud.firestore {
       allow create: if isRegistered() && request.resource.data.userId == request.auth.uid;
       allow delete: if isAuth() && resource.data.userId == request.auth.uid;
     }
+
+    // Service providers — aggregated ratings/history for shops and mechanics
+    // Managers/admins can read and write; all registered users can read for autocomplete
+    match /serviceProviders/{providerId} {
+      allow read: if isRegistered();
+      allow create, update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow delete: if isAdmin();
+    }
+
+    // Vendor events — missed appointments, completions, reliability tracking
+    // Managers/admins only
+    match /vendorEvents/{eventId} {
+      allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow update, delete: if isAdmin();
+    }
+
+    // User activity log — write by any registered user (fire-and-forget), read by admin only
+    match /userActivity/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isRegistered();
+    }
   }
 }
