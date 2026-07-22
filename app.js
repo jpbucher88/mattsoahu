@@ -935,6 +935,102 @@ function sanitizePlate(plate) {
   return plate.replace(/[^a-zA-Z0-9-]/g, '_').toUpperCase();
 }
 
+// --------------- EXIF TIMESTAMP INJECTION ---------------
+// canvas.toBlob() strips all metadata, including the camera timestamp that Turo requires for claims.
+// This function injects a minimal EXIF APP1 segment (DateTimeOriginal, DateTimeDigitized, DateTime)
+// directly into the JPEG binary so the timestamp survives compression and upload.
+// All times are written in Hawaii Standard Time (APP_TIMEZONE) since that is where operations run.
+function injectExifTimestamp(blob, date) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const jpeg = new Uint8Array(e.target.result);
+
+        // Format the date as "YYYY:MM:DD HH:MM:SS" in Hawaii time (EXIF standard format)
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: APP_TIMEZONE,
+          year: 'numeric', month: '2-digit', day: '2-digit',
+          hour: '2-digit', minute: '2-digit', second: '2-digit',
+          hour12: false
+        }).formatToParts(date);
+        const get = (t) => (parts.find(p => p.type === t) || {}).value || '00';
+        let hour = get('hour');
+        if (hour === '24') hour = '00'; // guard: some browsers return 24 for midnight
+        const dtStr = `${get('year')}:${get('month')}:${get('day')} ${hour}:${get('minute')}:${get('second')}`;
+        // EXIF ASCII datetime = 19 printable chars + null terminator = 20 bytes
+        const dtBytes = new Uint8Array(20);
+        for (let i = 0; i < 19; i++) dtBytes[i] = dtStr.charCodeAt(i);
+        // dtBytes[19] already 0 (null terminator)
+
+        // ---- Build TIFF block (little-endian, 128 bytes) ----
+        // Byte layout:
+        //   [0-7]    TIFF header  (II, magic, IFD0 offset=8)
+        //   [8-37]   IFD0         (2 entries: DateTime, ExifIFD ptr) + next=0
+        //   [38-57]  DateTime string (20 bytes)
+        //   [58-87]  ExifIFD      (2 entries: DateTimeOriginal, DateTimeDigitized) + next=0
+        //   [88-107] DateTimeOriginal string (20 bytes)
+        //   [108-127] DateTimeDigitized string (20 bytes)
+        const tiff = new Uint8Array(128);
+        const v = new DataView(tiff.buffer);
+
+        // TIFF header
+        v.setUint16(0, 0x4949);       // 'II' = little-endian byte order
+        v.setUint16(2, 0x002A);       // TIFF magic number
+        v.setUint32(4, 8, true);      // Offset to IFD0
+
+        // IFD0 — 2 entries, sorted by tag number (required by TIFF spec)
+        v.setUint16(8, 2, true);
+        // Entry 0: 0x0132 DateTime — ASCII, 20 bytes, value at TIFF offset 38
+        v.setUint16(10, 0x0132, true); v.setUint16(12, 2, true);
+        v.setUint32(14, 20, true);     v.setUint32(18, 38, true);
+        // Entry 1: 0x8769 ExifIFD pointer — LONG, value = TIFF offset 58
+        v.setUint16(22, 0x8769, true); v.setUint16(24, 4, true);
+        v.setUint32(26, 1, true);      v.setUint32(30, 58, true);
+        v.setUint32(34, 0, true);      // next IFD = none
+
+        tiff.set(dtBytes, 38);         // DateTime string
+
+        // ExifIFD at TIFF offset 58 — 2 entries
+        v.setUint16(58, 2, true);
+        // Entry 0: 0x9003 DateTimeOriginal — ASCII, 20 bytes, at TIFF offset 88
+        v.setUint16(60, 0x9003, true); v.setUint16(62, 2, true);
+        v.setUint32(64, 20, true);     v.setUint32(68, 88, true);
+        // Entry 1: 0x9004 DateTimeDigitized — ASCII, 20 bytes, at TIFF offset 108
+        v.setUint16(72, 0x9004, true); v.setUint16(74, 2, true);
+        v.setUint32(76, 20, true);     v.setUint32(80, 108, true);
+        v.setUint32(84, 0, true);      // next IFD = none
+
+        tiff.set(dtBytes, 88);         // DateTimeOriginal string
+        tiff.set(dtBytes, 108);        // DateTimeDigitized string
+
+        // ---- Build JPEG APP1 segment ----
+        // Structure: FF E1 (marker, 2) + length (2) + "Exif\0\0" (6) + tiff (128) = 138 bytes
+        // Length field = 2 (itself) + 6 (Exif header) + 128 (TIFF) = 136 = 0x0088
+        const app1 = new Uint8Array(138);
+        app1[0] = 0xFF; app1[1] = 0xE1;  // APP1 marker
+        app1[2] = 0x00; app1[3] = 0x88;  // length = 136
+        app1[4] = 0x45; app1[5] = 0x78;  // 'E' 'x'
+        app1[6] = 0x69; app1[7] = 0x66;  // 'i' 'f'
+        app1[8] = 0x00; app1[9] = 0x00;  // null padding
+        app1.set(tiff, 10);
+
+        // Assemble: SOI (2 bytes) + EXIF APP1 (138 bytes) + rest of original JPEG
+        const result = new Uint8Array(jpeg.length + app1.length);
+        result.set(jpeg.slice(0, 2));                   // FF D8 SOI
+        result.set(app1, 2);                            // EXIF APP1
+        result.set(jpeg.slice(2), 2 + app1.length);     // remaining JPEG data
+
+        resolve(new Blob([result], { type: 'image/jpeg' }));
+      } catch (err) {
+        resolve(blob); // fallback: return original blob if anything goes wrong
+      }
+    };
+    reader.onerror = () => resolve(blob);
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
 // Compress image before upload
 // 1920px wide at 85% quality — good detail for damage docs, ~40% smaller than the old 2560@92% defaults
 function compressImage(file, maxWidth = 1920, quality = 0.85) {
@@ -958,9 +1054,12 @@ function compressImage(file, maxWidth = 1920, quality = 0.85) {
         canvas.height = h;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, w, h);
-        canvas.toBlob((blob) => {
+        canvas.toBlob(async (blob) => {
           if (!blob) { reject(new Error('Failed to convert image to JPEG.')); return; }
-          resolve(new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+          // Re-inject EXIF timestamp — canvas.toBlob() strips all metadata.
+          // Use file.lastModified so iPhone/Android original capture time is preserved.
+          const stamped = await injectExifTimestamp(blob, new Date(file.lastModified || Date.now()));
+          resolve(new File([stamped], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
         }, 'image/jpeg', quality);
       };
       img.src = e.target.result;
@@ -991,9 +1090,11 @@ function compressBlob(blob, maxWidth = 1920, quality = 0.85) {
       canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, w, h);
-      canvas.toBlob((result) => {
+      canvas.toBlob(async (result) => {
         if (!result) { reject(new Error('Failed to convert to JPEG.')); return; }
-        resolve(result);
+        // Re-inject EXIF timestamp — canvas.toBlob() strips all metadata.
+        // Use new Date() because this is the in-browser camera: the photo was just taken.
+        resolve(await injectExifTimestamp(result, new Date()));
       }, 'image/jpeg', quality);
     };
     img.src = url;
