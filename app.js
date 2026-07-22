@@ -5817,8 +5817,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
     this.classList.add('active');
     $(this.dataset.tab).classList.add('active');
-    // Auto-load Matthew-only tabs
-    if (this.dataset.tab === 'tab-deleted') loadDeletedTasks();
+    // Auto-load tabs that need data
+    if (this.dataset.tab === 'tab-deleted')    loadDeletedTasks();
+    if (this.dataset.tab === 'tab-ops-report') loadOpsReport();
   });
 });
 
@@ -6660,6 +6661,253 @@ function _renderActivityTable(items, el) {
       </tr>`;
     }).join('')}</tbody>
   </table>`;
+}
+
+// ================================================================
+// OPS REPORT — Admin-only comprehensive operations snapshot
+// ================================================================
+async function loadOpsReport() {
+  const el = $('ops-report-body');
+  if (!el || currentUserRole !== 'admin') return;
+  el.innerHTML = '<p class="hint" style="text-align:center;padding:32px;">⏳ Loading operations snapshot…</p>';
+
+  try {
+    const today = todayDateString();
+    const d30 = new Date(); d30.setDate(d30.getDate() + 30);
+    const d30str = d30.toISOString().slice(0, 10);
+    const d15ms = Date.now() + 15 * 86400000;
+    const monthStart = today.slice(0, 7) + '-01';
+
+    // ── Run queries in parallel ──────────────────────────────────
+    const [
+      woSnap, maintMonthSnap, maintDueSnap, expSnap, billSnap, userSnap, actSnap,
+    ] = await Promise.all([
+      db.collection('vehicleNotes').where('workOrder','==',true).where('done','==',false).limit(300).get(),
+      db.collection('maintenance').where('date','>=',monthStart).orderBy('date','desc').get(),
+      db.collection('maintenance').where('nextDueDate','<=',d30str).orderBy('nextDueDate','asc').get(),
+      db.collection('expenses').where('date','>=',monthStart).orderBy('date','desc').get(),
+      db.collection('bills').where('paid','!=',true).orderBy('dueDate','asc').limit(10).get(),
+      db.collection('users').orderBy('displayName').get(),
+      db.collection('userActivity').orderBy('at','desc').limit(20).get(),
+    ]);
+
+    // ── Fleet stats from vehiclesCache ───────────────────────────
+    const onTrip     = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
+    const atShop     = vehiclesCache.filter(v => v.tripStatus === 'repair-shop');
+    const available  = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning);
+    const needsClean = vehiclesCache.filter(v => v.needsCleaning);
+    const total      = vehiclesCache.length;
+
+    // Compliance: expiring within 30 days
+    const compIssues = [];
+    vehiclesCache.forEach(v => {
+      [['Safety', v.complianceSafety], ['Reg', v.complianceRegistration], ['Insurance', v.complianceInsurance]].forEach(([label, field]) => {
+        if (!field) return;
+        const [cy, cm] = field.split('-').map(Number);
+        const expiresMs = Date.UTC(cy, cm, 0, 23, 59, 59);
+        const daysLeft = Math.round((expiresMs - Date.now()) / 86400000);
+        if (daysLeft <= 30) compIssues.push({ plate: v.plate, label, daysLeft, expired: daysLeft < 0 });
+      });
+    });
+    compIssues.sort((a, b) => a.daysLeft - b.daysLeft);
+
+    // ── Oil check ────────────────────────────────────────────────
+    const allVIds = vehiclesCache.map(v => v.id).filter(Boolean);
+    const oilSet = new Set();
+    for (let i = 0; i < allVIds.length; i += 10) {
+      const chunk = allVIds.slice(i, i + 10);
+      const s = await db.collection('maintenance').where('vehicleId','in',chunk).get();
+      s.forEach(d => { if ((d.data().serviceType||'').toLowerCase().includes('oil')) oilSet.add(d.data().vehicleId); });
+    }
+    const noOilVehicles = vehiclesCache.filter(v => v.id && !oilSet.has(v.id));
+
+    // ── Work orders ──────────────────────────────────────────────
+    const wos = woSnap.docs.map(d => ({id:d.id,...d.data()}));
+    const woByPriority = { critical:[], high:[], standard:[], monitor:[] };
+    wos.forEach(w => {
+      const p = w.repairPriority || 'standard';
+      if (woByPriority[p]) woByPriority[p].push(w);
+      else woByPriority.standard.push(w);
+    });
+    // Oldest open issues
+    const oldestOpen = [...wos].filter(w => !w.repairStatus || w.repairStatus === 'open')
+      .sort((a,b) => {
+        const at = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : 0;
+        const bt = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : 0;
+        return at - bt;
+      }).slice(0, 6);
+    // Per-vehicle WO counts
+    const woCounts = {};
+    wos.forEach(w => { if (w.vehicleId) woCounts[w.vehicleId] = (woCounts[w.vehicleId]||0)+1; });
+    const topWoVehicles = Object.entries(woCounts).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([vid,cnt]) => {
+      const v = vehiclesCache.find(x=>x.id===vid);
+      return { plate: v ? v.plate : vid, cnt };
+    });
+
+    // ── Maintenance ──────────────────────────────────────────────
+    let monthMaintCost = 0, monthMaintCount = 0;
+    maintMonthSnap.forEach(d => { monthMaintCount++; monthMaintCost += d.data().cost || 0; });
+    const overdueSvc = [], dueSoonSvc = [];
+    const seen = new Set();
+    maintDueSnap.forEach(d => {
+      const data = d.data();
+      const key = `${data.vehicleId}_${data.serviceType}`;
+      if (seen.has(key) || !data.nextDueDate) return;
+      seen.add(key);
+      const v = vehiclesCache.find(x=>x.id===data.vehicleId);
+      const entry = { plate: v?v.plate:data.vehicleId, service: data.serviceType, nextDueDate: data.nextDueDate };
+      if (data.nextDueDate <= today) overdueSvc.push(entry);
+      else dueSoonSvc.push(entry);
+    });
+
+    // ── Expenses this month ──────────────────────────────────────
+    let monthExpTotal = 0;
+    const expByCat = {};
+    expSnap.forEach(d => {
+      const data = d.data();
+      monthExpTotal += data.amount || 0;
+      const cat = data.category || 'Other';
+      expByCat[cat] = (expByCat[cat]||0) + (data.amount||0);
+    });
+
+    // ── Bills ────────────────────────────────────────────────────
+    const bills = billSnap.docs.map(d => ({id:d.id,...d.data()})).filter(b => !b.paid);
+    const urgentBills = bills.filter(b => b.dueDate && b.dueDate <= d30str);
+
+    // ── Users / Staff ────────────────────────────────────────────
+    const users = userSnap.docs.map(d => ({uid:d.id,...d.data()}));
+    const recentActivity = actSnap.docs.map(d => d.data());
+
+    // ── Build HTML ───────────────────────────────────────────────
+    const kpi = (icon, val, label, cls='') =>
+      `<div class="or-kpi ${cls}"><div class="or-kpi-val">${val}</div><div class="or-kpi-label">${icon} ${label}</div></div>`;
+
+    const sectionHead = (title, sub='') =>
+      `<div class="or-section-head"><span class="or-section-title">${title}</span>${sub?`<span class="or-section-sub">${sub}</span>`:''}</div>`;
+
+    const row = (cells) => `<tr>${cells.map(c=>`<td class="or-td">${c}</td>`).join('')}</tr>`;
+
+    // ── Section 1: Fleet ─────────────────────────────────────────
+    let html = sectionHead('🚗 Fleet Status', `${total} vehicles total`);
+    html += `<div class="or-kpi-row">
+      ${kpi('🚗',''+onTrip.length,'On Trip','or-kpi-trip')}
+      ${kpi('✅',''+available.length,'Available','or-kpi-ok')}
+      ${kpi('🔧',''+atShop.length,'At Shop','or-kpi-shop')}
+      ${kpi('🧹',''+needsClean.length,'Needs Cleaning','or-kpi-warn')}
+      ${kpi('⛽',''+noOilVehicles.length,'No Oil Record','or-kpi-crit')}
+    </div>`;
+
+    if (compIssues.length) {
+      html += sectionHead('⚠️ Compliance Issues', `${compIssues.length} vehicles`);
+      html += `<table class="or-table"><thead><tr><th>Vehicle</th><th>Type</th><th>Status</th></tr></thead><tbody>`;
+      html += compIssues.slice(0,8).map(c => row([
+        escapeHtml(c.plate),
+        c.label,
+        c.expired ? `<span class="or-badge or-badge-crit">EXPIRED</span>` : `<span class="or-badge or-badge-warn">Expires in ${c.daysLeft}d</span>`,
+      ])).join('');
+      html += `</tbody></table>`;
+    }
+
+    // ── Section 2: Work Orders ───────────────────────────────────
+    html += sectionHead('🔧 Open Work Orders', `${wos.length} total`);
+    html += `<div class="or-kpi-row">
+      ${kpi('🔴',''+woByPriority.critical.length,'Critical','or-kpi-crit')}
+      ${kpi('🟠',''+woByPriority.high.length,'High','or-kpi-high')}
+      ${kpi('🟡',''+woByPriority.standard.length,'Standard','or-kpi-warn')}
+      ${kpi('🟢',''+woByPriority.monitor.length,'Monitor','')}
+    </div>`;
+
+    if (oldestOpen.length) {
+      html += `<div class="or-subsection">Oldest Unscheduled Issues</div>`;
+      html += `<table class="or-table"><thead><tr><th>Vehicle</th><th>Issue</th><th>Priority</th><th>Open Since</th></tr></thead><tbody>`;
+      html += oldestOpen.map(w => {
+        const v = vehiclesCache.find(x=>x.id===w.vehicleId);
+        const plate = v ? v.plate : '?';
+        const ageMs = w.createdAt?.toDate ? Date.now() - w.createdAt.toDate().getTime() : 0;
+        const ageDays = Math.floor(ageMs / 86400000);
+        const ageCls = ageDays > 14 ? 'or-badge-crit' : ageDays > 7 ? 'or-badge-warn' : '';
+        const PRI = {critical:'🔴 Critical',high:'🟠 High',standard:'🟡 Standard',monitor:'🟢 Monitor'};
+        return row([escapeHtml(plate), escapeHtml((w.text||'').slice(0,60)), PRI[w.repairPriority]||'—',
+          `<span class="or-badge ${ageCls}">${ageDays > 0 ? ageDays + 'd ago' : 'Today'}</span>`]);
+      }).join('');
+      html += `</tbody></table>`;
+    }
+
+    if (topWoVehicles.length) {
+      html += `<div class="or-subsection">Most Issues Per Vehicle</div>`;
+      html += `<div class="or-pill-row">${topWoVehicles.map(({plate,cnt}) =>
+        `<span class="or-pill or-pill-${cnt >= 3 ? 'crit' : cnt >= 2 ? 'warn' : 'ok'}">${escapeHtml(plate)}: ${cnt}</span>`
+      ).join('')}</div>`;
+    }
+
+    // ── Section 3: Maintenance ───────────────────────────────────
+    html += sectionHead('🔩 Maintenance', `Month: ${monthMaintCount} services · $${monthMaintCost.toFixed(0)}`);
+    html += `<div class="or-kpi-row">
+      ${kpi('🚨',''+overdueSvc.length,'Overdue Services','or-kpi-crit')}
+      ${kpi('⏰',''+dueSoonSvc.length,'Due in 30 Days','or-kpi-warn')}
+      ${kpi('🔧',''+monthMaintCount,'This Month','')}
+      ${kpi('💰','$'+monthMaintCost.toFixed(0),'Month Spend','')}
+    </div>`;
+
+    if (overdueSvc.length) {
+      html += `<div class="or-subsection">Overdue Services</div>`;
+      html += `<div class="or-pill-row">${overdueSvc.slice(0,8).map(s =>
+        `<span class="or-pill or-pill-crit">${escapeHtml(s.plate)}: ${escapeHtml(s.service)}</span>`
+      ).join('')}</div>`;
+    }
+    if (noOilVehicles.length) {
+      html += `<div class="or-subsection">No Oil Change On Record</div>`;
+      html += `<div class="or-pill-row">${noOilVehicles.map(v =>
+        `<span class="or-pill or-pill-crit">⛽ ${escapeHtml(v.plate)}</span>`
+      ).join('')}</div>`;
+    }
+
+    // ── Section 4: Financials ────────────────────────────────────
+    html += sectionHead('💰 Financials', `Month total: $${monthExpTotal.toFixed(0)}`);
+    const catEntries = Object.entries(expByCat).sort((a,b)=>b[1]-a[1]);
+    html += `<div class="or-kpi-row">
+      ${catEntries.slice(0,4).map(([cat, amt]) => kpi('💸','$'+amt.toFixed(0), escapeHtml(cat))).join('')}
+    </div>`;
+
+    if (urgentBills.length) {
+      html += `<div class="or-subsection">Bills Due in 30 Days</div>`;
+      html += `<table class="or-table"><thead><tr><th>Bill</th><th>Amount</th><th>Due</th></tr></thead><tbody>`;
+      html += urgentBills.slice(0,6).map(b => {
+        const isPast = b.dueDate && b.dueDate < today;
+        return row([
+          escapeHtml(b.name || b.description || '?'),
+          `$${parseFloat(b.amount||0).toFixed(0)}`,
+          `<span class="or-badge ${isPast ? 'or-badge-crit' : 'or-badge-warn'}">${b.dueDate||'?'}${isPast?' OVERDUE':''}</span>`,
+        ]);
+      }).join('');
+      html += `</tbody></table>`;
+    }
+
+    // ── Section 5: Recent Activity ───────────────────────────────
+    if (recentActivity.length) {
+      html += sectionHead('👥 Recent Staff Activity', `Last ${recentActivity.length} actions`);
+      html += `<table class="or-table"><thead><tr><th>Who</th><th>Action</th><th>When</th></tr></thead><tbody>`;
+      html += recentActivity.slice(0,12).map(a => row([
+        escapeHtml(a.userName || '?'),
+        escapeHtml((a.action || '') + (a.details?.plate ? ' · ' + a.details.plate : '')),
+        escapeHtml(a.atDisplay || ''),
+      ])).join('');
+      html += `</tbody></table>`;
+    }
+
+    // ── Section 6: Users ─────────────────────────────────────────
+    html += sectionHead('👤 Team', `${users.length} users`);
+    html += `<div class="or-pill-row">${users.map(u =>
+      `<span class="or-pill or-pill-${u.role==='admin'?'crit':u.role==='manager'?'warn':'ok'}">${escapeHtml(u.displayName||u.email||'?')} · ${u.role||'user'}</span>`
+    ).join('')}</div>`;
+
+    html += `<div style="font-size:0.72rem;color:#9ca3af;text-align:right;margin-top:16px;">Generated ${new Date().toLocaleString('en-US',{timeZone:APP_TIMEZONE,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',hour12:true})}</div>`;
+
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<p class="hint" style="color:#ef4444;padding:16px;">Failed to load ops report: ${escapeHtml(e.message)}</p>`;
+    console.error('loadOpsReport error:', e);
+  }
 }
 
 async function loadAdminUsers() {
@@ -7763,7 +8011,6 @@ let _activeWoCategoryFilter = null; // null = show all
 let _pendingWOResolveId = null;    // set when close-out sends user to maintenance form
 let _woCountByVehicle = {};        // vehicleId → ALL open WO count (for red badge on vehicle chips)
 let _woUrgentCountByVehicle = {};  // vehicleId → non-monitor WO count (blocks Fleet Ready)
-let _woGroupByLocation = false;    // toggle: group by vehicle home location vs priority
 let _woGroupByLocation = false;    // toggle: group by vehicle home location vs priority
 
 // ================================================================
