@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260703">
+  <link rel="stylesheet" href="style.css?v=20260721">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -77,6 +77,7 @@
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
       </button>
+      <button id="btn-ops-v2" class="ops-v2-nav-btn" title="Operations V2" onclick="openOpsV2()" style="display:none;">🚀 Ops V2</button>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
         <button id="btn-change-password" class="btn btn-sm btn-outline btn-icon-mobile" title="Change Password">Change Password</button>
@@ -2147,6 +2148,10 @@
           <span class="fab-action-icon">🎯</span>
           <span class="fab-action-label">Operations Hub</span>
         </button>
+        <button class="fab-action-btn" id="fab-ops-v2-btn" onclick="closeFabMenu(); openOpsV2();" style="display:none;">
+          <span class="fab-action-icon">🚀</span>
+          <span class="fab-action-label">Ops V2</span>
+        </button>
         <button class="fab-action-btn" onclick="closeFabMenu(); openMailbox();">
           <span class="fab-action-icon">📬</span>
           <span class="fab-action-label">Send Message</span>
@@ -2532,6 +2537,195 @@
       <div id="jason-confetti" style="position:absolute;inset:0;pointer-events:none;overflow:hidden;"></div>
     </div>
   </div>
+
+  <!-- ==================== OPERATIONS V2 OVERLAY ==================== -->
+  <div id="ops-v2-overlay" class="ops-v2-overlay" style="display:none;">
+    <div class="ops-v2-container">
+
+      <!-- V2 Header -->
+      <div class="ops-v2-header">
+        <div class="ops-v2-header-left">
+          <span class="ops-v2-logo">🚀</span>
+          <div>
+            <h2 class="ops-v2-title">Operations V2</h2>
+            <span class="ops-v2-subtitle">Aloha Fleet Management</span>
+          </div>
+        </div>
+        <div class="ops-v2-header-right">
+          <span id="ops-v2-clock" class="ops-v2-clock"></span>
+          <button class="ops-v2-close-btn" onclick="closeOpsV2()" aria-label="Close">&times;</button>
+        </div>
+      </div>
+
+      <!-- Tab Bar -->
+      <div class="ops-v2-tab-bar" id="ops-v2-tab-bar">
+        <button class="ops-v2-tab active" data-tab="dashboard" onclick="switchOpsV2Tab('dashboard')">📊 Dashboard</button>
+        <button class="ops-v2-tab ops-v2-tab-dispatch" data-tab="dispatch" onclick="switchOpsV2Tab('dispatch')">🚗 Dispatch</button>
+        <button class="ops-v2-tab" data-tab="tasks" onclick="switchOpsV2Tab('tasks')">🎯 Tasks <span id="ops-v2-tasks-badge" class="ops-v2-tab-badge" style="display:none;"></span></button>
+        <button class="ops-v2-tab" data-tab="checklist" onclick="switchOpsV2Tab('checklist')">📋 Checklist</button>
+        <button class="ops-v2-tab" data-tab="chat" onclick="switchOpsV2Tab('chat')">💬 Chat <span id="ops-v2-chat-badge" class="ops-v2-tab-badge ops-v2-chat-badge-pill" style="display:none;"></span></button>
+      </div>
+
+      <!-- Tab Panels -->
+      <div class="ops-v2-body">
+
+        <!-- ---- DASHBOARD TAB ---- -->
+        <div id="ops-v2-panel-dashboard" class="ops-v2-panel">
+          <div class="ops-v2-kpi-grid" id="ops-v2-kpi-grid">
+            <div class="ops-v2-kpi-card ops-v2-kpi-available">
+              <div class="ops-v2-kpi-value" id="kpi-available">—</div>
+              <div class="ops-v2-kpi-label">Available</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-ontrip">
+              <div class="ops-v2-kpi-value" id="kpi-ontrip">—</div>
+              <div class="ops-v2-kpi-label">On Trip</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-shop">
+              <div class="ops-v2-kpi-value" id="kpi-shop">—</div>
+              <div class="ops-v2-kpi-label">In Shop</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-total">
+              <div class="ops-v2-kpi-value" id="kpi-total">—</div>
+              <div class="ops-v2-kpi-label">Total Fleet</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-urgent">
+              <div class="ops-v2-kpi-value" id="kpi-urgent">—</div>
+              <div class="ops-v2-kpi-label">Urgent Tasks</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-overdue">
+              <div class="ops-v2-kpi-value" id="kpi-overdue">—</div>
+              <div class="ops-v2-kpi-label">Overdue</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-mine">
+              <div class="ops-v2-kpi-value" id="kpi-mine">—</div>
+              <div class="ops-v2-kpi-label">My Tasks</div>
+            </div>
+            <div class="ops-v2-kpi-card ops-v2-kpi-checklist">
+              <div class="ops-v2-kpi-value" id="kpi-checklist">—</div>
+              <div class="ops-v2-kpi-label">Checklist Done</div>
+            </div>
+          </div>
+
+          <!-- Today's Priority Items -->
+          <div class="ops-v2-section">
+            <div class="ops-v2-section-header">
+              <h4>⚡ Needs Attention</h4>
+              <button class="ops-v2-link-btn" onclick="switchOpsV2Tab('tasks')">View All Tasks →</button>
+            </div>
+            <div id="ops-v2-priority-list" class="ops-v2-priority-list">
+              <p class="ops-v2-empty">Loading…</p>
+            </div>
+          </div>
+
+          <!-- Quick Actions -->
+          <div class="ops-v2-section">
+            <h4 style="margin-bottom:10px;">⚡ Quick Actions</h4>
+            <div class="ops-v2-quick-actions">
+              <button class="ops-v2-qa-btn" onclick="switchOpsV2Tab('tasks'); setTimeout(()=>openOpsV2AddTask(),200)">➕ Add Task</button>
+              <button class="ops-v2-qa-btn" onclick="switchOpsV2Tab('dispatch')">🚗 View Dispatch</button>
+              <button class="ops-v2-qa-btn" onclick="switchOpsV2Tab('checklist')">📋 Today's Checklist</button>
+              <button class="ops-v2-qa-btn" onclick="switchOpsV2Tab('chat')">💬 Team Chat</button>
+              <button class="ops-v2-qa-btn ops-v2-qa-legacy" onclick="closeOpsV2(); openTaskPanel()">🎯 Legacy Hub →</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---- DISPATCH TAB ---- -->
+        <div id="ops-v2-panel-dispatch" class="ops-v2-panel" style="display:none;">
+          <div class="ops-v2-dispatch-toolbar">
+            <div class="ops-v2-dispatch-filters">
+              <button class="ops-v2-filter-btn active" data-filter="all" onclick="filterDispatch('all',this)">All</button>
+              <button class="ops-v2-filter-btn" data-filter="available" onclick="filterDispatch('available',this)">✅ Available</button>
+              <button class="ops-v2-filter-btn" data-filter="on-trip" onclick="filterDispatch('on-trip',this)">🚗 On Trip</button>
+              <button class="ops-v2-filter-btn" data-filter="repair-shop" onclick="filterDispatch('repair-shop',this)">🔧 In Shop</button>
+            </div>
+            <button class="ops-v2-refresh-btn" onclick="loadOpsV2Dispatch()" title="Refresh">↻</button>
+          </div>
+          <div id="ops-v2-dispatch-grid" class="ops-v2-dispatch-grid">
+            <p class="ops-v2-empty" style="padding:24px;">Loading fleet…</p>
+          </div>
+        </div>
+
+        <!-- ---- TASKS TAB ---- -->
+        <div id="ops-v2-panel-tasks" class="ops-v2-panel" style="display:none;">
+          <div class="ops-v2-tasks-toolbar">
+            <div class="ops-v2-task-filters">
+              <button class="ops-v2-filter-btn active" data-filter="all" onclick="filterOpsV2Tasks('all',this)">All</button>
+              <button class="ops-v2-filter-btn" data-filter="mine" onclick="filterOpsV2Tasks('mine',this)">👤 Mine</button>
+              <button class="ops-v2-filter-btn" data-filter="urgent" onclick="filterOpsV2Tasks('urgent',this)">🚨 Urgent</button>
+              <button class="ops-v2-filter-btn" data-filter="overdue" onclick="filterOpsV2Tasks('overdue',this)">⏰ Overdue</button>
+            </div>
+            <button class="ops-v2-add-task-btn" onclick="openOpsV2AddTask()">➕ Add</button>
+          </div>
+
+          <!-- Inline Add Task Form (hidden by default) -->
+          <div id="ops-v2-add-task-form" class="ops-v2-add-task-form" style="display:none;">
+            <input type="text" id="ops-v2-task-title" class="ops-v2-input" placeholder="Task title…" maxlength="200">
+            <div class="ops-v2-task-form-row">
+              <select id="ops-v2-task-priority" class="ops-v2-select">
+                <option value="normal">🔵 Normal</option>
+                <option value="urgent">🚨 Urgent</option>
+                <option value="high">🟠 High</option>
+                <option value="low">🟢 Low</option>
+              </select>
+              <input type="date" id="ops-v2-task-due" class="ops-v2-input ops-v2-date-input">
+              <select id="ops-v2-task-assignee" class="ops-v2-select">
+                <option value="">Team (all)</option>
+              </select>
+            </div>
+            <div class="ops-v2-task-form-actions">
+              <button class="ops-v2-btn-outline" onclick="closeOpsV2AddTask()">Cancel</button>
+              <button class="ops-v2-btn-primary" onclick="submitOpsV2Task()">Save Task</button>
+            </div>
+          </div>
+
+          <div id="ops-v2-tasks-list" class="ops-v2-tasks-list">
+            <p class="ops-v2-empty">Loading tasks…</p>
+          </div>
+        </div>
+
+        <!-- ---- CHECKLIST TAB ---- -->
+        <div id="ops-v2-panel-checklist" class="ops-v2-panel" style="display:none;">
+          <div class="ops-v2-checklist-header">
+            <div>
+              <h4 id="ops-v2-checklist-date">Today's Checklist</h4>
+              <span class="ops-v2-checklist-progress" id="ops-v2-checklist-progress">Loading…</span>
+            </div>
+            <button class="ops-v2-add-task-btn" onclick="openOpsV2AddCheckItem()">➕ Add Item</button>
+          </div>
+
+          <!-- Inline add check item -->
+          <div id="ops-v2-add-check-form" class="ops-v2-add-task-form" style="display:none;">
+            <input type="text" id="ops-v2-check-text" class="ops-v2-input" placeholder="New checklist item…" maxlength="150">
+            <div class="ops-v2-task-form-actions">
+              <button class="ops-v2-btn-outline" onclick="closeOpsV2AddCheckItem()">Cancel</button>
+              <button class="ops-v2-btn-primary" onclick="submitOpsV2CheckItem()">Add</button>
+            </div>
+          </div>
+
+          <div id="ops-v2-checklist-items" class="ops-v2-checklist-items">
+            <p class="ops-v2-empty">Loading checklist…</p>
+          </div>
+        </div>
+
+        <!-- ---- CHAT TAB ---- -->
+        <div id="ops-v2-panel-chat" class="ops-v2-panel ops-v2-chat-panel" style="display:none;">
+          <div class="ops-v2-chat-header">
+            <span>💬 Team Channel</span>
+            <span id="ops-v2-chat-online" class="ops-v2-chat-online"></span>
+          </div>
+          <div id="ops-v2-chat-messages" class="ops-v2-chat-messages">
+            <p class="ops-v2-empty" style="text-align:center;padding:30px;">Loading messages…</p>
+          </div>
+          <div class="ops-v2-chat-input-row">
+            <input type="text" id="ops-v2-chat-input" class="ops-v2-chat-input" placeholder="Message the team…" maxlength="500" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendOpsV2Chat();}">
+            <button class="ops-v2-chat-send-btn" onclick="sendOpsV2Chat()">Send ➤</button>
+          </div>
+        </div>
+
+      </div><!-- end ops-v2-body -->
+    </div><!-- end ops-v2-container -->
+  </div><!-- end ops-v2-overlay -->
 
   <!-- Datalist for :00/:30 time snapping (private trip time inputs) -->
   <datalist id="half-hour-times">
