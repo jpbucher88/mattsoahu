@@ -7052,6 +7052,7 @@ async function loadAdminUsers() {
             </select>
             <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
             <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">👁 View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
+            <button class="btn btn-sm ${data.crmAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleCrmAccess('${doc.id}', ${!!data.crmAccess})" title="Toggle CRM sales dashboard access">🤝 CRM: ${data.crmAccess ? 'On' : 'Off'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
         </div>
@@ -7109,6 +7110,19 @@ window.toggleTimeclockViewAll = async function(uid, currentVal) {
   } catch(e) {
     console.error('toggleTimeclockViewAll error:', e);
     toast('Failed to update permission.', 'error');
+  }
+};
+
+window.toggleCrmAccess = async function(uid, currentAccess) {
+  if (currentUserRole !== 'admin') return;
+  const newAccess = !currentAccess;
+  try {
+    await db.collection('users').doc(uid).update({ crmAccess: newAccess });
+    toast(newAccess ? 'CRM access granted.' : 'CRM access removed.', 'success');
+    loadAdminUsers();
+  } catch(e) {
+    console.error('toggleCrmAccess error:', e);
+    toast('Failed to update CRM access.', 'error');
   }
 };
 
@@ -19134,20 +19148,22 @@ window.exitRolePreview = function() {
 };
 
 
-
-
+// ================================================================
+// CRM V1 - SALES DASHBOARD
 
 
 // ================================================================
-// CRM V1 � SALES DASHBOARD
+// CRM V1 - SALES DASHBOARD
 // ================================================================
 
 let _crmDashLoaded = false;
-let _crmAllLeads = [];      // cache for client-side filtering
+let _crmAllLeads = [];
 
-// -- Open / Close / Tab Switch -------------------------------------
+// _el: safe getElementById helper
+function _el(id) { return document.getElementById(id); }
+
 window.openCrmDash = function() {
-  const overlay = crm-dash-overlay;
+  var overlay = _el('crm-dash-overlay');
   if (!overlay) return;
   overlay.style.display = 'flex';
   if (!_crmDashLoaded) {
@@ -19158,17 +19174,17 @@ window.openCrmDash = function() {
 };
 
 window.closeCrmDash = function() {
-  const overlay = crm-dash-overlay;
+  var overlay = _el('crm-dash-overlay');
   if (overlay) overlay.style.display = 'none';
 };
 
 window.switchCrmTab = function(tabId, btn) {
-  document.querySelectorAll('.crm-tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.crm-tab-content').forEach(c => {
+  document.querySelectorAll('.crm-tab-btn').forEach(function(b) { b.classList.remove('active'); });
+  document.querySelectorAll('.crm-tab-content').forEach(function(c) {
     if (c.closest && c.closest('.crm-dash-panel')) c.style.display = 'none';
   });
   if (btn) btn.classList.add('active');
-  const tab = ;
+  var tab = document.getElementById(tabId);
   if (tab) tab.style.display = 'block';
   if (tabId === 'ctab-pipeline') _loadCrmPipeline();
   else if (tabId === 'ctab-leads') _loadCrmLeads();
@@ -19177,550 +19193,389 @@ window.switchCrmTab = function(tabId, btn) {
   else if (tabId === 'ctab-team') _loadCrmTeam();
 };
 
-// -- KPI Summary Bar -----------------------------------------------
 async function _loadCrmKpis() {
   try {
-    const snap = await db.collection('crm_leads').get();
-    const leads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    var snap = await db.collection('crm_leads').get();
+    var leads = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
     _crmAllLeads = leads;
-
-    const thirtyAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-    const won = leads.filter(l => l.status === 'won');
-    const lost = leads.filter(l => l.status === 'lost');
-    const lostRecent = lost.filter(l => l.updatedAt && l.updatedAt.toDate && l.updatedAt.toDate() > thirtyAgo);
-    const active = leads.filter(l => !['won','lost'].includes(l.status));
-    const pipelineVal = active.reduce((s, l) => s + (parseFloat(l.value) || 0), 0);
-    const winRate = (won.length + lost.length) > 0
-      ? Math.round((won.length / (won.length + lost.length)) * 100) : 0;
-
-    // Count trips ending within 48h
-    const now = new Date();
-    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-    const endingSoon = (vehiclesCache || []).filter(v => {
+    var thirtyAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    var won = leads.filter(function(l) { return l.status === 'won'; });
+    var lost = leads.filter(function(l) { return l.status === 'lost'; });
+    var lostRecent = lost.filter(function(l) { return l.updatedAt && l.updatedAt.toDate && l.updatedAt.toDate() > thirtyAgo; });
+    var active = leads.filter(function(l) { return l.status !== 'won' && l.status !== 'lost'; });
+    var pipelineVal = active.reduce(function(s, l) { return s + (parseFloat(l.value) || 0); }, 0);
+    var winRate = (won.length + lost.length) > 0 ? Math.round((won.length / (won.length + lost.length)) * 100) : 0;
+    var now = new Date();
+    var in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    var endingSoon = (vehiclesCache || []).filter(function(v) {
       if (v.tripStatus !== 'on-trip' || !v.tripExpectedEnd) return false;
-      const end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
+      var end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
       return end >= now && end <= in48h;
     });
-
-    const setEl = (id, val) => { const el = ; if (el) el.textContent = val; };
+    function setEl(id, val) { var el = _el(id); if (el) el.textContent = val; }
     setEl('crm-kpi-total', leads.length);
-    setEl('crm-kpi-pipeline', pipelineVal > 0 ? '$' + Math.round(pipelineVal) : '');
+    setEl('crm-kpi-pipeline', pipelineVal > 0 ? '$' + Math.round(pipelineVal) : '$0');
     setEl('crm-kpi-winrate', winRate + '%');
     setEl('crm-kpi-lost', lostRecent.length);
     setEl('crm-kpi-alerts', endingSoon.length);
-
-    // Update header badge
-    const badge = crm-alert-count;
-    if (badge) {
-      badge.textContent = endingSoon.length;
-      badge.className = 'task-alert-count' + (endingSoon.length > 0 ? '' : ' count-zero');
-    }
-  } catch (e) {
-    console.warn('CRM KPI error:', e);
-  }
+    var badge = _el('crm-alert-count');
+    if (badge) { badge.textContent = endingSoon.length; badge.className = 'task-alert-count' + (endingSoon.length > 0 ? '' : ' count-zero'); }
+  } catch (e) { console.warn('CRM KPI error:', e); }
 }
 
-// -- Pipeline (Kanban) ---------------------------------------------
 window._loadCrmPipeline = async function() {
-  const board = crm-pipeline-board;
+  var board = _el('crm-pipeline-board');
   if (!board) return;
-  board.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading pipeline�</p>';
+  board.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading pipeline...</p>';
   try {
-    const snap = await db.collection('crm_leads').orderBy('createdAt', 'desc').get();
-    const leads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    var snap = await db.collection('crm_leads').orderBy('createdAt', 'desc').get();
+    var leads = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
     _crmAllLeads = leads;
-
-    const COLS = [
-      { key: 'new',       label: '?? New',         cls: 'col-new' },
-      { key: 'contacted', label: '?? Contacted',    cls: 'col-contacted' },
-      { key: 'qualified', label: '? Qualified',    cls: 'col-qualified' },
-      { key: 'proposal',  label: '?? Proposal',     cls: 'col-proposal' },
-      { key: 'won',       label: '?? Won',           cls: 'col-won' },
-      { key: 'lost',      label: '? Lost',          cls: 'col-lost' },
+    var COLS = [
+      { key: 'new', label: 'New Inquiry', emoji: '🆕', cls: 'col-new' },
+      { key: 'contacted', label: 'Contacted', emoji: '📞', cls: 'col-contacted' },
+      { key: 'qualified', label: 'Qualified', emoji: '✅', cls: 'col-qualified' },
+      { key: 'proposal', label: 'Proposal Sent', emoji: '📄', cls: 'col-proposal' },
+      { key: 'won', label: 'Won', emoji: '🏆', cls: 'col-won' },
+      { key: 'lost', label: 'Lost', emoji: '❌', cls: 'col-lost' },
     ];
-
-    let html = '';
-    COLS.forEach(col => {
-      const colLeads = leads.filter(l => l.status === col.key);
-      const colVal = colLeads.reduce((s, l) => s + (parseFloat(l.value) || 0), 0);
-      const valTag = colVal > 0 ? ' � $' + Math.round(colVal) : '';
-      html += '<div class=crm-pipeline-col ' + col.cls + '>'
-        + '<div class=crm-pipeline-col-header>'
-        + '<span>' + col.label + '</span>'
-        + '<span class=badge style=background:#e5e7eb;color:#374151;font-size:0.7rem;>' + colLeads.length + valTag + '</span>'
-        + '</div><div class=crm-pipeline-col-body>';
+    var html = '';
+    COLS.forEach(function(col) {
+      var colLeads = leads.filter(function(l) { return l.status === col.key; });
+      var colVal = colLeads.reduce(function(s, l) { return s + (parseFloat(l.value) || 0); }, 0);
+      var valTag = colVal > 0 ? ' - $' + Math.round(colVal) : '';
+      html += '<div class="crm-pipeline-col ' + col.cls + '"><div class="crm-pipeline-col-header"><span>' + col.emoji + ' ' + col.label + '</span><span class="badge" style="background:#e5e7eb;color:#374151;font-size:0.7rem;">' + colLeads.length + valTag + '</span></div><div class="crm-pipeline-col-body">';
       if (!colLeads.length) {
-        html += '<p class=hint style=font-size:0.76rem;text-align:center;padding:10px 0;>Empty</p>';
+        html += '<p class="hint" style="font-size:0.76rem;text-align:center;padding:10px 0;">Empty</p>';
       } else {
-        const shown = col.key === 'lost' ? colLeads.slice(0, 5) : colLeads;
-        shown.forEach(l => { html += _buildCrmPipelineCard(l); });
-        if (col.key === 'lost' && colLeads.length > 5) {
-          html += '<p class=hint style=font-size:0.74rem;text-align:center;>+'
-            + (colLeads.length - 5) + ' more ? Lost tab</p>';
-        }
+        var shown = col.key === 'lost' ? colLeads.slice(0, 5) : colLeads;
+        shown.forEach(function(l) { html += _buildCrmPipelineCard(l); });
+        if (col.key === 'lost' && colLeads.length > 5) html += '<p class="hint" style="font-size:0.74rem;text-align:center;">+' + (colLeads.length - 5) + ' more in Lost tab</p>';
       }
       html += '</div></div>';
     });
-
     board.innerHTML = html;
     _loadCrmKpis();
-  } catch (e) {
-    board.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
-  }
+  } catch (e) { board.innerHTML = '<p class="hint" style="color:#dc2626;padding:24px;">Error: ' + escapeHtml(e.message) + '</p>'; }
 };
 
 function _buildCrmPipelineCard(l) {
-  const name = escapeHtml(l.name || 'Unknown');
-  const phone = escapeHtml((l.phone || l.email || '').slice(0, 22));
-  const source = l.source ? ' � ' + escapeHtml(l.source) : '';
-  const assigned = l.assignedTo ? '<span style=font-size:0.7rem;color:#6b7280;>?? ' + escapeHtml(l.assignedTo) + '</span>' : '';
-  const value = l.value ? '<div class=crm-card-value>$' + parseFloat(l.value).toFixed(0) + '</div>' : '';
-  const dates = l.tripStart ? '<div class=crm-card-meta>' + escapeHtml(l.tripStart) + (l.tripEnd ? ' ? ' + escapeHtml(l.tripEnd) : '') + '</div>' : '';
-  const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, \\');
-  return '<div class=crm-pipeline-card status-' + l.status + ' onclick=editCrmLead(\'' + l.id + '\')>'
-    + '<div class=crm-card-name>' + name + '</div>'
-    + '<div class=crm-card-meta>' + phone + source + '</div>'
+  var name = escapeHtml(l.name || 'Unknown');
+  var phone = escapeHtml((l.phone || l.email || '').slice(0, 22));
+  var source = l.source ? ' - ' + escapeHtml(l.source) : '';
+  var assigned = l.assignedTo ? '<span style="font-size:0.7rem;color:#6b7280;">👤 ' + escapeHtml(l.assignedTo) + '</span>' : '<span></span>';
+  var value = l.value ? '<div class="crm-card-value">$' + parseFloat(l.value).toFixed(0) + '</div>' : '';
+  var dates = l.tripStart ? '<div class="crm-card-meta">' + escapeHtml(l.tripStart) + (l.tripEnd ? ' to ' + escapeHtml(l.tripEnd) : '') + '</div>' : '';
+  var safeId = l.id; var safeName = name.replace(/'/g, '');
+  return '<div class="crm-pipeline-card status-' + l.status + '" onclick="editCrmLead(' + "'" + safeId + "'" + ')">'
+    + '<div class="crm-card-name">' + name + '</div><div class="crm-card-meta">' + phone + source + '</div>'
     + dates + value
-    + '<div style=display:flex;justify-content:space-between;align-items:center;margin-top:6px;>'
-    + assigned
-    + '<button class=btn btn-xs btn-outline style=font-size:0.68rem;padding:2px 6px; onclick=event.stopPropagation();openCrmCommModal(\'' + l.id + '\',\'' + safeName + '\')>??</button>'
-    + '</div></div>';
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">' + assigned
+    + '<button class="btn btn-xs btn-outline" style="font-size:0.68rem;padding:2px 6px;" onclick="event.stopPropagation();openCrmCommModal(' + "'" + safeId + "'" + ',' + "'" + safeName + "'" + ')">💬</button></div></div>';
 }
 
-// -- All Leads Table -----------------------------------------------
 window._loadCrmLeads = async function() {
-  const content = crm-leads-content;
+  var content = _el('crm-leads-content');
   if (!content) return;
-  content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading�</p>';
+  content.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading...</p>';
   try {
-    const snap = await db.collection('crm_leads').orderBy('createdAt', 'desc').get();
-    _crmAllLeads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    var snap = await db.collection('crm_leads').orderBy('createdAt', 'desc').get();
+    _crmAllLeads = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
     _renderCrmLeadsTable(_crmAllLeads);
-  } catch (e) {
-    content.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
-  }
+  } catch (e) { content.innerHTML = '<p class="hint" style="color:#dc2626;padding:24px;">Error: ' + escapeHtml(e.message) + '</p>'; }
 };
 
 function _renderCrmLeadsTable(leads) {
-  const content = crm-leads-content;
+  var content = _el('crm-leads-content');
   if (!content) return;
   if (!leads.length) {
-    content.innerHTML = '<div style=text-align:center;padding:40px 20px;>'
-      + '<p style=color:#6b7280;margin-bottom:16px;>No leads match. Try adjusting filters or add a new lead.</p>'
-      + '<button class=btn btn-primary onclick=openAddLeadModal()>+ Add Lead</button></div>';
+    content.innerHTML = '<div style="text-align:center;padding:40px 20px;"><p style="color:#6b7280;margin-bottom:16px;">No leads. Add your first lead to get started.</p><button class="btn btn-primary" onclick="openAddLeadModal()">+ Add Lead</button></div>';
     return;
   }
-  const SL = { new:'New', contacted:'Contacted', qualified:'Qualified', proposal:'Proposal Sent', won:'Won ?', lost:'Lost ?' };
-  const SI = { turo:'??', direct:'??', instagram:'??', referral:'??', phone:'??', other:'?' };
-  const REASONS = { price:'Price', availability:'Availability', competitor:'Competitor', timing:'Timing', 'no-response':'No Response', other:'Other' };
-  let html = '<div style=font-size:0.8rem;color:#6b7280;margin-bottom:8px;text-align:right;>' + leads.length + ' lead' + (leads.length !== 1 ? 's' : '') + '</div>';
-  leads.forEach(l => {
-    const icon = SI[l.source] || '?';
-    const val = l.value ? '$' + parseFloat(l.value).toFixed(0) : '';
-    const dates = l.tripStart ? escapeHtml(l.tripStart) + (l.tripEnd ? ' ? ' + escapeHtml(l.tripEnd) : '') : '';
-    const lostTag = l.status === 'lost' && l.lostReason
-      ? '<span style=font-size:0.7rem;color:#dc2626;background:#fee2e2;padding:2px 6px;border-radius:6px;margin-left:6px;>' + escapeHtml(REASONS[l.lostReason] || l.lostReason) + '</span>' : '';
-    const infoParts = [l.phone && escapeHtml(l.phone), l.email && escapeHtml(l.email), l.assignedTo && '?? ' + escapeHtml(l.assignedTo), dates].filter(Boolean);
-    const safeName = escapeHtml(l.name || '').replace(/'/g, \\');
-    html += '<div class=crm-lead-row onclick=editCrmLead(\'' + l.id + '\')>'
-      + '<div><div class=crm-lead-name>' + icon + ' ' + escapeHtml(l.name || 'Unknown') + lostTag + '</div>'
-      + '<div class=crm-lead-info>' + infoParts.join(' � ') + '</div></div>'
-      + '<span class=crm-status-badge crm-status-' + (l.status || 'new') + '>' + (SL[l.status] || l.status) + '</span>'
-      + '<span style=font-weight:700;color:#059669;font-size:0.88rem;>' + val + '</span>'
-      + '<div style=display:flex;gap:4px;>'
-      + '<button class=btn btn-xs btn-outline title=Log communication onclick=event.stopPropagation();openCrmCommModal(\'' + l.id + '\',\'' + safeName + '\')>??</button>'
-      + '<button class=btn btn-xs btn-outline title=Edit lead onclick=event.stopPropagation();editCrmLead(\'' + l.id + '\')>??</button>'
-      + '<button class=btn btn-xs btn-outline style=color:#dc2626; title=Delete lead onclick=event.stopPropagation();deleteCrmLead(\'' + l.id + '\',\'' + safeName + '\')>??</button>'
+  var SL = { new:'New', contacted:'Contacted', qualified:'Qualified', proposal:'Proposal Sent', won:'Won ✅', lost:'Lost ❌' };
+  var SI = { turo:'🚗', direct:'🌐', instagram:'📸', referral:'🤝', phone:'📞', other:'⭐' };
+  var REASONS = { price:'Price', availability:'Availability', competitor:'Competitor', timing:'Timing', 'no-response':'No Response', other:'Other' };
+  var html = '<div style="font-size:0.8rem;color:#6b7280;margin-bottom:8px;text-align:right;">' + leads.length + ' lead' + (leads.length !== 1 ? 's' : '') + '</div>';
+  leads.forEach(function(l) {
+    var icon = SI[l.source] || '⭐';
+    var val = l.value ? '$' + parseFloat(l.value).toFixed(0) : '';
+    var dates = l.tripStart ? escapeHtml(l.tripStart) + (l.tripEnd ? ' to ' + escapeHtml(l.tripEnd) : '') : '';
+    var lostTag = l.status === 'lost' && l.lostReason ? '<span style="font-size:0.7rem;color:#dc2626;background:#fee2e2;padding:2px 6px;border-radius:6px;margin-left:6px;">' + escapeHtml(REASONS[l.lostReason] || l.lostReason) + '</span>' : '';
+    var infoParts = [l.phone && escapeHtml(l.phone), l.email && escapeHtml(l.email), l.assignedTo && '👤 ' + escapeHtml(l.assignedTo), dates].filter(Boolean);
+    var safeId = l.id; var safeName = escapeHtml(l.name || '').replace(/'/g, '');
+    html += '<div class="crm-lead-row" onclick="editCrmLead(' + "'" + safeId + "'" + ')">'
+      + '<div><div class="crm-lead-name">' + icon + ' ' + escapeHtml(l.name || 'Unknown') + lostTag + '</div><div class="crm-lead-info">' + infoParts.join(' · ') + '</div></div>'
+      + '<span class="crm-status-badge crm-status-' + (l.status || 'new') + '">' + (SL[l.status] || l.status) + '</span>'
+      + '<span style="font-weight:700;color:#059669;font-size:0.88rem;">' + val + '</span>'
+      + '<div style="display:flex;gap:4px;">'
+      + '<button class="btn btn-xs btn-outline" onclick="event.stopPropagation();openCrmCommModal(' + "'" + safeId + "'" + ',' + "'" + safeName + "'" + ')">💬</button>'
+      + '<button class="btn btn-xs btn-outline" onclick="event.stopPropagation();editCrmLead(' + "'" + safeId + "'" + ')">✏️</button>'
+      + '<button class="btn btn-xs btn-outline" style="color:#dc2626;" onclick="event.stopPropagation();deleteCrmLead(' + "'" + safeId + "'" + ',' + "'" + safeName + "'" + ')">🗑</button>'
       + '</div></div>';
   });
   content.innerHTML = html;
 }
 
 window._filterCrmLeads = function() {
-  const search = (crm-leads-search ? crm-leads-search.value : '').toLowerCase();
-  const status = crm-leads-status-filter ? crm-leads-status-filter.value : '';
-  const source = crm-leads-source-filter ? crm-leads-source-filter.value : '';
-  const filtered = _crmAllLeads.filter(l => {
-    const ms = !search || (l.name||'').toLowerCase().includes(search)
-      || (l.email||'').toLowerCase().includes(search)
-      || (l.phone||'').toLowerCase().includes(search);
-    const mst = !status || l.status === status;
-    const mso = !source || l.source === source;
-    return ms && mst && mso;
+  var searchEl = _el('crm-leads-search'); var statusEl = _el('crm-leads-status-filter'); var sourceEl = _el('crm-leads-source-filter');
+  var search = (searchEl ? searchEl.value : '').toLowerCase();
+  var status = statusEl ? statusEl.value : ''; var source = sourceEl ? sourceEl.value : '';
+  var filtered = _crmAllLeads.filter(function(l) {
+    return (!search || (l.name||'').toLowerCase().includes(search) || (l.email||'').toLowerCase().includes(search) || (l.phone||'').toLowerCase().includes(search))
+      && (!status || l.status === status) && (!source || l.source === source);
   });
   _renderCrmLeadsTable(filtered);
 };
 
-// -- Active Rentals ------------------------------------------------
 window._loadCrmActiveRentals = function() {
-  const content = crm-rentals-content;
-  const alertsEl = crm-rentals-alerts;
+  var content = _el('crm-rentals-content'); var alertsEl = _el('crm-rentals-alerts');
   if (!content) return;
-
-  const now = new Date();
-  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-  const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
-  const onTrip = (vehiclesCache || []).filter(v => v.tripStatus === 'on-trip');
-
-  if (!onTrip.length) {
-    if (alertsEl) alertsEl.innerHTML = '';
-    content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>No vehicles currently on trip.</p>';
-    return;
-  }
-
-  const sorted = onTrip.slice().sort((a, b) => {
-    const aE = a.tripExpectedEnd ? (a.tripExpectedEnd.toDate ? a.tripExpectedEnd.toDate() : new Date(a.tripExpectedEnd)) : new Date('9999');
-    const bE = b.tripExpectedEnd ? (b.tripExpectedEnd.toDate ? b.tripExpectedEnd.toDate() : new Date(b.tripExpectedEnd)) : new Date('9999');
+  var now = new Date(); var in24h = new Date(now.getTime() + 24*60*60*1000);
+  var onTrip = (vehiclesCache || []).filter(function(v) { return v.tripStatus === 'on-trip'; });
+  if (!onTrip.length) { if (alertsEl) alertsEl.innerHTML = ''; content.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No vehicles currently on trip.</p>'; return; }
+  var sorted = onTrip.slice().sort(function(a, b) {
+    var aE = a.tripExpectedEnd ? (a.tripExpectedEnd.toDate ? a.tripExpectedEnd.toDate() : new Date(a.tripExpectedEnd)) : new Date('9999');
+    var bE = b.tripExpectedEnd ? (b.tripExpectedEnd.toDate ? b.tripExpectedEnd.toDate() : new Date(b.tripExpectedEnd)) : new Date('9999');
     return aE - bE;
   });
-
-  const urgent = sorted.filter(v => {
-    if (!v.tripExpectedEnd) return false;
-    const end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
-    return end <= in24h;
-  });
-
-  if (alertsEl) {
-    alertsEl.innerHTML = urgent.length
-      ? '<div style=background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;>'
-        + '<strong style=color:#dc2626;>?? ' + urgent.length + ' rental' + (urgent.length > 1 ? 's' : '') + ' ending within 24 hours</strong>'
-        + '<span style=color:#6b7280;font-size:0.82rem;margin-left:8px;>� send a pre-end check-in now</span></div>'
-      : '';
-  }
-
-  let html = '';
-  sorted.forEach(v => {
-    const plate = escapeHtml(v.plate || '');
-    const makeModel = escapeHtml((v.make || '') + ' ' + (v.model || '')).trim();
-    let timeBadge = '', badgeCls = 'crm-time-normal', cardCls = '';
-
+  var urgent = sorted.filter(function(v) { if (!v.tripExpectedEnd) return false; var end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd); return end <= in24h; });
+  if (alertsEl) alertsEl.innerHTML = urgent.length ? '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;"><strong style="color:#dc2626;">⚠️ ' + urgent.length + ' rental' + (urgent.length > 1 ? 's' : '') + ' ending within 24 hours</strong><span style="color:#6b7280;font-size:0.82rem;margin-left:8px;">- send a pre-end check-in now</span></div>' : '';
+  var html = '';
+  sorted.forEach(function(v) {
+    var plate = escapeHtml(v.plate || ''); var makeModel = escapeHtml(((v.make || '') + ' ' + (v.model || '')).trim());
+    var timeBadge = '', badgeCls = 'crm-time-normal', cardCls = '';
     if (v.tripExpectedEnd) {
-      const end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
-      const hrs = (end - now) / 3600000;
-      const endFmt = end.toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', year: 'numeric' });
+      var end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
+      var hrs = (end - now) / 3600000;
+      var endFmt = end.toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', year: 'numeric' });
       if (hrs < 0) { timeBadge = 'OVERDUE'; badgeCls = 'crm-time-urgent'; cardCls = 'ending-urgent'; }
       else if (hrs < 24) { timeBadge = Math.ceil(hrs) + 'h left'; badgeCls = 'crm-time-urgent'; cardCls = 'ending-urgent'; }
       else if (hrs < 48) { timeBadge = Math.ceil(hrs) + 'h left'; badgeCls = 'crm-time-soon'; cardCls = 'ending-soon'; }
       else { timeBadge = 'Ends ' + endFmt; }
     }
-
-    html += '<div class=crm-rental-card ' + cardCls + '>'
-      + '<div>'
-      + '<div class=crm-rental-label>?? ' + plate + (makeModel ? ' � ' + makeModel : '') + '</div>'
-      + (v.homeLocation ? '<div class=crm-rental-meta>?? ' + escapeHtml(v.homeLocation) + '</div>' : '')
-      + (timeBadge ? '<span class=crm-rental-time-badge ' + badgeCls + '>' + timeBadge + '</span>' : '')
-      + '</div>'
-      + '<div class=crm-rental-actions>'
-      + '<button class=btn btn-sm btn-outline onclick=openCrmCommModalVehicle(\'' + v.id + '\',\'' + plate + '\',\'pre-end\')>?? Pre-End Check-in</button>'
-      + '<button class=btn btn-sm btn-outline onclick=openCrmCommModalVehicle(\'' + v.id + '\',\'' + plate + '\',\'rebooking\')>?? Rebook Offer</button>'
-      + '<button class=btn btn-sm btn-outline onclick=closeCrmDash();setTimeout(()=>openVehiclePage(\'' + v.id + '\'),100)>?? Vehicle</button>'
+    html += '<div class="crm-rental-card ' + cardCls + '"><div><div class="crm-rental-label">🚗 ' + plate + (makeModel ? ' - ' + makeModel : '') + '</div>'
+      + (v.homeLocation ? '<div class="crm-rental-meta">📍 ' + escapeHtml(v.homeLocation) + '</div>' : '')
+      + (timeBadge ? '<span class="crm-rental-time-badge ' + badgeCls + '">' + timeBadge + '</span>' : '')
+      + '</div><div class="crm-rental-actions">'
+      + '<button class="btn btn-sm btn-outline" onclick="openCrmCommModalVehicle(' + "'" + v.id + "'" + ',' + "'" + plate + "'" + ",'pre-end'" + ')">💬 Pre-End Check-in</button>'
+      + '<button class="btn btn-sm btn-outline" onclick="openCrmCommModalVehicle(' + "'" + v.id + "'" + ',' + "'" + plate + "'" + ",'rebooking'" + ')">🔁 Rebook Offer</button>'
+      + '<button class="btn btn-sm btn-outline" onclick="closeCrmDash();setTimeout(function(){openVehiclePage(' + "'" + v.id + "'" + ');},100)">📋 Vehicle</button>'
       + '</div></div>';
   });
-
   content.innerHTML = html;
 };
 
 window.openCrmCommModalVehicle = function(vehicleId, plate, template) {
-  crm-comm-lead-id.value = 'vehicle:' + vehicleId;
-  crm-comm-lead-name.textContent = 'Vehicle: ' + plate;
-  crm-comm-message.value = '';
-  crm-comm-type.value = 'turo';
-  crm-comm-direction.value = 'outbound';
+  var liEl = _el('crm-comm-lead-id'); if (liEl) liEl.value = 'vehicle:' + vehicleId;
+  var lnEl = _el('crm-comm-lead-name'); if (lnEl) lnEl.textContent = 'Vehicle: ' + plate;
+  var msgEl = _el('crm-comm-message'); if (msgEl) msgEl.value = '';
+  var typeEl = _el('crm-comm-type'); if (typeEl) typeEl.value = 'turo';
+  var dirEl = _el('crm-comm-direction'); if (dirEl) dirEl.value = 'outbound';
   if (template) setCrmCommTemplate(template);
-  crm-comm-modal.style.display = 'flex';
+  var modal = _el('crm-comm-modal'); if (modal) modal.style.display = 'flex';
 };
 
-// -- Lost Reasons Analytics ----------------------------------------
 window._loadCrmLostReasons = async function() {
-  const content = crm-lost-content;
+  var content = _el('crm-lost-content');
   if (!content) return;
-  content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading�</p>';
+  content.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading...</p>';
   try {
-    const snap = await db.collection('crm_leads').where('status', '==', 'lost').get();
-    const lostLeads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    if (!lostLeads.length) {
-      content.innerHTML = '<p class=hint style=padding:32px;text-align:center;>No lost leads yet. Mark leads as ? Lost with a reason to build your analytics here.</p>';
-      return;
-    }
-
-    const RL = { price:'?? Price Too High', availability:'?? No Availability', competitor:'?? Went with Competitor', timing:'? Bad Timing', 'no-response':'?? Stopped Responding', other:'? Other' };
-    const counts = {};
-    lostLeads.forEach(l => { const r = l.lostReason || 'other'; counts[r] = (counts[r] || 0) + 1; });
-    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-    const max = sorted[0][1];
-    const totalVal = lostLeads.reduce((s, l) => s + (parseFloat(l.value) || 0), 0);
-    const totalAll = _crmAllLeads.length || lostLeads.length;
-
-    let html = '<div style=display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;>'
-      + '<div style=background:#fef2f2;border-radius:10px;padding:13px;text-align:center;><div style=font-size:1.45rem;font-weight:800;color:#dc2626;>' + lostLeads.length + '</div><div style=font-size:0.74rem;color:#6b7280;font-weight:600;>Lost Leads</div></div>'
-      + '<div style=background:#fff7ed;border-radius:10px;padding:13px;text-align:center;><div style=font-size:1.45rem;font-weight:800;color:#d97706;>$' + Math.round(totalVal) + '</div><div style=font-size:0.74rem;color:#6b7280;font-weight:600;>Revenue Lost</div></div>'
-      + '<div style=background:#f0fdf4;border-radius:10px;padding:13px;text-align:center;><div style=font-size:1.45rem;font-weight:800;color:#059669;>' + Math.round((lostLeads.length / totalAll) * 100) + '%</div><div style=font-size:0.74rem;color:#6b7280;font-weight:600;>of Total Lost</div></div>'
-      + '</div>'
-      + '<h4 style=margin:0 0 14px;font-size:0.9rem;color:#374151;>?? Why We\'re Losing Deals</h4>';
-
-    sorted.forEach(function(entry) {
-      const reason = entry[0]; const count = entry[1];
-      const pct = Math.round((count / lostLeads.length) * 100);
-      const barPct = Math.round((count / max) * 100);
-      html += '<div class=crm-lost-reason-row>'
-        + '<div class=crm-lost-reason-label>' + (RL[reason] || escapeHtml(reason)) + '</div>'
-        + '<div class=crm-lost-bar-wrap><div class=crm-lost-bar style=width:' + barPct + '%;></div></div>'
-        + '<div class=crm-lost-count>' + count + ' <span style=color:#9ca3af;font-size:0.72rem;>(' + pct + '%)</span></div>'
+    var snap = await db.collection('crm_leads').where('status', '==', 'lost').get();
+    var lostLeads = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
+    if (!lostLeads.length) { content.innerHTML = '<p class="hint" style="padding:32px;text-align:center;">No lost leads yet. Mark leads as Lost with a reason to see analytics here.</p>'; return; }
+    var RL = { price:'💰 Price Too High', availability:'📅 No Availability', competitor:'🏁 Went with Competitor', timing:'⏰ Bad Timing', 'no-response':'🔇 Stopped Responding', other:'❓ Other' };
+    var counts = {};
+    lostLeads.forEach(function(l) { var r = l.lostReason || 'other'; counts[r] = (counts[r] || 0) + 1; });
+    var sortedR = Object.entries(counts).sort(function(a, b) { return b[1] - a[1]; });
+    var maxC = sortedR[0][1];
+    var totalVal = lostLeads.reduce(function(s, l) { return s + (parseFloat(l.value) || 0); }, 0);
+    var totalAll = _crmAllLeads.length || lostLeads.length;
+    var html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">'
+      + '<div style="background:#fef2f2;border-radius:10px;padding:13px;text-align:center;"><div style="font-size:1.45rem;font-weight:800;color:#dc2626;">' + lostLeads.length + '</div><div style="font-size:0.74rem;color:#6b7280;font-weight:600;">Lost Leads</div></div>'
+      + '<div style="background:#fff7ed;border-radius:10px;padding:13px;text-align:center;"><div style="font-size:1.45rem;font-weight:800;color:#d97706;">$' + Math.round(totalVal) + '</div><div style="font-size:0.74rem;color:#6b7280;font-weight:600;">Revenue Lost</div></div>'
+      + '<div style="background:#f0fdf4;border-radius:10px;padding:13px;text-align:center;"><div style="font-size:1.45rem;font-weight:800;color:#059669;">' + Math.round((lostLeads.length / totalAll) * 100) + '%</div><div style="font-size:0.74rem;color:#6b7280;font-weight:600;">of Total Lost</div></div>'
+      + '</div><h4 style="margin:0 0 14px;font-size:0.9rem;color:#374151;">📊 Why Are We Losing Deals</h4>';
+    sortedR.forEach(function(entry) {
+      var reason = entry[0]; var count = entry[1]; var pct = Math.round((count / lostLeads.length) * 100);
+      html += '<div class="crm-lost-reason-row"><div class="crm-lost-reason-label">' + (RL[reason] || escapeHtml(reason)) + '</div><div class="crm-lost-bar-wrap"><div class="crm-lost-bar" style="width:' + Math.round((count / maxC) * 100) + '%;"></div></div><div class="crm-lost-count">' + count + ' <span style="color:#9ca3af;font-size:0.72rem;">(' + pct + '%)</span></div></div>';
+    });
+    html += '<h4 style="margin:22px 0 10px;font-size:0.9rem;color:#374151;">Recent Lost Leads</h4>';
+    lostLeads.slice(0, 12).forEach(function(l) {
+      html += '<div style="padding:10px 12px;border:1px solid #fee2e2;border-radius:9px;margin-bottom:6px;cursor:pointer;" onclick="editCrmLead(' + "'" + l.id + "'" + ')">'
+        + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;"><strong style="font-size:0.88rem;">' + escapeHtml(l.name || 'Unknown') + '</strong><span style="font-size:0.74rem;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;">' + (RL[l.lostReason] || l.lostReason || 'Unknown') + '</span></div>'
+        + (l.lostNotes ? '<div style="font-size:0.78rem;color:#6b7280;margin-top:3px;">' + escapeHtml(l.lostNotes) + '</div>' : '')
+        + (l.value ? '<div style="font-size:0.78rem;color:#d97706;margin-top:2px;">Lost value: $' + parseFloat(l.value).toFixed(0) + '</div>' : '')
         + '</div>';
     });
-
-    html += '<h4 style=margin:22px 0 10px;font-size:0.9rem;color:#374151;>Recent Lost Leads</h4>';
-    lostLeads.slice(0, 12).forEach(l => {
-      const reason = RL[l.lostReason] || l.lostReason || 'Unknown';
-      html += '<div style=padding:10px 12px;border:1px solid #fee2e2;border-radius:9px;margin-bottom:6px;cursor:pointer; onclick=editCrmLead(\'' + l.id + '\')>'
-        + '<div style=display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;>'
-        + '<strong style=font-size:0.88rem;>' + escapeHtml(l.name || 'Unknown') + '</strong>'
-        + '<span style=font-size:0.74rem;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;>' + reason + '</span>'
-        + '</div>'
-        + (l.lostNotes ? '<div style=font-size:0.78rem;color:#6b7280;margin-top:3px;>' + escapeHtml(l.lostNotes) + '</div>' : '')
-        + (l.value ? '<div style=font-size:0.78rem;color:#d97706;margin-top:2px;>Lost value: $' + parseFloat(l.value).toFixed(0) + '</div>' : '')
-        + '</div>';
-    });
-
     content.innerHTML = html;
-  } catch (e) {
-    content.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
-  }
+  } catch (e) { content.innerHTML = '<p class="hint" style="color:#dc2626;padding:24px;">Error: ' + escapeHtml(e.message) + '</p>'; }
 };
 
-// -- Team Performance ----------------------------------------------
 window._loadCrmTeam = async function() {
-  const content = crm-team-content;
+  var content = _el('crm-team-content');
   if (!content) return;
-  content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading�</p>';
+  content.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading...</p>';
   try {
-    const snap = await db.collection('crm_leads').get();
-    const leads = snap.docs.map(d => d.data());
-    const reps = {};
-    leads.forEach(l => {
-      const rep = l.assignedTo ? l.assignedTo.trim() : 'Unassigned';
+    var snap = await db.collection('crm_leads').get();
+    var leads = snap.docs.map(function(d) { return d.data(); });
+    var reps = {};
+    leads.forEach(function(l) {
+      var rep = l.assignedTo ? l.assignedTo.trim() : 'Unassigned';
       if (!reps[rep]) reps[rep] = { name: rep, total: 0, won: 0, lost: 0, pipeline: 0, revenue: 0 };
       reps[rep].total++;
       if (l.status === 'won') { reps[rep].won++; reps[rep].revenue += parseFloat(l.value) || 0; }
       else if (l.status === 'lost') reps[rep].lost++;
       else reps[rep].pipeline++;
     });
-    const repList = Object.values(reps).sort((a, b) => b.won - a.won || b.total - a.total);
-    if (!repList.length) {
-      content.innerHTML = '<p class=hint style=padding:32px;text-align:center;>No data yet. Assign leads to sales reps to track performance here.</p>';
-      return;
-    }
-    let html = '<p style=font-size:0.82rem;color:#6b7280;margin-bottom:16px;>Assign leads to team members using the Assigned To field to track individual performance.</p>';
-    repList.forEach(rep => {
-      const initials = rep.name.split(' ').map(w => w[0] || '').join('').slice(0,2).toUpperCase();
-      const winRate = (rep.won + rep.lost) > 0 ? Math.round((rep.won / (rep.won + rep.lost)) * 100) : 0;
-      html += '<div class=crm-team-card>'
-        + '<div class=crm-team-avatar>' + escapeHtml(initials || '?') + '</div>'
-        + '<div><div style=font-weight:700;font-size:0.95rem;>' + escapeHtml(rep.name) + '</div>'
-        + '<div style=font-size:0.78rem;color:#6b7280;>' + rep.total + ' total lead' + (rep.total !== 1 ? 's' : '') + '</div></div>'
-        + '<div class=crm-team-stats>'
-        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#059669;>' + rep.won + '</div><div class=crm-team-stat-label>Won</div></div>'
-        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#dc2626;>' + rep.lost + '</div><div class=crm-team-stat-label>Lost</div></div>'
-        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#d97706;>' + rep.pipeline + '</div><div class=crm-team-stat-label>Pipeline</div></div>'
-        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#2563eb;>' + winRate + '%</div><div class=crm-team-stat-label>Win Rate</div></div>'
-        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#059669;>$' + Math.round(rep.revenue) + '</div><div class=crm-team-stat-label>Revenue</div></div>'
+    var repList = Object.values(reps).sort(function(a, b) { return b.won - a.won || b.total - a.total; });
+    if (!repList.length) { content.innerHTML = '<p class="hint" style="padding:32px;text-align:center;">No data yet. Assign leads to sales reps to track performance.</p>'; return; }
+    var html = '<p style="font-size:0.82rem;color:#6b7280;margin-bottom:16px;">Assign leads to team members using the Assigned To field to track individual performance.</p>';
+    repList.forEach(function(rep) {
+      var initials = rep.name.split(' ').map(function(w) { return w[0] || ''; }).join('').slice(0, 2).toUpperCase();
+      var winRate = (rep.won + rep.lost) > 0 ? Math.round((rep.won / (rep.won + rep.lost)) * 100) : 0;
+      html += '<div class="crm-team-card"><div class="crm-team-avatar">' + escapeHtml(initials || '?') + '</div>'
+        + '<div><div style="font-weight:700;font-size:0.95rem;">' + escapeHtml(rep.name) + '</div><div style="font-size:0.78rem;color:#6b7280;">' + rep.total + ' total lead' + (rep.total !== 1 ? 's' : '') + '</div></div>'
+        + '<div class="crm-team-stats"><div class="crm-team-stat"><div class="crm-team-stat-num" style="color:#059669;">' + rep.won + '</div><div class="crm-team-stat-label">Won</div></div>'
+        + '<div class="crm-team-stat"><div class="crm-team-stat-num" style="color:#dc2626;">' + rep.lost + '</div><div class="crm-team-stat-label">Lost</div></div>'
+        + '<div class="crm-team-stat"><div class="crm-team-stat-num" style="color:#d97706;">' + rep.pipeline + '</div><div class="crm-team-stat-label">Pipeline</div></div>'
+        + '<div class="crm-team-stat"><div class="crm-team-stat-num" style="color:#2563eb;">' + winRate + '%</div><div class="crm-team-stat-label">Win Rate</div></div>'
+        + '<div class="crm-team-stat"><div class="crm-team-stat-num" style="color:#059669;">$' + Math.round(rep.revenue) + '</div><div class="crm-team-stat-label">Revenue</div></div>'
         + '</div></div>';
     });
     content.innerHTML = html;
-  } catch (e) {
-    content.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
-  }
+  } catch (e) { content.innerHTML = '<p class="hint" style="color:#dc2626;padding:24px;">Error: ' + escapeHtml(e.message) + '</p>'; }
 };
 
-// -- Add / Edit Lead Modal -----------------------------------------
 window.openAddLeadModal = function() {
-  crm-lead-modal-title.textContent = 'Add New Lead';
-  crm-lead-id.value = '';
-  ['crm-lead-name','crm-lead-phone','crm-lead-email','crm-lead-assigned','crm-lead-vehicle','crm-lead-notes','crm-lead-lost-notes'].forEach(id => { if () .value = ''; });
-  if (crm-lead-value) crm-lead-value.value = '';
-  if (crm-lead-start) crm-lead-start.value = '';
-  if (crm-lead-end) crm-lead-end.value = '';
-  if (crm-lead-source) crm-lead-source.value = 'turo';
-  if (crm-lead-status) crm-lead-status.value = 'new';
-  if (crm-lead-lost-reason) crm-lead-lost-reason.value = 'price';
+  var titleEl = _el('crm-lead-modal-title'); if (titleEl) titleEl.textContent = 'Add New Lead';
+  var idEl = _el('crm-lead-id'); if (idEl) idEl.value = '';
+  ['crm-lead-name','crm-lead-phone','crm-lead-email','crm-lead-assigned','crm-lead-vehicle','crm-lead-notes','crm-lead-lost-notes'].forEach(function(id) { var el = _el(id); if (el) el.value = ''; });
+  var valEl = _el('crm-lead-value'); if (valEl) valEl.value = '';
+  var startEl = _el('crm-lead-start'); if (startEl) startEl.value = '';
+  var endEl = _el('crm-lead-end'); if (endEl) endEl.value = '';
+  var srcEl = _el('crm-lead-source'); if (srcEl) srcEl.value = 'turo';
+  var stEl = _el('crm-lead-status'); if (stEl) stEl.value = 'new';
+  var lrEl = _el('crm-lead-lost-reason'); if (lrEl) lrEl.value = 'price';
+  var hist = _el('crm-lead-comm-history'); if (hist) hist.innerHTML = '';
   _toggleCrmLostFields();
-  const hist = crm-lead-comm-history;
-  if (hist) hist.innerHTML = '';
-  crm-lead-modal.style.display = 'flex';
+  var modal = _el('crm-lead-modal'); if (modal) modal.style.display = 'flex';
 };
 
 window.editCrmLead = async function(leadId) {
   try {
-    const doc = await db.collection('crm_leads').doc(leadId).get();
+    var doc = await db.collection('crm_leads').doc(leadId).get();
     if (!doc.exists) { toast('Lead not found', 'error'); return; }
-    const l = doc.data();
-    crm-lead-modal-title.textContent = 'Edit Lead';
-    crm-lead-id.value = leadId;
-    if (crm-lead-name) crm-lead-name.value = l.name || '';
-    if (crm-lead-phone) crm-lead-phone.value = l.phone || '';
-    if (crm-lead-email) crm-lead-email.value = l.email || '';
-    if (crm-lead-source) crm-lead-source.value = l.source || 'turo';
-    if (crm-lead-status) crm-lead-status.value = l.status || 'new';
-    if (crm-lead-value) crm-lead-value.value = l.value || '';
-    if (crm-lead-start) crm-lead-start.value = l.tripStart || '';
-    if (crm-lead-end) crm-lead-end.value = l.tripEnd || '';
-    if (crm-lead-assigned) crm-lead-assigned.value = l.assignedTo || '';
-    if (crm-lead-vehicle) crm-lead-vehicle.value = l.vehicleInterest || '';
-    if (crm-lead-notes) crm-lead-notes.value = l.notes || '';
-    if (crm-lead-lost-reason) crm-lead-lost-reason.value = l.lostReason || 'price';
-    if (crm-lead-lost-notes) crm-lead-lost-notes.value = l.lostNotes || '';
+    var l = doc.data();
+    var titleEl = _el('crm-lead-modal-title'); if (titleEl) titleEl.textContent = 'Edit Lead';
+    var idEl = _el('crm-lead-id'); if (idEl) idEl.value = leadId;
+    var nm = _el('crm-lead-name'); if (nm) nm.value = l.name || '';
+    var ph = _el('crm-lead-phone'); if (ph) ph.value = l.phone || '';
+    var em = _el('crm-lead-email'); if (em) em.value = l.email || '';
+    var src = _el('crm-lead-source'); if (src) src.value = l.source || 'turo';
+    var st = _el('crm-lead-status'); if (st) st.value = l.status || 'new';
+    var val = _el('crm-lead-value'); if (val) val.value = l.value || '';
+    var sd = _el('crm-lead-start'); if (sd) sd.value = l.tripStart || '';
+    var ed = _el('crm-lead-end'); if (ed) ed.value = l.tripEnd || '';
+    var asgn = _el('crm-lead-assigned'); if (asgn) asgn.value = l.assignedTo || '';
+    var veh = _el('crm-lead-vehicle'); if (veh) veh.value = l.vehicleInterest || '';
+    var nts = _el('crm-lead-notes'); if (nts) nts.value = l.notes || '';
+    var lr = _el('crm-lead-lost-reason'); if (lr) lr.value = l.lostReason || 'price';
+    var ln = _el('crm-lead-lost-notes'); if (ln) ln.value = l.lostNotes || '';
     _toggleCrmLostFields();
-    crm-lead-modal.style.display = 'flex';
+    var modal = _el('crm-lead-modal'); if (modal) modal.style.display = 'flex';
     _loadLeadCommHistory(leadId);
-  } catch (e) {
-    toast('Error loading lead: ' + e.message, 'error');
-  }
+  } catch (e) { toast('Error loading lead: ' + e.message, 'error'); }
 };
 
 async function _loadLeadCommHistory(leadId) {
-  const hist = crm-lead-comm-history;
+  var hist = _el('crm-lead-comm-history');
   if (!hist) return;
-  hist.innerHTML = '<p style=font-size:0.78rem;color:#9ca3af;>Loading history�</p>';
+  hist.innerHTML = '<p style="font-size:0.78rem;color:#9ca3af;">Loading history...</p>';
   try {
-    const snap = await db.collection('crm_comms').where('leadId', '==', leadId).orderBy('sentAt', 'desc').limit(8).get();
-    if (snap.empty) {
-      hist.innerHTML = '<p style=font-size:0.78rem;color:#9ca3af;margin-top:8px;>No communications logged yet.</p>';
-      return;
-    }
-    const TI = { call:'??', text:'??', email:'??', turo:'??', note:'??' };
-    let html = '<div style=margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb;><h5 style=margin:0 0 8px;font-size:0.82rem;color:#374151;>Recent Communications</h5>';
-    snap.docs.forEach(d => {
-      const c = d.data();
-      const icon = TI[c.type] || '??';
-      const cls = c.type === 'note' ? 'crm-comm-note' : c.direction === 'inbound' ? 'crm-comm-inbound' : 'crm-comm-outbound';
-      const time = c.sentAt ? (c.sentAt.toDate ? c.sentAt.toDate() : new Date(c.sentAt)).toLocaleString() : '';
-      html += '<div class=crm-comm-entry ' + cls + '>' + icon + ' ' + escapeHtml(c.message || '') + '<div class=crm-comm-time>' + escapeHtml(c.sentBy || '') + (time ? ' � ' + time : '') + '</div></div>';
+    var snap = await db.collection('crm_comms').where('leadId', '==', leadId).orderBy('sentAt', 'desc').limit(8).get();
+    if (snap.empty) { hist.innerHTML = '<p style="font-size:0.78rem;color:#9ca3af;margin-top:8px;">No communications logged yet.</p>'; return; }
+    var TI = { call:'📞', text:'💬', email:'📧', turo:'🚗', note:'📝' };
+    var html = '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb;"><h5 style="margin:0 0 8px;font-size:0.82rem;color:#374151;">Recent Communications</h5>';
+    snap.docs.forEach(function(d) {
+      var c = d.data(); var icon = TI[c.type] || '💬';
+      var cls = c.type === 'note' ? 'crm-comm-note' : c.direction === 'inbound' ? 'crm-comm-inbound' : 'crm-comm-outbound';
+      var time = c.sentAt ? (c.sentAt.toDate ? c.sentAt.toDate() : new Date(c.sentAt)).toLocaleString() : '';
+      html += '<div class="crm-comm-entry ' + cls + '">' + icon + ' ' + escapeHtml(c.message || '') + '<div class="crm-comm-time">' + escapeHtml(c.sentBy || '') + (time ? ' - ' + time : '') + '</div></div>';
     });
     hist.innerHTML = html + '</div>';
-  } catch (e) {
-    hist.innerHTML = '<p style=font-size:0.78rem;color:#dc2626;>Could not load history.</p>';
-  }
+  } catch (e) { hist.innerHTML = '<p style="font-size:0.78rem;color:#dc2626;">Could not load history.</p>'; }
 }
 
 window._toggleCrmLostFields = function() {
-  const lostFields = crm-lost-fields;
-  const statusEl = crm-lead-status;
+  var lostFields = _el('crm-lost-fields'); var statusEl = _el('crm-lead-status');
   if (lostFields && statusEl) lostFields.style.display = statusEl.value === 'lost' ? 'block' : 'none';
 };
 
-window.closeCrmLeadModal = function() {
-  crm-lead-modal.style.display = 'none';
-};
+window.closeCrmLeadModal = function() { var modal = _el('crm-lead-modal'); if (modal) modal.style.display = 'none'; };
 
 window.saveCrmLead = async function() {
-  const nameEl = crm-lead-name;
-  const name = nameEl ? nameEl.value.trim() : '';
+  var nameEl = _el('crm-lead-name'); var name = nameEl ? nameEl.value.trim() : '';
   if (!name) { toast('Customer name is required', 'error'); return; }
-  const status = crm-lead-status ? crm-lead-status.value : 'new';
-  const data = {
-    name,
-    phone: (crm-lead-phone ? crm-lead-phone.value.trim() : ''),
-    email: (crm-lead-email ? crm-lead-email.value.trim() : ''),
-    source: (crm-lead-source ? crm-lead-source.value : 'other'),
-    status,
-    value: parseFloat(crm-lead-value ? crm-lead-value.value : '') || null,
-    tripStart: (crm-lead-start ? crm-lead-start.value : '') || null,
-    tripEnd: (crm-lead-end ? crm-lead-end.value : '') || null,
-    assignedTo: (crm-lead-assigned ? crm-lead-assigned.value.trim() : ''),
-    vehicleInterest: (crm-lead-vehicle ? crm-lead-vehicle.value.trim() : ''),
-    notes: (crm-lead-notes ? crm-lead-notes.value.trim() : ''),
-    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-  };
-  if (status === 'lost') {
-    data.lostReason = crm-lead-lost-reason ? crm-lead-lost-reason.value : 'other';
-    data.lostNotes = crm-lead-lost-notes ? crm-lead-lost-notes.value.trim() : '';
-  }
-  const id = crm-lead-id ? crm-lead-id.value : '';
+  var stEl = _el('crm-lead-status'); var status = stEl ? stEl.value : 'new';
+  function gv(id) { var e = _el(id); return e ? e.value.trim() : ''; }
+  var data = { name: name, phone: gv('crm-lead-phone'), email: gv('crm-lead-email'), source: gv('crm-lead-source') || 'other', status: status,
+    value: parseFloat(gv('crm-lead-value')) || null, tripStart: gv('crm-lead-start') || null, tripEnd: gv('crm-lead-end') || null,
+    assignedTo: gv('crm-lead-assigned'), vehicleInterest: gv('crm-lead-vehicle'), notes: gv('crm-lead-notes'),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp() };
+  if (status === 'lost') { data.lostReason = gv('crm-lead-lost-reason') || 'other'; data.lostNotes = gv('crm-lead-lost-notes'); }
+  var idEl = _el('crm-lead-id'); var id = idEl ? idEl.value : '';
   try {
-    if (id) {
-      await db.collection('crm_leads').doc(id).update(data);
-      toast('Lead updated ?', 'success');
-    } else {
-      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
-      data.createdBy = currentUser ? currentUser.uid : '';
-      await db.collection('crm_leads').add(data);
-      toast('Lead added ?', 'success');
-    }
+    if (id) { await db.collection('crm_leads').doc(id).update(data); toast('Lead updated', 'success'); }
+    else { data.createdAt = firebase.firestore.FieldValue.serverTimestamp(); data.createdBy = currentUser ? currentUser.uid : ''; await db.collection('crm_leads').add(data); toast('Lead added', 'success'); }
     closeCrmLeadModal();
-    const activeTab = document.querySelector('.crm-tab-btn.active');
+    var activeTab = document.querySelector('.crm-tab-btn.active');
     if (activeTab) switchCrmTab(activeTab.dataset.ctab, activeTab);
     _loadCrmKpis();
-  } catch (e) {
-    toast('Error saving lead: ' + e.message, 'error');
-  }
+  } catch (e) { toast('Error saving lead: ' + e.message, 'error'); }
 };
 
 window.deleteCrmLead = async function(leadId, name) {
-  if (!confirm('Delete lead ' + name + '? This cannot be undone.')) return;
+  if (!confirm('Delete lead "' + name + '"? This cannot be undone.')) return;
   try {
-    await db.collection('crm_leads').doc(leadId).delete();
-    toast('Lead deleted', 'success');
-    const activeTab = document.querySelector('.crm-tab-btn.active');
+    await db.collection('crm_leads').doc(leadId).delete(); toast('Lead deleted', 'success');
+    var activeTab = document.querySelector('.crm-tab-btn.active');
     if (activeTab) switchCrmTab(activeTab.dataset.ctab, activeTab);
     _loadCrmKpis();
-  } catch (e) {
-    toast('Error: ' + e.message, 'error');
-  }
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
 };
 
-// -- Communication Modal -------------------------------------------
 window.openCrmCommModal = function(leadId, leadName) {
-  crm-comm-lead-id.value = leadId;
-  crm-comm-lead-name.textContent = leadName ? 'Customer: ' + leadName : '';
-  if (crm-comm-message) crm-comm-message.value = '';
-  if (crm-comm-type) crm-comm-type.value = 'call';
-  if (crm-comm-direction) crm-comm-direction.value = 'outbound';
-  crm-comm-modal.style.display = 'flex';
+  var liEl = _el('crm-comm-lead-id'); if (liEl) liEl.value = leadId;
+  var lnEl = _el('crm-comm-lead-name'); if (lnEl) lnEl.textContent = leadName ? 'Customer: ' + leadName : '';
+  var msgEl = _el('crm-comm-message'); if (msgEl) msgEl.value = '';
+  var typeEl = _el('crm-comm-type'); if (typeEl) typeEl.value = 'call';
+  var dirEl = _el('crm-comm-direction'); if (dirEl) dirEl.value = 'outbound';
+  var modal = _el('crm-comm-modal'); if (modal) modal.style.display = 'flex';
 };
 
-window.closeCrmCommModal = function() {
-  crm-comm-modal.style.display = 'none';
+window.closeCrmCommModal = function() { var modal = _el('crm-comm-modal'); if (modal) modal.style.display = 'none'; };
+
+var _CRM_TEMPLATES = {
+  'pre-end': "Aloha! Just checking in as your rental is wrapping up. We hope you're enjoying the trip! Please remember to return the vehicle with the same fuel level and clean interior. Let us know if you have any questions before drop-off. Mahalo!",
+  'follow-up': "Aloha! Just following up on your inquiry about renting with us. We'd love to get you set up - do you have any questions I can help answer? What dates are you looking at?",
+  'rebooking': "Aloha! Hope your last trip was amazing! We'd love to have you back. Are you planning another visit to Hawaii? Let me know your dates and I'll find the perfect vehicle for you. Returning guests get priority booking!",
+  'welcome': "Aloha and welcome! Your rental is confirmed. We're excited to have you! Please don't hesitate to reach out if you need anything before or during your trip. We're here to make your experience incredible. Mahalo!"
 };
 
-const _CRM_TEMPLATES = {
-  'pre-end': Aloha! Just checking in as your rental is wrapping up. We hope you're enjoying the trip! Please remember to return the vehicle with the same fuel level and clean interior. Let us know if you have any questions before drop-off. Mahalo!,
-  'follow-up': Aloha! Just following up on your inquiry about renting with us. We'd love to get you set up � do you have any questions I can help answer? What dates are you looking at?,
-  'rebooking': Aloha! Hope your last trip was amazing! We'd love to have you back. Are you planning another visit to Hawaii? Let me know your dates and I'll find the perfect vehicle for you. Returning guests get priority booking!,
-  'welcome': Aloha and welcome! Your rental is confirmed. We're excited to have you! Please don't hesitate to reach out if you need anything before or during your trip. We're here to make your experience incredible. Mahalo!
-};
-
-window.setCrmCommTemplate = function(key) {
-  const tmpl = _CRM_TEMPLATES[key];
-  if (tmpl && crm-comm-message) crm-comm-message.value = tmpl;
-};
+window.setCrmCommTemplate = function(key) { var tmpl = _CRM_TEMPLATES[key]; var msgEl = _el('crm-comm-message'); if (tmpl && msgEl) msgEl.value = tmpl; };
 
 window.saveCrmComm = async function() {
-  const msg = crm-comm-message ? crm-comm-message.value.trim() : '';
+  var msgEl = _el('crm-comm-message'); var msg = msgEl ? msgEl.value.trim() : '';
   if (!msg) { toast('Please enter a message or notes', 'error'); return; }
-  const leadId = crm-comm-lead-id ? crm-comm-lead-id.value : '';
-  const leadName = crm-comm-lead-name ? crm-comm-lead-name.textContent.replace('Customer: ','').replace('Vehicle: ','') : '';
-  const data = {
-    leadId,
-    leadName,
-    type: crm-comm-type ? crm-comm-type.value : 'note',
-    direction: crm-comm-direction ? crm-comm-direction.value : 'outbound',
-    message: msg,
-    sentAt: firebase.firestore.FieldValue.serverTimestamp(),
-    sentBy: currentUser ? (currentUser.displayName || currentUser.email || '') : '',
-  };
+  var liEl = _el('crm-comm-lead-id'); var lnEl = _el('crm-comm-lead-name'); var typeEl = _el('crm-comm-type'); var dirEl = _el('crm-comm-direction');
+  var leadId = liEl ? liEl.value : ''; var leadName = lnEl ? lnEl.textContent.replace('Customer: ', '').replace('Vehicle: ', '') : '';
+  var data = { leadId: leadId, leadName: leadName, type: typeEl ? typeEl.value : 'note', direction: dirEl ? dirEl.value : 'outbound', message: msg,
+    sentAt: firebase.firestore.FieldValue.serverTimestamp(), sentBy: currentUser ? (currentUser.displayName || currentUser.email || '') : '' };
   try {
     await db.collection('crm_comms').add(data);
-    if (leadId && !leadId.startsWith('vehicle:')) {
-      await db.collection('crm_leads').doc(leadId).update({ updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
-    }
-    toast('Communication logged ?', 'success');
-    closeCrmCommModal();
-    // Refresh history if lead modal open
-    if (crm-lead-modal && crm-lead-modal.style.display === 'flex' && leadId && !leadId.startsWith('vehicle:')) {
-      _loadLeadCommHistory(leadId);
-    }
-  } catch (e) {
-    toast('Error saving: ' + e.message, 'error');
-  }
+    if (leadId && leadId.indexOf('vehicle:') !== 0) await db.collection('crm_leads').doc(leadId).update({ updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    toast('Communication logged', 'success'); closeCrmCommModal();
+    var leadModal = _el('crm-lead-modal');
+    if (leadModal && leadModal.style.display === 'flex' && leadId && leadId.indexOf('vehicle:') !== 0) _loadLeadCommHistory(leadId);
+  } catch (e) { toast('Error saving: ' + e.message, 'error'); }
 };
