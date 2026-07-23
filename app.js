@@ -19305,9 +19305,10 @@ function _buildCrmPipelineCard(l) {
   var assigned = l.assignedTo ? '<span style="font-size:0.7rem;color:#6b7280;">👤 ' + escapeHtml(l.assignedTo) + '</span>' : '<span></span>';
   var value = l.value ? '<div class="crm-card-value">$' + parseFloat(l.value).toFixed(0) + '</div>' : '';
   var dates = l.tripStart ? '<div class="crm-card-meta">' + escapeHtml(l.tripStart) + (l.tripEnd ? ' to ' + escapeHtml(l.tripEnd) : '') + '</div>' : '';
+  var depositPill = (typeof _crmDepositPill === 'function') ? _crmDepositPill(l) : '';
   var safeId = l.id; var safeName = name.replace(/'/g, '');
   return '<div class="crm-pipeline-card status-' + l.status + '" onclick="editCrmLead(' + "'" + safeId + "'" + ')">'
-    + '<div class="crm-card-name">' + name + '</div><div class="crm-card-meta">' + phone + source + '</div>'
+    + '<div class="crm-card-name">' + name + depositPill + '</div><div class="crm-card-meta">' + phone + source + '</div>'
     + dates + value
     + '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">' + assigned
     + '<button class="btn btn-xs btn-outline" style="font-size:0.68rem;padding:2px 6px;" onclick="event.stopPropagation();openCrmCommModal(' + "'" + safeId + "'" + ',' + "'" + safeName + "'" + ')">💬</button></div></div>';
@@ -20025,6 +20026,8 @@ window.loadFinanceDashboard = async function() {
     var revSnap = results[0], expSnap = results[1];
 
     // ── Process Revenue ──
+    // ONLY count manualRevenueEntry records — auto-created productivity logs
+    // are excluded to prevent revenue bleeding across months when trips span dates
     var byVehicle = {};
     var manualEntries = [];
     var totalTuro = 0, totalPrivate = 0, totalExtras = 0;
@@ -20032,6 +20035,8 @@ window.loadFinanceDashboard = async function() {
     revSnap.forEach(function(doc) {
       var d = doc.data();
       if (d.cancelled) return;
+      // Skip auto-created productivity tracking entries — only show explicitly recorded revenue
+      if (!d.manualRevenueEntry) return;
       var vid = d.vehicleId || 'unknown';
       if (!byVehicle[vid]) {
         byVehicle[vid] = { id: vid, plate: d.vehiclePlate || '?', model: d.vehicleMakeModel || '', turo: 0, priv: 0, extras: 0, trips: 0, noRev: 0 };
@@ -20091,7 +20096,11 @@ window.loadFinanceDashboard = async function() {
     var revMax = vehicles.length > 0 ? Math.max.apply(null, vehicles.map(function(v) { return v.turo + v.priv + v.extras; })) : 1;
     var revHtml = '';
     if (!vehicles.length) {
-      revHtml = '<p class="hint" style="padding:20px;">No revenue this month. Use <strong>+ Revenue</strong> to add a payout.</p>';
+      revHtml = '<div style="padding:20px;text-align:center;">'
+        + '<p class="hint" style="margin-bottom:12px;">No revenue recorded this month.</p>'
+        + '<p style="font-size:0.82rem;color:#6b7280;">Use <strong>+ Revenue</strong> in the header to log a Turo payout or Private booking.</p>'
+        + '<button class="btn btn-sm fin2-add-rev-btn" onclick="openFin2RevModal()" style="margin-top:10px;background:#059669;color:#fff;border:none;">+ Add Revenue</button>'
+        + '</div>';
     } else {
       vehicles.forEach(function(v) {
         var total = v.turo + v.priv + v.extras;
@@ -20522,4 +20531,286 @@ function _populateCrmTeamSelect(sel, members) {
       });
     }
   };
+})();
+
+// ================================================================
+// CRM DEPOSIT TRACKING
+// ================================================================
+
+// Toggle the "reimbursed" row based on whether deposit is paid
+window._crmToggleDepositReimbursed = function() {
+  var paidEl = _el('crm-lead-deposit-paid');
+  var reimbRow = _el('crm-deposit-reimbursed-row');
+  var reimbEl = _el('crm-lead-deposit-reimbursed');
+  var actionRow = _el('crm-deposit-action-row');
+  var reimbDateRow = _el('crm-deposit-reimbursed-date-row');
+
+  var paid = paidEl && paidEl.checked;
+  if (reimbRow) reimbRow.style.opacity = paid ? '1' : '0.4';
+  if (reimbEl) reimbEl.disabled = !paid;
+
+  if (paid && reimbEl && !reimbEl.checked) {
+    // Show the quick "Mark Reimbursed" button
+    if (actionRow) actionRow.style.display = '';
+  } else {
+    if (actionRow) actionRow.style.display = 'none';
+  }
+
+  // Show reimbursed date row when checked
+  var isReimbursed = reimbEl && reimbEl.checked;
+  if (reimbDateRow) reimbDateRow.style.display = isReimbursed ? '' : 'none';
+
+  _crmUpdateDepositBadge();
+};
+
+// Quick action: mark reimbursed with today's date
+window._crmMarkDepositReimbursedNow = function() {
+  var reimbEl = _el('crm-lead-deposit-reimbursed');
+  var dateEl = _el('crm-lead-deposit-reimbursed-date');
+  if (reimbEl) { reimbEl.checked = true; reimbEl.disabled = false; }
+  if (dateEl) dateEl.value = todayDateString();
+  _crmToggleDepositReimbursed();
+};
+
+// Update the deposit badge in the modal header
+function _crmUpdateDepositBadge() {
+  var badge = _el('crm-deposit-status-badge');
+  if (!badge) return;
+  var amtEl = _el('crm-lead-deposit-amount');
+  var paidEl = _el('crm-lead-deposit-paid');
+  var reimbEl = _el('crm-lead-deposit-reimbursed');
+  var amt = parseFloat(amtEl ? amtEl.value : '0') || 0;
+
+  if (!amt) { badge.style.display = 'none'; return; }
+  badge.style.display = '';
+  var paid = paidEl && paidEl.checked;
+  var reimbursed = reimbEl && reimbEl.checked;
+
+  if (reimbursed) {
+    badge.textContent = 'Reimbursed ✓';
+    badge.className = 'crm-deposit-badge reimbursed';
+  } else if (paid) {
+    badge.textContent = '$' + amt.toFixed(0) + ' — Awaiting Reimbursement';
+    badge.className = 'crm-deposit-badge pending';
+  } else {
+    badge.textContent = '$' + amt.toFixed(0) + ' — Not Yet Collected';
+    badge.className = 'crm-deposit-badge collected';
+  }
+}
+
+// Load deposit data into the modal fields
+function _crmLoadDepositFields(l) {
+  var amtEl = _el('crm-lead-deposit-amount');
+  var dateEl = _el('crm-lead-deposit-date');
+  var paidEl = _el('crm-lead-deposit-paid');
+  var reimbEl = _el('crm-lead-deposit-reimbursed');
+  var reimbDateEl = _el('crm-lead-deposit-reimbursed-date');
+
+  if (amtEl) amtEl.value = l.depositAmount || '';
+  if (dateEl) dateEl.value = l.depositDate || '';
+  if (paidEl) paidEl.checked = !!l.depositPaid;
+  if (reimbEl) { reimbEl.checked = !!l.depositReimbursed; reimbEl.disabled = !l.depositPaid; }
+  if (reimbDateEl) reimbDateEl.value = l.depositReimbursedDate || '';
+
+  _crmToggleDepositReimbursed();
+}
+
+// Reset deposit fields for a new lead
+function _crmResetDepositFields() {
+  var ids = ['crm-lead-deposit-amount', 'crm-lead-deposit-date', 'crm-lead-deposit-reimbursed-date'];
+  ids.forEach(function(id) { var el = _el(id); if (el) el.value = ''; });
+  var paidEl = _el('crm-lead-deposit-paid'); if (paidEl) paidEl.checked = false;
+  var reimbEl = _el('crm-lead-deposit-reimbursed'); if (reimbEl) { reimbEl.checked = false; reimbEl.disabled = true; }
+  _crmToggleDepositReimbursed();
+}
+
+// Read deposit data from modal fields
+function _crmReadDepositFields() {
+  var amt = parseFloat(_el('crm-lead-deposit-amount') ? _el('crm-lead-deposit-amount').value : '') || null;
+  var date = _el('crm-lead-deposit-date') ? _el('crm-lead-deposit-date').value : '';
+  var paid = _el('crm-lead-deposit-paid') ? _el('crm-lead-deposit-paid').checked : false;
+  var reimbursed = _el('crm-lead-deposit-reimbursed') ? _el('crm-lead-deposit-reimbursed').checked : false;
+  var reimbursedDate = _el('crm-lead-deposit-reimbursed-date') ? _el('crm-lead-deposit-reimbursed-date').value : '';
+  return { depositAmount: amt, depositDate: date || null, depositPaid: paid, depositReimbursed: reimbursed, depositReimbursedDate: reimbursedDate || null };
+}
+
+// Deposit status helper for pipeline cards and rental view
+function _crmDepositPill(l) {
+  if (!l.depositAmount || l.depositAmount <= 0) return '';
+  if (l.depositReimbursed) return '<span class="crm-deposit-pill done">💰 Dep. Returned</span>';
+  if (l.depositPaid) return '<span class="crm-deposit-pill reimburse">💰 $' + parseFloat(l.depositAmount).toFixed(0) + ' — Reimburse!</span>';
+  return '<span class="crm-deposit-pill">💰 $' + parseFloat(l.depositAmount).toFixed(0) + ' deposit</span>';
+}
+
+// Patch openAddLeadModal to reset deposit fields
+(function() {
+  var _origOpen = window.openAddLeadModal;
+  window.openAddLeadModal = function() {
+    if (_origOpen) _origOpen.apply(this, arguments);
+    _crmResetDepositFields();
+  };
+})();
+
+// Patch editCrmLead to load deposit fields
+(function() {
+  var _origEdit = window.editCrmLead;
+  window.editCrmLead = async function(leadId) {
+    if (_origEdit) await _origEdit.apply(this, arguments);
+    // Load deposit after a short delay to ensure modal is open
+    setTimeout(function() {
+      db.collection('crm_leads').doc(leadId).get().then(function(doc) {
+        if (doc.exists) _crmLoadDepositFields(doc.data());
+      });
+    }, 150);
+  };
+})();
+
+// Patch saveCrmLead to include deposit data
+(function() {
+  var _origSave = window.saveCrmLead;
+  window.saveCrmLead = async function() {
+    // Read deposit before calling original (which clears modal)
+    var depositData = _crmReadDepositFields();
+
+    // Temporarily intercept the db.collection('crm_leads').add/update call
+    // by storing the deposit data and patching it in after save
+    window._pendingDepositData = depositData;
+    if (_origSave) await _origSave.apply(this, arguments);
+    window._pendingDepositData = null;
+  };
+})();
+
+// Override the actual Firestore write to include deposit data
+// We do this by patching the data object in saveCrmLead logic
+// Since we can't easily intercept, we'll do a follow-up write
+(function() {
+  var _origSave2 = window.saveCrmLead;
+  window.saveCrmLead = async function() {
+    var nameEl = _el('crm-lead-name');
+    var name = nameEl ? nameEl.value.trim() : '';
+    if (!name) { toast('Customer name is required', 'error'); return; }
+    var stEl = _el('crm-lead-status'); var status = stEl ? stEl.value : 'new';
+    function gv(id) { var e = _el(id); return e ? e.value.trim() : ''; }
+
+    var depositData = _crmReadDepositFields();
+
+    var data = {
+      name: name, phone: gv('crm-lead-phone'), email: gv('crm-lead-email'),
+      source: gv('crm-lead-source') || 'other', status: status,
+      value: parseFloat(gv('crm-lead-value')) || null,
+      tripStart: gv('crm-lead-start') || null, tripEnd: gv('crm-lead-end') || null,
+      assignedTo: gv('crm-lead-assigned'), vehicleInterest: gv('crm-lead-vehicle'),
+      notes: gv('crm-lead-notes'), updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      // Deposit fields
+      depositAmount: depositData.depositAmount,
+      depositDate: depositData.depositDate,
+      depositPaid: depositData.depositPaid,
+      depositReimbursed: depositData.depositReimbursed,
+      depositReimbursedDate: depositData.depositReimbursedDate,
+    };
+    // Remove nulls from deposit fields
+    if (!data.depositAmount) delete data.depositAmount;
+    if (!data.depositDate) delete data.depositDate;
+    if (!data.depositReimbursedDate) delete data.depositReimbursedDate;
+
+    if (status === 'lost') {
+      data.lostReason = gv('crm-lead-lost-reason') || 'other';
+      data.lostNotes = gv('crm-lead-lost-notes');
+    }
+    var idEl = _el('crm-lead-id'); var id = idEl ? idEl.value : '';
+
+    try {
+      if (id) {
+        await db.collection('crm_leads').doc(id).update(data);
+        toast('Lead updated', 'success');
+      } else {
+        data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        data.createdBy = currentUser ? currentUser.uid : '';
+        await db.collection('crm_leads').add(data);
+        toast('Lead added', 'success');
+      }
+      closeCrmLeadModal();
+      var activeTab = document.querySelector('.crm-tab-btn.active');
+      if (activeTab) switchCrmTab(activeTab.dataset.ctab, activeTab);
+      _loadCrmKpis();
+    } catch (e) { toast('Error saving lead: ' + e.message, 'error'); }
+  };
+})();
+
+// Show deposit status in pipeline cards
+(function() {
+  var _origBuild = window._buildCrmPipelineCard || _buildCrmPipelineCard;
+  // Patch the pipeline board render to include deposit pills
+  var _origLoadPipeline = window._loadCrmPipeline;
+  window._loadCrmPipeline = async function() {
+    if (_origLoadPipeline) await _origLoadPipeline.apply(this, arguments);
+    // After render, insert deposit pills into existing cards
+    // (handled inside _buildCrmPipelineCard via _crmAllLeads)
+  };
+})();
+
+// Show deposits needing reimbursement in a CRM summary
+function _getCrmDepositAlerts() {
+  return _crmAllLeads.filter(function(l) {
+    return l.depositPaid && !l.depositReimbursed && l.depositAmount > 0;
+  });
+}
+
+// Refresh KPIs to include deposit alerts
+(function() {
+  var _origKpis = _loadCrmKpis;
+  async function _loadCrmKpisWithDeposits() {
+    try {
+      var snap = await db.collection('crm_leads').get();
+      var leads = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
+      _crmAllLeads = leads;
+
+      var thirtyAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      var won = leads.filter(function(l) { return l.status === 'won'; });
+      var lost = leads.filter(function(l) { return l.status === 'lost'; });
+      var lostRecent = lost.filter(function(l) { return l.updatedAt && l.updatedAt.toDate && l.updatedAt.toDate() > thirtyAgo; });
+      var active = leads.filter(function(l) { return l.status !== 'won' && l.status !== 'lost'; });
+      var pipelineVal = active.reduce(function(s, l) { return s + (parseFloat(l.value) || 0); }, 0);
+      var winRate = (won.length + lost.length) > 0 ? Math.round((won.length / (won.length + lost.length)) * 100) : 0;
+
+      var now = new Date();
+      var in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+      var endingSoon = (vehiclesCache || []).filter(function(v) {
+        if (v.tripStatus !== 'on-trip' || !v.tripExpectedEnd) return false;
+        var end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
+        return end >= now && end <= in48h;
+      });
+
+      // Deposits pending reimbursement
+      var pendingDeposits = leads.filter(function(l) { return l.depositPaid && !l.depositReimbursed && l.depositAmount > 0; });
+
+      function setEl(id, val) { var el = _el(id); if (el) el.textContent = val; }
+      setEl('crm-kpi-total', leads.length);
+      setEl('crm-kpi-pipeline', pipelineVal > 0 ? '$' + Math.round(pipelineVal) : '$0');
+      setEl('crm-kpi-winrate', winRate + '%');
+      setEl('crm-kpi-lost', lostRecent.length);
+      // Show deposit alerts OR trip ending alerts (whichever is higher priority)
+      var alertCount = endingSoon.length + pendingDeposits.length;
+      setEl('crm-kpi-alerts', alertCount);
+
+      // Update header badge
+      var badge = _el('crm-alert-count');
+      if (badge) {
+        badge.textContent = alertCount;
+        badge.className = 'task-alert-count' + (alertCount > 0 ? '' : ' count-zero');
+      }
+
+      // Update KPI label for alerts
+      var alertLabel = _el('crm-kpi-alerts');
+      if (alertLabel) {
+        var labelEl = alertLabel.nextElementSibling;
+        if (labelEl) {
+          labelEl.textContent = pendingDeposits.length > 0
+            ? '⚠️ ' + pendingDeposits.length + ' deposit' + (pendingDeposits.length > 1 ? 's' : '') + ' to reimburse'
+            : '⚠️ Trips Ending Soon';
+        }
+      }
+    } catch (e) { console.warn('CRM KPI error:', e); }
+  }
+  window._loadCrmKpis = _loadCrmKpisWithDeposits;
 })();

@@ -2082,6 +2082,44 @@
           <label>Internal Notes</label>
           <textarea id="crm-lead-notes" class="crm-form-input" rows="3" placeholder="Any notes about this lead or conversation…" style="resize:vertical;"></textarea>
         </div>
+        <!-- Deposit Tracking -->
+        <div class="crm-deposit-section" id="crm-deposit-section">
+          <div class="crm-deposit-header">
+            <span>💰 Deposit</span>
+            <span id="crm-deposit-status-badge" class="crm-deposit-badge" style="display:none;"></span>
+          </div>
+          <div class="crm-form-row" style="margin-bottom:8px;">
+            <div class="crm-form-group">
+              <label>Deposit Amount ($)</label>
+              <input type="number" id="crm-lead-deposit-amount" class="crm-form-input" placeholder="0.00" min="0" step="0.01">
+            </div>
+            <div class="crm-form-group">
+              <label>Date Collected</label>
+              <input type="date" id="crm-lead-deposit-date" class="crm-form-input">
+            </div>
+          </div>
+          <div class="crm-deposit-toggle-row">
+            <label class="crm-deposit-toggle-label" onclick="document.getElementById('crm-lead-deposit-paid').click()">
+              <input type="checkbox" id="crm-lead-deposit-paid" style="width:16px;height:16px;" onchange="_crmToggleDepositReimbursed()">
+              <span>✅ Deposit Received from Customer</span>
+            </label>
+            <label class="crm-deposit-toggle-label" id="crm-deposit-reimbursed-row" style="opacity:0.4;" onclick="document.getElementById('crm-lead-deposit-reimbursed').click()">
+              <input type="checkbox" id="crm-lead-deposit-reimbursed" style="width:16px;height:16px;" disabled>
+              <span>🔄 Deposit Reimbursed to Customer</span>
+            </label>
+          </div>
+          <div id="crm-deposit-reimbursed-date-row" style="display:none;margin-top:8px;">
+            <div class="crm-form-group">
+              <label>Reimbursement Date</label>
+              <input type="date" id="crm-lead-deposit-reimbursed-date" class="crm-form-input" style="max-width:200px;">
+            </div>
+          </div>
+          <div id="crm-deposit-action-row" style="display:none;margin-top:8px;">
+            <button class="btn btn-sm btn-outline" style="border-color:#059669;color:#059669;" onclick="_crmMarkDepositReimbursedNow()">
+              🔄 Mark Deposit Reimbursed Today
+            </button>
+          </div>
+        </div>
         <!-- Communication history (injected dynamically on edit) -->
         <div id="crm-lead-comm-history"></div>
       </div>
