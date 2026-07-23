@@ -1861,6 +1861,32 @@
     </div>
   </div>
 
+  <!-- ==================== VEHICLE RETURN CHECK ==================== -->
+  <div id="vrc-overlay" class="vrc-overlay" style="display:none;">
+    <div class="vrc-panel">
+      <div class="vrc-header">
+        <div class="vrc-header-left">
+          <span class="vrc-icon">🏠</span>
+          <div>
+            <h3 class="vrc-title">Vehicle Checked In — <span id="vrc-plate">—</span></h3>
+            <p class="vrc-subtitle">Address these items before the next booking</p>
+          </div>
+        </div>
+        <div class="vrc-header-right">
+          <button class="btn btn-sm btn-outline" onclick="openMaintenanceDash();closeVehicleReturnCheck();">🔧 Full Maintenance</button>
+          <button class="vrc-close-btn" onclick="closeVehicleReturnCheck()">&times;</button>
+        </div>
+      </div>
+      <div class="vrc-body" id="vrc-body">
+        <p class="hint" style="padding:24px;text-align:center;">Loading maintenance items…</p>
+      </div>
+      <div class="vrc-footer">
+        <button class="btn btn-sm btn-outline" onclick="closeVehicleReturnCheck()">Dismiss — I'll handle later</button>
+        <button class="btn btn-sm btn-primary" onclick="openMaintenanceDash();closeVehicleReturnCheck();">Open Full Maintenance Dashboard</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== CRM V1 DASHBOARD ==================== -->
   <div id="crm-dash-overlay" class="crm-dash-overlay" style="display:none;" onclick="if(event.target===this)closeCrmDash()">
     <div class="crm-dash-panel">

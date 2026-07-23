@@ -5711,6 +5711,13 @@ $('btn-save-location').addEventListener('click', async () => {
     toast('Location saved!', 'success');
     renderFleetDashboard();
 
+    // ── Trigger Return Maintenance Check when vehicle comes home from a trip ──
+    if ((wasOnTrip && nowHome) || nowReturnFromRepair) {
+      const _vrcPlate = selectedVehicle.plate || 'Vehicle';
+      const _vrcId = selectedVehicle.id;
+      setTimeout(function() { _showReturnMaintCheck(_vrcId, _vrcPlate); }, 1200);
+    }
+
     // ── Auto-record Private Trip revenue to Finance if checkbox checked ──
     if (tripStatus === 'private-trip' && _el('private-trip-record-finance') && _el('private-trip-record-finance').checked) {
       const ptRevForFinance = typeof updateData.tripRevenue === 'number' ? updateData.tripRevenue : null;
@@ -10450,8 +10457,16 @@ window._openReturnQueueAdd = function(vehicleId) {
           <label style="font-size:0.82rem;font-weight:600;color:#374151;">What needs to be done when it returns?</label>
           <textarea id="rq-note-text" rows="3" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;resize:vertical;" placeholder="e.g. Check transmission fluid, order wiper blades, inspect front brakes…"></textarea>
         </div>
-        <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer;">
-          <input type="checkbox" id="rq-is-urgent"> Mark as Urgent (must address before next trip)
+        <div class="form-group" style="margin-top:4px;">
+          <label style="font-size:0.82rem;font-weight:600;color:#374151;">Priority</label>
+          <select id="rq-priority-sel" style="width:100%;margin-top:4px;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:0.9rem;background:#fff;">
+            <option value="standard">🔵 Standard — Schedule when convenient</option>
+            <option value="urgent">🔴 Urgent — Must fix before next trip</option>
+            <option value="quick">🟡 Quick Fix — Parts in storage, 5-min install</option>
+          </select>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:0.88rem;cursor:pointer;margin-top:6px;">
+          <input type="checkbox" id="rq-materials-ready"> Materials already in storage (just needs install)
         </label>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;padding:12px 16px;border-top:1px solid #e5e7eb;">
@@ -10467,7 +10482,10 @@ window._openReturnQueueAdd = function(vehicleId) {
 window._saveReturnQueueItem = async function() {
   const vid = document.getElementById('rq-vehicle-sel')?.value;
   const text = (document.getElementById('rq-note-text')?.value || '').trim();
-  const urgent = document.getElementById('rq-is-urgent')?.checked || false;
+  const prioritySel = document.getElementById('rq-priority-sel');
+  const priority = prioritySel ? prioritySel.value : 'standard';
+  const urgent = priority === 'urgent';
+  const materialsReady = document.getElementById('rq-materials-ready')?.checked || priority === 'quick';
   if (!vid) { toast('Select a vehicle.', 'warning'); return; }
   if (!text) { toast('Enter a description.', 'warning'); return; }
   try {
@@ -10476,6 +10494,8 @@ window._saveReturnQueueItem = async function() {
       text,
       returnQueue: true,
       urgent,
+      materialsReady,
+      rqPriority: priority,
       isFollowUp: true,
       done: false,
       taskStatus: urgent ? 'urgent' : 'monitoring',
@@ -20163,14 +20183,16 @@ window.loadFinanceDashboard = async function() {
     var allVids = new Set(Object.keys(byVehicle).concat(Object.keys(expByVehicle)));
     var plRows = [];
     allVids.forEach(function(vid) {
-      var rv = byVehicle[vid] || { plate: vid, turo: 0, priv: 0, extras: 0 };
+      var rv = byVehicle[vid] || {};
+      // Always look up from vehiclesCache first — never fall back to raw Firestore ID
       var vObj = (vehiclesCache || []).find(function(x) { return x.id === vid; });
-      var plate = rv.plate || (vObj ? vObj.plate : vid);
-      var totalV = rv.turo + rv.priv + rv.extras;
+      var plate = vObj ? vObj.plate : (rv.plate || '?');
+      var model = vObj ? ((vObj.make || '') + ' ' + (vObj.model || '')).trim() : (rv.model || '');
+      var totalV = (rv.turo || 0) + (rv.priv || 0) + (rv.extras || 0);
       var expV = expByVehicle[vid] || 0;
       var netV = totalV - expV;
       var margin = totalV > 0 ? Math.round((netV / totalV) * 100) : null;
-      plRows.push({ plate: plate, rev: totalV, exp: expV, net: netV, margin: margin, id: vid });
+      plRows.push({ plate: plate, model: model, rev: totalV, exp: expV, net: netV, margin: margin, id: vid });
     });
     plRows.sort(function(a, b) { return b.net - a.net; });
 
@@ -20182,7 +20204,7 @@ window.loadFinanceDashboard = async function() {
             var netCls = r.net >= 0 ? 'fin2-pl-profit' : 'fin2-pl-loss';
             var canLink = !!(vehiclesCache || []).find(function(x) { return x.id === r.id; });
             return '<tr' + (canLink ? ' onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + r.id + '\');},100);" style="cursor:pointer;"' : '') + '>'
-              + '<td><strong>' + escapeHtml(r.plate) + '</strong></td>'
+              + '<td><strong>' + escapeHtml(r.plate) + '</strong>' + (r.model ? '<div style="font-size:0.74rem;color:#9ca3af;">' + escapeHtml(r.model) + '</div>' : '') + '</td>'
               + '<td class="fin2-pl-rev">' + _fin2FmtFull(r.rev) + '</td>'
               + '<td class="fin2-pl-exp">' + (r.exp > 0 ? '-' + _fin2FmtFull(r.exp) : '—') + '</td>'
               + '<td class="' + netCls + '">' + (r.net >= 0 ? '+' : '-') + _fin2FmtFull(r.net) + '</td>'
@@ -20814,3 +20836,180 @@ function _getCrmDepositAlerts() {
   }
   window._loadCrmKpis = _loadCrmKpisWithDeposits;
 })();
+
+// ================================================================
+// VEHICLE RETURN CHECK — maintenance alert when vehicle checks in
+// ================================================================
+
+window.closeVehicleReturnCheck = function() {
+  var el = document.getElementById('vrc-overlay');
+  if (el) el.style.display = 'none';
+};
+
+window._showReturnMaintCheck = async function(vehicleId, plate) {
+  try {
+    // Load return queue items + open work orders for this vehicle in parallel
+    var results = await Promise.all([
+      db.collection('vehicleNotes').where('vehicleId', '==', vehicleId).where('returnQueue', '==', true).where('done', '==', false).get(),
+      db.collection('vehicleNotes').where('vehicleId', '==', vehicleId).where('workOrder', '==', true).where('done', '==', false).get()
+    ]);
+    var rqItems = results[0].docs.map(function(d) { return Object.assign({ _id: d.id, _col: 'rq' }, d.data()); });
+    var woItems = results[1].docs.map(function(d) { return Object.assign({ _id: d.id, _col: 'wo' }, d.data()); });
+
+    if (!rqItems.length && !woItems.length) return; // All clear — no modal needed
+
+    var plateLabelEl = document.getElementById('vrc-plate');
+    if (plateLabelEl) plateLabelEl.textContent = plate;
+
+    // Priority order: urgent > critical/high > quick > standard > monitor
+    function getPriority(item) {
+      if (item._col === 'rq') {
+        if (item.urgent || item.rqPriority === 'urgent') return 0;
+        if (item.rqPriority === 'quick' || item.materialsReady) return 1;
+        return 2;
+      } else {
+        // work order
+        if (item.repairPriority === 'critical') return 0;
+        if (item.repairPriority === 'high') return 0;
+        if (item.repairPriority === 'standard') return 2;
+        if (item.repairPriority === 'monitor') return 3;
+        return 2;
+      }
+    }
+
+    function getPriorityBadge(item) {
+      if (item._col === 'rq') {
+        if (item.urgent || item.rqPriority === 'urgent') return '<span class="vrc-badge vrc-urgent">🔴 URGENT</span>';
+        if (item.rqPriority === 'quick' || item.materialsReady) return '<span class="vrc-badge vrc-quick">🟡 QUICK FIX</span>';
+        return '<span class="vrc-badge vrc-std">🔵 QUEUED</span>';
+      } else {
+        if (item.repairPriority === 'critical') return '<span class="vrc-badge vrc-urgent">🔴 CRITICAL</span>';
+        if (item.repairPriority === 'high') return '<span class="vrc-badge vrc-urgent">🟠 HIGH</span>';
+        if (item.repairPriority === 'monitor') return '<span class="vrc-badge vrc-monitor">🟢 MONITOR</span>';
+        return '<span class="vrc-badge vrc-std">🔵 STANDARD</span>';
+      }
+    }
+
+    function getItemDesc(item) {
+      return item.text || item.note || item.body || item.description || 'No description';
+    }
+
+    // Sort by priority
+    var allItems = rqItems.concat(woItems);
+    allItems.sort(function(a, b) { return getPriority(a) - getPriority(b); });
+
+    // Split into sections
+    var rqSorted = rqItems.slice().sort(function(a, b) { return getPriority(a) - getPriority(b); });
+    var woSorted = woItems.slice().sort(function(a, b) { return getPriority(a) - getPriority(b); });
+
+    var html = '';
+
+    // Summary bar
+    var urgentCount = allItems.filter(function(i) { return getPriority(i) === 0; }).length;
+    var quickCount = allItems.filter(function(i) { return getPriority(i) === 1 && i._col === 'rq'; }).length;
+    html += '<div class="vrc-summary">'
+      + (urgentCount > 0 ? '<span class="vrc-sum-badge vrc-sum-urgent">🔴 ' + urgentCount + ' urgent</span>' : '')
+      + (quickCount > 0 ? '<span class="vrc-sum-badge vrc-sum-quick">🟡 ' + quickCount + ' quick fix</span>' : '')
+      + '<span class="vrc-sum-badge vrc-sum-total">' + allItems.length + ' total items</span>'
+      + '</div>';
+
+    // Return Queue Section
+    if (rqSorted.length > 0) {
+      html += '<div class="vrc-section">'
+        + '<div class="vrc-sec-header"><span class="vrc-sec-icon">🔁</span><span class="vrc-sec-title">Return Queue</span><span class="vrc-sec-sub">Queued to handle when ' + escapeHtml(plate) + ' came back</span></div>';
+      rqSorted.forEach(function(item) {
+        var quickNote = (item.materialsReady || item.rqPriority === 'quick')
+          ? '<div class="vrc-item-sub">📦 Materials in storage — ready to install</div>' : '';
+        html += '<div class="vrc-item" id="vrc-item-' + item._id + '">'
+          + '<div class="vrc-item-info">'
+          + getPriorityBadge(item)
+          + '<div class="vrc-item-desc">' + escapeHtml(getItemDesc(item)) + '</div>'
+          + quickNote
+          + '</div>'
+          + '<div class="vrc-item-actions">'
+          + '<button class="vrc-done-btn" onclick="_vrcMarkDone(\'' + item._id + '\')">✓ Done</button>'
+          + '<button class="vrc-skip-btn" data-skip="' + item._id + '" onclick="_vrcSkip(this)">Skip</button>'
+          + '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    // Work Orders Section
+    if (woSorted.length > 0) {
+      html += '<div class="vrc-section">'
+        + '<div class="vrc-sec-header"><span class="vrc-sec-icon">⚠️</span><span class="vrc-sec-title">Open Issues</span><span class="vrc-sec-sub">Active work orders that need attention</span></div>';
+      woSorted.forEach(function(item) {
+        var cat = item.category ? '<span class="vrc-item-cat">' + escapeHtml(item.category) + '</span>' : '';
+        html += '<div class="vrc-item" id="vrc-item-' + item._id + '">'
+          + '<div class="vrc-item-info">'
+          + getPriorityBadge(item)
+          + '<div class="vrc-item-desc">' + escapeHtml(getItemDesc(item)) + cat + '</div>'
+          + (item.repairStatus && item.repairStatus !== 'open' ? '<div class="vrc-item-sub">Status: ' + item.repairStatus.replace(/_/g, ' ') + '</div>' : '')
+          + '</div>'
+          + '<div class="vrc-item-actions">'
+          + '<button class="vrc-done-btn" onclick="_vrcMarkWoDone(\'' + item._id + '\')">✓ Mark Fixed</button>'
+          + '<button class="vrc-view-btn" onclick="closeVehicleReturnCheck();openMaintenanceDash();">View →</button>'
+          + '</div></div>';
+      });
+      html += '</div>';
+    }
+
+    var body = document.getElementById('vrc-body');
+    if (body) body.innerHTML = html;
+
+    var overlay = document.getElementById('vrc-overlay');
+    if (overlay) overlay.style.display = 'flex';
+  } catch (e) {
+    console.warn('Return check error:', e);
+    // Don't break the save flow if this fails
+  }
+};
+
+window._vrcMarkDone = async function(noteId) {
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      done: true, doneAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    var el = document.getElementById('vrc-item-' + noteId);
+    if (el) {
+      el.innerHTML = '<div style="color:#059669;font-size:0.85rem;padding:4px 0;">✅ Done</div>';
+      setTimeout(function() { if (el) el.remove(); _vrcCheckEmpty(); }, 800);
+    }
+    toast('Item completed ✓', 'success');
+    // Refresh maintenance dash if open
+    if (_maintDashLoaded) _loadWorkOrders && _loadWorkOrders();
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+};
+
+window._vrcMarkWoDone = async function(noteId) {
+  try {
+    await db.collection('vehicleNotes').doc(noteId).update({
+      done: true,
+      doneAt: firebase.firestore.FieldValue.serverTimestamp(),
+      closedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      closedBy: currentUser ? currentUser.uid : ''
+    });
+    var el = document.getElementById('vrc-item-' + noteId);
+    if (el) {
+      el.innerHTML = '<div style="color:#059669;font-size:0.85rem;padding:4px 0;">✅ Marked Fixed</div>';
+      setTimeout(function() { if (el) el.remove(); _vrcCheckEmpty(); }, 800);
+    }
+    toast('Issue marked fixed ✓', 'success');
+    if (_maintDashLoaded) _loadWorkOrders && _loadWorkOrders();
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
+};
+
+function _vrcCheckEmpty() {
+  var items = document.querySelectorAll('#vrc-body .vrc-item');
+  if (!items || items.length === 0) {
+    var body = document.getElementById('vrc-body');
+    if (body) body.innerHTML = '<div style="text-align:center;padding:32px;"><div style="font-size:2rem;">✅</div><p style="color:#059669;font-weight:700;margin-top:8px;">All clear! No pending maintenance.</p></div>';
+    setTimeout(closeVehicleReturnCheck, 2500);
+  }
+}
+
+window._vrcSkip = function(btn) {
+  var id = btn ? btn.getAttribute('data-skip') : '';
+  var el = id ? document.getElementById('vrc-item-' + id) : null;
+  if (el) el.style.opacity = '0.35';
+};
