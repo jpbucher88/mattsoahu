@@ -2048,7 +2048,9 @@
         <div class="crm-form-row">
           <div class="crm-form-group">
             <label>Assigned To (Sales Rep)</label>
-            <input type="text" id="crm-lead-assigned" class="crm-form-input" placeholder="Name of rep handling this">
+            <select id="crm-lead-assigned" class="crm-form-input">
+              <option value="">-- Unassigned --</option>
+            </select>
           </div>
           <div class="crm-form-group">
             <label>Vehicle Interest</label>
@@ -2193,211 +2195,194 @@
 
   <!-- ==================== TOAST NOTIFICATION ==================== -->
 
-  <!-- ==================== FINANCE PANEL ==================== -->
+  <!-- ==================== FINANCE PANEL V2 ==================== -->
   <div id="finance-overlay" class="finance-overlay" style="display:none;" onclick="if(event.target===this)closeFinance()">
-    <div class="finance-panel">
-      <div class="finance-header">
-        <div class="finance-header-left">
-          <h3>💵 Finance</h3>
+    <div class="finance-panel fin2-panel">
+
+      <!-- Header -->
+      <div class="fin2-header">
+        <div class="fin2-title-row">
+          <span style="font-size:1.4rem;">💵</span>
+          <span class="fin2-title">Finance Dashboard</span>
         </div>
-        <button class="finance-close" onclick="closeFinance()">&times;</button>
+        <div class="fin2-nav-row">
+          <button class="fin2-nav-btn" onclick="_fin2PrevMonth()">&#8249;</button>
+          <span id="fin2-month-label" class="fin2-month-label">Loading...</span>
+          <button class="fin2-nav-btn" onclick="_fin2NextMonth()">&#8250;</button>
+        </div>
+        <div class="fin2-actions-row">
+          <button class="btn btn-sm fin2-add-rev-btn" onclick="openFin2RevModal()">+ Revenue</button>
+          <button class="btn btn-sm fin2-add-exp-btn" onclick="openFin2ExpModal()">+ Expense</button>
+          <button class="finance-close" onclick="closeFinance()">&times;</button>
+        </div>
       </div>
-      <!-- Finance Tabs -->
-      <div class="finance-tabs">
-        <button class="finance-tab active" id="ftab-overview" onclick="switchFinanceTab('overview')">📊 Overview</button>
-        <button class="finance-tab" id="ftab-revenue" onclick="switchFinanceTab('revenue')">💰 Revenue</button>
-        <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
-        <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
-        <button class="finance-tab" id="ftab-ownercut" onclick="switchFinanceTab('ownercut')">👥 Owner Cut</button>
-        <button class="finance-tab" id="ftab-byvehicle" onclick="switchFinanceTab('byvehicle')">🚗 By Vehicle</button>
-        <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
+
+      <!-- KPI Cards -->
+      <div class="fin2-kpis" id="fin2-kpis">
+        <div class="fin2-kpi-card fin2-kpi-rev" onclick="_fin2ScrollTo('fin2-sec-revenue')">
+          <div class="fin2-kpi-num" id="fin2-kpi-revenue">$—</div>
+          <div class="fin2-kpi-label">💰 Revenue</div>
+        </div>
+        <div class="fin2-kpi-card fin2-kpi-turo" onclick="_fin2ScrollTo('fin2-sec-revenue')">
+          <div class="fin2-kpi-num" id="fin2-kpi-turo">$—</div>
+          <div class="fin2-kpi-label">🚗 Turo</div>
+        </div>
+        <div class="fin2-kpi-card fin2-kpi-private" onclick="_fin2ScrollTo('fin2-sec-revenue')">
+          <div class="fin2-kpi-num" id="fin2-kpi-private">$—</div>
+          <div class="fin2-kpi-label">🔒 Private</div>
+        </div>
+        <div class="fin2-kpi-card fin2-kpi-exp" onclick="_fin2ScrollTo('fin2-sec-expenses')">
+          <div class="fin2-kpi-num" id="fin2-kpi-expenses">$—</div>
+          <div class="fin2-kpi-label">🧾 Expenses</div>
+        </div>
+        <div class="fin2-kpi-card" id="fin2-kpi-pl-card" onclick="_fin2ScrollTo('fin2-sec-pl')">
+          <div class="fin2-kpi-num" id="fin2-kpi-pl">$—</div>
+          <div class="fin2-kpi-label">📈 Net P&amp;L</div>
+        </div>
       </div>
-      <div class="finance-body">
 
-        <!-- ===== OVERVIEW TAB ===== -->
-        <div id="finance-tab-overview" class="finance-tab-content">
-          <div id="finance-overview-body"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
-        </div>
-
-        <!-- ===== REVENUE TAB ===== -->
-        <div id="finance-tab-revenue" class="finance-tab-content" style="display:none;">
-          <div class="fin-controls-row">
-            <label class="exp-label">Month</label>
-            <input type="month" id="fin-rev-month" class="form-select exp-input" style="width:auto;">
-            <button class="btn btn-sm btn-primary" onclick="loadFinanceRevenue()">Load</button>
-            <button class="btn btn-sm btn-success" onclick="toggleFinRevForm()" id="fin-rev-add-btn">➕ Add Revenue</button>
-          </div>
-          <!-- Add Revenue Form -->
-          <div id="fin-rev-add-form" class="fin-add-rev-form" style="display:none;">
-            <div class="fin-add-rev-title">➕ Add Revenue Entry</div>
-            <div class="exp-form-row">
-              <div class="exp-field">
-                <label class="exp-label">Vehicle</label>
-                <select id="fin-rev-vehicle" class="form-select exp-input"></select>
-              </div>
-              <div class="exp-field">
-                <label class="exp-label">Type</label>
-                <select id="fin-rev-type" class="form-select exp-input">
-                  <option value="on-trip">📅 Turo</option>
-                  <option value="private-trip">🔒 Private</option>
-                </select>
-              </div>
-            </div>
-            <div class="exp-form-row">
-              <div class="exp-field">
-                <label class="exp-label">Date</label>
-                <input type="date" id="fin-rev-date" class="form-select exp-input">
-              </div>
-              <div class="exp-field exp-field-amount">
-                <label class="exp-label">Amount ($)</label>
-                <input type="number" id="fin-rev-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
-              </div>
-            </div>
-            <div class="exp-field" style="margin-bottom:10px;">
-              <label class="exp-label">Note <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
-              <input type="text" id="fin-rev-note" class="form-select exp-input" placeholder="e.g. April Turo payout" maxlength="120">
-            </div>
-            <div class="exp-form-row" style="margin-bottom:10px;">
-              <div class="exp-field">
-                <label class="exp-label">Extras <span style="color:#9ca3af;font-weight:400;">(optional)</span></label>
-                <select id="fin-rev-extras-type" class="form-select exp-input">
-                  <option value="">-- None --</option>
-                  <option value="beach-gear">🏖️ Beach Gear</option>
-                  <option value="parking">🅿️ Parking</option>
-                  <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
-                  <option value="beach-tent">⛺ Beach Tent</option>
-                  <option value="car-seat">🪑 Car Seat</option>
-                  <option value="other">✏️ Other</option>
-                </select>
-              </div>
-              <div class="exp-field exp-field-amount">
-                <label class="exp-label">Extras Amount ($)</label>
-                <input type="number" id="fin-rev-extras-amount" class="form-select exp-input" placeholder="0.00" min="0" step="0.01">
-              </div>
-            </div>
-            <div class="exp-form-actions">
-              <button class="btn btn-primary" id="fin-rev-save-btn" onclick="saveFinanceRevenue()">Save</button>
-              <button class="btn btn-outline" onclick="toggleFinRevForm()">Cancel</button>
-            </div>
-          </div>
-          <div id="finance-revenue-body"></div>
-        </div>
-
-        <!-- ===== EXPENSES TAB ===== -->
-        <div id="finance-tab-expenses" class="finance-tab-content" style="display:none;">
-          <!-- Controls row -->
-          <div class="fin-controls-row">
-            <label class="exp-label">Month</label>
-            <input type="month" id="exp-month-filter" class="form-select exp-input" style="width:auto;" onchange="loadExpenseWidget()">
-            <button class="btn btn-sm btn-primary" onclick="loadExpenseWidget()">Load</button>
-            <button class="btn btn-sm btn-success" onclick="toggleFinExpForm()" id="fin-exp-add-btn">➕ Add Expense</button>
-          </div>
-          <!-- Add Expense Form (collapsed by default) -->
-          <div id="fin-exp-add-form" class="fin-add-rev-form" style="display:none;">
-            <div class="fin-add-rev-title">➕ Add Expense</div>
-            <div class="exp-form-row">
-              <div class="exp-field">
-                <label class="exp-label">Date</label>
-                <input type="date" id="exp-date" class="form-select exp-input">
-              </div>
-              <div class="exp-field exp-field-amount">
-                <label class="exp-label">Amount ($)</label>
-                <input type="number" id="exp-amount" class="form-select exp-input" placeholder="0.00" min="0.01" step="0.01">
-              </div>
-              <div class="exp-field">
-                <label class="exp-label">Category</label>
-                <select id="exp-category" class="form-select exp-input">
-                  <option>Venmo Payment</option>
-                  <option>Vendor Payment</option>
-                  <option>Fuel</option>
-                  <option>Supplies</option>
-                  <option>Maintenance</option>
-                  <option>Insurance</option>
-                  <option>Registration</option>
-                  <option>Cleaning</option>
-                  <option>Other</option>
-                </select>
-              </div>
-            </div>
-            <div class="exp-form-row">
-              <div class="exp-field">
-                <label class="exp-label">Vehicle <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
-                <select id="exp-vehicle" class="form-select exp-input">
-                  <option value="">Fleet / General</option>
-                </select>
-              </div>
-              <div class="exp-field exp-field-desc">
-                <label class="exp-label">Description</label>
-                <input type="text" id="exp-desc-input" class="form-select exp-input" placeholder="e.g. Oil change — 613TXU" maxlength="200">
-              </div>
-            </div>
-            <div class="exp-form-actions">
-              <button id="exp-save-btn" class="btn btn-primary" onclick="saveExpense()">Save</button>
-              <button class="btn btn-outline" onclick="toggleFinExpForm()">Cancel</button>
-            </div>
-          </div>
-          <!-- Month total + Expense List (admins/managers only) -->
-          <div id="fin-exp-list-section">
-            <div class="exp-filter-row" style="margin-top:8px;">
-              <span id="expense-month-total" class="exp-month-total-badge">$0.00</span>
-              <span class="exp-month-label">total this month</span>
-            </div>
-            <div id="expense-list" class="exp-list"></div>
-          </div>
-        </div>
-
-        <!-- ===== P&L TAB ===== -->
-        <div id="finance-tab-pl" class="finance-tab-content" style="display:none;">
-          <div class="fin-controls-row">
-            <label class="exp-label">Month</label>
-            <input type="month" id="fin-pl-month" class="form-select exp-input" style="width:auto;">
-            <button class="btn btn-sm btn-primary" onclick="loadFinancePL()">Load</button>
-          </div>
-          <div id="finance-pl-body"></div>
-        </div>
-
-        <!-- ===== BY VEHICLE TAB ===== -->
-        <div id="finance-tab-byvehicle" class="finance-tab-content" style="display:none;">
-          <div class="fin-controls-row">
-            <label class="exp-label">Year</label>
-            <select id="fin-bv-year" class="form-select exp-input" style="width:auto;"></select>
-            <button class="btn btn-sm btn-primary" onclick="_loadFinanceByVehicle()">Load</button>
-            <div style="display:flex;gap:6px;margin-left:auto;">
-              <button class="fin-bv-type-btn active" data-bvtype="all" onclick="_filterFinBvType('all',this)">All</button>
-              <button class="fin-bv-type-btn" data-bvtype="on-trip" onclick="_filterFinBvType('on-trip',this)">🚗 Turo</button>
-              <button class="fin-bv-type-btn" data-bvtype="private-trip" onclick="_filterFinBvType('private-trip',this)">🔒 Private</button>
-            </div>
-          </div>
-          <div id="finance-byvehicle-body"><p class="hint" style="padding:24px;text-align:center;">Select a year and click Load.</p></div>
-        </div>
-
-        <!-- ===== OWNER CUT TAB ===== -->
-        <div id="finance-tab-ownercut" class="finance-tab-content" style="display:none;">
-          <div class="fin-controls-row">
-            <label class="exp-label">Month</label>
-            <input type="month" id="fin-ownercut-month" class="form-select exp-input" style="width:auto;">
-            <button class="btn btn-sm btn-primary" onclick="loadOwnerCutReport()">Load</button>
-          </div>
-          <div id="finance-ownercut-body"><p class="hint" style="padding:24px;text-align:center;">Select a month and click Load.</p></div>
-        </div>
-
-        <!-- Bills tab hidden — will be rebuilt later -->
-        <div id="finance-tab-bills" class="finance-tab-content" style="display:none;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-            <div class="bills-filter-tabs" style="border:none;padding:0;">
-              <button class="bills-tab active" data-fbtab="all" onclick="switchFinanceBillsTab('all',this)">All</button>
-              <button class="bills-tab" data-fbtab="upcoming" onclick="switchFinanceBillsTab('upcoming',this)">⏰ Upcoming</button>
-              <button class="bills-tab" data-fbtab="overdue" onclick="switchFinanceBillsTab('overdue',this)">🔴 Overdue</button>
-              <button class="bills-tab" data-fbtab="paid" onclick="switchFinanceBillsTab('paid',this)">✅ Paid</button>
-            </div>
-            <button class="btn btn-sm btn-primary" onclick="openAddBillForm()">+ Add Bill</button>
-          </div>
-          <div id="finance-bills-list" class="bills-list" style="max-height:55vh;"></div>
-        </div>
-
-      </div><!-- finance-body -->
-    </div><!-- finance-panel -->
+      <!-- Body -->
+      <div class="fin2-body" id="fin2-body">
+        <p class="hint" style="padding:32px;text-align:center;">Loading finance data&hellip;</p>
+      </div>
+    </div>
   </div>
+
+  <!-- ===== Finance V2 Add Revenue Modal ===== -->
+  <div id="fin2-rev-modal" class="fin2-modal-overlay" style="display:none;" onclick="if(event.target===this)closeFin2RevModal()">
+    <div class="fin2-modal-panel">
+      <div class="fin2-modal-header">
+        <h3 style="margin:0;font-size:1rem;font-weight:700;">💰 Add Revenue</h3>
+        <button class="crm-modal-close-btn" onclick="closeFin2RevModal()">&times;</button>
+      </div>
+      <div class="fin2-modal-body">
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Vehicle</label>
+            <select id="fin2-rev-vehicle" class="crm-form-input"></select>
+          </div>
+          <div class="crm-form-group">
+            <label>Type</label>
+            <select id="fin2-rev-type" class="crm-form-input">
+              <option value="on-trip">🚗 Turo</option>
+              <option value="private-trip">🔒 Private</option>
+            </select>
+          </div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Date</label>
+            <input type="date" id="fin2-rev-date" class="crm-form-input">
+          </div>
+          <div class="crm-form-group">
+            <label>Amount ($)</label>
+            <input type="number" id="fin2-rev-amount" class="crm-form-input" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="crm-form-group" style="margin-bottom:10px;">
+          <label>Note <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+          <input type="text" id="fin2-rev-note" class="crm-form-input" placeholder="e.g. July Turo payout" maxlength="120">
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Extras</label>
+            <select id="fin2-rev-extras-type" class="crm-form-input">
+              <option value="">-- None --</option>
+              <option value="beach-gear">🏖️ Beach Gear</option>
+              <option value="parking">🅿️ Parking</option>
+              <option value="snorkeling-gear">🤿 Snorkeling Gear</option>
+              <option value="beach-tent">⛺ Beach Tent</option>
+              <option value="car-seat">🪑 Car Seat</option>
+              <option value="other">✏️ Other</option>
+            </select>
+          </div>
+          <div class="crm-form-group">
+            <label>Extras Amount ($)</label>
+            <input type="number" id="fin2-rev-extras-amount" class="crm-form-input" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+      </div>
+      <div class="crm-lead-modal-footer">
+        <button class="btn btn-sm btn-outline" onclick="closeFin2RevModal()">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="fin2-rev-save-btn" onclick="saveFin2Revenue()">Save Revenue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Finance V2 Add Expense Modal ===== -->
+  <div id="fin2-exp-modal" class="fin2-modal-overlay" style="display:none;" onclick="if(event.target===this)closeFin2ExpModal()">
+    <div class="fin2-modal-panel">
+      <div class="fin2-modal-header">
+        <h3 style="margin:0;font-size:1rem;font-weight:700;">🧾 Add Expense</h3>
+        <button class="crm-modal-close-btn" onclick="closeFin2ExpModal()">&times;</button>
+      </div>
+      <div class="fin2-modal-body">
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Date</label>
+            <input type="date" id="fin2-exp-date" class="crm-form-input">
+          </div>
+          <div class="crm-form-group">
+            <label>Amount ($)</label>
+            <input type="number" id="fin2-exp-amount" class="crm-form-input" placeholder="0.00" min="0.01" step="0.01">
+          </div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Category</label>
+            <select id="fin2-exp-category" class="crm-form-input">
+              <option>Fuel</option>
+              <option>Maintenance</option>
+              <option>Cleaning</option>
+              <option>Insurance</option>
+              <option>Registration</option>
+              <option>Supplies</option>
+              <option>Venmo Payment</option>
+              <option>Vendor Payment</option>
+              <option>Parking / Fees</option>
+              <option>Other</option>
+            </select>
+          </div>
+          <div class="crm-form-group">
+            <label>Vehicle <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+            <select id="fin2-exp-vehicle" class="crm-form-input">
+              <option value="">Fleet / General</option>
+            </select>
+          </div>
+        </div>
+        <div class="crm-form-group">
+          <label>Description</label>
+          <input type="text" id="fin2-exp-desc" class="crm-form-input" placeholder="e.g. Oil change — WRJ219" maxlength="200">
+        </div>
+      </div>
+      <div class="crm-lead-modal-footer">
+        <button class="btn btn-sm btn-outline" onclick="closeFin2ExpModal()">Cancel</button>
+        <button class="btn btn-sm btn-primary" id="fin2-exp-save-btn" onclick="saveFin2Expense()">Save Expense</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Keep legacy hidden inputs for backward-compat functions -->
+  <input type="hidden" id="fin-rev-vehicle"><input type="hidden" id="fin-rev-type">
+  <input type="hidden" id="fin-rev-date"><input type="hidden" id="fin-rev-amount">
+  <input type="hidden" id="fin-rev-note"><input type="hidden" id="fin-rev-extras-type">
+  <input type="hidden" id="fin-rev-extras-amount"><input type="hidden" id="fin-rev-save-btn">
+  <input type="hidden" id="fin-rev-month"><input type="hidden" id="fin-rev-add-btn">
+  <input type="hidden" id="fin-pl-month"><input type="hidden" id="fin-bv-year">
+  <input type="hidden" id="exp-date"><input type="hidden" id="exp-amount">
+  <input type="hidden" id="exp-category"><input type="hidden" id="exp-vehicle">
+  <input type="hidden" id="exp-desc-input"><input type="hidden" id="exp-save-btn">
+  <input type="hidden" id="exp-month-filter"><input type="hidden" id="expense-month-total">
+  <div id="expense-list" style="display:none;"></div>
+  <div id="fin-exp-list-section" style="display:none;"></div>
+  <div id="fin-exp-add-form" style="display:none;"></div>
+  <div id="finance-revenue-body" style="display:none;"></div>
+  <div id="finance-pl-body" style="display:none;"></div>
+  <div id="finance-ownercut-body" style="display:none;"></div>
+  <div id="finance-bills-list" style="display:none;"></div>
+  <div id="finance-byvehicle-body" style="display:none;"></div>
+  <input type="hidden" id="fin-ownercut-month">
+
 
   <!-- ==================== MAILBOX PANEL ==================== -->
   <div id="mailbox-overlay" class="mailbox-overlay" style="display:none;" onclick="if(event.target===this)closeMailbox()">

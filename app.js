@@ -19953,3 +19953,538 @@ function _renderFinanceByVehicle(logs, typeFilter) {
     }
   };
 })();
+
+
+// ================================================================
+// FINANCE DASHBOARD V2
+// ================================================================
+
+var _fin2Year = new Date().getFullYear();
+var _fin2Month = new Date().getMonth() + 1;
+
+function _fin2Fmt(n) {
+  if (!n || n === 0) return '$0';
+  return '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+function _fin2FmtFull(n) {
+  return '$' + Math.abs(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function _fin2DateRange() {
+  var y = _fin2Year, m = _fin2Month;
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+  var start = y + '-' + pad(m) + '-01';
+  var nextM = m === 12 ? 1 : m + 1;
+  var nextY = m === 12 ? y + 1 : y;
+  var lastDay = new Date(nextY, nextM - 1, 0).getDate();
+  var end = y + '-' + pad(m) + '-' + pad(lastDay);
+  return { start: start, end: end };
+}
+
+function _fin2UpdateLabel() {
+  var el = _el('fin2-month-label');
+  if (!el) return;
+  var d = new Date(_fin2Year, _fin2Month - 1, 1);
+  el.textContent = d.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+}
+
+window._fin2PrevMonth = function() {
+  _fin2Month--;
+  if (_fin2Month < 1) { _fin2Month = 12; _fin2Year--; }
+  _fin2UpdateLabel();
+  loadFinanceDashboard();
+};
+
+window._fin2NextMonth = function() {
+  _fin2Month++;
+  if (_fin2Month > 12) { _fin2Month = 1; _fin2Year++; }
+  _fin2UpdateLabel();
+  loadFinanceDashboard();
+};
+
+window._fin2ScrollTo = function(id) {
+  var el = _el(id);
+  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+
+window.loadFinanceDashboard = async function() {
+  var body = _el('fin2-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:32px;text-align:center;">Loading...</p>';
+
+  var range = _fin2DateRange();
+  var EXTRA_LABELS = { 'beach-gear':'Beach Gear', 'parking':'Parking', 'snorkeling-gear':'Snorkeling Gear', 'beach-tent':'Beach Tent', 'car-seat':'Car Seat', 'other':'Other' };
+
+  try {
+    // Load all data in parallel
+    var revPromise = db.collection('tripLogs').where('startDate', '>=', range.start).where('startDate', '<=', range.end).get();
+    var expPromise = db.collection('expenses').where('date', '>=', range.start).where('date', '<=', range.end).get();
+    var maintPromise = db.collection('maintenance').where('date', '>=', range.start).where('date', '<=', range.end).get();
+
+    var results = await Promise.all([revPromise, expPromise, maintPromise]);
+    var revSnap = results[0], expSnap = results[1], maintSnap = results[2];
+
+    // ── Process Revenue ──
+    var byVehicle = {};
+    var manualEntries = [];
+    var totalTuro = 0, totalPrivate = 0, totalExtras = 0;
+
+    revSnap.forEach(function(doc) {
+      var d = doc.data();
+      if (d.cancelled) return;
+      var vid = d.vehicleId || 'unknown';
+      if (!byVehicle[vid]) {
+        byVehicle[vid] = { id: vid, plate: d.vehiclePlate || '?', model: d.vehicleMakeModel || '', turo: 0, priv: 0, extras: 0, trips: 0, noRev: 0 };
+      }
+      var rev = Number(d.revenue) || 0;
+      var extArr = Array.isArray(d.extras) ? d.extras : (d.extrasType && d.extrasAmount ? [{ type: d.extrasType, amount: d.extrasAmount }] : []);
+      var extTotal = extArr.reduce(function(s, e) { return s + (Number(e.amount) || 0); }, 0);
+
+      if (d.tripType === 'private-trip') { byVehicle[vid].priv += rev; totalPrivate += rev; }
+      else { byVehicle[vid].turo += rev; totalTuro += rev; }
+      byVehicle[vid].extras += extTotal;
+      byVehicle[vid].trips++;
+      if (!rev) byVehicle[vid].noRev++;
+      totalExtras += extTotal;
+
+      if (d.manualRevenueEntry) manualEntries.push(Object.assign({ _id: doc.id }, d));
+    });
+
+    var totalRev = totalTuro + totalPrivate + totalExtras;
+    var vehicles = Object.values(byVehicle).sort(function(a, b) { return (b.turo + b.priv + b.extras) - (a.turo + a.priv + a.extras); });
+
+    // ── Process Expenses ──
+    var expByCategory = {};
+    var expByVehicle = {};
+    var generalExp = 0;
+    var totalExpenses = 0;
+    var allExpDocs = [];
+
+    expSnap.forEach(function(doc) {
+      var d = doc.data();
+      var amt = Number(d.amount) || 0;
+      totalExpenses += amt;
+      var cat = d.category || 'Other';
+      expByCategory[cat] = (expByCategory[cat] || 0) + amt;
+      if (d.vehicleId) expByVehicle[d.vehicleId] = (expByVehicle[d.vehicleId] || 0) + amt;
+      else generalExp += amt;
+      allExpDocs.push(Object.assign({ _id: doc.id }, d));
+    });
+    allExpDocs.sort(function(a, b) { return b.date < a.date ? -1 : 1; });
+
+    // ── Process Maintenance Costs ──
+    var maintByVehicle = {};
+    var totalMaint = 0;
+    maintSnap.forEach(function(doc) {
+      var d = doc.data();
+      var cost = Number(d.cost) || 0;
+      if (cost && d.vehicleId) {
+        maintByVehicle[d.vehicleId] = (maintByVehicle[d.vehicleId] || 0) + cost;
+        totalMaint += cost;
+      }
+    });
+
+    var totalCosts = totalExpenses + totalMaint;
+    var netPL = totalRev - totalCosts;
+
+    // ── Update KPI cards ──
+    function setKpi(id, val) { var el = _el(id); if (el) el.textContent = val; }
+    setKpi('fin2-kpi-revenue', _fin2Fmt(totalRev));
+    setKpi('fin2-kpi-turo', _fin2Fmt(totalTuro));
+    setKpi('fin2-kpi-private', _fin2Fmt(totalPrivate + totalExtras));
+    setKpi('fin2-kpi-expenses', _fin2Fmt(totalCosts));
+    setKpi('fin2-kpi-pl', (netPL >= 0 ? '+' : '-') + _fin2Fmt(netPL));
+    var plCard = _el('fin2-kpi-pl-card');
+    if (plCard) { plCard.className = 'fin2-kpi-card ' + (netPL >= 0 ? 'fin2-kpi-profit' : 'fin2-kpi-loss'); }
+
+    // ── Revenue by Vehicle: bar chart ──
+    var revMax = vehicles.length > 0 ? Math.max.apply(null, vehicles.map(function(v) { return v.turo + v.priv + v.extras; })) : 1;
+    var revHtml = '';
+    if (!vehicles.length) {
+      revHtml = '<p class="hint" style="padding:20px;">No revenue this month. Use <strong>+ Revenue</strong> to add a payout.</p>';
+    } else {
+      vehicles.forEach(function(v) {
+        var total = v.turo + v.priv + v.extras;
+        var turoW = revMax > 0 ? Math.round((v.turo / revMax) * 100) : 0;
+        var privW = revMax > 0 ? Math.round((v.priv / revMax) * 100) : 0;
+        var extW = revMax > 0 ? Math.round((v.extras / revMax) * 100) : 0;
+        var vObj = (vehiclesCache || []).find(function(x) { return x.id === v.id; });
+        var vLink = vObj ? ' onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + v.id + '\');},100);" style="cursor:pointer;"' : '';
+        revHtml += '<div class="fin2-veh-row"' + vLink + '>'
+          + '<div class="fin2-veh-label"><strong>' + escapeHtml(v.plate) + '</strong>'
+          + (v.model ? '<span class="fin2-veh-model">' + escapeHtml(v.model) + '</span>' : '')
+          + (v.noRev > 0 ? '<span class="fin2-no-rev-badge">' + v.noRev + ' no $</span>' : '')
+          + '</div>'
+          + '<div class="fin2-bar-wrap">'
+          + (v.turo > 0 ? '<div class="fin2-bar fin2-bar-turo" style="width:' + turoW + '%;" title="Turo: ' + _fin2FmtFull(v.turo) + '"></div>' : '')
+          + (v.priv > 0 ? '<div class="fin2-bar fin2-bar-private" style="width:' + privW + '%;" title="Private: ' + _fin2FmtFull(v.priv) + '"></div>' : '')
+          + (v.extras > 0 ? '<div class="fin2-bar fin2-bar-extras" style="width:' + extW + '%;" title="Extras: ' + _fin2FmtFull(v.extras) + '"></div>' : '')
+          + '</div>'
+          + '<div class="fin2-veh-amounts">'
+          + (v.turo > 0 ? '<span class="fin2-amt-turo">' + _fin2Fmt(v.turo) + '</span>' : '')
+          + (v.priv > 0 ? '<span class="fin2-amt-private">' + _fin2Fmt(v.priv) + '</span>' : '')
+          + (v.extras > 0 ? '<span class="fin2-amt-extras">+' + _fin2Fmt(v.extras) + '</span>' : '')
+          + '<strong class="fin2-amt-total">' + _fin2Fmt(total) + '</strong>'
+          + '</div></div>';
+      });
+    }
+
+    // ── Expenses by Category ──
+    var expCats = Object.entries(expByCategory).sort(function(a, b) { return b[1] - a[1]; });
+    var expMax = expCats.length > 0 ? expCats[0][1] : 1;
+    var CAT_EMOJI = { Fuel:'⛽', Maintenance:'🔧', Cleaning:'🧹', Insurance:'🛡️', Registration:'📋', Supplies:'📦', 'Venmo Payment':'📱', 'Vendor Payment':'🏢', 'Parking / Fees':'🅿️', Other:'📌' };
+    var expCatHtml = expCats.length === 0
+      ? '<p class="hint" style="padding:16px;">No expenses this month.</p>'
+      : expCats.map(function(e) {
+          var pct = Math.round((e[1] / expMax) * 100);
+          return '<div class="fin2-exp-row">'
+            + '<div class="fin2-exp-label">' + (CAT_EMOJI[e[0]] || '📌') + ' ' + escapeHtml(e[0]) + '</div>'
+            + '<div class="fin2-bar-wrap"><div class="fin2-bar fin2-bar-exp" style="width:' + pct + '%;"></div></div>'
+            + '<div class="fin2-exp-amt">' + _fin2FmtFull(e[1]) + '</div></div>';
+        }).join('');
+
+    // ── Expense List ──
+    var expListHtml = allExpDocs.length === 0
+      ? '<p class="hint" style="padding:16px;">No expenses recorded.</p>'
+      : '<div class="fin2-exp-list">' + allExpDocs.map(function(e) {
+          var canDel = currentUserRole === 'admin';
+          return '<div class="fin2-exp-item">'
+            + '<div class="fin2-exp-item-info">'
+            + '<span class="fin2-exp-item-cat">' + (CAT_EMOJI[e.category] || '📌') + ' ' + escapeHtml(e.category || '') + '</span>'
+            + '<span class="fin2-exp-item-desc">' + escapeHtml(e.description || '') + '</span>'
+            + (e.vehiclePlate ? '<span class="fin2-exp-item-plate">' + escapeHtml(e.vehiclePlate) + '</span>' : '<span class="fin2-exp-item-plate" style="color:#9ca3af;">Fleet</span>')
+            + '<span class="fin2-exp-item-date">' + escapeHtml(e.date || '') + '</span>'
+            + '</div>'
+            + '<div class="fin2-exp-item-right">'
+            + '<span class="fin2-exp-item-amt">-' + _fin2FmtFull(e.amount) + '</span>'
+            + (canDel ? '<button class="btn btn-xs btn-outline" style="color:#dc2626;margin-left:8px;" onclick="deleteFin2Expense(\'' + e._id + '\')">✕</button>' : '')
+            + '</div></div>';
+        }).join('') + '</div>';
+
+    // ── P&L per Vehicle table ──
+    var allVids = new Set(Object.keys(byVehicle).concat(Object.keys(expByVehicle)).concat(Object.keys(maintByVehicle)));
+    var plRows = [];
+    allVids.forEach(function(vid) {
+      var rv = byVehicle[vid] || { plate: vid, turo: 0, priv: 0, extras: 0 };
+      var vObj = (vehiclesCache || []).find(function(x) { return x.id === vid; });
+      var plate = rv.plate || (vObj ? vObj.plate : vid);
+      var totalV = rv.turo + rv.priv + rv.extras;
+      var expV = (expByVehicle[vid] || 0) + (maintByVehicle[vid] || 0);
+      var netV = totalV - expV;
+      var margin = totalV > 0 ? Math.round((netV / totalV) * 100) : null;
+      plRows.push({ plate: plate, rev: totalV, exp: expV, net: netV, margin: margin, id: vid });
+    });
+    plRows.sort(function(a, b) { return b.net - a.net; });
+
+    var plTableHtml = plRows.length === 0
+      ? '<p class="hint" style="padding:16px;">No P&L data this month.</p>'
+      : '<div style="overflow-x:auto;"><table class="fin2-pl-table">'
+        + '<thead><tr><th>Vehicle</th><th>Revenue</th><th>Costs</th><th>Net P&L</th><th>Margin</th></tr></thead>'
+        + '<tbody>' + plRows.map(function(r) {
+            var netCls = r.net >= 0 ? 'fin2-pl-profit' : 'fin2-pl-loss';
+            var marginStr = r.margin !== null ? r.margin + '%' : '—';
+            return '<tr onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + r.id + '\');},100);" style="cursor:pointer;">'
+              + '<td><strong>' + escapeHtml(r.plate) + '</strong></td>'
+              + '<td class="fin2-pl-rev">' + _fin2FmtFull(r.rev) + '</td>'
+              + '<td class="fin2-pl-exp">' + (r.exp > 0 ? '-' + _fin2FmtFull(r.exp) : '—') + '</td>'
+              + '<td class="' + netCls + '">' + (r.net >= 0 ? '+' : '-') + _fin2FmtFull(r.net) + '</td>'
+              + '<td style="color:#6b7280;">' + marginStr + '</td>'
+              + '</tr>';
+          }).join('')
+        + (generalExp > 0 ? '<tr><td style="color:#6b7280;"><em>Fleet / General</em></td><td>—</td><td class="fin2-pl-exp">-' + _fin2FmtFull(generalExp) + '</td><td class="fin2-pl-loss">-' + _fin2FmtFull(generalExp) + '</td><td>—</td></tr>' : '')
+        + '</tbody>'
+        + '<tfoot><tr><td><strong>TOTAL</strong></td><td class="fin2-pl-rev"><strong>' + _fin2FmtFull(totalRev) + '</strong></td><td class="fin2-pl-exp"><strong>-' + _fin2FmtFull(totalCosts) + '</strong></td><td class="' + (netPL >= 0 ? 'fin2-pl-profit' : 'fin2-pl-loss') + '"><strong>' + (netPL >= 0 ? '+' : '-') + _fin2FmtFull(netPL) + '</strong></td><td style="color:#6b7280;">' + (totalRev > 0 ? Math.round((netPL / totalRev) * 100) + '%' : '—') + '</td></tr></tfoot>'
+        + '</table></div>';
+
+    // ── Manual Revenue Entries ──
+    var manHtml = '';
+    if (manualEntries.length > 0) {
+      manHtml = '<div id="fin2-sec-manual" class="fin2-section">'
+        + '<div class="fin2-sec-header"><h4 class="fin2-sec-title">📝 Manual Revenue Entries</h4><span class="fin2-sec-count">' + manualEntries.length + '</span></div>'
+        + '<div class="fin2-man-list">'
+        + manualEntries.sort(function(a, b) { return a.startDate < b.startDate ? -1 : 1; }).map(function(e) {
+            var extAmt = Array.isArray(e.extras) ? e.extras.reduce(function(s, x) { return s + (Number(x.amount) || 0); }, 0) : Number(e.extrasAmount || 0);
+            var total = (Number(e.revenue) || 0) + extAmt;
+            return '<div class="fin2-man-row">'
+              + '<span class="fin2-man-plate">' + escapeHtml(e.vehiclePlate || '?') + '</span>'
+              + '<span class="fin2-man-type">' + (e.tripType === 'private-trip' ? '🔒 Private' : '🚗 Turo') + '</span>'
+              + '<span class="fin2-man-date">' + escapeHtml(e.startDate || '') + '</span>'
+              + (e.notes ? '<span class="fin2-man-note">' + escapeHtml(e.notes) + '</span>' : '')
+              + '<div style="margin-left:auto;display:flex;align-items:center;gap:8px;">'
+              + '<strong>' + _fin2FmtFull(total) + '</strong>'
+              + '<button class="btn btn-xs btn-outline" style="color:#dc2626;" onclick="deleteFin2Revenue(\'' + e._id + '\')">✕</button>'
+              + '</div></div>';
+          }).join('')
+        + '</div></div>';
+    }
+
+    // ── Assemble Full Body ──
+    body.innerHTML = ''
+      + '<div id="fin2-sec-revenue" class="fin2-section">'
+      + '<div class="fin2-sec-header">'
+      + '<h4 class="fin2-sec-title">💰 Revenue by Vehicle</h4>'
+      + '<div class="fin2-legend"><span class="fin2-dot fin2-dot-turo"></span>Turo <span class="fin2-dot fin2-dot-private"></span>Private <span class="fin2-dot fin2-dot-extras"></span>Extras</div>'
+      + '</div>'
+      + revHtml
+      + '<div class="fin2-rev-total">Total: <strong>' + _fin2FmtFull(totalRev) + '</strong> &nbsp;|&nbsp; 🚗 Turo: <strong>' + _fin2FmtFull(totalTuro) + '</strong> &nbsp;|&nbsp; 🔒 Private: <strong>' + _fin2FmtFull(totalPrivate) + '</strong>' + (totalExtras > 0 ? ' &nbsp;|&nbsp; Extras: <strong>' + _fin2FmtFull(totalExtras) + '</strong>' : '') + '</div>'
+      + '</div>'
+
+      + '<div id="fin2-sec-expenses" class="fin2-section">'
+      + '<div class="fin2-sec-header">'
+      + '<h4 class="fin2-sec-title">🧾 Expenses</h4>'
+      + '<button class="btn btn-sm fin2-add-exp-btn" onclick="openFin2ExpModal()">+ Add</button>'
+      + '</div>'
+      + '<div class="fin2-two-col">'
+      + '<div>'
+      + '<p class="fin2-sec-sub">By Category</p>'
+      + expCatHtml
+      + '<div class="fin2-exp-totals">Total expenses: <strong>' + _fin2FmtFull(totalExpenses) + '</strong> &nbsp;|&nbsp; Maintenance: <strong>' + _fin2FmtFull(totalMaint) + '</strong></div>'
+      + '</div>'
+      + '<div><p class="fin2-sec-sub">All Entries</p>' + expListHtml + '</div>'
+      + '</div></div>'
+
+      + '<div id="fin2-sec-pl" class="fin2-section">'
+      + '<div class="fin2-sec-header"><h4 class="fin2-sec-title">📈 P&L Per Vehicle</h4><span class="fin2-sec-count">' + plRows.length + ' vehicles</span></div>'
+      + plTableHtml
+      + '</div>'
+
+      + manHtml;
+
+  } catch(e) {
+    console.error('Finance V2 error:', e);
+    body.innerHTML = '<p class="hint" style="color:#dc2626;padding:24px;">Error loading finance data: ' + escapeHtml(e.message) + '</p>';
+  }
+};
+
+// ── Add Revenue Modal ──────────────────────────────────────────
+window.openFin2RevModal = function() {
+  // Populate vehicle dropdown
+  var sel = _el('fin2-rev-vehicle');
+  if (sel) {
+    sel.innerHTML = '<option value="">-- Select Vehicle --</option>';
+    (vehiclesCache || []).slice().sort(function(a, b) { return (a.plate || '').localeCompare(b.plate || ''); }).forEach(function(v) {
+      var opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.plate + (v.make ? ' - ' + v.make + ' ' + v.model : '');
+      sel.appendChild(opt);
+    });
+  }
+  // Set today's date
+  var dateEl = _el('fin2-rev-date');
+  if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+  var modal = _el('fin2-rev-modal'); if (modal) modal.style.display = 'flex';
+};
+
+window.closeFin2RevModal = function() {
+  var modal = _el('fin2-rev-modal'); if (modal) modal.style.display = 'none';
+};
+
+window.saveFin2Revenue = async function() {
+  var vehicleSel = _el('fin2-rev-vehicle');
+  var vehicleId = vehicleSel ? vehicleSel.value : '';
+  var vehiclePlate = vehicleSel && vehicleSel.selectedOptions[0] ? (vehicleSel.selectedOptions[0].textContent.split(' - ')[0]) : '';
+  var vehicleObj = vehicleId ? (vehiclesCache || []).find(function(v) { return v.id === vehicleId; }) : null;
+  var vehicleModel = vehicleObj ? ((vehicleObj.make || '') + ' ' + (vehicleObj.model || '')).trim() : '';
+  var tripType = _el('fin2-rev-type') ? _el('fin2-rev-type').value : 'on-trip';
+  var date = _el('fin2-rev-date') ? _el('fin2-rev-date').value : todayDateString();
+  var amount = parseFloat(_el('fin2-rev-amount') ? _el('fin2-rev-amount').value : '0');
+  var note = _el('fin2-rev-note') ? _el('fin2-rev-note').value.trim() : '';
+  var extrasType = _el('fin2-rev-extras-type') ? _el('fin2-rev-extras-type').value : '';
+  var extrasAmount = parseFloat(_el('fin2-rev-extras-amount') ? _el('fin2-rev-extras-amount').value : '0') || 0;
+
+  if (!vehicleId) { toast('Select a vehicle', 'warning'); return; }
+  if (!date) { toast('Enter a date', 'warning'); return; }
+  if ((!amount || amount <= 0) && (!extrasType || extrasAmount <= 0)) { toast('Enter an amount', 'warning'); return; }
+
+  var btn = _el('fin2-rev-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  try {
+    var record = {
+      vehicleId: vehicleId, vehiclePlate: vehiclePlate, vehicleMakeModel: vehicleModel,
+      startDate: date, endDate: date, tripType: tripType,
+      revenue: amount > 0 ? amount : 0, manualRevenueEntry: true,
+      loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      loggedBy: currentUser.uid, loggedByName: currentUser.displayName || currentUser.email
+    };
+    if (note) record.notes = note;
+    if (extrasType && extrasAmount > 0) record.extras = [{ type: extrasType, amount: extrasAmount }];
+    var key = vehicleId + '_' + date + '_manrev_' + Date.now();
+    await db.collection('tripLogs').doc(key).set(record);
+    toast('Revenue added!', 'success');
+    // Reset
+    var amtEl = _el('fin2-rev-amount'); if (amtEl) amtEl.value = '';
+    var noteEl = _el('fin2-rev-note'); if (noteEl) noteEl.value = '';
+    var extTypeEl = _el('fin2-rev-extras-type'); if (extTypeEl) extTypeEl.value = '';
+    var extAmtEl = _el('fin2-rev-extras-amount'); if (extAmtEl) extAmtEl.value = '';
+    closeFin2RevModal();
+    loadFinanceDashboard();
+  } catch(e) {
+    toast('Failed to save revenue: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Revenue'; }
+  }
+};
+
+window.deleteFin2Revenue = async function(docId) {
+  if (!confirm('Delete this revenue entry?')) return;
+  try {
+    await db.collection('tripLogs').doc(docId).delete();
+    toast('Revenue entry deleted', 'success');
+    loadFinanceDashboard();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+};
+
+// ── Add Expense Modal ─────────────────────────────────────────
+window.openFin2ExpModal = function() {
+  var sel = _el('fin2-exp-vehicle');
+  if (sel) {
+    sel.innerHTML = '<option value="">Fleet / General</option>';
+    (vehiclesCache || []).slice().sort(function(a, b) { return (a.plate || '').localeCompare(b.plate || ''); }).forEach(function(v) {
+      var opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = v.plate + (v.make ? ' - ' + v.make + ' ' + v.model : '');
+      sel.appendChild(opt);
+    });
+  }
+  var dateEl = _el('fin2-exp-date');
+  if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+  var modal = _el('fin2-exp-modal'); if (modal) modal.style.display = 'flex';
+};
+
+window.closeFin2ExpModal = function() {
+  var modal = _el('fin2-exp-modal'); if (modal) modal.style.display = 'none';
+};
+
+window.saveFin2Expense = async function() {
+  var date = _el('fin2-exp-date') ? _el('fin2-exp-date').value : todayDateString();
+  var amount = parseFloat(_el('fin2-exp-amount') ? _el('fin2-exp-amount').value : '0');
+  var category = _el('fin2-exp-category') ? _el('fin2-exp-category').value : 'Other';
+  var desc = _el('fin2-exp-desc') ? _el('fin2-exp-desc').value.trim() : '';
+  var vehicleSel = _el('fin2-exp-vehicle');
+  var vehicleId = vehicleSel ? vehicleSel.value : '';
+  var vehicleObj = vehicleId ? (vehiclesCache || []).find(function(v) { return v.id === vehicleId; }) : null;
+
+  if (!amount || amount <= 0) { toast('Enter a valid amount', 'warning'); return; }
+  if (!desc) { toast('Enter a description', 'warning'); return; }
+
+  var btn = _el('fin2-exp-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+
+  try {
+    var record = {
+      date: date, amount: amount, category: category, description: desc,
+      submittedBy: currentUser.uid, submittedByName: currentUser.displayName || currentUser.email,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if (vehicleId) { record.vehicleId = vehicleId; record.vehiclePlate = vehicleObj ? vehicleObj.plate : ''; }
+    await db.collection('expenses').add(record);
+    toast('Expense saved!', 'success');
+    var amtEl = _el('fin2-exp-amount'); if (amtEl) amtEl.value = '';
+    var descEl = _el('fin2-exp-desc'); if (descEl) descEl.value = '';
+    closeFin2ExpModal();
+    loadFinanceDashboard();
+  } catch(e) {
+    toast('Failed to save expense: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Save Expense'; }
+  }
+};
+
+window.deleteFin2Expense = async function(docId) {
+  if (!confirm('Delete this expense?')) return;
+  try {
+    await db.collection('expenses').doc(docId).delete();
+    toast('Expense deleted', 'success');
+    loadFinanceDashboard();
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
+};
+
+// ── Override openFinance to use V2 ────────────────────────────
+(function() {
+  window.openFinance = function() {
+    var overlay = _el('finance-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+    _fin2Year = new Date().getFullYear();
+    _fin2Month = new Date().getMonth() + 1;
+    _fin2UpdateLabel();
+    loadFinanceDashboard();
+  };
+})();
+
+
+// ================================================================
+// CRM TEAM MEMBERS - Load real users into Assigned To dropdown
+// ================================================================
+
+var _crmTeamMembers = []; // cache of team members
+
+window._loadCrmTeamSelect = async function() {
+  var sel = _el('crm-lead-assigned');
+  if (!sel) return;
+
+  // Use cache if already loaded
+  if (_crmTeamMembers.length > 0) {
+    _populateCrmTeamSelect(sel, _crmTeamMembers);
+    return;
+  }
+
+  try {
+    // Load users who have crmAccess or are admin/manager
+    var snap = await db.collection('users').get();
+    var members = [];
+    snap.forEach(function(doc) {
+      var d = doc.data();
+      if (d.crmAccess === true || d.role === 'admin' || d.role === 'manager') {
+        members.push({ uid: doc.id, name: d.displayName || d.email || 'Unknown', role: d.role || 'user' });
+      }
+    });
+    members.sort(function(a, b) { return a.name.localeCompare(b.name); });
+    _crmTeamMembers = members;
+    _populateCrmTeamSelect(sel, members);
+  } catch(e) {
+    console.warn('Could not load team members:', e);
+    // Fallback: leave as free text
+    var input = document.createElement('input');
+    input.type = 'text'; input.id = 'crm-lead-assigned'; input.className = sel.className;
+    input.placeholder = 'Sales rep name';
+    sel.parentNode.replaceChild(input, sel);
+  }
+};
+
+function _populateCrmTeamSelect(sel, members) {
+  var currentVal = sel.value || '';
+  sel.innerHTML = '<option value="">-- Unassigned --</option>';
+  members.forEach(function(m) {
+    var opt = document.createElement('option');
+    opt.value = m.name;
+    opt.textContent = m.name + (m.role === 'admin' ? ' 👑' : m.role === 'manager' ? ' ⭐' : '');
+    if (m.name === currentVal) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// Patch openAddLeadModal and editCrmLead to load team members
+(function() {
+  var _origOpen = window.openAddLeadModal;
+  window.openAddLeadModal = function() {
+    if (_origOpen) _origOpen.apply(this, arguments);
+    _loadCrmTeamSelect();
+  };
+
+  var _origEdit = window.editCrmLead;
+  window.editCrmLead = async function(leadId) {
+    if (_origEdit) await _origEdit.apply(this, arguments);
+    // After edit populates the select, reload with members to restore selection
+    var asgn = _el('crm-lead-assigned');
+    if (asgn && asgn.tagName === 'SELECT') {
+      // Value was set to text by the original function - try to match
+      var currentText = asgn.value;
+      _loadCrmTeamSelect().then(function() {
+        var sel = _el('crm-lead-assigned');
+        if (sel) sel.value = currentText;
+      });
+    }
+  };
+})();
