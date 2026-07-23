@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260721g">
+  <link rel="stylesheet" href="style.css?v=20260722crm">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -73,6 +73,10 @@
       </button>
       <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
         <span class="task-alert-icon">🔧</span>
+      </button>
+      <button id="btn-crm-dash" class="task-alert-btn" title="CRM — Sales Dashboard" onclick="openCrmDash()" style="display:none;">
+        <span class="task-alert-icon">🤝</span>
+        <span id="crm-alert-count" class="task-alert-count count-zero">0</span>
       </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
@@ -1831,6 +1835,285 @@
           <div id="maint-hist-results" style="margin-top:12px;"><p class="hint">Click Search to load records.</p></div>
         </div>
 
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== CRM V1 DASHBOARD ==================== -->
+  <div id="crm-dash-overlay" class="crm-dash-overlay" style="display:none;" onclick="if(event.target===this)closeCrmDash()">
+    <div class="crm-dash-panel">
+      <div class="crm-dash-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:1.3rem;">🤝</span>
+          <div>
+            <h3 style="margin:0;font-size:1rem;font-weight:700;color:#fff;">CRM V1 — Sales Dashboard</h3>
+            <p style="margin:0;font-size:0.78rem;color:rgba(255,255,255,0.75);">Track leads · Monitor rentals · Close more deals</p>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:1px solid rgba(255,255,255,0.3);" onclick="openAddLeadModal()">+ Add Lead</button>
+          <button class="crm-dash-close" onclick="closeCrmDash()">&times;</button>
+        </div>
+      </div>
+
+      <!-- KPI Summary Bar -->
+      <div id="crm-kpi-bar" class="crm-kpi-bar">
+        <div class="crm-kpi-card" onclick="switchCrmTab('ctab-leads',document.querySelector('[data-ctab=ctab-leads]'))">
+          <div class="crm-kpi-num" id="crm-kpi-total">—</div>
+          <div class="crm-kpi-label">Total Leads</div>
+        </div>
+        <div class="crm-kpi-card crm-kpi-card-green" onclick="switchCrmTab('ctab-pipeline',document.querySelector('[data-ctab=ctab-pipeline]'))">
+          <div class="crm-kpi-num" id="crm-kpi-pipeline">—</div>
+          <div class="crm-kpi-label">💰 Pipeline Value</div>
+        </div>
+        <div class="crm-kpi-card crm-kpi-card-blue" onclick="switchCrmTab('ctab-team',document.querySelector('[data-ctab=ctab-team]'))">
+          <div class="crm-kpi-num" id="crm-kpi-winrate">—%</div>
+          <div class="crm-kpi-label">🏆 Win Rate</div>
+        </div>
+        <div class="crm-kpi-card crm-kpi-card-red" onclick="switchCrmTab('ctab-lost',document.querySelector('[data-ctab=ctab-lost]'))">
+          <div class="crm-kpi-num" id="crm-kpi-lost">—</div>
+          <div class="crm-kpi-label">❌ Lost (30d)</div>
+        </div>
+        <div class="crm-kpi-card crm-kpi-card-orange" onclick="switchCrmTab('ctab-rentals',document.querySelector('[data-ctab=ctab-rentals]'))">
+          <div class="crm-kpi-num" id="crm-kpi-alerts">—</div>
+          <div class="crm-kpi-label">⚠️ Trips Ending Soon</div>
+        </div>
+      </div>
+
+      <div class="crm-dash-tabs">
+        <button class="crm-tab-btn active" data-ctab="ctab-pipeline" onclick="switchCrmTab('ctab-pipeline',this)">📊 Pipeline</button>
+        <button class="crm-tab-btn" data-ctab="ctab-leads" onclick="switchCrmTab('ctab-leads',this)">📋 All Leads</button>
+        <button class="crm-tab-btn" data-ctab="ctab-rentals" onclick="switchCrmTab('ctab-rentals',this)">🚗 Active Rentals</button>
+        <button class="crm-tab-btn" data-ctab="ctab-lost" onclick="switchCrmTab('ctab-lost',this)">📉 Lost Reasons</button>
+        <button class="crm-tab-btn" data-ctab="ctab-team" onclick="switchCrmTab('ctab-team',this)">👥 Team</button>
+      </div>
+
+      <div class="crm-dash-body">
+
+        <!-- ===== Pipeline Tab ===== -->
+        <div id="ctab-pipeline" class="crm-tab-content">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Move leads through the pipeline. Click any card to edit or log a communication.</p>
+            <button class="btn btn-sm btn-outline" onclick="_loadCrmPipeline()">↻ Refresh</button>
+          </div>
+          <div id="crm-pipeline-board" class="crm-pipeline-board">
+            <p class="hint" style="padding:24px;text-align:center;">Loading pipeline…</p>
+          </div>
+        </div>
+
+        <!-- ===== All Leads Tab ===== -->
+        <div id="ctab-leads" class="crm-tab-content" style="display:none;">
+          <div class="crm-leads-toolbar">
+            <input type="text" id="crm-leads-search" class="crm-search-input" placeholder="Search by name, email, phone…" oninput="_filterCrmLeads()">
+            <select id="crm-leads-status-filter" class="crm-filter-select" onchange="_filterCrmLeads()">
+              <option value="">All Statuses</option>
+              <option value="new">New Inquiry</option>
+              <option value="contacted">Contacted</option>
+              <option value="qualified">Qualified</option>
+              <option value="proposal">Proposal Sent</option>
+              <option value="won">Won ✅</option>
+              <option value="lost">Lost ❌</option>
+            </select>
+            <select id="crm-leads-source-filter" class="crm-filter-select" onchange="_filterCrmLeads()">
+              <option value="">All Sources</option>
+              <option value="turo">Turo</option>
+              <option value="direct">Direct / Website</option>
+              <option value="instagram">Instagram</option>
+              <option value="referral">Referral</option>
+              <option value="phone">Phone Call</option>
+              <option value="other">Other</option>
+            </select>
+            <button class="btn btn-sm btn-outline" onclick="_loadCrmLeads()">↻ Refresh</button>
+          </div>
+          <div id="crm-leads-content"><p class="hint" style="padding:24px;text-align:center;">Loading leads…</p></div>
+        </div>
+
+        <!-- ===== Active Rentals Tab ===== -->
+        <div id="ctab-rentals" class="crm-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Monitor active rentals. Send pre-end messages to retain customers and drive rebookings.</p>
+            <button class="btn btn-sm btn-outline" onclick="_loadCrmActiveRentals()">↻ Refresh</button>
+          </div>
+          <div id="crm-rentals-alerts" style="margin-bottom:12px;"></div>
+          <div id="crm-rentals-content"><p class="hint" style="padding:24px;text-align:center;">Loading active rentals…</p></div>
+        </div>
+
+        <!-- ===== Lost Reasons Tab ===== -->
+        <div id="ctab-lost" class="crm-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">We're losing 95% of inquiries. Use this data to fix the leaks in your pipeline.</p>
+            <button class="btn btn-sm btn-outline" onclick="_loadCrmLostReasons()">↻ Refresh</button>
+          </div>
+          <div id="crm-lost-content"><p class="hint" style="padding:24px;text-align:center;">Loading data…</p></div>
+        </div>
+
+        <!-- ===== Team Tab ===== -->
+        <div id="ctab-team" class="crm-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Sales team performance. See who's closing and who needs support.</p>
+            <button class="btn btn-sm btn-outline" onclick="_loadCrmTeam()">↻ Refresh</button>
+          </div>
+          <div id="crm-team-content"><p class="hint" style="padding:24px;text-align:center;">Loading team data…</p></div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CRM Add/Edit Lead Modal ===== -->
+  <div id="crm-lead-modal" class="crm-lead-modal-overlay" style="display:none;" onclick="if(event.target===this)closeCrmLeadModal()">
+    <div class="crm-lead-modal-panel">
+      <div class="crm-lead-modal-header">
+        <h3 id="crm-lead-modal-title" style="margin:0;font-size:1rem;font-weight:700;">Add New Lead</h3>
+        <button class="crm-modal-close-btn" onclick="closeCrmLeadModal()">&times;</button>
+      </div>
+      <div class="crm-lead-modal-body">
+        <input type="hidden" id="crm-lead-id">
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Customer Name *</label>
+            <input type="text" id="crm-lead-name" class="crm-form-input" placeholder="Full name" autocomplete="off">
+          </div>
+          <div class="crm-form-group">
+            <label>Phone</label>
+            <input type="tel" id="crm-lead-phone" class="crm-form-input" placeholder="(808) 555-0000">
+          </div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Email</label>
+            <input type="email" id="crm-lead-email" class="crm-form-input" placeholder="customer@email.com">
+          </div>
+          <div class="crm-form-group">
+            <label>Lead Source</label>
+            <select id="crm-lead-source" class="crm-form-input">
+              <option value="turo">🚗 Turo</option>
+              <option value="direct">🌐 Direct / Website</option>
+              <option value="instagram">📸 Instagram</option>
+              <option value="referral">🤝 Referral</option>
+              <option value="phone">📞 Phone Call</option>
+              <option value="other">⭐ Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Status</label>
+            <select id="crm-lead-status" class="crm-form-input" onchange="_toggleCrmLostFields()">
+              <option value="new">🆕 New Inquiry</option>
+              <option value="contacted">📞 Contacted</option>
+              <option value="qualified">✅ Qualified</option>
+              <option value="proposal">📄 Proposal Sent</option>
+              <option value="won">🏆 Won</option>
+              <option value="lost">❌ Lost</option>
+            </select>
+          </div>
+          <div class="crm-form-group">
+            <label>Trip Value ($)</label>
+            <input type="number" id="crm-lead-value" class="crm-form-input" placeholder="0.00" min="0" step="0.01">
+          </div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Trip Start Date</label>
+            <input type="date" id="crm-lead-start" class="crm-form-input">
+          </div>
+          <div class="crm-form-group">
+            <label>Trip End Date</label>
+            <input type="date" id="crm-lead-end" class="crm-form-input">
+          </div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Assigned To (Sales Rep)</label>
+            <input type="text" id="crm-lead-assigned" class="crm-form-input" placeholder="Name of rep handling this">
+          </div>
+          <div class="crm-form-group">
+            <label>Vehicle Interest</label>
+            <input type="text" id="crm-lead-vehicle" class="crm-form-input" placeholder="e.g. SUV, Tesla, any">
+          </div>
+        </div>
+        <!-- Lost fields — visible only when status = lost -->
+        <div id="crm-lost-fields" style="display:none;background:#fef2f2;border-radius:10px;padding:12px;margin-bottom:12px;">
+          <p style="margin:0 0 10px;font-size:0.82rem;font-weight:700;color:#dc2626;">❌ Lost Lead Details</p>
+          <div class="crm-form-row" style="margin-bottom:0;">
+            <div class="crm-form-group">
+              <label>Lost Reason *</label>
+              <select id="crm-lead-lost-reason" class="crm-form-input">
+                <option value="price">💰 Price Too High</option>
+                <option value="availability">📅 No Availability</option>
+                <option value="competitor">🏁 Went with Competitor</option>
+                <option value="timing">⏰ Bad Timing / Postponed</option>
+                <option value="no-response">🔇 Stopped Responding</option>
+                <option value="other">❓ Other</option>
+              </select>
+            </div>
+            <div class="crm-form-group">
+              <label>Lost Notes</label>
+              <input type="text" id="crm-lead-lost-notes" class="crm-form-input" placeholder="Any additional context…">
+            </div>
+          </div>
+        </div>
+        <div class="crm-form-group" style="margin-bottom:4px;">
+          <label>Internal Notes</label>
+          <textarea id="crm-lead-notes" class="crm-form-input" rows="3" placeholder="Any notes about this lead or conversation…" style="resize:vertical;"></textarea>
+        </div>
+        <!-- Communication history (injected dynamically on edit) -->
+        <div id="crm-lead-comm-history"></div>
+      </div>
+      <div class="crm-lead-modal-footer">
+        <button class="btn btn-sm btn-outline" onclick="closeCrmLeadModal()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="saveCrmLead()">Save Lead</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== CRM Log Communication Modal ===== -->
+  <div id="crm-comm-modal" class="crm-lead-modal-overlay" style="display:none;" onclick="if(event.target===this)closeCrmCommModal()">
+    <div class="crm-lead-modal-panel" style="max-width:560px;">
+      <div class="crm-lead-modal-header">
+        <h3 style="margin:0;font-size:1rem;font-weight:700;">Log Communication</h3>
+        <button class="crm-modal-close-btn" onclick="closeCrmCommModal()">&times;</button>
+      </div>
+      <div class="crm-lead-modal-body">
+        <input type="hidden" id="crm-comm-lead-id">
+        <p id="crm-comm-lead-name" style="margin:0 0 14px;font-size:0.88rem;color:#6b7280;font-weight:600;"></p>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Communication Type</label>
+            <select id="crm-comm-type" class="crm-form-input">
+              <option value="call">📞 Phone Call</option>
+              <option value="text">💬 Text Message</option>
+              <option value="email">📧 Email</option>
+              <option value="turo">🚗 Turo Message</option>
+              <option value="note">📝 Internal Note</option>
+            </select>
+          </div>
+          <div class="crm-form-group">
+            <label>Direction</label>
+            <select id="crm-comm-direction" class="crm-form-input">
+              <option value="outbound">↗ Outbound (we sent)</option>
+              <option value="inbound">↙ Inbound (they reached out)</option>
+            </select>
+          </div>
+        </div>
+        <div class="crm-form-group" style="margin-bottom:12px;">
+          <label>Message / Notes</label>
+          <textarea id="crm-comm-message" class="crm-form-input" rows="4" placeholder="What was communicated? Paste message or summarize the call…" style="resize:vertical;"></textarea>
+        </div>
+        <div>
+          <p style="font-size:0.78rem;color:#6b7280;margin:0 0 8px;font-weight:700;">⚡ Quick Templates:</p>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <button class="btn btn-xs btn-outline" onclick="setCrmCommTemplate('pre-end')">Pre-Trip End Check-in</button>
+            <button class="btn btn-xs btn-outline" onclick="setCrmCommTemplate('follow-up')">General Follow Up</button>
+            <button class="btn btn-xs btn-outline" onclick="setCrmCommTemplate('rebooking')">Rebooking Offer</button>
+            <button class="btn btn-xs btn-outline" onclick="setCrmCommTemplate('welcome')">Welcome / Confirmation</button>
+          </div>
+        </div>
+      </div>
+      <div class="crm-lead-modal-footer">
+        <button class="btn btn-sm btn-outline" onclick="closeCrmCommModal()">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="saveCrmComm()">Log Communication</button>
       </div>
     </div>
   </div>

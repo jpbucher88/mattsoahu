@@ -1,4 +1,4 @@
-rules_version = '2';
+﻿rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -134,14 +134,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Pending photo upload markers — any registered user can create/read/delete their own
+    // Pending photo upload markers â€” any registered user can create/read/delete their own
     match /_pendingPhotoUploads/{markerId} {
       allow read: if isAuth() && resource.data.userId == request.auth.uid;
       allow create: if isRegistered() && request.resource.data.userId == request.auth.uid;
       allow delete: if isAuth() && resource.data.userId == request.auth.uid;
     }
 
-    // Service providers — aggregated ratings/history for shops and mechanics
+    // Service providers â€” aggregated ratings/history for shops and mechanics
     // Managers/admins can read and write; all registered users can read for autocomplete
     match /serviceProviders/{providerId} {
       allow read: if isRegistered();
@@ -149,7 +149,7 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Vendor events — missed appointments, completions, reliability tracking
+    // Vendor events â€” missed appointments, completions, reliability tracking
     // Managers/admins only
     match /vendorEvents/{eventId} {
       allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
@@ -157,10 +157,21 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
-    // User activity log — write by any registered user (fire-and-forget), read by admin only
+    // User activity log â€” write by any registered user (fire-and-forget), read by admin only
     match /userActivity/{entryId} {
       allow read: if isAdmin();
       allow create: if isRegistered();
+
+    // CRM V1 - Sales leads
+    // Access: admin always, or crmAccess:true on user doc
+    match /crm_leads/{leadId} {
+      allow read, create, update: if isAdmin() || (isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('crmAccess', false) == true);
+      allow delete: if isAdmin();
+    }
+
+    match /crm_comms/{commId} {
+      allow read, create: if isAdmin() || (isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('crmAccess', false) == true);
+      allow update, delete: if isAdmin();
     }
   }
 }

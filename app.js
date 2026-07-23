@@ -1188,6 +1188,12 @@ auth.onAuthStateChanged(async (user) => {
         }
       }
 
+      // CRM V1 access — admin always has it; others need crmAccess: true on their user doc
+      if (currentUserRole === 'admin' || userData.crmAccess === true) {
+        const crmBtn = $('btn-crm-dash');
+        if (crmBtn) crmBtn.style.display = '';
+      }
+
       // Easter eggs: fire AFTER page is visible so they don't block the loading spinner
       if (uName.includes('dan')) {
         setTimeout(() => showDanEasterEgg(), 80);
@@ -19130,3 +19136,591 @@ window.exitRolePreview = function() {
 
 
 
+
+
+// ================================================================
+// CRM V1 � SALES DASHBOARD
+// ================================================================
+
+let _crmDashLoaded = false;
+let _crmAllLeads = [];      // cache for client-side filtering
+
+// -- Open / Close / Tab Switch -------------------------------------
+window.openCrmDash = function() {
+  const overlay = crm-dash-overlay;
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  if (!_crmDashLoaded) {
+    _crmDashLoaded = true;
+    _loadCrmPipeline();
+    _loadCrmKpis();
+  }
+};
+
+window.closeCrmDash = function() {
+  const overlay = crm-dash-overlay;
+  if (overlay) overlay.style.display = 'none';
+};
+
+window.switchCrmTab = function(tabId, btn) {
+  document.querySelectorAll('.crm-tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.crm-tab-content').forEach(c => {
+    if (c.closest && c.closest('.crm-dash-panel')) c.style.display = 'none';
+  });
+  if (btn) btn.classList.add('active');
+  const tab = ;
+  if (tab) tab.style.display = 'block';
+  if (tabId === 'ctab-pipeline') _loadCrmPipeline();
+  else if (tabId === 'ctab-leads') _loadCrmLeads();
+  else if (tabId === 'ctab-rentals') _loadCrmActiveRentals();
+  else if (tabId === 'ctab-lost') _loadCrmLostReasons();
+  else if (tabId === 'ctab-team') _loadCrmTeam();
+};
+
+// -- KPI Summary Bar -----------------------------------------------
+async function _loadCrmKpis() {
+  try {
+    const snap = await db.collection('crm_leads').get();
+    const leads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _crmAllLeads = leads;
+
+    const thirtyAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const won = leads.filter(l => l.status === 'won');
+    const lost = leads.filter(l => l.status === 'lost');
+    const lostRecent = lost.filter(l => l.updatedAt && l.updatedAt.toDate && l.updatedAt.toDate() > thirtyAgo);
+    const active = leads.filter(l => !['won','lost'].includes(l.status));
+    const pipelineVal = active.reduce((s, l) => s + (parseFloat(l.value) || 0), 0);
+    const winRate = (won.length + lost.length) > 0
+      ? Math.round((won.length / (won.length + lost.length)) * 100) : 0;
+
+    // Count trips ending within 48h
+    const now = new Date();
+    const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+    const endingSoon = (vehiclesCache || []).filter(v => {
+      if (v.tripStatus !== 'on-trip' || !v.tripExpectedEnd) return false;
+      const end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
+      return end >= now && end <= in48h;
+    });
+
+    const setEl = (id, val) => { const el = ; if (el) el.textContent = val; };
+    setEl('crm-kpi-total', leads.length);
+    setEl('crm-kpi-pipeline', pipelineVal > 0 ? '$' + Math.round(pipelineVal) : '');
+    setEl('crm-kpi-winrate', winRate + '%');
+    setEl('crm-kpi-lost', lostRecent.length);
+    setEl('crm-kpi-alerts', endingSoon.length);
+
+    // Update header badge
+    const badge = crm-alert-count;
+    if (badge) {
+      badge.textContent = endingSoon.length;
+      badge.className = 'task-alert-count' + (endingSoon.length > 0 ? '' : ' count-zero');
+    }
+  } catch (e) {
+    console.warn('CRM KPI error:', e);
+  }
+}
+
+// -- Pipeline (Kanban) ---------------------------------------------
+window._loadCrmPipeline = async function() {
+  const board = crm-pipeline-board;
+  if (!board) return;
+  board.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading pipeline�</p>';
+  try {
+    const snap = await db.collection('crm_leads').orderBy('createdAt', 'desc').get();
+    const leads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _crmAllLeads = leads;
+
+    const COLS = [
+      { key: 'new',       label: '?? New',         cls: 'col-new' },
+      { key: 'contacted', label: '?? Contacted',    cls: 'col-contacted' },
+      { key: 'qualified', label: '? Qualified',    cls: 'col-qualified' },
+      { key: 'proposal',  label: '?? Proposal',     cls: 'col-proposal' },
+      { key: 'won',       label: '?? Won',           cls: 'col-won' },
+      { key: 'lost',      label: '? Lost',          cls: 'col-lost' },
+    ];
+
+    let html = '';
+    COLS.forEach(col => {
+      const colLeads = leads.filter(l => l.status === col.key);
+      const colVal = colLeads.reduce((s, l) => s + (parseFloat(l.value) || 0), 0);
+      const valTag = colVal > 0 ? ' � $' + Math.round(colVal) : '';
+      html += '<div class=crm-pipeline-col ' + col.cls + '>'
+        + '<div class=crm-pipeline-col-header>'
+        + '<span>' + col.label + '</span>'
+        + '<span class=badge style=background:#e5e7eb;color:#374151;font-size:0.7rem;>' + colLeads.length + valTag + '</span>'
+        + '</div><div class=crm-pipeline-col-body>';
+      if (!colLeads.length) {
+        html += '<p class=hint style=font-size:0.76rem;text-align:center;padding:10px 0;>Empty</p>';
+      } else {
+        const shown = col.key === 'lost' ? colLeads.slice(0, 5) : colLeads;
+        shown.forEach(l => { html += _buildCrmPipelineCard(l); });
+        if (col.key === 'lost' && colLeads.length > 5) {
+          html += '<p class=hint style=font-size:0.74rem;text-align:center;>+'
+            + (colLeads.length - 5) + ' more ? Lost tab</p>';
+        }
+      }
+      html += '</div></div>';
+    });
+
+    board.innerHTML = html;
+    _loadCrmKpis();
+  } catch (e) {
+    board.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
+  }
+};
+
+function _buildCrmPipelineCard(l) {
+  const name = escapeHtml(l.name || 'Unknown');
+  const phone = escapeHtml((l.phone || l.email || '').slice(0, 22));
+  const source = l.source ? ' � ' + escapeHtml(l.source) : '';
+  const assigned = l.assignedTo ? '<span style=font-size:0.7rem;color:#6b7280;>?? ' + escapeHtml(l.assignedTo) + '</span>' : '';
+  const value = l.value ? '<div class=crm-card-value>$' + parseFloat(l.value).toFixed(0) + '</div>' : '';
+  const dates = l.tripStart ? '<div class=crm-card-meta>' + escapeHtml(l.tripStart) + (l.tripEnd ? ' ? ' + escapeHtml(l.tripEnd) : '') + '</div>' : '';
+  const safeName = name.replace(/\\/g, '\\\\').replace(/'/g, \\');
+  return '<div class=crm-pipeline-card status-' + l.status + ' onclick=editCrmLead(\'' + l.id + '\')>'
+    + '<div class=crm-card-name>' + name + '</div>'
+    + '<div class=crm-card-meta>' + phone + source + '</div>'
+    + dates + value
+    + '<div style=display:flex;justify-content:space-between;align-items:center;margin-top:6px;>'
+    + assigned
+    + '<button class=btn btn-xs btn-outline style=font-size:0.68rem;padding:2px 6px; onclick=event.stopPropagation();openCrmCommModal(\'' + l.id + '\',\'' + safeName + '\')>??</button>'
+    + '</div></div>';
+}
+
+// -- All Leads Table -----------------------------------------------
+window._loadCrmLeads = async function() {
+  const content = crm-leads-content;
+  if (!content) return;
+  content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading�</p>';
+  try {
+    const snap = await db.collection('crm_leads').orderBy('createdAt', 'desc').get();
+    _crmAllLeads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _renderCrmLeadsTable(_crmAllLeads);
+  } catch (e) {
+    content.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
+  }
+};
+
+function _renderCrmLeadsTable(leads) {
+  const content = crm-leads-content;
+  if (!content) return;
+  if (!leads.length) {
+    content.innerHTML = '<div style=text-align:center;padding:40px 20px;>'
+      + '<p style=color:#6b7280;margin-bottom:16px;>No leads match. Try adjusting filters or add a new lead.</p>'
+      + '<button class=btn btn-primary onclick=openAddLeadModal()>+ Add Lead</button></div>';
+    return;
+  }
+  const SL = { new:'New', contacted:'Contacted', qualified:'Qualified', proposal:'Proposal Sent', won:'Won ?', lost:'Lost ?' };
+  const SI = { turo:'??', direct:'??', instagram:'??', referral:'??', phone:'??', other:'?' };
+  const REASONS = { price:'Price', availability:'Availability', competitor:'Competitor', timing:'Timing', 'no-response':'No Response', other:'Other' };
+  let html = '<div style=font-size:0.8rem;color:#6b7280;margin-bottom:8px;text-align:right;>' + leads.length + ' lead' + (leads.length !== 1 ? 's' : '') + '</div>';
+  leads.forEach(l => {
+    const icon = SI[l.source] || '?';
+    const val = l.value ? '$' + parseFloat(l.value).toFixed(0) : '';
+    const dates = l.tripStart ? escapeHtml(l.tripStart) + (l.tripEnd ? ' ? ' + escapeHtml(l.tripEnd) : '') : '';
+    const lostTag = l.status === 'lost' && l.lostReason
+      ? '<span style=font-size:0.7rem;color:#dc2626;background:#fee2e2;padding:2px 6px;border-radius:6px;margin-left:6px;>' + escapeHtml(REASONS[l.lostReason] || l.lostReason) + '</span>' : '';
+    const infoParts = [l.phone && escapeHtml(l.phone), l.email && escapeHtml(l.email), l.assignedTo && '?? ' + escapeHtml(l.assignedTo), dates].filter(Boolean);
+    const safeName = escapeHtml(l.name || '').replace(/'/g, \\');
+    html += '<div class=crm-lead-row onclick=editCrmLead(\'' + l.id + '\')>'
+      + '<div><div class=crm-lead-name>' + icon + ' ' + escapeHtml(l.name || 'Unknown') + lostTag + '</div>'
+      + '<div class=crm-lead-info>' + infoParts.join(' � ') + '</div></div>'
+      + '<span class=crm-status-badge crm-status-' + (l.status || 'new') + '>' + (SL[l.status] || l.status) + '</span>'
+      + '<span style=font-weight:700;color:#059669;font-size:0.88rem;>' + val + '</span>'
+      + '<div style=display:flex;gap:4px;>'
+      + '<button class=btn btn-xs btn-outline title=Log communication onclick=event.stopPropagation();openCrmCommModal(\'' + l.id + '\',\'' + safeName + '\')>??</button>'
+      + '<button class=btn btn-xs btn-outline title=Edit lead onclick=event.stopPropagation();editCrmLead(\'' + l.id + '\')>??</button>'
+      + '<button class=btn btn-xs btn-outline style=color:#dc2626; title=Delete lead onclick=event.stopPropagation();deleteCrmLead(\'' + l.id + '\',\'' + safeName + '\')>??</button>'
+      + '</div></div>';
+  });
+  content.innerHTML = html;
+}
+
+window._filterCrmLeads = function() {
+  const search = (crm-leads-search ? crm-leads-search.value : '').toLowerCase();
+  const status = crm-leads-status-filter ? crm-leads-status-filter.value : '';
+  const source = crm-leads-source-filter ? crm-leads-source-filter.value : '';
+  const filtered = _crmAllLeads.filter(l => {
+    const ms = !search || (l.name||'').toLowerCase().includes(search)
+      || (l.email||'').toLowerCase().includes(search)
+      || (l.phone||'').toLowerCase().includes(search);
+    const mst = !status || l.status === status;
+    const mso = !source || l.source === source;
+    return ms && mst && mso;
+  });
+  _renderCrmLeadsTable(filtered);
+};
+
+// -- Active Rentals ------------------------------------------------
+window._loadCrmActiveRentals = function() {
+  const content = crm-rentals-content;
+  const alertsEl = crm-rentals-alerts;
+  if (!content) return;
+
+  const now = new Date();
+  const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const in48h = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const onTrip = (vehiclesCache || []).filter(v => v.tripStatus === 'on-trip');
+
+  if (!onTrip.length) {
+    if (alertsEl) alertsEl.innerHTML = '';
+    content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>No vehicles currently on trip.</p>';
+    return;
+  }
+
+  const sorted = onTrip.slice().sort((a, b) => {
+    const aE = a.tripExpectedEnd ? (a.tripExpectedEnd.toDate ? a.tripExpectedEnd.toDate() : new Date(a.tripExpectedEnd)) : new Date('9999');
+    const bE = b.tripExpectedEnd ? (b.tripExpectedEnd.toDate ? b.tripExpectedEnd.toDate() : new Date(b.tripExpectedEnd)) : new Date('9999');
+    return aE - bE;
+  });
+
+  const urgent = sorted.filter(v => {
+    if (!v.tripExpectedEnd) return false;
+    const end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
+    return end <= in24h;
+  });
+
+  if (alertsEl) {
+    alertsEl.innerHTML = urgent.length
+      ? '<div style=background:#fef2f2;border:1px solid #fca5a5;border-radius:10px;padding:12px 16px;>'
+        + '<strong style=color:#dc2626;>?? ' + urgent.length + ' rental' + (urgent.length > 1 ? 's' : '') + ' ending within 24 hours</strong>'
+        + '<span style=color:#6b7280;font-size:0.82rem;margin-left:8px;>� send a pre-end check-in now</span></div>'
+      : '';
+  }
+
+  let html = '';
+  sorted.forEach(v => {
+    const plate = escapeHtml(v.plate || '');
+    const makeModel = escapeHtml((v.make || '') + ' ' + (v.model || '')).trim();
+    let timeBadge = '', badgeCls = 'crm-time-normal', cardCls = '';
+
+    if (v.tripExpectedEnd) {
+      const end = v.tripExpectedEnd.toDate ? v.tripExpectedEnd.toDate() : new Date(v.tripExpectedEnd);
+      const hrs = (end - now) / 3600000;
+      const endFmt = end.toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', year: 'numeric' });
+      if (hrs < 0) { timeBadge = 'OVERDUE'; badgeCls = 'crm-time-urgent'; cardCls = 'ending-urgent'; }
+      else if (hrs < 24) { timeBadge = Math.ceil(hrs) + 'h left'; badgeCls = 'crm-time-urgent'; cardCls = 'ending-urgent'; }
+      else if (hrs < 48) { timeBadge = Math.ceil(hrs) + 'h left'; badgeCls = 'crm-time-soon'; cardCls = 'ending-soon'; }
+      else { timeBadge = 'Ends ' + endFmt; }
+    }
+
+    html += '<div class=crm-rental-card ' + cardCls + '>'
+      + '<div>'
+      + '<div class=crm-rental-label>?? ' + plate + (makeModel ? ' � ' + makeModel : '') + '</div>'
+      + (v.homeLocation ? '<div class=crm-rental-meta>?? ' + escapeHtml(v.homeLocation) + '</div>' : '')
+      + (timeBadge ? '<span class=crm-rental-time-badge ' + badgeCls + '>' + timeBadge + '</span>' : '')
+      + '</div>'
+      + '<div class=crm-rental-actions>'
+      + '<button class=btn btn-sm btn-outline onclick=openCrmCommModalVehicle(\'' + v.id + '\',\'' + plate + '\',\'pre-end\')>?? Pre-End Check-in</button>'
+      + '<button class=btn btn-sm btn-outline onclick=openCrmCommModalVehicle(\'' + v.id + '\',\'' + plate + '\',\'rebooking\')>?? Rebook Offer</button>'
+      + '<button class=btn btn-sm btn-outline onclick=closeCrmDash();setTimeout(()=>openVehiclePage(\'' + v.id + '\'),100)>?? Vehicle</button>'
+      + '</div></div>';
+  });
+
+  content.innerHTML = html;
+};
+
+window.openCrmCommModalVehicle = function(vehicleId, plate, template) {
+  crm-comm-lead-id.value = 'vehicle:' + vehicleId;
+  crm-comm-lead-name.textContent = 'Vehicle: ' + plate;
+  crm-comm-message.value = '';
+  crm-comm-type.value = 'turo';
+  crm-comm-direction.value = 'outbound';
+  if (template) setCrmCommTemplate(template);
+  crm-comm-modal.style.display = 'flex';
+};
+
+// -- Lost Reasons Analytics ----------------------------------------
+window._loadCrmLostReasons = async function() {
+  const content = crm-lost-content;
+  if (!content) return;
+  content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading�</p>';
+  try {
+    const snap = await db.collection('crm_leads').where('status', '==', 'lost').get();
+    const lostLeads = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    if (!lostLeads.length) {
+      content.innerHTML = '<p class=hint style=padding:32px;text-align:center;>No lost leads yet. Mark leads as ? Lost with a reason to build your analytics here.</p>';
+      return;
+    }
+
+    const RL = { price:'?? Price Too High', availability:'?? No Availability', competitor:'?? Went with Competitor', timing:'? Bad Timing', 'no-response':'?? Stopped Responding', other:'? Other' };
+    const counts = {};
+    lostLeads.forEach(l => { const r = l.lostReason || 'other'; counts[r] = (counts[r] || 0) + 1; });
+    const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const max = sorted[0][1];
+    const totalVal = lostLeads.reduce((s, l) => s + (parseFloat(l.value) || 0), 0);
+    const totalAll = _crmAllLeads.length || lostLeads.length;
+
+    let html = '<div style=display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;>'
+      + '<div style=background:#fef2f2;border-radius:10px;padding:13px;text-align:center;><div style=font-size:1.45rem;font-weight:800;color:#dc2626;>' + lostLeads.length + '</div><div style=font-size:0.74rem;color:#6b7280;font-weight:600;>Lost Leads</div></div>'
+      + '<div style=background:#fff7ed;border-radius:10px;padding:13px;text-align:center;><div style=font-size:1.45rem;font-weight:800;color:#d97706;>$' + Math.round(totalVal) + '</div><div style=font-size:0.74rem;color:#6b7280;font-weight:600;>Revenue Lost</div></div>'
+      + '<div style=background:#f0fdf4;border-radius:10px;padding:13px;text-align:center;><div style=font-size:1.45rem;font-weight:800;color:#059669;>' + Math.round((lostLeads.length / totalAll) * 100) + '%</div><div style=font-size:0.74rem;color:#6b7280;font-weight:600;>of Total Lost</div></div>'
+      + '</div>'
+      + '<h4 style=margin:0 0 14px;font-size:0.9rem;color:#374151;>?? Why We\'re Losing Deals</h4>';
+
+    sorted.forEach(function(entry) {
+      const reason = entry[0]; const count = entry[1];
+      const pct = Math.round((count / lostLeads.length) * 100);
+      const barPct = Math.round((count / max) * 100);
+      html += '<div class=crm-lost-reason-row>'
+        + '<div class=crm-lost-reason-label>' + (RL[reason] || escapeHtml(reason)) + '</div>'
+        + '<div class=crm-lost-bar-wrap><div class=crm-lost-bar style=width:' + barPct + '%;></div></div>'
+        + '<div class=crm-lost-count>' + count + ' <span style=color:#9ca3af;font-size:0.72rem;>(' + pct + '%)</span></div>'
+        + '</div>';
+    });
+
+    html += '<h4 style=margin:22px 0 10px;font-size:0.9rem;color:#374151;>Recent Lost Leads</h4>';
+    lostLeads.slice(0, 12).forEach(l => {
+      const reason = RL[l.lostReason] || l.lostReason || 'Unknown';
+      html += '<div style=padding:10px 12px;border:1px solid #fee2e2;border-radius:9px;margin-bottom:6px;cursor:pointer; onclick=editCrmLead(\'' + l.id + '\')>'
+        + '<div style=display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;>'
+        + '<strong style=font-size:0.88rem;>' + escapeHtml(l.name || 'Unknown') + '</strong>'
+        + '<span style=font-size:0.74rem;background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:8px;>' + reason + '</span>'
+        + '</div>'
+        + (l.lostNotes ? '<div style=font-size:0.78rem;color:#6b7280;margin-top:3px;>' + escapeHtml(l.lostNotes) + '</div>' : '')
+        + (l.value ? '<div style=font-size:0.78rem;color:#d97706;margin-top:2px;>Lost value: $' + parseFloat(l.value).toFixed(0) + '</div>' : '')
+        + '</div>';
+    });
+
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
+  }
+};
+
+// -- Team Performance ----------------------------------------------
+window._loadCrmTeam = async function() {
+  const content = crm-team-content;
+  if (!content) return;
+  content.innerHTML = '<p class=hint style=padding:24px;text-align:center;>Loading�</p>';
+  try {
+    const snap = await db.collection('crm_leads').get();
+    const leads = snap.docs.map(d => d.data());
+    const reps = {};
+    leads.forEach(l => {
+      const rep = l.assignedTo ? l.assignedTo.trim() : 'Unassigned';
+      if (!reps[rep]) reps[rep] = { name: rep, total: 0, won: 0, lost: 0, pipeline: 0, revenue: 0 };
+      reps[rep].total++;
+      if (l.status === 'won') { reps[rep].won++; reps[rep].revenue += parseFloat(l.value) || 0; }
+      else if (l.status === 'lost') reps[rep].lost++;
+      else reps[rep].pipeline++;
+    });
+    const repList = Object.values(reps).sort((a, b) => b.won - a.won || b.total - a.total);
+    if (!repList.length) {
+      content.innerHTML = '<p class=hint style=padding:32px;text-align:center;>No data yet. Assign leads to sales reps to track performance here.</p>';
+      return;
+    }
+    let html = '<p style=font-size:0.82rem;color:#6b7280;margin-bottom:16px;>Assign leads to team members using the Assigned To field to track individual performance.</p>';
+    repList.forEach(rep => {
+      const initials = rep.name.split(' ').map(w => w[0] || '').join('').slice(0,2).toUpperCase();
+      const winRate = (rep.won + rep.lost) > 0 ? Math.round((rep.won / (rep.won + rep.lost)) * 100) : 0;
+      html += '<div class=crm-team-card>'
+        + '<div class=crm-team-avatar>' + escapeHtml(initials || '?') + '</div>'
+        + '<div><div style=font-weight:700;font-size:0.95rem;>' + escapeHtml(rep.name) + '</div>'
+        + '<div style=font-size:0.78rem;color:#6b7280;>' + rep.total + ' total lead' + (rep.total !== 1 ? 's' : '') + '</div></div>'
+        + '<div class=crm-team-stats>'
+        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#059669;>' + rep.won + '</div><div class=crm-team-stat-label>Won</div></div>'
+        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#dc2626;>' + rep.lost + '</div><div class=crm-team-stat-label>Lost</div></div>'
+        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#d97706;>' + rep.pipeline + '</div><div class=crm-team-stat-label>Pipeline</div></div>'
+        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#2563eb;>' + winRate + '%</div><div class=crm-team-stat-label>Win Rate</div></div>'
+        + '<div class=crm-team-stat><div class=crm-team-stat-num style=color:#059669;>$' + Math.round(rep.revenue) + '</div><div class=crm-team-stat-label>Revenue</div></div>'
+        + '</div></div>';
+    });
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<p class=hint style=color:#dc2626;padding:24px;>Error: ' + escapeHtml(e.message) + '</p>';
+  }
+};
+
+// -- Add / Edit Lead Modal -----------------------------------------
+window.openAddLeadModal = function() {
+  crm-lead-modal-title.textContent = 'Add New Lead';
+  crm-lead-id.value = '';
+  ['crm-lead-name','crm-lead-phone','crm-lead-email','crm-lead-assigned','crm-lead-vehicle','crm-lead-notes','crm-lead-lost-notes'].forEach(id => { if () .value = ''; });
+  if (crm-lead-value) crm-lead-value.value = '';
+  if (crm-lead-start) crm-lead-start.value = '';
+  if (crm-lead-end) crm-lead-end.value = '';
+  if (crm-lead-source) crm-lead-source.value = 'turo';
+  if (crm-lead-status) crm-lead-status.value = 'new';
+  if (crm-lead-lost-reason) crm-lead-lost-reason.value = 'price';
+  _toggleCrmLostFields();
+  const hist = crm-lead-comm-history;
+  if (hist) hist.innerHTML = '';
+  crm-lead-modal.style.display = 'flex';
+};
+
+window.editCrmLead = async function(leadId) {
+  try {
+    const doc = await db.collection('crm_leads').doc(leadId).get();
+    if (!doc.exists) { toast('Lead not found', 'error'); return; }
+    const l = doc.data();
+    crm-lead-modal-title.textContent = 'Edit Lead';
+    crm-lead-id.value = leadId;
+    if (crm-lead-name) crm-lead-name.value = l.name || '';
+    if (crm-lead-phone) crm-lead-phone.value = l.phone || '';
+    if (crm-lead-email) crm-lead-email.value = l.email || '';
+    if (crm-lead-source) crm-lead-source.value = l.source || 'turo';
+    if (crm-lead-status) crm-lead-status.value = l.status || 'new';
+    if (crm-lead-value) crm-lead-value.value = l.value || '';
+    if (crm-lead-start) crm-lead-start.value = l.tripStart || '';
+    if (crm-lead-end) crm-lead-end.value = l.tripEnd || '';
+    if (crm-lead-assigned) crm-lead-assigned.value = l.assignedTo || '';
+    if (crm-lead-vehicle) crm-lead-vehicle.value = l.vehicleInterest || '';
+    if (crm-lead-notes) crm-lead-notes.value = l.notes || '';
+    if (crm-lead-lost-reason) crm-lead-lost-reason.value = l.lostReason || 'price';
+    if (crm-lead-lost-notes) crm-lead-lost-notes.value = l.lostNotes || '';
+    _toggleCrmLostFields();
+    crm-lead-modal.style.display = 'flex';
+    _loadLeadCommHistory(leadId);
+  } catch (e) {
+    toast('Error loading lead: ' + e.message, 'error');
+  }
+};
+
+async function _loadLeadCommHistory(leadId) {
+  const hist = crm-lead-comm-history;
+  if (!hist) return;
+  hist.innerHTML = '<p style=font-size:0.78rem;color:#9ca3af;>Loading history�</p>';
+  try {
+    const snap = await db.collection('crm_comms').where('leadId', '==', leadId).orderBy('sentAt', 'desc').limit(8).get();
+    if (snap.empty) {
+      hist.innerHTML = '<p style=font-size:0.78rem;color:#9ca3af;margin-top:8px;>No communications logged yet.</p>';
+      return;
+    }
+    const TI = { call:'??', text:'??', email:'??', turo:'??', note:'??' };
+    let html = '<div style=margin-top:14px;padding-top:12px;border-top:1px solid #e5e7eb;><h5 style=margin:0 0 8px;font-size:0.82rem;color:#374151;>Recent Communications</h5>';
+    snap.docs.forEach(d => {
+      const c = d.data();
+      const icon = TI[c.type] || '??';
+      const cls = c.type === 'note' ? 'crm-comm-note' : c.direction === 'inbound' ? 'crm-comm-inbound' : 'crm-comm-outbound';
+      const time = c.sentAt ? (c.sentAt.toDate ? c.sentAt.toDate() : new Date(c.sentAt)).toLocaleString() : '';
+      html += '<div class=crm-comm-entry ' + cls + '>' + icon + ' ' + escapeHtml(c.message || '') + '<div class=crm-comm-time>' + escapeHtml(c.sentBy || '') + (time ? ' � ' + time : '') + '</div></div>';
+    });
+    hist.innerHTML = html + '</div>';
+  } catch (e) {
+    hist.innerHTML = '<p style=font-size:0.78rem;color:#dc2626;>Could not load history.</p>';
+  }
+}
+
+window._toggleCrmLostFields = function() {
+  const lostFields = crm-lost-fields;
+  const statusEl = crm-lead-status;
+  if (lostFields && statusEl) lostFields.style.display = statusEl.value === 'lost' ? 'block' : 'none';
+};
+
+window.closeCrmLeadModal = function() {
+  crm-lead-modal.style.display = 'none';
+};
+
+window.saveCrmLead = async function() {
+  const nameEl = crm-lead-name;
+  const name = nameEl ? nameEl.value.trim() : '';
+  if (!name) { toast('Customer name is required', 'error'); return; }
+  const status = crm-lead-status ? crm-lead-status.value : 'new';
+  const data = {
+    name,
+    phone: (crm-lead-phone ? crm-lead-phone.value.trim() : ''),
+    email: (crm-lead-email ? crm-lead-email.value.trim() : ''),
+    source: (crm-lead-source ? crm-lead-source.value : 'other'),
+    status,
+    value: parseFloat(crm-lead-value ? crm-lead-value.value : '') || null,
+    tripStart: (crm-lead-start ? crm-lead-start.value : '') || null,
+    tripEnd: (crm-lead-end ? crm-lead-end.value : '') || null,
+    assignedTo: (crm-lead-assigned ? crm-lead-assigned.value.trim() : ''),
+    vehicleInterest: (crm-lead-vehicle ? crm-lead-vehicle.value.trim() : ''),
+    notes: (crm-lead-notes ? crm-lead-notes.value.trim() : ''),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  if (status === 'lost') {
+    data.lostReason = crm-lead-lost-reason ? crm-lead-lost-reason.value : 'other';
+    data.lostNotes = crm-lead-lost-notes ? crm-lead-lost-notes.value.trim() : '';
+  }
+  const id = crm-lead-id ? crm-lead-id.value : '';
+  try {
+    if (id) {
+      await db.collection('crm_leads').doc(id).update(data);
+      toast('Lead updated ?', 'success');
+    } else {
+      data.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      data.createdBy = currentUser ? currentUser.uid : '';
+      await db.collection('crm_leads').add(data);
+      toast('Lead added ?', 'success');
+    }
+    closeCrmLeadModal();
+    const activeTab = document.querySelector('.crm-tab-btn.active');
+    if (activeTab) switchCrmTab(activeTab.dataset.ctab, activeTab);
+    _loadCrmKpis();
+  } catch (e) {
+    toast('Error saving lead: ' + e.message, 'error');
+  }
+};
+
+window.deleteCrmLead = async function(leadId, name) {
+  if (!confirm('Delete lead ' + name + '? This cannot be undone.')) return;
+  try {
+    await db.collection('crm_leads').doc(leadId).delete();
+    toast('Lead deleted', 'success');
+    const activeTab = document.querySelector('.crm-tab-btn.active');
+    if (activeTab) switchCrmTab(activeTab.dataset.ctab, activeTab);
+    _loadCrmKpis();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+};
+
+// -- Communication Modal -------------------------------------------
+window.openCrmCommModal = function(leadId, leadName) {
+  crm-comm-lead-id.value = leadId;
+  crm-comm-lead-name.textContent = leadName ? 'Customer: ' + leadName : '';
+  if (crm-comm-message) crm-comm-message.value = '';
+  if (crm-comm-type) crm-comm-type.value = 'call';
+  if (crm-comm-direction) crm-comm-direction.value = 'outbound';
+  crm-comm-modal.style.display = 'flex';
+};
+
+window.closeCrmCommModal = function() {
+  crm-comm-modal.style.display = 'none';
+};
+
+const _CRM_TEMPLATES = {
+  'pre-end': Aloha! Just checking in as your rental is wrapping up. We hope you're enjoying the trip! Please remember to return the vehicle with the same fuel level and clean interior. Let us know if you have any questions before drop-off. Mahalo!,
+  'follow-up': Aloha! Just following up on your inquiry about renting with us. We'd love to get you set up � do you have any questions I can help answer? What dates are you looking at?,
+  'rebooking': Aloha! Hope your last trip was amazing! We'd love to have you back. Are you planning another visit to Hawaii? Let me know your dates and I'll find the perfect vehicle for you. Returning guests get priority booking!,
+  'welcome': Aloha and welcome! Your rental is confirmed. We're excited to have you! Please don't hesitate to reach out if you need anything before or during your trip. We're here to make your experience incredible. Mahalo!
+};
+
+window.setCrmCommTemplate = function(key) {
+  const tmpl = _CRM_TEMPLATES[key];
+  if (tmpl && crm-comm-message) crm-comm-message.value = tmpl;
+};
+
+window.saveCrmComm = async function() {
+  const msg = crm-comm-message ? crm-comm-message.value.trim() : '';
+  if (!msg) { toast('Please enter a message or notes', 'error'); return; }
+  const leadId = crm-comm-lead-id ? crm-comm-lead-id.value : '';
+  const leadName = crm-comm-lead-name ? crm-comm-lead-name.textContent.replace('Customer: ','').replace('Vehicle: ','') : '';
+  const data = {
+    leadId,
+    leadName,
+    type: crm-comm-type ? crm-comm-type.value : 'note',
+    direction: crm-comm-direction ? crm-comm-direction.value : 'outbound',
+    message: msg,
+    sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+    sentBy: currentUser ? (currentUser.displayName || currentUser.email || '') : '',
+  };
+  try {
+    await db.collection('crm_comms').add(data);
+    if (leadId && !leadId.startsWith('vehicle:')) {
+      await db.collection('crm_leads').doc(leadId).update({ updatedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    }
+    toast('Communication logged ?', 'success');
+    closeCrmCommModal();
+    // Refresh history if lead modal open
+    if (crm-lead-modal && crm-lead-modal.style.display === 'flex' && leadId && !leadId.startsWith('vehicle:')) {
+      _loadLeadCommHistory(leadId);
+    }
+  } catch (e) {
+    toast('Error saving: ' + e.message, 'error');
+  }
+};
