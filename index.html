@@ -231,7 +231,7 @@
               <option value="home">At Home</option>
               <option value="scheduled">⏰ Scheduled Trip</option>
               <option value="private-trip">🔒 Private Trip</option>
-              <option value="on-trip">On Trip</option>
+              <option value="on-trip">🚗 Turo Trip</option>
               <option value="repair-shop">Repair Shop</option>
             </select>
           </div>
@@ -303,6 +303,28 @@
           </div>
           <!-- Private Trip fields (shown when private-trip selected) -->
           <div id="private-trip-row" class="loc-parts-row" style="display:none;">
+            <!-- CRM Lead Link -->
+            <div class="loc-field crm-link-field" id="private-trip-crm-block">
+              <label style="font-weight:700;color:#7c3aed;">🔗 Link CRM Lead <span style="font-size:0.77rem;font-weight:400;color:#9ca3af;">(auto-fills customer info)</span></label>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+                <select id="private-trip-crm-lead" class="vehicle-location-custom" style="flex:1;" onchange="linkCrmLeadToVehicleTrip()">
+                  <option value="">-- No linked lead --</option>
+                </select>
+                <button type="button" class="btn btn-sm btn-outline" onclick="_refreshCrmLeadsDropdown()" title="Refresh CRM leads">↻</button>
+                <button type="button" class="btn btn-sm btn-outline" style="color:#7c3aed;border-color:#7c3aed;" onclick="_openCrmFromPrivateTrip()">CRM →</button>
+              </div>
+              <div id="private-crm-linked-info" style="display:none;margin-top:6px;background:#f5f3ff;border-radius:8px;padding:8px 10px;font-size:0.82rem;color:#5b21b6;">
+                ✅ <span id="private-crm-linked-name"></span> linked — customer info auto-filled
+                <button type="button" class="btn btn-xs btn-outline" style="margin-left:8px;font-size:0.72rem;" onclick="openCrmCommModal(_el('private-trip-crm-lead').value,'')" title="Log communication for this lead">💬 Send Comm</button>
+              </div>
+            </div>
+            <!-- Auto-record to Finance -->
+            <div class="loc-field" id="private-trip-finance-row">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="private-trip-record-finance" style="width:16px;height:16px;">
+                <span style="font-size:0.88rem;">📊 Auto-record revenue to Finance when saving</span>
+              </label>
+            </div>
             <details class="priv-section" open>
               <summary class="priv-section-title">⏰ Trip Dates</summary>
               <div class="loc-field">
@@ -2187,6 +2209,7 @@
         <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
         <button class="finance-tab" id="ftab-pl" onclick="switchFinanceTab('pl')">📈 P&amp;L</button>
         <button class="finance-tab" id="ftab-ownercut" onclick="switchFinanceTab('ownercut')">👥 Owner Cut</button>
+        <button class="finance-tab" id="ftab-byvehicle" onclick="switchFinanceTab('byvehicle')">🚗 By Vehicle</button>
         <button class="finance-tab" id="ftab-expenses" onclick="switchFinanceTab('expenses')">🧾 Expenses</button>
       </div>
       <div class="finance-body">
@@ -2331,6 +2354,21 @@
             <button class="btn btn-sm btn-primary" onclick="loadFinancePL()">Load</button>
           </div>
           <div id="finance-pl-body"></div>
+        </div>
+
+        <!-- ===== BY VEHICLE TAB ===== -->
+        <div id="finance-tab-byvehicle" class="finance-tab-content" style="display:none;">
+          <div class="fin-controls-row">
+            <label class="exp-label">Year</label>
+            <select id="fin-bv-year" class="form-select exp-input" style="width:auto;"></select>
+            <button class="btn btn-sm btn-primary" onclick="_loadFinanceByVehicle()">Load</button>
+            <div style="display:flex;gap:6px;margin-left:auto;">
+              <button class="fin-bv-type-btn active" data-bvtype="all" onclick="_filterFinBvType('all',this)">All</button>
+              <button class="fin-bv-type-btn" data-bvtype="on-trip" onclick="_filterFinBvType('on-trip',this)">🚗 Turo</button>
+              <button class="fin-bv-type-btn" data-bvtype="private-trip" onclick="_filterFinBvType('private-trip',this)">🔒 Private</button>
+            </div>
+          </div>
+          <div id="finance-byvehicle-body"><p class="hint" style="padding:24px;text-align:center;">Select a year and click Load.</p></div>
         </div>
 
         <!-- ===== OWNER CUT TAB ===== -->

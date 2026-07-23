@@ -1685,13 +1685,13 @@ async function autoStartScheduledTrips() {
   await Promise.all(toFlip.map(v =>
     db.collection('vehicles').doc(v.id).update({
       tripStatus: 'on-trip',
-      location: 'On Trip',
+      location: 'Turo Trip',
       tripScheduledStart: firebase.firestore.FieldValue.delete(),
       tripReturnDate: v.tripExpectedEnd || firebase.firestore.FieldValue.delete(),
       tripExpectedEnd: firebase.firestore.FieldValue.delete()
     }).then(() => {
       v.tripStatus = 'on-trip';
-      v.location = 'On Trip';
+      v.location = 'Turo Trip';
       if (v.tripExpectedEnd) { v.tripReturnDate = v.tripExpectedEnd; }
       delete v.tripScheduledStart;
       delete v.tripExpectedEnd;
@@ -1837,7 +1837,7 @@ function renderFleetDashboard() {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
         returnInfo = ' · Return ' + rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
       }
-      locDisplay = `🚗 On Trip${returnInfo}`;
+      locDisplay = `🚗 Turo Trip${returnInfo}`;
       locCls = 'status-warn';
     } else if (v.tripStatus === 'repair-shop') {
       locDisplay = '🔧 Repair Shop';
@@ -1986,7 +1986,7 @@ window.renderShopSchedule = async function() {
       const ts = v.tripStatus || '';
       let label, bg, color, border;
       if (ts === 'on-trip' || ts === 'private-trip') {
-        label = '🚗 On Trip'; bg = '#dbeafe'; color = '#1e40af'; border = '#bfdbfe';
+        label = '🚗 Turo Trip'; bg = '#dbeafe'; color = '#1e40af'; border = '#bfdbfe';
       } else if (ts === 'repair-shop') {
         label = '🔧 At Shop'; bg = '#fee2e2'; color = '#991b1b'; border = '#fca5a5';
       } else if (ts === 'scheduled') {
@@ -2976,6 +2976,8 @@ async function openVehiclePage(vid) {
     $('private-trip-row').style.display = ts === 'private-trip' ? '' : 'none';
     // Populate private trip fields
     if (ts === 'private-trip') {
+      // Load CRM leads dropdown & restore any previously linked lead
+      _refreshCrmLeadsDropdown(selectedVehicle.crmLeadId || null);
       $('private-customer-name').value = selectedVehicle.privateTripCustomerName || '';
       $('private-customer-phone').value = selectedVehicle.privateTripCustomerPhone || '';
       $('private-customer-email').value = selectedVehicle.privateTripCustomerEmail || '';
@@ -5455,6 +5457,10 @@ $('vehicle-trip-status').addEventListener('change', function() {
   $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
   $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
   $('private-trip-row').style.display = v === 'private-trip' ? '' : 'none';
+  // When switching TO private-trip, populate the CRM lead dropdown
+  if (v === 'private-trip') {
+    _refreshCrmLeadsDropdown(null);
+  }
   // Hide needs-cleaning btn if switching to trip/repair
   const needsCleanBtn = $('btn-needs-cleaning');
   if (needsCleanBtn && selectedVehicle) {
@@ -5548,6 +5554,9 @@ $('btn-save-location').addEventListener('click', async () => {
     updateData.privateTripCustomerName = $('private-customer-name').value.trim() || null;
     updateData.privateTripCustomerPhone = $('private-customer-phone').value.trim() || null;
     updateData.privateTripCustomerEmail = $('private-customer-email').value.trim() || null;
+    // Save linked CRM lead
+    const linkedLeadEl = _el('private-trip-crm-lead');
+    updateData.crmLeadId = (linkedLeadEl && linkedLeadEl.value) ? linkedLeadEl.value : firebase.firestore.FieldValue.delete();
     updateData.privateTripDailyRate = parseFloat($('private-trip-cost').value) || null;
     updateData.privateTripGET = parseFloat($('private-trip-get').value) || null;
     updateData.privateTripDailyTax = parseFloat($('private-trip-daily-tax').value) || null;
@@ -5585,7 +5594,7 @@ $('btn-save-location').addEventListener('click', async () => {
       } catch(e) { console.warn('Contract upload failed', e); }
     }
   } else if (tripStatus === 'on-trip') {
-    updateData.location = 'On Trip';
+    updateData.location = 'Turo Trip';
     updateData.tripScheduledStart = firebase.firestore.FieldValue.delete();
     updateData.tripExpectedEnd = firebase.firestore.FieldValue.delete();
     if (tripReturnVal) {
@@ -5701,6 +5710,36 @@ $('btn-save-location').addEventListener('click', async () => {
     if (cached) Object.assign(cached, selectedVehicle);
     toast('Location saved!', 'success');
     renderFleetDashboard();
+
+    // ── Auto-record Private Trip revenue to Finance if checkbox checked ──
+    if (tripStatus === 'private-trip' && _el('private-trip-record-finance') && _el('private-trip-record-finance').checked) {
+      const ptRevForFinance = typeof updateData.tripRevenue === 'number' ? updateData.tripRevenue : null;
+      if (ptRevForFinance && ptRevForFinance > 0 && selectedVehicle) {
+        try {
+          const ptStartForFin = $('private-trip-start-date') ? $('private-trip-start-date').value : todayDateString();
+          const finRecord = {
+            vehicleId: selectedVehicle.id,
+            vehiclePlate: selectedVehicle.plate || '',
+            vehicleMakeModel: ((selectedVehicle.make || '') + ' ' + (selectedVehicle.model || '')).trim(),
+            startDate: ptStartForFin || todayDateString(),
+            endDate: ptStartForFin || todayDateString(),
+            tripType: 'private-trip',
+            revenue: ptRevForFinance,
+            manualRevenueEntry: true,
+            notes: ($('private-customer-name') ? ($('private-customer-name').value.trim() || '') : '') + ' (Private Trip)',
+            loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            loggedBy: currentUser.uid,
+            loggedByName: currentUser.displayName || currentUser.email,
+          };
+          // Include extras
+          if (Array.isArray(updateData.extras) && updateData.extras.length > 0) finRecord.extras = updateData.extras;
+          const finKey = selectedVehicle.id + '_' + (ptStartForFin || todayDateString()) + '_private_' + Date.now();
+          await db.collection('tripLogs').doc(finKey).set(finRecord, { merge: true });
+          if (_el('private-trip-record-finance')) _el('private-trip-record-finance').checked = false;
+          toast('Revenue recorded to Finance ✓', 'success');
+        } catch(finErr) { console.warn('Finance auto-record error:', finErr); }
+      }
+    }
 
     // ── Auto-log maintenance record when returning from repair shop ──
     if (nowReturnFromRepair) {
@@ -7794,7 +7833,7 @@ function _renderMaintByVehicle(filter, sortMode) {
     const isAtShop   = v.tripStatus === 'repair-shop';
     const isCleaning = v.needsCleaning && !isOnTrip && !isAtShop;
 
-    const statusBadge = isOnTrip   ? '<span class="mv-status mv-trip">🚗 On Trip</span>'
+    const statusBadge = isOnTrip   ? '<span class="mv-status mv-trip">🚗 Turo Trip</span>'
       : isAtShop   ? '<span class="mv-status mv-shop">🔧 At Shop</span>'
       : isCleaning ? '<span class="mv-status mv-cleaning">🧹 Needs Cleaning</span>'
       :              '<span class="mv-status mv-avail">✅ Available</span>';
@@ -8444,7 +8483,7 @@ async function _loadWorkOrders() {
       const isAtShop  = v && v.tripStatus === 'repair-shop';
       const needsClean = v && v.needsCleaning && !isOnTrip && !isAtShop;
       const availBadge = !v ? ''
-        : isOnTrip  ? '<span class="wo-avail wo-trip">🚗 On Trip</span>'
+        : isOnTrip  ? '<span class="wo-avail wo-trip">🚗 Turo Trip</span>'
         : isAtShop  ? '<span class="wo-avail wo-shop">🔧 At Shop</span>'
         : needsClean? '<span class="wo-avail wo-clean">🧹 Needs Cleaning</span>'
         :             '<span class="wo-avail wo-avail-ok">✅ Available</span>';
@@ -8558,7 +8597,7 @@ async function _loadWorkOrders() {
           if (tripConflict) return `<span class="wo-chip-conflict">⚠️ Schedule conflict · returns ${rdFmt}</span>`;
           return `<span class="wo-chip-ontrip${isOverdueTrip ? ' wo-chip-overdue-trip' : ''}">🚗 Returns ${rdFmt}${isOverdueTrip ? ' OVERDUE' : ''}</span>`;
         }
-        return tripConflict ? '<span class="wo-chip-conflict">⚠️ Trip Conflict</span>' : '<span class="wo-chip-ontrip">🚗 On Trip</span>';
+        return tripConflict ? '<span class="wo-chip-conflict">⚠️ Trip Conflict</span>' : '<span class="wo-chip-ontrip">🚗 Turo Trip</span>';
       })();
 
       // Progress timeline — rendered as a proper visual timeline
@@ -10195,7 +10234,7 @@ async function _loadMaintByLocation() {
       function renderVehicleRow(v, returnLabel) {
         const { priority, flags } = scoreVehicle(v);
         const icon = priority === 2 ? '🔴' : priority === 1 ? '🟡' : '🟢';
-        const statusBadge = isOnTrip(v) ? '<span class="mv-status mv-trip">🚗 On Trip</span>'
+        const statusBadge = isOnTrip(v) ? '<span class="mv-status mv-trip">🚗 Turo Trip</span>'
           : isAtShop(v) ? '<span class="mv-status mv-shop">🔧 At Shop</span>'
           : v.needsCleaning ? '<span class="mv-status mv-cleaning">🧹 Needs Cleaning</span>'
           : '<span class="mv-status mv-avail">✅ Available</span>';
@@ -10345,7 +10384,7 @@ async function _loadReturnQueue() {
       const meta = v ? `${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ' · ' + escapeHtml(v.color) : ''}` : '';
       const isOnTrip = v && (v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip');
       const isAtShop = v && v.tripStatus === 'repair-shop';
-      const statusBadge = isOnTrip ? '<span class="rq-badge rq-badge-trip">🚗 On Trip</span>'
+      const statusBadge = isOnTrip ? '<span class="rq-badge rq-badge-trip">🚗 Turo Trip</span>'
         : isAtShop ? '<span class="rq-badge rq-badge-shop">🔧 At Shop</span>'
         : '<span class="rq-badge rq-badge-home">🏠 At Home</span>';
       let returnLabel = '';
@@ -19579,3 +19618,338 @@ window.saveCrmComm = async function() {
     if (leadModal && leadModal.style.display === 'flex' && leadId && leadId.indexOf('vehicle:') !== 0) _loadLeadCommHistory(leadId);
   } catch (e) { toast('Error saving: ' + e.message, 'error'); }
 };
+
+// ================================================================
+// CRM <-> VEHICLE PRIVATE TRIP LINKING
+// ================================================================
+
+// Populate the CRM leads dropdown on the private trip form
+// Loads "won", "qualified", and "proposal" leads as options
+window._refreshCrmLeadsDropdown = async function(selectedLeadId) {
+  var sel = _el('private-trip-crm-lead');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">-- No linked lead --</option>';
+  try {
+    var snap = await db.collection('crm_leads')
+      .where('status', 'in', ['won', 'qualified', 'proposal', 'contacted'])
+      .orderBy('updatedAt', 'desc')
+      .limit(50)
+      .get();
+    snap.docs.forEach(function(d) {
+      var l = d.data();
+      var opt = document.createElement('option');
+      opt.value = d.id;
+      var statusEmoji = { won:'🏆', qualified:'✅', proposal:'📄', contacted:'📞' };
+      opt.textContent = (statusEmoji[l.status] || '') + ' ' + (l.name || 'Unknown') + (l.phone ? ' - ' + l.phone : '') + (l.tripStart ? ' (' + l.tripStart + ')' : '');
+      if (d.id === selectedLeadId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+    // If a lead is already linked, show the info bar
+    if (selectedLeadId && sel.value === selectedLeadId) {
+      var infoBar = _el('private-crm-linked-info');
+      var nameEl = _el('private-crm-linked-name');
+      var selected = snap.docs.find(function(d) { return d.id === selectedLeadId; });
+      if (infoBar && nameEl && selected) {
+        nameEl.textContent = selected.data().name || 'Unknown';
+        infoBar.style.display = '';
+      }
+    }
+  } catch(e) {
+    console.warn('CRM leads dropdown error:', e);
+  }
+};
+
+// Auto-fill customer info from selected CRM lead
+window.linkCrmLeadToVehicleTrip = async function() {
+  var sel = _el('private-trip-crm-lead');
+  if (!sel) return;
+  var leadId = sel.value;
+  var infoBar = _el('private-crm-linked-info');
+  var nameEl = _el('private-crm-linked-name');
+
+  if (!leadId) {
+    if (infoBar) infoBar.style.display = 'none';
+    return;
+  }
+
+  try {
+    var doc = await db.collection('crm_leads').doc(leadId).get();
+    if (!doc.exists) return;
+    var l = doc.data();
+
+    // Auto-fill customer info fields
+    var nm = _el('private-customer-name'); if (nm && l.name) nm.value = l.name;
+    var ph = _el('private-customer-phone'); if (ph && l.phone) ph.value = l.phone;
+    var em = _el('private-customer-email'); if (em && l.email) em.value = l.email;
+
+    // Auto-fill trip dates if set on the lead
+    if (l.tripStart) {
+      var sd = _el('private-trip-start-date'); if (sd) sd.value = l.tripStart;
+    }
+    if (l.tripEnd) {
+      var ed = _el('private-trip-end-date'); if (ed) ed.value = l.tripEnd;
+    }
+
+    // Auto-fill revenue if set on the lead
+    if (l.value) {
+      var rv = _el('private-trip-revenue-override'); if (rv && !rv.value) rv.value = l.value;
+    }
+
+    // Show the linked info banner
+    if (infoBar && nameEl) {
+      nameEl.textContent = l.name || 'Unknown';
+      infoBar.style.display = '';
+      // Wire the Send Comm button with correct name
+      var commBtn = infoBar.querySelector('button');
+      if (commBtn) {
+        commBtn.onclick = function() { openCrmCommModal(leadId, l.name || ''); };
+      }
+    }
+
+    toast('Customer info filled from CRM lead', 'success');
+    _calcPrivateTripRevenue();
+  } catch(e) {
+    console.warn('CRM lead auto-fill error:', e);
+  }
+};
+
+// Open CRM dashboard focused on the linked lead
+window._openCrmFromPrivateTrip = function() {
+  var sel = _el('private-trip-crm-lead');
+  var leadId = sel ? sel.value : '';
+  openCrmDash();
+  if (leadId) {
+    // Switch to All Leads tab and edit the lead
+    var leadsBtn = document.querySelector('[data-ctab="ctab-leads"]');
+    if (leadsBtn) switchCrmTab('ctab-leads', leadsBtn);
+    setTimeout(function() { editCrmLead(leadId); }, 400);
+  }
+};
+
+
+// ================================================================
+// CRM WON LEAD -> AUTO-RECORD FINANCE
+// ================================================================
+// Called from saveCrmLead when status changes to 'won' with a value set
+async function _crmWonOfferFinance(leadData, leadId) {
+  var value = parseFloat(leadData.value);
+  if (!value || value <= 0) return;
+
+  var msg = 'Lead "' + (leadData.name || 'Unknown') + '" marked as Won for $' + value.toFixed(2) + '.\n\nRecord this revenue to the Finance tab?';
+  if (!confirm(msg)) return;
+
+  // Find the matching vehicle (try to match by vehicleInterest or crmLeadId)
+  var matchedVehicle = (vehiclesCache || []).find(function(v) { return v.crmLeadId === leadId; });
+  var vehicleId = matchedVehicle ? matchedVehicle.id : '';
+  var vehiclePlate = matchedVehicle ? (matchedVehicle.plate || '') : '';
+  var vehicleModel = matchedVehicle ? (((matchedVehicle.make || '') + ' ' + (matchedVehicle.model || '')).trim()) : '';
+
+  try {
+    var today = new Date().toISOString().slice(0, 10);
+    var finRecord = {
+      vehicleId: vehicleId,
+      vehiclePlate: vehiclePlate,
+      vehicleMakeModel: vehicleModel,
+      startDate: leadData.tripStart || today,
+      endDate: leadData.tripEnd || today,
+      tripType: 'private-trip',
+      revenue: value,
+      manualRevenueEntry: true,
+      notes: 'CRM Won: ' + (leadData.name || ''),
+      crmLeadId: leadId,
+      loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      loggedBy: currentUser ? currentUser.uid : '',
+      loggedByName: currentUser ? (currentUser.displayName || currentUser.email || '') : '',
+    };
+    var finKey = (vehicleId || 'novehl') + '_' + (leadData.tripStart || today) + '_crmwon_' + Date.now();
+    await db.collection('tripLogs').doc(finKey).set(finRecord, { merge: true });
+    toast('Revenue recorded to Finance', 'success');
+  } catch(e) {
+    console.warn('CRM Won finance record error:', e);
+    toast('Could not record to Finance: ' + e.message, 'error');
+  }
+}
+
+
+// ================================================================
+// FINANCE - BY VEHICLE TAB
+// ================================================================
+var _finBvAllData = [];
+var _finBvTypeFilter = 'all';
+
+// Populate the year selector on load
+// Wrap switchFinanceTab to handle the 'byvehicle' tab without breaking existing tabs
+(function() {
+  var _origSFT = window.switchFinanceTab;
+  window.switchFinanceTab = function(tab) {
+    if (tab === 'byvehicle') {
+      // Populate year selector
+      var yrSel = _el('fin-bv-year');
+      if (yrSel && yrSel.options.length === 0) {
+        var currentYear = new Date().getFullYear();
+        for (var y = currentYear; y >= currentYear - 3; y--) {
+          var opt = document.createElement('option');
+          opt.value = y; opt.textContent = y;
+          yrSel.appendChild(opt);
+        }
+      }
+      // Activate tab UI
+      document.querySelectorAll('.finance-tab').forEach(function(b) { b.classList.remove('active'); });
+      var btn = _el('ftab-byvehicle'); if (btn) btn.classList.add('active');
+      document.querySelectorAll('.finance-tab-content').forEach(function(c) { c.style.display = 'none'; });
+      var content = _el('finance-tab-byvehicle'); if (content) content.style.display = '';
+      _loadFinanceByVehicle();
+      return;
+    }
+    if (_origSFT) _origSFT(tab);
+  };
+})();
+
+window._loadFinanceByVehicle = async function() {
+  var body = _el('finance-byvehicle-body');
+  if (!body) return;
+  body.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading...</p>';
+
+  var yrSel = _el('fin-bv-year');
+  var year = yrSel ? parseInt(yrSel.value) : new Date().getFullYear();
+  var yearStart = year + '-01-01';
+  var yearEnd = (year + 1) + '-01-01';
+
+  try {
+    var snap = await db.collection('tripLogs')
+      .where('startDate', '>=', yearStart)
+      .where('startDate', '<', yearEnd)
+      .get();
+
+    var logs = snap.docs.map(function(d) { return Object.assign({ id: d.id }, d.data()); });
+    _finBvAllData = logs;
+    _renderFinanceByVehicle(logs, _finBvTypeFilter);
+  } catch(e) {
+    body.innerHTML = '<p class="hint" style="color:#dc2626;padding:24px;">Error: ' + escapeHtml(e.message) + '</p>';
+  }
+};
+
+window._filterFinBvType = function(type, btn) {
+  _finBvTypeFilter = type;
+  document.querySelectorAll('.fin-bv-type-btn').forEach(function(b) { b.classList.remove('active'); });
+  if (btn) btn.classList.add('active');
+  _renderFinanceByVehicle(_finBvAllData, type);
+};
+
+function _renderFinanceByVehicle(logs, typeFilter) {
+  var body = _el('finance-byvehicle-body');
+  if (!body) return;
+
+  var filtered = typeFilter === 'all' ? logs : logs.filter(function(l) { return l.tripType === typeFilter; });
+
+  if (!filtered.length) {
+    body.innerHTML = '<p class="hint" style="padding:32px;text-align:center;">No revenue data for this period.</p>';
+    return;
+  }
+
+  // Group by vehicle
+  var byVehicle = {};
+  filtered.forEach(function(l) {
+    var key = l.vehicleId || 'unknown';
+    if (!byVehicle[key]) {
+      byVehicle[key] = { id: key, plate: l.vehiclePlate || l.vehicleId || 'Unknown', model: l.vehicleMakeModel || '', turo: 0, private: 0, total: 0, trips: 0 };
+    }
+    var rev = parseFloat(l.revenue) || 0;
+    var extraRev = Array.isArray(l.extras) ? l.extras.reduce(function(s, e) { return s + (parseFloat(e.amount) || 0); }, 0) : 0;
+    var totalRev = rev + extraRev;
+    if (l.tripType === 'private-trip') byVehicle[key].private += totalRev;
+    else byVehicle[key].turo += totalRev;
+    byVehicle[key].total += totalRev;
+    byVehicle[key].trips++;
+  });
+
+  var vehicles = Object.values(byVehicle).sort(function(a, b) { return b.total - a.total; });
+  var grandTotTuro = vehicles.reduce(function(s, v) { return s + v.turo; }, 0);
+  var grandTotPrivate = vehicles.reduce(function(s, v) { return s + v.private; }, 0);
+  var grandTotal = vehicles.reduce(function(s, v) { return s + v.total; }, 0);
+
+  var yrSel = _el('fin-bv-year');
+  var year = yrSel ? yrSel.value : new Date().getFullYear();
+
+  var html = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:20px;">'
+    + '<div style="background:#f0fdf4;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:1.3rem;font-weight:800;color:#059669;">$' + grandTotal.toFixed(0) + '</div><div style="font-size:0.74rem;color:#6b7280;font-weight:600;">Total Revenue ' + year + '</div></div>'
+    + '<div style="background:#eff6ff;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:1.3rem;font-weight:800;color:#1d4ed8;">$' + grandTotTuro.toFixed(0) + '</div><div style="font-size:0.74rem;color:#6b7280;font-weight:600;">🚗 Turo Revenue</div></div>'
+    + '<div style="background:#f5f3ff;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:1.3rem;font-weight:800;color:#7c3aed;">$' + grandTotPrivate.toFixed(0) + '</div><div style="font-size:0.74rem;color:#6b7280;font-weight:600;">🔒 Private Revenue</div></div>'
+    + '</div>';
+
+  html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:0.86rem;">'
+    + '<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb;">'
+    + '<th style="padding:8px 10px;text-align:left;">Vehicle</th>'
+    + '<th style="padding:8px 10px;text-align:right;color:#1d4ed8;">🚗 Turo</th>'
+    + '<th style="padding:8px 10px;text-align:right;color:#7c3aed;">🔒 Private</th>'
+    + '<th style="padding:8px 10px;text-align:right;">Total</th>'
+    + '<th style="padding:8px 10px;text-align:right;color:#6b7280;">Trips</th>'
+    + '<th style="padding:8px 10px;text-align:left;"></th>'
+    + '</tr></thead><tbody>';
+
+  var barMax = Math.max(grandTotal, 1);
+  vehicles.forEach(function(v) {
+    var pct = Math.round((v.total / barMax) * 100);
+    var turoPct = v.total > 0 ? Math.round((v.turo / v.total) * 100) : 0;
+    var privPct = 100 - turoPct;
+    html += '<tr style="border-bottom:1px solid #f0f0f0;">'
+      + '<td style="padding:10px 10px;font-weight:700;">' + escapeHtml(v.plate) + '<div style="font-size:0.74rem;color:#6b7280;font-weight:400;">' + escapeHtml(v.model) + '</div></td>'
+      + '<td style="padding:10px 10px;text-align:right;color:#1d4ed8;font-weight:600;">' + (v.turo > 0 ? '$' + v.turo.toFixed(0) : '<span style="color:#d1d5db;">—</span>') + '</td>'
+      + '<td style="padding:10px 10px;text-align:right;color:#7c3aed;font-weight:600;">' + (v.private > 0 ? '$' + v.private.toFixed(0) : '<span style="color:#d1d5db;">—</span>') + '</td>'
+      + '<td style="padding:10px 10px;text-align:right;font-weight:800;">$' + v.total.toFixed(0) + '</td>'
+      + '<td style="padding:10px 10px;text-align:right;color:#6b7280;">' + v.trips + '</td>'
+      + '<td style="padding:10px 10px;min-width:100px;">'
+      + '<div style="height:8px;border-radius:4px;background:#f1f5f9;overflow:hidden;display:flex;">'
+      + (v.turo > 0 ? '<div style="height:100%;background:#3b82f6;width:' + turoPct + '%;" title="Turo ' + turoPct + '%"></div>' : '')
+      + (v.private > 0 ? '<div style="height:100%;background:#8b5cf6;width:' + privPct + '%;" title="Private ' + privPct + '%"></div>' : '')
+      + '</div></td>'
+      + '</tr>';
+  });
+
+  html += '</tbody>'
+    + '<tfoot><tr style="background:#f9fafb;font-weight:700;border-top:2px solid #e5e7eb;">'
+    + '<td style="padding:8px 10px;">TOTAL</td>'
+    + '<td style="padding:8px 10px;text-align:right;color:#1d4ed8;">$' + grandTotTuro.toFixed(0) + '</td>'
+    + '<td style="padding:8px 10px;text-align:right;color:#7c3aed;">$' + grandTotPrivate.toFixed(0) + '</td>'
+    + '<td style="padding:8px 10px;text-align:right;">$' + grandTotal.toFixed(0) + '</td>'
+    + '<td colspan="2" style="padding:8px 10px;text-align:right;color:#6b7280;">' + filtered.length + ' records</td>'
+    + '</tr></tfoot></table></div>';
+
+  body.innerHTML = html;
+}
+
+// Patch saveCrmLead to offer Finance entry when marking Won
+(function() {
+  var _origSaveCrmLead = window.saveCrmLead;
+  window.saveCrmLead = async function() {
+    var stEl = _el('crm-lead-status');
+    var prevStatus = null;
+    var idEl = _el('crm-lead-id');
+    if (idEl && idEl.value && stEl && stEl.value === 'won') {
+      // Check the previous status to see if this is a new 'won' transition
+      try {
+        var prevDoc = await db.collection('crm_leads').doc(idEl.value).get();
+        if (prevDoc.exists) prevStatus = prevDoc.data().status;
+      } catch(e) {}
+    }
+    // Call the original save
+    await _origSaveCrmLead.apply(this, arguments);
+    // If this was a won transition, offer Finance recording
+    if (stEl && stEl.value === 'won' && prevStatus && prevStatus !== 'won') {
+      var valEl = _el('crm-lead-value');
+      var val = valEl ? parseFloat(valEl.value) : 0;
+      if (val > 0) {
+        var leadName = _el('crm-lead-name') ? _el('crm-lead-name').value : '';
+        var leadId = idEl ? idEl.value : '';
+        var tripStart = _el('crm-lead-start') ? _el('crm-lead-start').value : '';
+        var tripEnd = _el('crm-lead-end') ? _el('crm-lead-end').value : '';
+        var phone = _el('crm-lead-phone') ? _el('crm-lead-phone').value : '';
+        setTimeout(function() {
+          _crmWonOfferFinance({
+            name: leadName, value: val, tripStart: tripStart, tripEnd: tripEnd, phone: phone
+          }, leadId);
+        }, 500);
+      }
+    }
+  };
+})();

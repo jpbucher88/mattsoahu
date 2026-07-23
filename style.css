@@ -9152,3 +9152,12 @@ body {
   .crm-dash-body { padding: 12px; max-height: calc(85vh - 200px); }
   .crm-kpi-num { font-size: 1.2rem; }
 }
+
+/* ===== CRM Link field on Private Trip form ===== */
+.crm-link-field { background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.crm-link-field label { color: #7c3aed; }
+
+/* ===== Finance By Vehicle type filter buttons ===== */
+.fin-bv-type-btn { background: none; border: 1.5px solid #d1d5db; border-radius: 6px; padding: 4px 10px; font-size: 0.82rem; font-weight: 600; cursor: pointer; color: #6b7280; transition: all 0.15s; }
+.fin-bv-type-btn.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+.fin-bv-type-btn:hover:not(.active) { border-color: #6b7280; color: #374151; }
