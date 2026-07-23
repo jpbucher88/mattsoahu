@@ -1,4 +1,4 @@
-﻿rules_version = '2';
+rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -161,6 +161,7 @@ service cloud.firestore {
     match /userActivity/{entryId} {
       allow read: if isAdmin();
       allow create: if isRegistered();
+    }
 
     // CRM V1 - Sales leads
     // Access: admin always, or crmAccess:true on user doc
