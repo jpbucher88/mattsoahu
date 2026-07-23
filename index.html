@@ -2263,25 +2263,40 @@
           </div>
           <div class="crm-form-group">
             <label>Type</label>
-            <select id="fin2-rev-type" class="crm-form-input">
-              <option value="on-trip">🚗 Turo</option>
-              <option value="private-trip">🔒 Private</option>
+            <select id="fin2-rev-type" class="crm-form-input" onchange="_fin2RevTypeChanged()">
+              <option value="on-trip">🚗 Turo (monthly payout)</option>
+              <option value="private-trip">🔒 Private (single booking)</option>
             </select>
           </div>
         </div>
-        <div class="crm-form-row">
+        <!-- Turo: date range shown by default -->
+        <div id="fin2-rev-range-date-row" class="crm-form-row">
           <div class="crm-form-group">
-            <label>Date</label>
-            <input type="date" id="fin2-rev-date" class="crm-form-input">
+            <label>Payout Period Start <span style="font-size:0.75rem;color:#2563eb;font-weight:400;">(covers full range)</span></label>
+            <input type="date" id="fin2-rev-start-date" class="crm-form-input">
           </div>
           <div class="crm-form-group">
-            <label>Amount ($)</label>
-            <input type="number" id="fin2-rev-amount" class="crm-form-input" placeholder="0.00" min="0" step="0.01">
+            <label>Payout Period End</label>
+            <input type="date" id="fin2-rev-end-date" class="crm-form-input">
           </div>
         </div>
-        <div class="crm-form-group" style="margin-bottom:10px;">
-          <label>Note <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
-          <input type="text" id="fin2-rev-note" class="crm-form-input" placeholder="e.g. July Turo payout" maxlength="120">
+        <!-- Private: single date (hidden by default) -->
+        <div id="fin2-rev-single-date-row" class="crm-form-row" style="display:none;">
+          <div class="crm-form-group">
+            <label>Booking Date</label>
+            <input type="date" id="fin2-rev-date" class="crm-form-input">
+          </div>
+          <div class="crm-form-group"></div>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Payout Amount ($)</label>
+            <input type="number" id="fin2-rev-amount" class="crm-form-input" placeholder="0.00" min="0" step="0.01">
+          </div>
+          <div class="crm-form-group">
+            <label>Note <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+            <input type="text" id="fin2-rev-note" class="crm-form-input" placeholder="e.g. July Turo payout" maxlength="120">
+          </div>
         </div>
         <div class="crm-form-row">
           <div class="crm-form-group">

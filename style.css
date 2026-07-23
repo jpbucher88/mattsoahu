@@ -8595,7 +8595,7 @@ body {
 
 
 /* ============================================================
-   OPERATIONS V2 — Full-screen overlay
+   OPERATIONS V2 ï¿½ Full-screen overlay
    ============================================================ */
 .ops-v2-overlay {
   position: fixed; inset: 0; z-index: 9800;
@@ -8774,7 +8774,7 @@ body {
 
 
 /* ================================================================
-   CRM V1 — SALES DASHBOARD
+   CRM V1 ï¿½ SALES DASHBOARD
    ================================================================ */
 
 /* Overlay & Panel */
@@ -9275,7 +9275,7 @@ body {
 .fin2-man-note { color: #6b7280; font-style: italic; flex: 1; }
 
 /* Finance V2 Modals */
-.fin2-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1300; display: flex; align-items: center; justify-content: center; padding: 16px 12px; }
+.fin2-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 9500; display: flex; align-items: center; justify-content: center; padding: 16px 12px; }
 .fin2-modal-panel { background: #fff; border-radius: 14px; width: 100%; max-width: 560px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); max-height: 90vh; overflow-y: auto; display: flex; flex-direction: column; }
 .fin2-modal-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px 12px; border-bottom: 1px solid #e5e7eb; position: sticky; top: 0; background: #fff; z-index: 1; border-radius: 14px 14px 0 0; }
 .fin2-modal-body { padding: 16px 20px; }
@@ -9289,3 +9289,5 @@ body {
   .fin2-kpi-num { font-size: 1.05rem; }
 }
 
+
+.fin2-pl-note { font-size: 0.72rem; color: #9ca3af; font-weight: 400; font-style: italic; }

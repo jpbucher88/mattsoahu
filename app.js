@@ -20014,15 +20014,15 @@ window.loadFinanceDashboard = async function() {
 
   var range = _fin2DateRange();
   var EXTRA_LABELS = { 'beach-gear':'Beach Gear', 'parking':'Parking', 'snorkeling-gear':'Snorkeling Gear', 'beach-tent':'Beach Tent', 'car-seat':'Car Seat', 'other':'Other' };
+  var CAT_EMOJI = { Fuel:'⛽', Maintenance:'🔧', Cleaning:'🧹', Insurance:'🛡️', Registration:'📋', Supplies:'📦', 'Venmo Payment':'📱', 'Vendor Payment':'🏢', 'Parking / Fees':'🅿️', Other:'📌' };
 
   try {
-    // Load all data in parallel
-    var revPromise = db.collection('tripLogs').where('startDate', '>=', range.start).where('startDate', '<=', range.end).get();
-    var expPromise = db.collection('expenses').where('date', '>=', range.start).where('date', '<=', range.end).get();
-    var maintPromise = db.collection('maintenance').where('date', '>=', range.start).where('date', '<=', range.end).get();
-
-    var results = await Promise.all([revPromise, expPromise, maintPromise]);
-    var revSnap = results[0], expSnap = results[1], maintSnap = results[2];
+    // Load revenue + expenses in parallel (maintenance NOT included in costs — tracked separately)
+    var results = await Promise.all([
+      db.collection('tripLogs').where('startDate', '>=', range.start).where('startDate', '<=', range.end).get(),
+      db.collection('expenses').where('date', '>=', range.start).where('date', '<=', range.end).get()
+    ]);
+    var revSnap = results[0], expSnap = results[1];
 
     // ── Process Revenue ──
     var byVehicle = {};
@@ -20051,9 +20051,11 @@ window.loadFinanceDashboard = async function() {
     });
 
     var totalRev = totalTuro + totalPrivate + totalExtras;
-    var vehicles = Object.values(byVehicle).sort(function(a, b) { return (b.turo + b.priv + b.extras) - (a.turo + a.priv + a.extras); });
+    var vehicles = Object.values(byVehicle).sort(function(a, b) {
+      return (b.turo + b.priv + b.extras) - (a.turo + a.priv + a.extras);
+    });
 
-    // ── Process Expenses ──
+    // ── Process Expenses (ONLY from expenses collection — no maintenance double-counting) ──
     var expByCategory = {};
     var expByVehicle = {};
     var generalExp = 0;
@@ -20063,6 +20065,7 @@ window.loadFinanceDashboard = async function() {
     expSnap.forEach(function(doc) {
       var d = doc.data();
       var amt = Number(d.amount) || 0;
+      if (amt <= 0) return; // skip $0 entries
       totalExpenses += amt;
       var cat = d.category || 'Other';
       expByCategory[cat] = (expByCategory[cat] || 0) + amt;
@@ -20070,29 +20073,16 @@ window.loadFinanceDashboard = async function() {
       else generalExp += amt;
       allExpDocs.push(Object.assign({ _id: doc.id }, d));
     });
-    allExpDocs.sort(function(a, b) { return b.date < a.date ? -1 : 1; });
+    allExpDocs.sort(function(a, b) { return (b.date || '') < (a.date || '') ? -1 : 1; });
 
-    // ── Process Maintenance Costs ──
-    var maintByVehicle = {};
-    var totalMaint = 0;
-    maintSnap.forEach(function(doc) {
-      var d = doc.data();
-      var cost = Number(d.cost) || 0;
-      if (cost && d.vehicleId) {
-        maintByVehicle[d.vehicleId] = (maintByVehicle[d.vehicleId] || 0) + cost;
-        totalMaint += cost;
-      }
-    });
-
-    var totalCosts = totalExpenses + totalMaint;
-    var netPL = totalRev - totalCosts;
+    var netPL = totalRev - totalExpenses;
 
     // ── Update KPI cards ──
     function setKpi(id, val) { var el = _el(id); if (el) el.textContent = val; }
     setKpi('fin2-kpi-revenue', _fin2Fmt(totalRev));
     setKpi('fin2-kpi-turo', _fin2Fmt(totalTuro));
     setKpi('fin2-kpi-private', _fin2Fmt(totalPrivate + totalExtras));
-    setKpi('fin2-kpi-expenses', _fin2Fmt(totalCosts));
+    setKpi('fin2-kpi-expenses', _fin2Fmt(totalExpenses));
     setKpi('fin2-kpi-pl', (netPL >= 0 ? '+' : '-') + _fin2Fmt(netPL));
     var plCard = _el('fin2-kpi-pl-card');
     if (plCard) { plCard.className = 'fin2-kpi-card ' + (netPL >= 0 ? 'fin2-kpi-profit' : 'fin2-kpi-loss'); }
@@ -20109,8 +20099,8 @@ window.loadFinanceDashboard = async function() {
         var privW = revMax > 0 ? Math.round((v.priv / revMax) * 100) : 0;
         var extW = revMax > 0 ? Math.round((v.extras / revMax) * 100) : 0;
         var vObj = (vehiclesCache || []).find(function(x) { return x.id === v.id; });
-        var vLink = vObj ? ' onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + v.id + '\');},100);" style="cursor:pointer;"' : '';
-        revHtml += '<div class="fin2-veh-row"' + vLink + '>'
+        var hasLink = !!vObj;
+        revHtml += '<div class="fin2-veh-row" ' + (hasLink ? 'onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + v.id + '\');},100);" style="cursor:pointer;"' : '') + '>'
           + '<div class="fin2-veh-label"><strong>' + escapeHtml(v.plate) + '</strong>'
           + (v.model ? '<span class="fin2-veh-model">' + escapeHtml(v.model) + '</span>' : '')
           + (v.noRev > 0 ? '<span class="fin2-no-rev-badge">' + v.noRev + ' no $</span>' : '')
@@ -20132,7 +20122,6 @@ window.loadFinanceDashboard = async function() {
     // ── Expenses by Category ──
     var expCats = Object.entries(expByCategory).sort(function(a, b) { return b[1] - a[1]; });
     var expMax = expCats.length > 0 ? expCats[0][1] : 1;
-    var CAT_EMOJI = { Fuel:'⛽', Maintenance:'🔧', Cleaning:'🧹', Insurance:'🛡️', Registration:'📋', Supplies:'📦', 'Venmo Payment':'📱', 'Vendor Payment':'🏢', 'Parking / Fees':'🅿️', Other:'📌' };
     var expCatHtml = expCats.length === 0
       ? '<p class="hint" style="padding:16px;">No expenses this month.</p>'
       : expCats.map(function(e) {
@@ -20161,15 +20150,15 @@ window.loadFinanceDashboard = async function() {
             + '</div></div>';
         }).join('') + '</div>';
 
-    // ── P&L per Vehicle table ──
-    var allVids = new Set(Object.keys(byVehicle).concat(Object.keys(expByVehicle)).concat(Object.keys(maintByVehicle)));
+    // ── P&L per Vehicle (expenses only — no maintenance double-count) ──
+    var allVids = new Set(Object.keys(byVehicle).concat(Object.keys(expByVehicle)));
     var plRows = [];
     allVids.forEach(function(vid) {
       var rv = byVehicle[vid] || { plate: vid, turo: 0, priv: 0, extras: 0 };
       var vObj = (vehiclesCache || []).find(function(x) { return x.id === vid; });
       var plate = rv.plate || (vObj ? vObj.plate : vid);
       var totalV = rv.turo + rv.priv + rv.extras;
-      var expV = (expByVehicle[vid] || 0) + (maintByVehicle[vid] || 0);
+      var expV = expByVehicle[vid] || 0;
       var netV = totalV - expV;
       var margin = totalV > 0 ? Math.round((netV / totalV) * 100) : null;
       plRows.push({ plate: plate, rev: totalV, exp: expV, net: netV, margin: margin, id: vid });
@@ -20179,22 +20168,25 @@ window.loadFinanceDashboard = async function() {
     var plTableHtml = plRows.length === 0
       ? '<p class="hint" style="padding:16px;">No P&L data this month.</p>'
       : '<div style="overflow-x:auto;"><table class="fin2-pl-table">'
-        + '<thead><tr><th>Vehicle</th><th>Revenue</th><th>Costs</th><th>Net P&L</th><th>Margin</th></tr></thead>'
-        + '<tbody>' + plRows.map(function(r) {
+        + '<thead><tr><th>Vehicle</th><th>Revenue</th><th>Expenses</th><th>Net P&L</th><th>Margin</th></tr></thead><tbody>'
+        + plRows.map(function(r) {
             var netCls = r.net >= 0 ? 'fin2-pl-profit' : 'fin2-pl-loss';
-            var marginStr = r.margin !== null ? r.margin + '%' : '—';
-            return '<tr onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + r.id + '\');},100);" style="cursor:pointer;">'
+            var canLink = !!(vehiclesCache || []).find(function(x) { return x.id === r.id; });
+            return '<tr' + (canLink ? ' onclick="closeFinance();setTimeout(function(){openVehiclePage(\'' + r.id + '\');},100);" style="cursor:pointer;"' : '') + '>'
               + '<td><strong>' + escapeHtml(r.plate) + '</strong></td>'
               + '<td class="fin2-pl-rev">' + _fin2FmtFull(r.rev) + '</td>'
               + '<td class="fin2-pl-exp">' + (r.exp > 0 ? '-' + _fin2FmtFull(r.exp) : '—') + '</td>'
               + '<td class="' + netCls + '">' + (r.net >= 0 ? '+' : '-') + _fin2FmtFull(r.net) + '</td>'
-              + '<td style="color:#6b7280;">' + marginStr + '</td>'
-              + '</tr>';
+              + '<td style="color:#6b7280;">' + (r.margin !== null ? r.margin + '%' : '—') + '</td></tr>';
           }).join('')
         + (generalExp > 0 ? '<tr><td style="color:#6b7280;"><em>Fleet / General</em></td><td>—</td><td class="fin2-pl-exp">-' + _fin2FmtFull(generalExp) + '</td><td class="fin2-pl-loss">-' + _fin2FmtFull(generalExp) + '</td><td>—</td></tr>' : '')
-        + '</tbody>'
-        + '<tfoot><tr><td><strong>TOTAL</strong></td><td class="fin2-pl-rev"><strong>' + _fin2FmtFull(totalRev) + '</strong></td><td class="fin2-pl-exp"><strong>-' + _fin2FmtFull(totalCosts) + '</strong></td><td class="' + (netPL >= 0 ? 'fin2-pl-profit' : 'fin2-pl-loss') + '"><strong>' + (netPL >= 0 ? '+' : '-') + _fin2FmtFull(netPL) + '</strong></td><td style="color:#6b7280;">' + (totalRev > 0 ? Math.round((netPL / totalRev) * 100) + '%' : '—') + '</td></tr></tfoot>'
-        + '</table></div>';
+        + '</tbody><tfoot><tr>'
+        + '<td><strong>TOTAL</strong></td>'
+        + '<td class="fin2-pl-rev"><strong>' + _fin2FmtFull(totalRev) + '</strong></td>'
+        + '<td class="fin2-pl-exp"><strong>-' + _fin2FmtFull(totalExpenses) + '</strong></td>'
+        + '<td class="' + (netPL >= 0 ? 'fin2-pl-profit' : 'fin2-pl-loss') + '"><strong>' + (netPL >= 0 ? '+' : '-') + _fin2FmtFull(netPL) + '</strong></td>'
+        + '<td style="color:#6b7280;">' + (totalRev > 0 ? Math.round((netPL / totalRev) * 100) + '%' : '—') + '</td>'
+        + '</tr></tfoot></table></div>';
 
     // ── Manual Revenue Entries ──
     var manHtml = '';
@@ -20205,10 +20197,11 @@ window.loadFinanceDashboard = async function() {
         + manualEntries.sort(function(a, b) { return a.startDate < b.startDate ? -1 : 1; }).map(function(e) {
             var extAmt = Array.isArray(e.extras) ? e.extras.reduce(function(s, x) { return s + (Number(x.amount) || 0); }, 0) : Number(e.extrasAmount || 0);
             var total = (Number(e.revenue) || 0) + extAmt;
+            var dateStr = e.startDate === e.endDate ? e.startDate : (e.startDate + ' to ' + e.endDate);
             return '<div class="fin2-man-row">'
               + '<span class="fin2-man-plate">' + escapeHtml(e.vehiclePlate || '?') + '</span>'
               + '<span class="fin2-man-type">' + (e.tripType === 'private-trip' ? '🔒 Private' : '🚗 Turo') + '</span>'
-              + '<span class="fin2-man-date">' + escapeHtml(e.startDate || '') + '</span>'
+              + '<span class="fin2-man-date">' + escapeHtml(dateStr || '') + '</span>'
               + (e.notes ? '<span class="fin2-man-note">' + escapeHtml(e.notes) + '</span>' : '')
               + '<div style="margin-left:auto;display:flex;align-items:center;gap:8px;">'
               + '<strong>' + _fin2FmtFull(total) + '</strong>'
@@ -20235,16 +20228,14 @@ window.loadFinanceDashboard = async function() {
       + '<button class="btn btn-sm fin2-add-exp-btn" onclick="openFin2ExpModal()">+ Add</button>'
       + '</div>'
       + '<div class="fin2-two-col">'
-      + '<div>'
-      + '<p class="fin2-sec-sub">By Category</p>'
-      + expCatHtml
-      + '<div class="fin2-exp-totals">Total expenses: <strong>' + _fin2FmtFull(totalExpenses) + '</strong> &nbsp;|&nbsp; Maintenance: <strong>' + _fin2FmtFull(totalMaint) + '</strong></div>'
+      + '<div><p class="fin2-sec-sub">By Category</p>' + expCatHtml
+      + '<div class="fin2-exp-totals">Total: <strong>' + _fin2FmtFull(totalExpenses) + '</strong></div>'
       + '</div>'
       + '<div><p class="fin2-sec-sub">All Entries</p>' + expListHtml + '</div>'
       + '</div></div>'
 
       + '<div id="fin2-sec-pl" class="fin2-section">'
-      + '<div class="fin2-sec-header"><h4 class="fin2-sec-title">📈 P&L Per Vehicle</h4><span class="fin2-sec-count">' + plRows.length + ' vehicles</span></div>'
+      + '<div class="fin2-sec-header"><h4 class="fin2-sec-title">📈 P&L Per Vehicle</h4><span class="fin2-sec-count fin2-pl-note">Revenue - Expenses (from Finance tab only)</span></div>'
       + plTableHtml
       + '</div>'
 
@@ -20258,7 +20249,6 @@ window.loadFinanceDashboard = async function() {
 
 // ── Add Revenue Modal ──────────────────────────────────────────
 window.openFin2RevModal = function() {
-  // Populate vehicle dropdown
   var sel = _el('fin2-rev-vehicle');
   if (sel) {
     sel.innerHTML = '<option value="">-- Select Vehicle --</option>';
@@ -20269,31 +20259,75 @@ window.openFin2RevModal = function() {
       sel.appendChild(opt);
     });
   }
-  // Set today's date
-  var dateEl = _el('fin2-rev-date');
-  if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+  // Set default dates based on type
+  _fin2UpdateRevModalDates();
   var modal = _el('fin2-rev-modal'); if (modal) modal.style.display = 'flex';
 };
 
+// Update date inputs when type changes
+window._fin2RevTypeChanged = function() {
+  _fin2UpdateRevModalDates();
+};
+
+function _fin2UpdateRevModalDates() {
+  var type = _el('fin2-rev-type') ? _el('fin2-rev-type').value : 'on-trip';
+  var singleRow = _el('fin2-rev-single-date-row');
+  var rangeRow = _el('fin2-rev-range-date-row');
+  var pad = function(n) { return String(n).padStart(2, '0'); };
+
+  if (type === 'on-trip') {
+    // Turo: show month range (full month by default)
+    if (singleRow) singleRow.style.display = 'none';
+    if (rangeRow) rangeRow.style.display = '';
+    // Default to current finance month
+    var lastDay = new Date(_fin2Year, _fin2Month, 0).getDate();
+    var startEl = _el('fin2-rev-start-date');
+    var endEl = _el('fin2-rev-end-date');
+    if (startEl && !startEl.value) startEl.value = _fin2Year + '-' + pad(_fin2Month) + '-01';
+    if (endEl && !endEl.value) endEl.value = _fin2Year + '-' + pad(_fin2Month) + '-' + pad(lastDay);
+  } else {
+    // Private: show single date
+    if (singleRow) singleRow.style.display = '';
+    if (rangeRow) rangeRow.style.display = 'none';
+    var dateEl = _el('fin2-rev-date');
+    if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+  }
+}
+
 window.closeFin2RevModal = function() {
   var modal = _el('fin2-rev-modal'); if (modal) modal.style.display = 'none';
+  // Reset date inputs for next open
+  var sd = _el('fin2-rev-start-date'); if (sd) sd.value = '';
+  var ed = _el('fin2-rev-end-date'); if (ed) ed.value = '';
+  var d = _el('fin2-rev-date'); if (d) d.value = '';
 };
 
 window.saveFin2Revenue = async function() {
   var vehicleSel = _el('fin2-rev-vehicle');
   var vehicleId = vehicleSel ? vehicleSel.value : '';
-  var vehiclePlate = vehicleSel && vehicleSel.selectedOptions[0] ? (vehicleSel.selectedOptions[0].textContent.split(' - ')[0]) : '';
+  if (!vehicleId) { toast('Select a vehicle', 'warning'); return; }
   var vehicleObj = vehicleId ? (vehiclesCache || []).find(function(v) { return v.id === vehicleId; }) : null;
+  var vehiclePlate = vehicleObj ? vehicleObj.plate : (vehicleSel && vehicleSel.selectedOptions[0] ? vehicleSel.selectedOptions[0].textContent.split(' - ')[0] : '');
   var vehicleModel = vehicleObj ? ((vehicleObj.make || '') + ' ' + (vehicleObj.model || '')).trim() : '';
   var tripType = _el('fin2-rev-type') ? _el('fin2-rev-type').value : 'on-trip';
-  var date = _el('fin2-rev-date') ? _el('fin2-rev-date').value : todayDateString();
   var amount = parseFloat(_el('fin2-rev-amount') ? _el('fin2-rev-amount').value : '0');
   var note = _el('fin2-rev-note') ? _el('fin2-rev-note').value.trim() : '';
   var extrasType = _el('fin2-rev-extras-type') ? _el('fin2-rev-extras-type').value : '';
   var extrasAmount = parseFloat(_el('fin2-rev-extras-amount') ? _el('fin2-rev-extras-amount').value : '0') || 0;
 
-  if (!vehicleId) { toast('Select a vehicle', 'warning'); return; }
-  if (!date) { toast('Enter a date', 'warning'); return; }
+  var startDate, endDate;
+  if (tripType === 'on-trip') {
+    // Turo: use the date range
+    startDate = _el('fin2-rev-start-date') ? _el('fin2-rev-start-date').value : '';
+    endDate = _el('fin2-rev-end-date') ? _el('fin2-rev-end-date').value : startDate;
+    if (!startDate) { toast('Select a start date', 'warning'); return; }
+  } else {
+    // Private: single date
+    startDate = _el('fin2-rev-date') ? _el('fin2-rev-date').value : todayDateString();
+    endDate = startDate;
+    if (!startDate) { toast('Enter a date', 'warning'); return; }
+  }
+
   if ((!amount || amount <= 0) && (!extrasType || extrasAmount <= 0)) { toast('Enter an amount', 'warning'); return; }
 
   var btn = _el('fin2-rev-save-btn');
@@ -20302,17 +20336,16 @@ window.saveFin2Revenue = async function() {
   try {
     var record = {
       vehicleId: vehicleId, vehiclePlate: vehiclePlate, vehicleMakeModel: vehicleModel,
-      startDate: date, endDate: date, tripType: tripType,
+      startDate: startDate, endDate: endDate, tripType: tripType,
       revenue: amount > 0 ? amount : 0, manualRevenueEntry: true,
       loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
       loggedBy: currentUser.uid, loggedByName: currentUser.displayName || currentUser.email
     };
     if (note) record.notes = note;
     if (extrasType && extrasAmount > 0) record.extras = [{ type: extrasType, amount: extrasAmount }];
-    var key = vehicleId + '_' + date + '_manrev_' + Date.now();
+    var key = vehicleId + '_' + startDate + '_manrev_' + Date.now();
     await db.collection('tripLogs').doc(key).set(record);
     toast('Revenue added!', 'success');
-    // Reset
     var amtEl = _el('fin2-rev-amount'); if (amtEl) amtEl.value = '';
     var noteEl = _el('fin2-rev-note'); if (noteEl) noteEl.value = '';
     var extTypeEl = _el('fin2-rev-extras-type'); if (extTypeEl) extTypeEl.value = '';
@@ -20412,6 +20445,8 @@ window.deleteFin2Expense = async function(docId) {
     loadFinanceDashboard();
   };
 })();
+
+
 
 
 // ================================================================
