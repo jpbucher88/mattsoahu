@@ -174,5 +174,12 @@ service cloud.firestore {
       allow read, create: if isAdmin() || (isAuth() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('crmAccess', false) == true);
       allow update, delete: if isAdmin();
     }
+    // Guest Tickets — all registered users can read/create; update by registered; delete by admin
+    match /guestTickets/{ticketId} {
+      allow read: if isRegistered();
+      allow create: if isRegistered();
+      allow update: if isRegistered();
+      allow delete: if isAdmin();
+    }
   }
 }

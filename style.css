@@ -9351,3 +9351,28 @@ body {
 .vrc-quick { background: #fef3c7; color: #92400e; }
 .vrc-std { background: #dbeafe; color: #1e40af; }
 .vrc-monitor { background: #dcfce7; color: #166534; }
+
+/* ===== Invoice rows in modal ===== */
+.inv-existing-row { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:#f8fafc; border-radius:8px; margin-bottom:6px; gap:8px; flex-wrap:wrap; }
+.inv-existing-info { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.inv-tag { display:inline-block; padding:2px 7px; border-radius:6px; font-size:0.76rem; font-weight:600; background:#e2e8f0; color:#374151; }
+.inv-tag-amt { background:#dcfce7; color:#166534; }
+.inv-tag-vendor { background:#ede9fe; color:#5b21b6; }
+.inv-tag-date { background:#f1f5f9; color:#6b7280; }
+.inv-existing-actions { display:flex; gap:4px; flex-shrink:0; }
+
+/* ===== Guest Ticket rows ===== */
+.gt-row { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #f0f0f0; gap:10px; flex-wrap:wrap; }
+.gt-row:last-child { border-bottom:none; }
+.gt-row.gt-overdue { background:#fff7f7; }
+.gt-info { flex:1; min-width:0; }
+.gt-header-row { display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-bottom:4px; }
+.gt-type-label { font-weight:700; font-size:0.85rem; color:#374151; }
+.gt-case { font-size:0.76rem; color:#6b7280; background:#f1f5f9; padding:1px 5px; border-radius:4px; }
+.gt-status-pill { display:inline-block; padding:2px 7px; border-radius:8px; font-size:0.72rem; font-weight:700; }
+.gt-meta { font-size:0.8rem; color:#6b7280; }
+.gt-note-text { font-size:0.78rem; color:#9ca3af; margin-top:2px; font-style:italic; }
+.gt-actions { display:flex; gap:4px; flex-shrink:0; }
+.gt-update-btn { background:#7c3aed; color:#fff; border:none; padding:3px 10px; border-radius:6px; font-size:0.76rem; cursor:pointer; font-weight:600; }
+.gt-update-btn:hover { background:#6d28d9; }
+

@@ -409,6 +409,7 @@
           <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>
           <button id="btn-queue-maintenance" class="btn btn-sm btn-outline" onclick="_openReturnQueueAdd(selectedVehicle && selectedVehicle.id)" title="Queue maintenance for when this vehicle returns" style="display:none;">🔁 Queue Maintenance</button>
           <button id="btn-log-issue" class="btn btn-sm btn-outline" onclick="openNewWorkOrder(selectedVehicle && selectedVehicle.id)" title="Log a repair issue or problem" style="display:none;">🔧 Log Issue</button>
+          <button id="btn-log-ticket" class="btn btn-sm btn-outline" onclick="openGuestTicketModal(selectedVehicle && selectedVehicle.id)" title="Log a guest ticket or violation" style="display:none;">🎫 Log Ticket</button>
 
           <!-- Ownership row (admin/manager only) -->
           <div id="vehicle-ownership-row" class="loc-field" style="display:none; margin-top:12px; padding-top:12px; border-top:1px solid #e5e7eb;">
@@ -567,6 +568,15 @@
         <div id="mini-calendar" class="mini-calendar"></div>
         <div id="photo-download-log" class="photo-download-log"></div>
         <div id="recent-photos" class="photo-grid"></div>
+      </section>
+
+      <!-- Guest Tickets Section -->
+      <section id="vehicle-tickets-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>🎫 Guest Tickets &amp; Violations</h3>
+          <button class="btn btn-sm btn-primary" style="background:#7c3aed;border-color:#7c3aed;" onclick="openGuestTicketModal(selectedVehicle && selectedVehicle.id)">+ Log Ticket</button>
+        </div>
+        <div id="vehicle-tickets-list"></div>
       </section>
 
       <!-- Maintenance Section -->

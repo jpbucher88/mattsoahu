@@ -3076,6 +3076,10 @@ async function openVehiclePage(vid) {
   const logIssueBtn = $('btn-log-issue');
   if (logIssueBtn) logIssueBtn.style.display = '';
 
+  // Show Log Ticket button
+  const logTicketBtn = $('btn-log-ticket');
+  if (logTicketBtn) logTicketBtn.style.display = '';
+
   // Show hero image if set
   const heroWrap = $('vehicle-hero-wrap');
   const heroImg = $('vehicle-hero-img');
@@ -3143,6 +3147,10 @@ async function openVehiclePage(vid) {
   $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
+  // Load guest tickets for this vehicle
+  if (typeof _loadVehicleTickets === 'function') {
+    _loadVehicleTickets(selectedVehicle.id);
+  }
   // Protect-date button visible to admin/manager only
   const protBtn = $('btn-protect-date');
   if (protBtn) protBtn.style.display = canUpload ? '' : 'none';
@@ -5451,23 +5459,102 @@ function _calcPrivateTripRevenue() {
 
 $('vehicle-trip-status').addEventListener('change', function() {
   const v = this.value;
+  const prev = selectedVehicle ? (selectedVehicle.tripStatus || 'home') : 'home';
   $('trip-return-row').style.display = (v === 'on-trip' || v === 'repair-shop') ? '' : 'none';
   $('on-trip-revenue-row').style.display = (v === 'on-trip' || v === 'scheduled') ? '' : 'none';
   $('repair-parts-row').style.display = v === 'repair-shop' ? '' : 'none';
   $('trip-scheduled-row').style.display = v === 'scheduled' ? '' : 'none';
   $('trip-expected-end-row').style.display = v === 'scheduled' ? '' : 'none';
   $('private-trip-row').style.display = v === 'private-trip' ? '' : 'none';
-  // When switching TO private-trip, populate the CRM lead dropdown
-  if (v === 'private-trip') {
-    _refreshCrmLeadsDropdown(null);
-  }
-  // Hide needs-cleaning btn if switching to trip/repair
+  if (v === 'private-trip') { _refreshCrmLeadsDropdown(null); }
   const needsCleanBtn = $('btn-needs-cleaning');
   if (needsCleanBtn && selectedVehicle) {
     const showCleanBtn = v !== 'on-trip' && v !== 'repair-shop' && v !== 'private-trip' && !selectedVehicle.needsCleaning;
     needsCleanBtn.style.display = showCleanBtn ? '' : 'none';
   }
+  // Auto-save for simple status changes; Turo Trip requires a return date first
+  if (v === 'home') {
+    // Going home: auto-save immediately
+    setTimeout(function() { if ($('btn-save-location')) $('btn-save-location').click(); }, 200);
+  } else if (v === 'on-trip') {
+    // Turo Trip: show return date prompt, then auto-save
+    _promptTuroReturnDate(prev);
+  } else if (v === 'repair-shop') {
+    // Repair shop: auto-save after brief delay (user may want to fill shop name)
+    setTimeout(function() { if ($('btn-save-location')) $('btn-save-location').click(); }, 400);
+  }
+  // scheduled / private-trip: user fills in details and clicks Save manually
 });
+
+// ── Turo Trip Return Date Prompt ──────────────────────────────────
+// Called when user switches status to 'on-trip'. Shows a compact date/time
+// picker; on Confirm the status is saved with the return date. On Cancel
+// the dropdown reverts to the previous status.
+window._promptTuroReturnDate = function(prevStatus) {
+  const existing = document.getElementById('turo-return-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'turo-return-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+
+  // Pre-fill with existing return date if already set
+  const existingReturn = _el('vehicle-trip-return-date') ? _el('vehicle-trip-return-date').value : '';
+  const existingTime = _el('vehicle-trip-return-time') ? _el('vehicle-trip-return-time').value : '';
+  const plate = selectedVehicle ? escapeHtml(selectedVehicle.plate) : 'Vehicle';
+
+  overlay.innerHTML = `<div class="modal-box" style="max-width:380px;">
+    <div class="modal-header" style="background:#1d4ed8;color:#fff;border-radius:10px 10px 0 0;">
+      <h3 style="color:#fff;margin:0;">🚗 Turo Trip — ${plate}</h3>
+      <button class="modal-close" style="color:#fff;" onclick="document.getElementById('turo-return-overlay').remove();document.getElementById('vehicle-trip-status').value='${escapeHtml(prevStatus)}';">&times;</button>
+    </div>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+      <p style="margin:0;font-size:0.85rem;color:#374151;">Set an expected return date/time for this Turo Trip. You can update it later.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <label style="font-size:0.8rem;font-weight:600;color:#374151;">Expected Return <span style="font-size:0.75rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;">HST</span></label>
+        <input type="date" id="trd-date" class="vehicle-location-custom" value="${existingReturn}" min="${todayDateString()}">
+        <select id="trd-time" class="vehicle-location-custom"></select>
+      </div>
+    </div>
+    <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('turo-return-overlay').remove();document.getElementById('vehicle-trip-status').value='${escapeHtml(prevStatus)}';">Cancel</button>
+      <button class="btn btn-sm btn-primary" onclick="_confirmTuroReturnAndSave()">✓ Confirm & Save</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) {
+      overlay.remove();
+      const sel = document.getElementById('vehicle-trip-status');
+      if (sel) sel.value = prevStatus;
+    }
+  });
+
+  // Populate time select
+  const trdTime = document.getElementById('trd-time');
+  if (trdTime) {
+    populateTimeSelect('trd-time');
+    if (existingTime) trdTime.value = existingTime;
+  }
+  setTimeout(() => { const d = document.getElementById('trd-date'); if (d) d.focus(); }, 80);
+};
+
+window._confirmTuroReturnAndSave = function() {
+  const date = document.getElementById('trd-date') ? document.getElementById('trd-date').value : '';
+  const time = document.getElementById('trd-time') ? document.getElementById('trd-time').value : '';
+  if (!date) { toast('Please set a return date', 'warning'); return; }
+
+  // Copy values into the main return date fields
+  const retDateEl = _el('vehicle-trip-return-date');
+  const retTimeEl = _el('vehicle-trip-return-time');
+  if (retDateEl) retDateEl.value = date;
+  if (retTimeEl && time) retTimeEl.value = time;
+
+  document.getElementById('turo-return-overlay')?.remove();
+  // Auto-save
+  setTimeout(function() { if ($('btn-save-location')) $('btn-save-location').click(); }, 150);
+};
 
 // Needs Cleaning button on vehicle page
 $('btn-needs-cleaning').addEventListener('click', async () => {
@@ -8679,8 +8766,11 @@ async function _loadWorkOrders() {
         myTaskAction = '<button class="btn btn-sm wo-btn-resolve wo-btn-my-task" onclick="openCloseOutWorkOrder(\'' + item.id + '\',\'' + item.vehicleId + '\',\'' + escapeHtml(item.text).replace(/'/g, '&#39;') + '\')">✅ Complete My Task</button>';
       }
 
-      // Invoice button — always visible
-      const invBadge = item.invoiceNumber ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;margin-left:4px;">📄 Inv #${escapeHtml(item.invoiceNumber)}</span>` : '';
+      // Invoice button — shows count if multiple invoices
+      const invCount = Array.isArray(item.invoices) ? item.invoices.length : (item.invoiceNumber ? 1 : 0);
+      const invBadge = invCount > 0
+        ? `<span style="font-size:0.72rem;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:4px;margin-left:4px;">📄 ${invCount} invoice${invCount > 1 ? 's' : ''}</span>`
+        : '';
 
       // ── Rentability indicator ──
       const rentability = item.repairPriority === 'critical'
@@ -8981,7 +9071,8 @@ window._loadCompletedWO = async function(days, btn) {
 };
 
 // ================================================================
-// INVOICE MODAL — attach invoice info to a work order
+// ================================================================
+// INVOICE MODAL — multiple invoices per work order (stored as array)
 // ================================================================
 window.openInvoiceModal = async function(noteId) {
   const snap = await db.collection('vehicleNotes').doc(noteId).get().catch(() => null);
@@ -8994,34 +9085,65 @@ window.openInvoiceModal = async function(noteId) {
   overlay.style.display = 'flex';
   const v = vehiclesCache.find(x => x.id === d.vehicleId);
   const plate = v ? escapeHtml(v.plate) : '—';
-  overlay.innerHTML = `<div class="modal-box" style="max-width:480px;">
+
+  // Collect existing invoices: new array format + legacy single-invoice fields for backward compat
+  const invArr = Array.isArray(d.invoices) ? d.invoices : [];
+  if (d.invoicePhotoUrl && !invArr.length) {
+    // Migrate legacy single invoice into the array display
+    invArr.push({
+      number: d.invoiceNumber || '', amount: d.invoiceAmount || null,
+      vendor: d.invoiceVendor || d.assignedMechanic || '', notes: d.invoiceNotes || '',
+      date: d.invoiceDate || '', photoUrl: d.invoicePhotoUrl, _legacy: true
+    });
+  }
+
+  const existingHtml = invArr.length ? `
+    <div style="margin-bottom:14px;">
+      <p style="font-size:0.78rem;font-weight:700;color:#374151;margin:0 0 8px;">📋 Existing Invoices (${invArr.length})</p>
+      ${invArr.map((inv, i) => `
+        <div class="inv-existing-row" data-idx="${i}">
+          <div class="inv-existing-info">
+            ${inv.number ? `<span class="inv-tag">📄 #${escapeHtml(inv.number)}</span>` : ''}
+            ${inv.amount ? `<span class="inv-tag inv-tag-amt">$${parseFloat(inv.amount).toFixed(2)}</span>` : ''}
+            ${inv.vendor ? `<span class="inv-tag inv-tag-vendor">${escapeHtml(inv.vendor)}</span>` : ''}
+            ${inv.date ? `<span class="inv-tag inv-tag-date">${escapeHtml(inv.date)}</span>` : ''}
+          </div>
+          <div class="inv-existing-actions">
+            ${inv.photoUrl ? `<a href="${escapeHtml(inv.photoUrl)}" target="_blank" class="btn btn-xs btn-outline">📄 View</a>` : ''}
+            <button class="btn btn-xs btn-outline" style="color:#dc2626;" onclick="_deleteInvoiceEntry('${noteId}',${i})">✕</button>
+          </div>
+        </div>`).join('')}
+    </div>` : '';
+
+  overlay.innerHTML = `<div class="modal-box" style="max-width:500px;">
     <div class="modal-header" style="background:#1d4ed8;color:#fff;border-radius:10px 10px 0 0;">
-      <h3 style="color:#fff;margin:0;">📄 Invoice — ${plate}</h3>
+      <h3 style="color:#fff;margin:0;">📄 Invoices — ${plate}</h3>
       <button class="modal-close" style="color:#fff;" onclick="document.getElementById('invoice-modal-overlay').remove()">&times;</button>
     </div>
-    <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px;max-height:65vh;overflow-y:auto;">
       <p style="margin:0;font-size:0.82rem;color:#6b7280;">${escapeHtml(d.text || '')}</p>
+      ${existingHtml}
+      <p style="font-size:0.8rem;font-weight:700;color:#374151;margin:0;">➕ Add New Invoice / Receipt</p>
       <div style="display:flex;gap:10px;">
         <div style="flex:1;"><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Invoice #</label>
-          <input id="inv-number" type="text" class="vehicle-location-custom" value="${escapeHtml(d.invoiceNumber || '')}" placeholder="e.g. INV-2026-001"></div>
+          <input id="inv-number" type="text" class="vehicle-location-custom" placeholder="e.g. INV-2026-001"></div>
         <div style="flex:1;"><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Amount ($)</label>
-          <input id="inv-amount" type="number" min="0" step="0.01" class="vehicle-location-custom" value="${d.invoiceAmount != null ? d.invoiceAmount : ''}" placeholder="0.00"></div>
+          <input id="inv-amount" type="number" min="0" step="0.01" class="vehicle-location-custom" placeholder="0.00"></div>
       </div>
       <div><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Vendor / Mechanic</label>
         <input id="inv-vendor" type="text" class="vehicle-location-custom" value="${escapeHtml(d.assignedMechanic || d.invoiceVendor || '')}" placeholder="Dennis, DJ, TJ…"></div>
       <div><label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">Notes</label>
-        <textarea id="inv-notes" class="vehicle-location-custom" rows="2" placeholder="Parts list, warranty info…">${escapeHtml(d.invoiceNotes || '')}</textarea></div>
+        <textarea id="inv-notes" class="vehicle-location-custom" rows="2" placeholder="Parts list, warranty info…"></textarea></div>
       <div>
         <label style="font-size:0.78rem;color:#6b7280;display:block;margin-bottom:4px;">📎 Upload Invoice / Receipt</label>
         <input type="file" id="inv-file" accept="image/*,.pdf" style="font-size:0.82rem;">
-        ${d.invoicePhotoUrl ? `<div style="margin-top:6px;"><a href="${escapeHtml(d.invoicePhotoUrl)}" target="_blank" style="font-size:0.8rem;color:#1d4ed8;">📄 View existing invoice</a></div>` : ''}
       </div>
       ${d.invoiceApproved ? '<div style="color:#15803d;font-weight:600;font-size:0.85rem;">✅ Invoice approved by ' + escapeHtml(d.invoiceApprovedBy||'') + '</div>' : ''}
     </div>
     <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap;">
-      ${(currentUserRole === 'admin' || currentUserRole === 'manager') && d.invoiceNumber && !d.invoiceApproved ? `<button class="btn btn-sm btn-outline" onclick="window._approveInvoice('${noteId}')">✅ Approve Invoice</button>` : ''}
-      <button class="btn btn-sm btn-outline" onclick="document.getElementById('invoice-modal-overlay').remove()">Cancel</button>
-      <button class="btn btn-sm btn-primary" onclick="window._saveInvoice('${noteId}')">💾 Save Invoice</button>
+      ${(currentUserRole === 'admin' || currentUserRole === 'manager') && invArr.length && !d.invoiceApproved ? `<button class="btn btn-sm btn-outline" onclick="window._approveInvoice('${noteId}')">✅ Approve All</button>` : ''}
+      <button class="btn btn-sm btn-outline" onclick="document.getElementById('invoice-modal-overlay').remove()">Close</button>
+      <button class="btn btn-sm btn-primary" onclick="window._saveInvoice('${noteId}')">💾 Add Invoice</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
@@ -9034,33 +9156,61 @@ window._saveInvoice = async function(noteId) {
   const invVendor = (document.getElementById('inv-vendor')?.value || '').trim();
   const invNotes  = (document.getElementById('inv-notes')?.value || '').trim();
   const invFile   = document.getElementById('inv-file')?.files?.[0];
-  const saveBtn   = document.querySelector('#invoice-modal-overlay .btn-primary');
+  if (!invNumber && !invAmount && !invVendor && !invFile) {
+    toast('Fill in at least one field to add an invoice.', 'warning'); return;
+  }
+  const saveBtn = document.querySelector('#invoice-modal-overlay .btn-primary');
   if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
   try {
-    const updateData = {
-      invoiceNumber: invNumber || firebase.firestore.FieldValue.delete(),
-      invoiceAmount: invAmount != null ? invAmount : firebase.firestore.FieldValue.delete(),
-      invoiceVendor: invVendor || firebase.firestore.FieldValue.delete(),
-      invoiceNotes:  invNotes  || firebase.firestore.FieldValue.delete(),
-      invoiceDate:   todayDateString(),
+    const newEntry = {
+      number: invNumber || '',
+      amount: invAmount,
+      vendor: invVendor || '',
+      notes: invNotes || '',
+      date: todayDateString(),
+      addedBy: currentUser ? (currentUser.displayName || currentUser.email) : '',
     };
-    if (invVendor) updateData.assignedMechanic = invVendor; // keep in sync
     // Upload invoice photo/PDF if provided
     if (invFile && getStorage()) {
       const path = `invoices/${noteId}/${Date.now()}_${invFile.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
       const ref = getStorage().ref(path);
       await ref.put(invFile);
-      updateData.invoicePhotoUrl = await ref.getDownloadURL();
+      newEntry.photoUrl = await ref.getDownloadURL();
     }
-    await db.collection('vehicleNotes').doc(noteId).update(updateData);
+    // Remove nulls from entry
+    Object.keys(newEntry).forEach(k => { if (newEntry[k] === null || newEntry[k] === undefined) delete newEntry[k]; });
+    // Append to invoices array
+    await db.collection('vehicleNotes').doc(noteId).update({
+      invoices: firebase.firestore.FieldValue.arrayUnion(newEntry),
+      // Keep legacy fields in sync with the latest entry for backward compat
+      invoiceNumber: newEntry.number || firebase.firestore.FieldValue.delete(),
+      invoiceAmount: newEntry.amount != null ? newEntry.amount : firebase.firestore.FieldValue.delete(),
+      invoiceVendor: newEntry.vendor || firebase.firestore.FieldValue.delete(),
+      invoiceDate: newEntry.date,
+      ...(invVendor ? { assignedMechanic: invVendor } : {}),
+    });
     document.getElementById('invoice-modal-overlay')?.remove();
-    toast('📄 Invoice saved!', 'success');
+    toast('📄 Invoice added!', 'success');
     _loadWorkOrders();
   } catch(e) {
     console.error('_saveInvoice error:', e);
     toast('Failed to save invoice.', 'error');
-    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Save Invoice'; }
+    if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = '💾 Add Invoice'; }
   }
+};
+
+window._deleteInvoiceEntry = async function(noteId, idx) {
+  if (!confirm('Remove this invoice entry?')) return;
+  try {
+    const snap = await db.collection('vehicleNotes').doc(noteId).get();
+    if (!snap.exists) return;
+    const invArr = Array.isArray(snap.data().invoices) ? snap.data().invoices : [];
+    invArr.splice(idx, 1);
+    await db.collection('vehicleNotes').doc(noteId).update({ invoices: invArr });
+    toast('Invoice removed', 'success');
+    // Re-open modal to show updated list
+    openInvoiceModal(noteId);
+  } catch(e) { toast('Error: ' + e.message, 'error'); }
 };
 
 window._approveInvoice = async function(noteId) {
