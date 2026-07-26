@@ -5501,59 +5501,132 @@ window._promptTuroReturnDate = function(prevStatus) {
 
   // Pre-fill with existing return date if already set
   const existingReturn = _el('vehicle-trip-return-date') ? _el('vehicle-trip-return-date').value : '';
-  const existingTime = _el('vehicle-trip-return-time') ? _el('vehicle-trip-return-time').value : '';
   const plate = selectedVehicle ? escapeHtml(selectedVehicle.plate) : 'Vehicle';
 
-  overlay.innerHTML = `<div class="modal-box" style="max-width:380px;">
+  // Determine default time (3:00 PM or existing)
+  let defaultHour = 15; // 3 PM default
+  let defaultMin = 0;
+  const existingTimeEl = _el('vehicle-trip-return-time');
+  if (existingTimeEl && existingTimeEl.value) {
+    const parts = existingTimeEl.value.split(':');
+    defaultHour = parseInt(parts[0]) || 15;
+    defaultMin = parseInt(parts[1]) || 0;
+  }
+  // Convert 24h to 12h for defaults
+  let defaultAmPm = defaultHour >= 12 ? 'PM' : 'AM';
+  let default12h = defaultHour % 12 || 12;
+  let defaultMinStr = defaultMin === 30 ? '30' : '00';
+
+  // Build the 12-hour time select options (12:00, 12:30, 1:00 ... 11:30)
+  let timeOpts = '';
+  for (let h = 12; h <= 23; h++) {
+    const h12 = h % 12 || 12;
+    for (const m of [0, 30]) {
+      const mStr = m === 0 ? '00' : '30';
+      const selected = (h12 === default12h && mStr === defaultMinStr) ? ' selected' : '';
+      timeOpts += `<option value="${h12}:${mStr}"${selected}>${h12}:${mStr}</option>`;
+    }
+  }
+  // Then wrap AM hours (but these aren't shown here — AM/PM button handles the offset)
+  // We just need 12 hour options (12:00 and 12:30 already done for PM, but we need them for AM too)
+  // Simpler: just list 1:00 to 11:30 as the hour:min options (12: and 1-11)
+  // Re-do: just 12 pairs of hours × 2 minutes = 24 options
+  timeOpts = '';
+  const hourOrder = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  for (const h12 of hourOrder) {
+    for (const m of [0, 30]) {
+      const mStr = m === 0 ? '00' : '30';
+      const selected = (h12 === default12h && mStr === defaultMinStr) ? ' selected' : '';
+      timeOpts += `<option value="${h12}:${mStr}"${selected}>${h12}:${mStr}</option>`;
+    }
+  }
+
+  const inner = document.createElement('div');
+  inner.className = 'modal-box';
+  inner.style.maxWidth = '360px';
+  inner.innerHTML = `
     <div class="modal-header" style="background:#1d4ed8;color:#fff;border-radius:10px 10px 0 0;">
       <h3 style="color:#fff;margin:0;">🚗 Turo Trip — ${plate}</h3>
-      <button class="modal-close" style="color:#fff;" onclick="document.getElementById('turo-return-overlay').remove();document.getElementById('vehicle-trip-status').value='${escapeHtml(prevStatus)}';">&times;</button>
+      <button class="modal-close" id="trd-close-btn" style="color:#fff;">&times;</button>
     </div>
-    <div style="padding:16px;display:flex;flex-direction:column;gap:12px;">
-      <p style="margin:0;font-size:0.85rem;color:#374151;">Set an expected return date/time for this Turo Trip. You can update it later.</p>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <label style="font-size:0.8rem;font-weight:600;color:#374151;">Expected Return <span style="font-size:0.75rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;">HST</span></label>
-        <input type="date" id="trd-date" class="vehicle-location-custom" value="${existingReturn}" min="${todayDateString()}">
-        <select id="trd-time" class="vehicle-location-custom"></select>
+    <div style="padding:16px;display:flex;flex-direction:column;gap:14px;">
+      <p style="margin:0;font-size:0.85rem;color:#374151;">Set an expected return date/time. You can update it later.</p>
+      <div>
+        <label style="font-size:0.8rem;font-weight:600;color:#374151;display:block;margin-bottom:6px;">
+          Expected Return &nbsp;<span style="font-size:0.72rem;font-weight:700;color:#1d4ed8;background:#dbeafe;padding:1px 6px;border-radius:4px;">HST</span>
+        </label>
+        <input type="date" id="trd-date" class="vehicle-location-custom" value="${existingReturn}" min="${todayDateString()}" style="margin-bottom:10px;">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="trd-hour-min" class="vehicle-location-custom" style="flex:1;font-size:1rem;font-weight:600;text-align:center;">
+            ${timeOpts}
+          </select>
+          <div style="display:flex;border:1.5px solid #d1d5db;border-radius:8px;overflow:hidden;flex-shrink:0;">
+            <button id="trd-am-btn" type="button" style="padding:8px 14px;font-size:0.92rem;font-weight:700;border:none;cursor:pointer;background:${defaultAmPm === 'AM' ? '#1d4ed8' : '#f9fafb'};color:${defaultAmPm === 'AM' ? '#fff' : '#6b7280'};transition:all 0.15s;" onclick="_trdAmPm('AM')">AM</button>
+            <button id="trd-pm-btn" type="button" style="padding:8px 14px;font-size:0.92rem;font-weight:700;border:none;cursor:pointer;background:${defaultAmPm === 'PM' ? '#1d4ed8' : '#f9fafb'};color:${defaultAmPm === 'PM' ? '#fff' : '#6b7280'};transition:all 0.15s;" onclick="_trdAmPm('PM')">PM</button>
+          </div>
+        </div>
       </div>
     </div>
     <div style="padding:10px 16px;border-top:1px solid #e5e7eb;display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn btn-sm btn-outline" onclick="document.getElementById('turo-return-overlay').remove();document.getElementById('vehicle-trip-status').value='${escapeHtml(prevStatus)}';">Cancel</button>
-      <button class="btn btn-sm btn-primary" onclick="_confirmTuroReturnAndSave()">✓ Confirm & Save</button>
-    </div>
-  </div>`;
-  document.body.appendChild(overlay);
-  overlay.addEventListener('click', e => {
-    if (e.target === overlay) {
-      overlay.remove();
-      const sel = document.getElementById('vehicle-trip-status');
-      if (sel) sel.value = prevStatus;
-    }
-  });
+      <button class="btn btn-sm btn-outline" id="trd-cancel-btn">Cancel</button>
+      <button class="btn btn-sm btn-primary" id="trd-confirm-btn">✓ Confirm &amp; Save</button>
+    </div>`;
 
-  // Populate time select
-  const trdTime = document.getElementById('trd-time');
-  if (trdTime) {
-    populateTimeSelect('trd-time');
-    if (existingTime) trdTime.value = existingTime;
-  }
+  overlay.appendChild(inner);
+  document.body.appendChild(overlay);
+
+  // Store selected AM/PM in an attribute on the overlay
+  overlay.dataset.ampm = defaultAmPm;
+
+  const closeAndRevert = () => {
+    overlay.remove();
+    const sel = document.getElementById('vehicle-trip-status');
+    if (sel) sel.value = prevStatus;
+  };
+  document.getElementById('trd-close-btn').onclick = closeAndRevert;
+  document.getElementById('trd-cancel-btn').onclick = closeAndRevert;
+  document.getElementById('trd-confirm-btn').onclick = _confirmTuroReturnAndSave;
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeAndRevert(); });
+
   setTimeout(() => { const d = document.getElementById('trd-date'); if (d) d.focus(); }, 80);
 };
 
+// Toggle AM/PM styling
+window._trdAmPm = function(choice) {
+  const overlay = document.getElementById('turo-return-overlay');
+  if (overlay) overlay.dataset.ampm = choice;
+  const amBtn = document.getElementById('trd-am-btn');
+  const pmBtn = document.getElementById('trd-pm-btn');
+  if (amBtn) { amBtn.style.background = choice === 'AM' ? '#1d4ed8' : '#f9fafb'; amBtn.style.color = choice === 'AM' ? '#fff' : '#6b7280'; }
+  if (pmBtn) { pmBtn.style.background = choice === 'PM' ? '#1d4ed8' : '#f9fafb'; pmBtn.style.color = choice === 'PM' ? '#fff' : '#6b7280'; }
+};
+
 window._confirmTuroReturnAndSave = function() {
-  const date = document.getElementById('trd-date') ? document.getElementById('trd-date').value : '';
-  const time = document.getElementById('trd-time') ? document.getElementById('trd-time').value : '';
+  const dateEl = document.getElementById('trd-date');
+  const hmEl = document.getElementById('trd-hour-min');
+  const overlay = document.getElementById('turo-return-overlay');
+  const date = dateEl ? dateEl.value : '';
+  const hm = hmEl ? hmEl.value : '3:00'; // e.g. "3:00" or "12:30"
+  const ampm = (overlay && overlay.dataset.ampm) || 'PM';
+
   if (!date) { toast('Please set a return date', 'warning'); return; }
 
-  // Copy values into the main return date fields
+  // Convert 12h + AM/PM → 24h HH:MM
+  const [h12, mm] = hm.split(':').map(Number);
+  let h24 = h12;
+  if (ampm === 'PM' && h12 !== 12) h24 = h12 + 12;
+  if (ampm === 'AM' && h12 === 12) h24 = 0;
+  const time24 = String(h24).padStart(2, '0') + ':' + String(mm || 0).padStart(2, '0');
+
+  // Set the main return date/time fields
   const retDateEl = _el('vehicle-trip-return-date');
   const retTimeEl = _el('vehicle-trip-return-time');
   if (retDateEl) retDateEl.value = date;
-  if (retTimeEl && time) retTimeEl.value = time;
+  if (retTimeEl) retTimeEl.value = time24;
 
-  document.getElementById('turo-return-overlay')?.remove();
+  if (overlay) overlay.remove();
   // Auto-save
-  setTimeout(function() { if ($('btn-save-location')) $('btn-save-location').click(); }, 150);
+  setTimeout(function() { const btn = $('btn-save-location'); if (btn) btn.click(); }, 150);
 };
 
 // Needs Cleaning button on vehicle page
