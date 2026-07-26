@@ -5486,6 +5486,23 @@ $('vehicle-trip-status').addEventListener('change', function() {
   // scheduled / private-trip: user fills in details and clicks Save manually
 });
 
+// ── Auto-save Expected Return date/time when already on a Turo Trip ──────────
+// Fires when the user edits the date or time after the trip has started.
+let _returnDateSaveTimer = null;
+function _autoSaveReturnDate() {
+  if (!selectedVehicle) return;
+  const status = $('vehicle-trip-status') ? $('vehicle-trip-status').value : '';
+  if (status !== 'on-trip' && status !== 'repair-shop') return; // only when active trip
+  // Debounce slightly so date+time changes don't fire two back-to-back saves
+  clearTimeout(_returnDateSaveTimer);
+  _returnDateSaveTimer = setTimeout(function() {
+    const btn = $('btn-save-location');
+    if (btn) btn.click();
+  }, 600);
+}
+$('vehicle-trip-return-date').addEventListener('change', _autoSaveReturnDate);
+$('vehicle-trip-return-time').addEventListener('change', _autoSaveReturnDate);
+
 // ── Turo Trip Return Date Prompt ──────────────────────────────────
 // Called when user switches status to 'on-trip'. Shows a compact date/time
 // picker; on Confirm the status is saved with the return date. On Cancel
