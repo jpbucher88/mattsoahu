@@ -5622,7 +5622,11 @@ window._confirmTuroReturnAndSave = function() {
   const retDateEl = _el('vehicle-trip-return-date');
   const retTimeEl = _el('vehicle-trip-return-time');
   if (retDateEl) retDateEl.value = date;
-  if (retTimeEl) retTimeEl.value = time24;
+  if (retTimeEl) {
+    // Populate the select options first (lazy-loaded, may be empty if never shown before)
+    _populateHalfHourSelect('vehicle-trip-return-time');
+    retTimeEl.value = time24;
+  }
 
   if (overlay) overlay.remove();
   // Auto-save
