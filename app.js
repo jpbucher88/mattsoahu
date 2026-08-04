@@ -940,6 +940,72 @@ function sanitizePlate(plate) {
 // This function injects a minimal EXIF APP1 segment (DateTimeOriginal, DateTimeDigitized, DateTime)
 // directly into the JPEG binary so the timestamp survives compression and upload.
 // All times are written in Hawaii Standard Time (APP_TIMEZONE) since that is where operations run.
+
+// ── Read the existing EXIF DateTimeOriginal from a JPEG file/blob ──────────
+// On Android, file.lastModified is the access time (wrong). This reads the
+// camera-written capture date directly from the original JPEG EXIF data so
+// we re-inject the correct timestamp after compression strips it.
+async function readExifCaptureDate(fileOrBlob) {
+  return new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onerror = () => resolve(null);
+    reader.onload = e => {
+      try {
+        const bytes = new Uint8Array(e.target.result);
+        if (bytes[0] !== 0xFF || bytes[1] !== 0xD8) { resolve(null); return; } // not JPEG
+        let pos = 2;
+        while (pos < bytes.length - 3) {
+          if (bytes[pos] !== 0xFF) break;
+          const marker = bytes[pos + 1];
+          if (marker === 0xDA || marker === 0xD9) break; // SOS or EOI — stop
+          const segLen = (bytes[pos + 2] << 8) | bytes[pos + 3];
+          if (marker === 0xE1) { // APP1
+            // Check for "Exif\0\0" header
+            if (bytes[pos+4]===0x45 && bytes[pos+5]===0x78 && bytes[pos+6]===0x69 && bytes[pos+7]===0x66) {
+              const tiff = pos + 10; // start of TIFF block
+              const isLE = bytes[tiff] === 0x49; // 'II' little-endian
+              const r16 = o => isLE ? (bytes[tiff+o] | bytes[tiff+o+1]<<8) : (bytes[tiff+o]<<8 | bytes[tiff+o+1]);
+              const r32 = o => isLE
+                ? (bytes[tiff+o] | bytes[tiff+o+1]<<8 | bytes[tiff+o+2]<<16 | (bytes[tiff+o+3]<<24)>>>0)
+                : ((bytes[tiff+o]<<24)>>>0 | bytes[tiff+o+1]<<16 | bytes[tiff+o+2]<<8 | bytes[tiff+o+3]);
+              const ifd0 = r32(4);
+              const n0 = r16(ifd0);
+              let exifPtr = -1;
+              for (let i = 0; i < n0 && i < 64; i++) {
+                const off = ifd0 + 2 + i * 12;
+                if (r16(off) === 0x8769) { exifPtr = r32(off + 8); break; }
+              }
+              if (exifPtr > 0) {
+                const ne = r16(exifPtr);
+                for (let i = 0; i < ne && i < 64; i++) {
+                  const off = exifPtr + 2 + i * 12;
+                  const tag = r16(off);
+                  if (tag === 0x9003 || tag === 0x9004 || tag === 0x0132) { // DateTimeOriginal first
+                    const valOff = r32(off + 8);
+                    let s = '';
+                    for (let c = 0; c < 19; c++) s += String.fromCharCode(bytes[tiff + valOff + c]);
+                    const m = s.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+                    if (m) {
+                      const d = new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
+                      if (!isNaN(d.getTime())) { resolve(d); return; }
+                    }
+                    if (tag === 0x9003) break; // DateTimeOriginal tried — move on
+                  }
+                }
+              }
+            }
+          }
+          pos += 2 + segLen;
+        }
+        resolve(null);
+      } catch { resolve(null); }
+    };
+    // Only need the first 64 KB — EXIF is always near the start
+    const slice = fileOrBlob.slice ? fileOrBlob.slice(0, 65536) : fileOrBlob;
+    reader.readAsArrayBuffer(slice);
+  });
+}
+
 function injectExifTimestamp(blob, date) {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -1057,9 +1123,13 @@ function compressImage(file, maxWidth = 1920, quality = 0.85) {
         canvas.toBlob(async (blob) => {
           if (!blob) { reject(new Error('Failed to convert image to JPEG.')); return; }
           // Re-inject EXIF timestamp — canvas.toBlob() strips all metadata.
-          // Use file.lastModified so iPhone/Android original capture time is preserved.
-          const stamped = await injectExifTimestamp(blob, new Date(file.lastModified || Date.now()));
-          resolve(new File([stamped], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+          // Priority: 1) Original EXIF DateTimeOriginal from the file (most accurate — works on Android)
+          //           2) file.lastModified (unreliable on Android — often returns current time)
+          //           3) Date.now() fallback
+          const exifDate = await readExifCaptureDate(file);
+          const captureDate = exifDate || new Date(file.lastModified > 0 ? file.lastModified : Date.now());
+          const stamped = await injectExifTimestamp(blob, captureDate);
+          resolve(new File([stamped], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: captureDate.getTime() }));
         }, 'image/jpeg', quality);
       };
       img.src = e.target.result;
