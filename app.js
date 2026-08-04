@@ -1022,70 +1022,87 @@ function injectExifTimestamp(blob, date) {
         }).formatToParts(date);
         const get = (t) => (parts.find(p => p.type === t) || {}).value || '00';
         let hour = get('hour');
-        if (hour === '24') hour = '00'; // guard: some browsers return 24 for midnight
+        if (hour === '24') hour = '00';
         const dtStr = `${get('year')}:${get('month')}:${get('day')} ${hour}:${get('minute')}:${get('second')}`;
-        // EXIF ASCII datetime = 19 printable chars + null terminator = 20 bytes
+        // EXIF ASCII datetime = 19 chars + null terminator = 20 bytes
         const dtBytes = new Uint8Array(20);
         for (let i = 0; i < 19; i++) dtBytes[i] = dtStr.charCodeAt(i);
-        // dtBytes[19] already 0 (null terminator)
 
-        // ---- Build TIFF block (little-endian, 128 bytes) ----
-        // Byte layout:
-        //   [0-7]    TIFF header  (II, magic, IFD0 offset=8)
-        //   [8-37]   IFD0         (2 entries: DateTime, ExifIFD ptr) + next=0
-        //   [38-57]  DateTime string (20 bytes)
-        //   [58-87]  ExifIFD      (2 entries: DateTimeOriginal, DateTimeDigitized) + next=0
-        //   [88-107] DateTimeOriginal string (20 bytes)
-        //   [108-127] DateTimeDigitized string (20 bytes)
-        const tiff = new Uint8Array(128);
+        // Hawaii Standard Time offset = UTC-10:00 (no DST)
+        // OffsetTimeOriginal format: "-10:00\0\0" (6 chars + null + pad = 8 bytes)
+        // This is critical: without this, Turo's system may assume UTC and show wrong time.
+        const tzBytes = new Uint8Array(8);
+        const tzStr = '-10:00';
+        for (let i = 0; i < tzStr.length; i++) tzBytes[i] = tzStr.charCodeAt(i);
+
+        // ---- Build TIFF block (little-endian, 188 bytes) ----
+        // Layout:
+        //   [0-7]     TIFF header
+        //   [8-49]    IFD0 (3 entries: DateTime, ExifIFD ptr, OffsetTime) + next=0
+        //   [50-69]   DateTime string (20 bytes)
+        //   [70-77]   OffsetTime string "-10:00\0\0" (8 bytes)
+        //   [78-131]  ExifIFD (4 entries: DateTimeOriginal, DateTimeDigitized,
+        //              OffsetTimeOriginal, OffsetTimeDigitized) + next=0
+        //   [132-151] DateTimeOriginal string (20 bytes)
+        //   [152-171] DateTimeDigitized string (20 bytes)
+        //   [172-179] OffsetTimeOriginal "-10:00\0\0" (8 bytes) — Hawaii = UTC-10:00
+        //   [180-187] OffsetTimeDigitized "-10:00\0\0" (8 bytes)
+        const tiff = new Uint8Array(188);
         const v = new DataView(tiff.buffer);
 
         // TIFF header
-        v.setUint16(0, 0x4949);       // 'II' = little-endian byte order
-        v.setUint16(2, 0x002A);       // TIFF magic number
-        v.setUint32(4, 8, true);      // Offset to IFD0
+        v.setUint16(0, 0x4949);       // 'II' = little-endian
+        v.setUint16(2, 0x002A, true); // TIFF magic 42
+        v.setUint32(4, 8, true);      // IFD0 at offset 8
 
-        // IFD0 — 2 entries, sorted by tag number (required by TIFF spec)
-        v.setUint16(8, 2, true);
-        // Entry 0: 0x0132 DateTime — ASCII, 20 bytes, value at TIFF offset 38
-        v.setUint16(10, 0x0132, true); v.setUint16(12, 2, true);
-        v.setUint32(14, 20, true);     v.setUint32(18, 38, true);
-        // Entry 1: 0x8769 ExifIFD pointer — LONG, value = TIFF offset 58
-        v.setUint16(22, 0x8769, true); v.setUint16(24, 4, true);
-        v.setUint32(26, 1, true);      v.setUint32(30, 58, true);
-        v.setUint32(34, 0, true);      // next IFD = none
+        // IFD0 — 3 entries, sorted by tag number (TIFF spec requires ascending order)
+        // Tags: 0x0132 DateTime < 0x8769 ExifIFD < 0x882A OffsetTime
+        v.setUint16(8, 3, true);
+        // Entry 0: 0x0132 DateTime — ASCII, 20 bytes, at TIFF offset 50
+        v.setUint16(10, 0x0132, true); v.setUint16(12, 2, true); v.setUint32(14, 20, true); v.setUint32(18, 50, true);
+        // Entry 1: 0x8769 ExifIFD pointer — LONG, value=78 (ExifIFD offset)
+        v.setUint16(22, 0x8769, true); v.setUint16(24, 4, true); v.setUint32(26, 1, true);  v.setUint32(30, 78, true);
+        // Entry 2: 0x882A OffsetTime — ASCII, 8 bytes, at TIFF offset 70
+        v.setUint16(34, 0x882A, true); v.setUint16(36, 2, true); v.setUint32(38, 8, true);  v.setUint32(42, 70, true);
+        v.setUint32(46, 0, true);     // IFD0 next IFD = none
 
-        tiff.set(dtBytes, 38);         // DateTime string
+        tiff.set(dtBytes, 50);        // DateTime string
+        tiff.set(tzBytes, 70);        // OffsetTime = "-10:00"
 
-        // ExifIFD at TIFF offset 58 — 2 entries
-        v.setUint16(58, 2, true);
-        // Entry 0: 0x9003 DateTimeOriginal — ASCII, 20 bytes, at TIFF offset 88
-        v.setUint16(60, 0x9003, true); v.setUint16(62, 2, true);
-        v.setUint32(64, 20, true);     v.setUint32(68, 88, true);
-        // Entry 1: 0x9004 DateTimeDigitized — ASCII, 20 bytes, at TIFF offset 108
-        v.setUint16(72, 0x9004, true); v.setUint16(74, 2, true);
-        v.setUint32(76, 20, true);     v.setUint32(80, 108, true);
-        v.setUint32(84, 0, true);      // next IFD = none
+        // ExifIFD at TIFF offset 78 — 4 entries
+        // Tags: 0x9003 < 0x9004 < 0x9011 < 0x9012
+        v.setUint16(78, 4, true);
+        // Entry 0: 0x9003 DateTimeOriginal — ASCII, 20 bytes, at offset 132
+        v.setUint16(80, 0x9003, true);  v.setUint16(82,  2, true); v.setUint32(84, 20, true); v.setUint32(88, 132, true);
+        // Entry 1: 0x9004 DateTimeDigitized — ASCII, 20 bytes, at offset 152
+        v.setUint16(92, 0x9004, true);  v.setUint16(94,  2, true); v.setUint32(96, 20, true); v.setUint32(100, 152, true);
+        // Entry 2: 0x9011 OffsetTimeOriginal — ASCII, 8 bytes, at offset 172 (HST = UTC-10:00)
+        v.setUint16(104, 0x9011, true); v.setUint16(106, 2, true); v.setUint32(108, 8, true); v.setUint32(112, 172, true);
+        // Entry 3: 0x9012 OffsetTimeDigitized — ASCII, 8 bytes, at offset 180
+        v.setUint16(116, 0x9012, true); v.setUint16(118, 2, true); v.setUint32(120, 8, true); v.setUint32(124, 180, true);
+        v.setUint32(128, 0, true);      // ExifIFD next IFD = none
 
-        tiff.set(dtBytes, 88);         // DateTimeOriginal string
-        tiff.set(dtBytes, 108);        // DateTimeDigitized string
+        tiff.set(dtBytes, 132);         // DateTimeOriginal
+        tiff.set(dtBytes, 152);         // DateTimeDigitized
+        tiff.set(tzBytes, 172);         // OffsetTimeOriginal = "-10:00" (Hawaii)
+        tiff.set(tzBytes, 180);         // OffsetTimeDigitized = "-10:00" (Hawaii)
 
         // ---- Build JPEG APP1 segment ----
-        // Structure: FF E1 (marker, 2) + length (2) + "Exif\0\0" (6) + tiff (128) = 138 bytes
-        // Length field = 2 (itself) + 6 (Exif header) + 128 (TIFF) = 136 = 0x0088
-        const app1 = new Uint8Array(138);
+        // FF E1 + length(2) + "Exif\0\0"(6) + tiff(188) = 198 bytes
+        // Length field = 2 (itself) + 6 (Exif header) + 188 (TIFF) = 196 = 0x00C4
+        const app1 = new Uint8Array(198);
         app1[0] = 0xFF; app1[1] = 0xE1;  // APP1 marker
-        app1[2] = 0x00; app1[3] = 0x88;  // length = 136
+        app1[2] = 0x00; app1[3] = 0xC4;  // length = 196
         app1[4] = 0x45; app1[5] = 0x78;  // 'E' 'x'
         app1[6] = 0x69; app1[7] = 0x66;  // 'i' 'f'
         app1[8] = 0x00; app1[9] = 0x00;  // null padding
         app1.set(tiff, 10);
 
-        // Assemble: SOI (2 bytes) + EXIF APP1 (138 bytes) + rest of original JPEG
+        // Assemble: SOI (2 bytes) + EXIF APP1 (198 bytes) + rest of original JPEG
         const result = new Uint8Array(jpeg.length + app1.length);
-        result.set(jpeg.slice(0, 2));                   // FF D8 SOI
-        result.set(app1, 2);                            // EXIF APP1
-        result.set(jpeg.slice(2), 2 + app1.length);     // remaining JPEG data
+        result.set(jpeg.slice(0, 2));
+        result.set(app1, 2);
+        result.set(jpeg.slice(2), 2 + app1.length);
 
         resolve(new Blob([result], { type: 'image/jpeg' }));
       } catch (err) {
