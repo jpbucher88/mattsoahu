@@ -977,21 +977,37 @@ async function readExifCaptureDate(fileOrBlob) {
               }
               if (exifPtr > 0) {
                 const ne = r16(exifPtr);
+                let dtStr = null, tzOffset = '-10:00'; // default: assume Hawaii time
                 for (let i = 0; i < ne && i < 64; i++) {
                   const off = exifPtr + 2 + i * 12;
                   const tag = r16(off);
-                  if (tag === 0x9003 || tag === 0x9004 || tag === 0x0132) { // DateTimeOriginal first
+                  // 0x9003 DateTimeOriginal, 0x9011 OffsetTimeOriginal
+                  if (tag === 0x9003) {
                     const valOff = r32(off + 8);
                     let s = '';
                     for (let c = 0; c < 19; c++) s += String.fromCharCode(bytes[tiff + valOff + c]);
-                    const m = s.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
-                    if (m) {
-                      const d = new Date(+m[1], +m[2]-1, +m[3], +m[4], +m[5], +m[6]);
-                      if (!isNaN(d.getTime())) { resolve(d); return; }
-                    }
-                    if (tag === 0x9003) break; // DateTimeOriginal tried — move on
+                    if (s.match(/^\d{4}:\d{2}:\d{2} \d{2}:\d{2}:\d{2}$/)) dtStr = s;
+                  } else if (tag === 0x9011) {
+                    // OffsetTimeOriginal: "+HH:MM" or "-HH:MM" (6 chars)
+                    const valOff = r32(off + 8);
+                    let tz = '';
+                    for (let c = 0; c < 6; c++) tz += String.fromCharCode(bytes[tiff + valOff + c]);
+                    if (tz.match(/^[+-]\d{2}:\d{2}$/)) tzOffset = tz;
                   }
                 }
+                if (dtStr) {
+                  // Parse using the phone's own timezone offset (or Hawaii default).
+                  // This is critical for iPhone: parse as the actual local time of capture,
+                  // not the browser's local timezone. A photo taken at 15:30 HST is 15:30 HST
+                  // whether the upload happens from Hawaii or the mainland.
+                  const mt = dtStr.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+                  if (mt) {
+                    const iso = `${mt[1]}-${mt[2]}-${mt[3]}T${mt[4]}:${mt[5]}:${mt[6]}${tzOffset}`;
+                    const d = new Date(iso);
+                    if (!isNaN(d.getTime())) { resolve(d); return; }
+                  }
+                }
+                // Fallback: also check IFD0 DateTime (0x0132) in case ExifIFD had no DateTimeOriginal
               }
             }
           }
