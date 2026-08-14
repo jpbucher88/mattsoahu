@@ -7194,7 +7194,7 @@ window.loadPerformanceReport = async function() {
   if (countEl)    countEl.textContent = '';
 
   try {
-    const snap = await db.collection('userActivity').orderBy('at', 'desc').limit(500).get();
+    const snap = await db.collection('userActivity').orderBy('at', 'desc').limit(2000).get();
     let allItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     // Filter to selected date in Hawaii time
@@ -7203,13 +7203,17 @@ window.loadPerformanceReport = async function() {
       return new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }) === dateVal;
     });
 
-    // Populate user filter from the day's data (before user-filter applied)
+    // Populate user filter from ALL users seen today (before user-filter)
     const userSelectEl = $('perf-filter-user');
     if (userSelectEl) {
-      const currentVal = userSelectEl.value;
       const names = [...new Set(dayItems.map(d => d.userName || '').filter(Boolean))].sort();
-      userSelectEl.innerHTML = '<option value="">All Staff</option>' +
-        names.map(n => `<option value="${escapeHtml(n)}"${n === currentVal ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+      // Only rebuild options if the list changed — preserve current selection
+      const currentVal = userSelectEl.value;
+      const newOptions = '<option value="">All Staff</option>' +
+        names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+      userSelectEl.innerHTML = newOptions;
+      // Restore selection if the user still exists in today's data
+      if (currentVal && names.includes(currentVal)) userSelectEl.value = currentVal;
     }
 
     // Apply user filter
@@ -7223,23 +7227,50 @@ window.loadPerformanceReport = async function() {
       cardsEl.innerHTML = `<div style="text-align:center;padding:40px 20px;color:#9ca3af;">
         <div style="font-size:2rem;margin-bottom:8px;">📭</div>
         <div style="font-size:0.95rem;font-weight:600;color:#374151;margin-bottom:4px;">No activity recorded for ${dateFmt}</div>
-        <div style="font-size:0.82rem;">Activity tracking just launched — new actions will appear here going forward.</div>
+        <div style="font-size:0.82rem;">Tracking started Aug 13, 2026 — activity will appear once staff use the app.</div>
       </div>`;
       if (timelineEl) timelineEl.style.display = 'none';
       return;
     }
 
+    // ── Group photo uploads: one entry per (user, plate) session ──
+    // Raw items keep all photos for the workflow chain; displayItems collapses them
+    const photoGroups = {};
+    items.filter(d => d.action === 'photo_uploaded').forEach(d => {
+      const det = d.details || {};
+      const plate = (typeof det === 'object' ? det.plate : null) || '';
+      const key = `${d.userName || ''}___${plate}`;
+      if (!photoGroups[key]) {
+        photoGroups[key] = { ...d, _photoCount: 1 };
+      } else {
+        photoGroups[key]._photoCount++;
+        // Advance timestamp to the most recent upload in the session
+        if (d.at && photoGroups[key].at && d.at.toDate() > photoGroups[key].at.toDate()) {
+          photoGroups[key].at = d.at;
+          photoGroups[key].atDisplay = d.atDisplay;
+        }
+      }
+    });
+    const groupedPhotoItems = Object.values(photoGroups);
+    const nonPhotoItems = items.filter(d => d.action !== 'photo_uploaded');
+    // displayItems = grouped photos + everything else, sorted newest-first
+    const displayItems = [...nonPhotoItems, ...groupedPhotoItems].sort((a, b) => {
+      const at = a.at?.toDate?.()?.getTime() || 0;
+      const bt = b.at?.toDate?.()?.getTime() || 0;
+      return bt - at;
+    });
+
     // ── Hero stats ───────────────────────────────────────────────
-    const activeStaff   = new Set(items.map(d => d.userName)).size;
-    const photosTotal   = items.filter(d => d.action === 'photo_uploaded').length;
-    const returnedTotal = items.filter(d => d.action === 'vehicle_returned').length;
-    const cleanedTotal  = items.filter(d => d.action === 'vehicle_cleaned').length;
-    const tasksTotal    = items.filter(d => d.action === 'complete_task').length;
-    const totalActions  = items.length;
+    const activeStaff     = new Set(items.map(d => d.userName)).size;
+    const vehiclesShot    = groupedPhotoItems.length;               // unique plate+user photo sessions
+    const returnedTotal   = items.filter(d => d.action === 'vehicle_returned').length;
+    const cleanedTotal    = items.filter(d => d.action === 'vehicle_cleaned').length;
+    const tasksTotal      = items.filter(d => d.action === 'complete_task').length;
+    const totalActions    = displayItems.length;
 
     const heroStats = [
       { icon: '👥', value: activeStaff,   label: 'Active Staff',  color: '#1d4ed8' },
-      { icon: '📸', value: photosTotal,   label: 'Photos',        color: '#2563eb' },
+      { icon: '📸', value: vehiclesShot,  label: 'Vehicles Shot', color: '#2563eb' },
       { icon: '🏠', value: returnedTotal, label: 'Returned',      color: '#16a34a' },
       { icon: '🧹', value: cleanedTotal,  label: 'Cleaned',       color: '#0891b2' },
       { icon: '✅', value: tasksTotal,    label: 'Tasks Done',    color: '#16a34a' },
@@ -7257,18 +7288,16 @@ window.loadPerformanceReport = async function() {
         </div>`).join('');
     }
 
-    // ── Vehicle workflow chain ────────────────────────────────────
-    // The workflow steps in order
+    // ── Vehicle workflow chain (uses raw items for photo detection) ─
     const WORKFLOW_STEPS = [
-      { action: 'vehicle_returned',    icon: '🏠', label: 'Returned'  },
+      { action: 'vehicle_returned',    icon: '🏠', label: 'Returned'   },
       { action: 'inspect_started',     icon: '🔍', label: 'Inspecting' },
       { action: 'inspection_complete', icon: '✅', label: 'Inspected'  },
-      { action: 'vehicle_cleaned',     icon: '🧹', label: 'Cleaned'   },
-      { action: 'photo_uploaded',      icon: '📸', label: 'Photo'     },
+      { action: 'vehicle_cleaned',     icon: '🧹', label: 'Cleaned'    },
+      { action: 'photo_uploaded',      icon: '📸', label: 'Photos'     },
     ];
     const workflowActions = new Set(WORKFLOW_STEPS.map(s => s.action));
 
-    // Build per-plate event chains (earliest-first)
     const byPlate = {};
     [...items].reverse().forEach(d => {
       if (!workflowActions.has(d.action)) return;
@@ -7279,55 +7308,37 @@ window.loadPerformanceReport = async function() {
       byPlate[plate].push(d);
     });
 
-    // Sort plates by the earliest event
     const platesSorted = Object.keys(byPlate).sort((a, b) => {
       const aTime = byPlate[a][0]?.at?.toDate?.()?.getTime() || 0;
       const bTime = byPlate[b][0]?.at?.toDate?.()?.getTime() || 0;
-      return bTime - aTime; // most recently active first
+      return bTime - aTime;
     });
 
     let workflowHtml = '';
     if (platesSorted.length) {
       const rows = platesSorted.map(plate => {
         const events = byPlate[plate];
-        // Collect one entry per step (last occurrence wins for multi-photos)
         const stepMap = {};
-        events.forEach(d => {
-          if (!stepMap[d.action]) stepMap[d.action] = d;
-        });
-        // Photo count
+        events.forEach(d => { if (!stepMap[d.action]) stepMap[d.action] = d; });
         const photoCount = events.filter(e => e.action === 'photo_uploaded').length;
 
-        // Figure out turnaround: returned → most recent photo/cleaned
         const retEvent  = stepMap['vehicle_returned'];
         const doneEvent = stepMap['photo_uploaded'] || stepMap['vehicle_cleaned'];
         let turnaround = '';
         if (retEvent?.at && doneEvent?.at) {
-          const diffMs = doneEvent.at.toDate().getTime() - retEvent.at.toDate().getTime();
-          const diffMin = Math.round(diffMs / 60000);
-          if (diffMin >= 0) {
-            turnaround = diffMin >= 60
-              ? `${Math.floor(diffMin/60)}h ${diffMin % 60}m`
-              : `${diffMin}m`;
-          }
+          const diffMin = Math.round((doneEvent.at.toDate().getTime() - retEvent.at.toDate().getTime()) / 60000);
+          if (diffMin >= 0) turnaround = diffMin >= 60 ? `${Math.floor(diffMin/60)}h ${diffMin%60}m` : `${diffMin}m`;
         }
 
-        // Build step pills
         const pills = WORKFLOW_STEPS.map(step => {
           const ev = stepMap[step.action];
-          if (!ev) {
-            return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:0.78rem;background:#f3f4f6;color:#d1d5db;border:1px dashed #e5e7eb;">${step.icon} ${step.label}</span>`;
-          }
-          const time = ev.at ? new Date(ev.at.toDate()).toLocaleTimeString('en-US', {
-            hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
-          }) : '';
-          const who  = (ev.userName || '').split(' ')[0]; // first name only
-          const cnt  = step.action === 'photo_uploaded' && photoCount > 1 ? ` ×${photoCount}` : '';
-          return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:0.78rem;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;" title="${escapeHtml(ev.userName || '')} at ${time}">${step.icon} ${step.label}${cnt} <span style="color:#6b7280;font-size:0.72rem;">${time}</span></span>`;
+          if (!ev) return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:0.78rem;background:#f3f4f6;color:#d1d5db;border:1px dashed #e5e7eb;">${step.icon} ${step.label}</span>`;
+          const time = ev.at ? new Date(ev.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+          const cnt  = step.action === 'photo_uploaded' && photoCount > 0 ? ` ×${photoCount}` : '';
+          return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:0.78rem;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;" title="${escapeHtml(ev.userName||'')} at ${time}">${step.icon} ${step.label}${cnt} <span style="color:#6b7280;font-size:0.72rem;">${time}</span></span>`;
         }).join('<span style="color:#d1d5db;font-size:0.7rem;padding:0 2px;">→</span>');
 
         const doneAll = stepMap['vehicle_returned'] && stepMap['inspection_complete'] && stepMap['vehicle_cleaned'] && stepMap['photo_uploaded'];
-
         return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;background:#fff;margin-bottom:6px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
             <span style="font-weight:700;font-size:0.95rem;color:#111827;">${escapeHtml(plate)}</span>
@@ -7346,39 +7357,42 @@ window.loadPerformanceReport = async function() {
       </div>`;
     }
 
-    // ── Per-user breakdown cards ─────────────────────────────────
+    // ── Per-user breakdown (uses displayItems = grouped photos) ──
     const byUser = {};
-    items.forEach(d => {
+    displayItems.forEach(d => {
       const name = d.userName || 'Unknown';
-      if (!byUser[name]) byUser[name] = { name, counts: {}, plates: new Set(), total: 0 };
-      byUser[name].counts[d.action] = (byUser[name].counts[d.action] || 0) + 1;
+      if (!byUser[name]) byUser[name] = { name, counts: {}, photoVehicles: new Set(), plates: new Set(), total: 0 };
+      if (d.action === 'photo_uploaded') {
+        // Count photo sessions (one per vehicle), not individual photos
+        const det = d.details || {};
+        const plate = (typeof det === 'object' ? det.plate : null) || '';
+        byUser[name].photoVehicles.add(plate);
+        byUser[name].counts['photo_uploaded'] = byUser[name].photoVehicles.size;
+      } else {
+        byUser[name].counts[d.action] = (byUser[name].counts[d.action] || 0) + 1;
+      }
       byUser[name].total++;
-      // Track vehicles touched
       const det = d.details || {};
       if (typeof det === 'object' && det.plate) byUser[name].plates.add(det.plate);
     });
     const sortedUsers = Object.values(byUser).sort((a, b) => b.total - a.total);
 
     const staffHtml = `<div style="display:flex;flex-direction:column;gap:8px;">` + sortedUsers.map(u => {
-      // Key metric chips (only show non-zero productive actions)
-      const chips = PERF_KEY_ACTIONS
-        .filter(a => u.counts[a])
-        .map(a => {
-          const m = PERF_ACTION_LABELS[a];
-          return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;color:#374151;">
-            ${m.icon} <span>${u.counts[a]}</span> <span style="font-weight:400;color:#6b7280;">${m.label}</span>
-          </span>`;
-        }).join('');
+      const chips = PERF_KEY_ACTIONS.filter(a => u.counts[a]).map(a => {
+        const m = PERF_ACTION_LABELS[a];
+        const cnt = u.counts[a];
+        // For photos show "N vehicles" label
+        const lbl = a === 'photo_uploaded' && cnt > 1 ? 'Vehicles Shot' : m.label;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;color:#374151;">
+          ${m.icon} <span>${cnt}</span> <span style="font-weight:400;color:#6b7280;">${lbl}</span>
+        </span>`;
+      }).join('');
 
-      // Other minor actions
       const otherActions = Object.entries(u.counts)
         .filter(([a]) => !PERF_KEY_ACTIONS.includes(a) && u.counts[a] > 0)
-        .map(([a, n]) => {
-          const m = PERF_ACTION_LABELS[a] || { icon: '▪️', label: a.replace(/_/g,' ') };
-          return `${m.icon} ${n} ${m.label}`;
-        }).join(' · ');
+        .map(([a, n]) => { const m = PERF_ACTION_LABELS[a] || { icon: '▪️', label: a.replace(/_/g,' ') }; return `${m.icon} ${n} ${m.label}`; })
+        .join(' · ');
 
-      // Vehicles touched
       const plates = [...u.plates];
       const platesStr = plates.length ? plates.slice(0, 8).join(' · ') + (plates.length > 8 ? ` +${plates.length - 8} more` : '') : '';
 
@@ -7397,15 +7411,23 @@ window.loadPerformanceReport = async function() {
       `<div style="font-size:0.82rem;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;margin-bottom:8px;">👤 Staff</div>` +
       staffHtml;
 
-    // ── Timeline ─────────────────────────────────────────────────
+    // ── Timeline (uses displayItems = grouped photos) ─────────────
     if (timelineEl) timelineEl.style.display = '';
-    if (countEl) countEl.textContent = `${items.length} events`;
-    feedEl.innerHTML = items.map((d, i) => {
+    if (countEl) countEl.textContent = `${displayItems.length} events`;
+    feedEl.innerHTML = displayItems.map((d, i) => {
       const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️', color: '#6b7280' };
       const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', {
         hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
       }) : '?';
-      const desc = _perfDescribe(d);
+      // For grouped photos, show "Uploaded N photos · PLATE"
+      let desc;
+      if (d.action === 'photo_uploaded' && d._photoCount > 1) {
+        const det = d.details || {};
+        const plate = (typeof det === 'object' ? det.plate : null) || '';
+        desc = `Uploaded ${d._photoCount} photos${plate ? ' · ' + plate : ''}`;
+      } else {
+        desc = _perfDescribe(d);
+      }
       const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
       return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;background:${bg};">
         <span style="font-size:1rem;min-width:20px;text-align:center;">${meta.icon}</span>
