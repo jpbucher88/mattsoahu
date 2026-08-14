@@ -7122,14 +7122,26 @@ window.perfJumpDate = function(offsetDays) {
   loadPerformanceReport();
 };
 
-// Toggle the detail panel for a staff card in the Performance tab
-window.togglePerfDetail = function(safeId) {
-  const detailEl = document.getElementById('perf-detail-' + safeId);
-  const toggleBtn = document.getElementById('perf-toggle-' + safeId);
-  if (!detailEl) return;
-  const isOpen = detailEl.style.display !== 'none';
-  detailEl.style.display = isOpen ? 'none' : '';
-  if (toggleBtn) toggleBtn.textContent = isOpen ? '▾ Details' : '▴ Hide';
+// Toggle the vehicle turnaround section
+window.togglePerfTurnaround = function() {
+  const body = $('perf-turnaround-body');
+  const btn  = $('perf-turnaround-btn');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (btn) btn.textContent = (open ? '▶' : '▼') + ' Vehicle Turnaround';
+};
+
+// Toggle the full activity log
+window.togglePerfLog = function() {
+  const body = $('perf-activity-feed');
+  const btn  = $('perf-log-btn');
+  const cnt  = $('perf-feed-count');
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  const cntTxt = cnt ? cnt.textContent : '';
+  if (btn) btn.innerHTML = (open ? '▶' : '▼') + ` Full Log <span id="perf-feed-count" style="color:#9ca3af;">${cntTxt}</span>`;
 };
 
 // ================================================================
@@ -7287,18 +7299,18 @@ window.loadPerformanceReport = async function() {
       { icon: '⚡', value: totalActions,  label: 'Total Actions', color: '#7c3aed' },
     ];
 
-    // ── Hero stats render ────────────────────────────────────────
+    // ── Hero stats — compact inline chips ───────────────────────
     if (heroEl) {
-      heroEl.style.display = 'grid';
+      heroEl.style.display = 'flex';
       heroEl.innerHTML = heroStats.map(s => `
-        <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px 10px;text-align:center;">
-          <div style="font-size:1.4rem;">${s.icon}</div>
-          <div style="font-size:1.6rem;font-weight:800;color:${s.color};line-height:1.1;">${s.value}</div>
-          <div style="font-size:0.72rem;color:#6b7280;margin-top:2px;">${s.label}</div>
+        <div style="display:flex;align-items:center;gap:5px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:20px;padding:5px 12px;">
+          <span style="font-size:1rem;">${s.icon}</span>
+          <span style="font-size:1rem;font-weight:800;color:${s.color};">${s.value}</span>
+          <span style="font-size:0.72rem;color:#9ca3af;">${s.label}</span>
         </div>`).join('');
     }
 
-    // ── Vehicle workflow chain (uses raw items for photo detection) ─
+    // ── Vehicle workflow chain (built but rendered collapsed) ────
     const WORKFLOW_STEPS = [
       { action: 'vehicle_returned',    icon: '🏠', label: 'Returned'   },
       { action: 'inspect_started',     icon: '🔍', label: 'Inspecting' },
@@ -7367,8 +7379,7 @@ window.loadPerformanceReport = async function() {
       </div>`;
     }
 
-    // ── Per-user breakdown (uses displayItems = grouped photos) ──
-    // Store by user so the toggle handler can access details
+    // ── Per-user breakdown — compact scorecard rows ──────────────
     window._perfUserItems = {};
     displayItems.forEach(d => {
       const name = d.userName || 'Unknown';
@@ -7379,145 +7390,148 @@ window.loadPerformanceReport = async function() {
     const byUser = {};
     displayItems.forEach(d => {
       const name = d.userName || 'Unknown';
-      if (!byUser[name]) byUser[name] = { name, counts: {}, photoVehicles: new Set(), plates: new Set(), total: 0 };
+      if (!byUser[name]) byUser[name] = { name, counts: {}, photoVehicles: new Set(), total: 0 };
       if (d.action === 'photo_uploaded') {
         const det = d.details || {};
-        const plate = (typeof det === 'object' ? det.plate : null) || '';
-        byUser[name].photoVehicles.add(plate);
+        byUser[name].photoVehicles.add((typeof det === 'object' ? det.plate : null) || '');
         byUser[name].counts['photo_uploaded'] = byUser[name].photoVehicles.size;
       } else {
         byUser[name].counts[d.action] = (byUser[name].counts[d.action] || 0) + 1;
       }
       byUser[name].total++;
-      const det = d.details || {};
-      if (typeof det === 'object' && det.plate) byUser[name].plates.add(det.plate);
     });
     const sortedUsers = Object.values(byUser).sort((a, b) => b.total - a.total);
 
-    const staffHtml = `<div style="display:flex;flex-direction:column;gap:8px;">` + sortedUsers.map(u => {
-      const safeId = encodeURIComponent(u.name);
-      const userItems = window._perfUserItems[u.name] || [];
+    const staffHtml = `<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px;">` +
+      sortedUsers.map(u => {
+        const safeId = encodeURIComponent(u.name);
+        const userItems = window._perfUserItems[u.name] || [];
 
-      // Key metric chips
-      const chips = PERF_KEY_ACTIONS.filter(a => u.counts[a]).map(a => {
-        const m = PERF_ACTION_LABELS[a];
-        const cnt = u.counts[a];
-        const lbl = a === 'photo_uploaded' && cnt > 1 ? 'Vehicles Shot' : m.label;
-        return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;color:#374151;">${m.icon} <span>${cnt}</span> <span style="font-weight:400;color:#6b7280;">${lbl}</span></span>`;
-      }).join('');
+        // Compact metric chips — icon + count, dot-separated
+        const metricOrder = ['photo_uploaded','vehicle_returned','vehicle_cleaned','inspection_complete','flag_not_returned','complete_task'];
+        const chips = metricOrder.filter(a => u.counts[a]).map(a => {
+          const m = PERF_ACTION_LABELS[a];
+          return `<span style="font-size:0.82rem;color:#374151;white-space:nowrap;">${m.icon} ${u.counts[a]}</span>`;
+        }).join('<span style="color:#e5e7eb;margin:0 3px;">·</span>');
 
-      // Minor action chips
-      const otherActions = Object.entries(u.counts)
-        .filter(([a]) => !PERF_KEY_ACTIONS.includes(a) && u.counts[a] > 0)
-        .map(([a, n]) => { const m = PERF_ACTION_LABELS[a] || { icon: '▪️', label: a.replace(/_/g,' ') }; return `${m.icon} ${n} ${m.label}`; })
-        .join(' · ');
+        // ── Detail panel content ────────────────────────────────
+        const taskItems  = userItems.filter(d => d.action === 'complete_task');
+        const photoItems = userItems.filter(d => d.action === 'photo_uploaded');
+        const opItems    = userItems.filter(d => ['vehicle_returned','vehicle_cleaned','flag_not_returned'].includes(d.action));
 
-      // ── Detail panel (hidden by default) ──────────────────────
-      // Tasks completed
-      const taskItems = userItems.filter(d => d.action === 'complete_task');
-      const tasksHtml = taskItems.length ? `
-        <div style="margin-bottom:10px;">
+        const tasksHtml = taskItems.length ? `<div style="margin-bottom:10px;">
           <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:5px;">✅ Completed Tasks (${taskItems.length})</div>
           ${taskItems.map(d => {
             const det = d.details || {};
             const text  = typeof det === 'object' ? (det.text || '') : '';
             const plate = typeof det === 'object' ? (det.plate || '') : '';
-            const time  = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+            const time  = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:APP_TIMEZONE}) : '';
             return `<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;">
-              <span style="color:#16a34a;font-size:0.85rem;margin-top:1px;">✓</span>
-              <div style="flex:1;min-width:0;">
-                <span style="font-size:0.8rem;color:#111827;">${text ? escapeHtml(text) : '<span style="color:#9ca3af;font-style:italic;">Task completed</span>'}</span>
-                ${plate ? `<span style="font-size:0.75rem;color:#9ca3af;margin-left:6px;">· ${escapeHtml(plate)}</span>` : ''}
-              </div>
+              <span style="color:#16a34a;">✓</span>
+              <span style="flex:1;font-size:0.8rem;color:#111827;">${text ? escapeHtml(text) : '<em style="color:#9ca3af;">task completed</em>'}${plate?` <span style="color:#9ca3af;font-size:0.75rem;">· ${escapeHtml(plate)}</span>`:''}</span>
               <span style="font-size:0.72rem;color:#9ca3af;white-space:nowrap;">${time}</span>
             </div>`;
           }).join('')}
         </div>` : '';
 
-      // Photos by vehicle
-      const photoItems = userItems.filter(d => d.action === 'photo_uploaded');
-      const photosHtml = photoItems.length ? `
-        <div style="margin-bottom:10px;">
-          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:5px;">📸 Photos (${photoItems.length} vehicle${photoItems.length !== 1 ? 's' : ''})</div>
+        const photosHtml = photoItems.length ? `<div style="margin-bottom:10px;">
+          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:5px;">📸 Photos (${photoItems.length} vehicle${photoItems.length!==1?'s':''})</div>
           ${photoItems.map(d => {
             const det = d.details || {};
-            const plate = typeof det === 'object' ? (det.plate || '?') : '?';
+            const plate = typeof det === 'object' ? (det.plate||'?') : '?';
             const cnt = d._photoCount || 1;
-            const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
-            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;">
-              <span style="font-size:0.8rem;color:#111827;font-weight:500;">📸 ${escapeHtml(plate)}</span>
-              <span style="font-size:0.78rem;color:#6b7280;">${cnt} photo${cnt !== 1 ? 's' : ''} · ${time}</span>
+            const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:APP_TIMEZONE}) : '';
+            return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f3f4f6;font-size:0.8rem;">
+              <span style="font-weight:500;">📸 ${escapeHtml(plate)}</span>
+              <span style="color:#6b7280;">${cnt} photo${cnt!==1?'s':''} · ${time}</span>
             </div>`;
           }).join('')}
         </div>` : '';
 
-      // Returns & cleans
-      const retItems   = userItems.filter(d => d.action === 'vehicle_returned');
-      const cleanItems = userItems.filter(d => d.action === 'vehicle_cleaned');
-      const flagItems  = userItems.filter(d => d.action === 'flag_not_returned');
-      const opsRows = [...retItems.map(d => {
-        const plate = (d.details || {}).plate || '?';
-        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
-        return `<div style="font-size:0.8rem;color:#111827;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;">
-          <span>🏠 Returned ${escapeHtml(plate)}</span><span style="color:#9ca3af;font-size:0.72rem;">${time}</span></div>`;
-      }), ...cleanItems.map(d => {
-        const plate = (d.details || {}).plate || '?';
-        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
-        return `<div style="font-size:0.8rem;color:#111827;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;">
-          <span>🧹 Cleaned ${escapeHtml(plate)}</span><span style="color:#9ca3af;font-size:0.72rem;">${time}</span></div>`;
-      }), ...flagItems.map(d => {
-        const plate = (d.details || {}).plate || '?';
-        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
-        return `<div style="font-size:0.8rem;color:#dc2626;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;">
-          <span>🚨 Not returned ${escapeHtml(plate)}</span><span style="color:#9ca3af;font-size:0.72rem;">${time}</span></div>`;
-      })].join('');
-      const opsHtml = opsRows ? `<div style="margin-bottom:6px;">${opsRows}</div>` : '';
+        const opsHtml = opItems.length ? `<div>${opItems.map(d => {
+          const m = PERF_ACTION_LABELS[d.action] || {icon:'▪️'};
+          const plate = (d.details||{}).plate || '';
+          const time  = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true,timeZone:APP_TIMEZONE}) : '';
+          return `<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #f3f4f6;font-size:0.8rem;">
+            <span>${m.icon} ${escapeHtml(plate)}</span><span style="color:#9ca3af;">${time}</span></div>`;
+        }).join('')}</div>` : '';
 
-      const hasDetail = tasksHtml || photosHtml || opsHtml;
+        const hasDetail = tasksHtml || photosHtml || opsHtml;
 
-      return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${chips ? '10px' : '4px'};">
-          <span style="font-weight:700;font-size:1rem;color:#111827;">${escapeHtml(u.name)}</span>
-          <div style="display:flex;align-items:center;gap:8px;">
-            <span style="font-size:0.78rem;color:#9ca3af;background:#f9fafb;border-radius:20px;padding:2px 10px;">${u.total} action${u.total !== 1 ? 's' : ''}</span>
-            ${hasDetail ? `<button id="perf-toggle-${safeId}" onclick="togglePerfDetail('${safeId}')" style="font-size:0.78rem;color:#2563eb;background:none;border:none;cursor:pointer;padding:0;">▾ Details</button>` : ''}
+        return `<div style="border:1px solid #e5e7eb;border-radius:10px;background:#fff;overflow:hidden;">
+          <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;${hasDetail?'cursor:pointer;':''}" onclick="${hasDetail?`togglePerfDetail('${safeId}')`:''}" >
+            <span style="font-weight:700;font-size:0.95rem;color:#111827;min-width:80px;">${escapeHtml(u.name)}</span>
+            <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">${chips||'<span style="font-size:0.78rem;color:#9ca3af;">No activity</span>'}</div>
+            <span style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;">${u.total} action${u.total!==1?'s':''}</span>
+            ${hasDetail?`<span id="perf-toggle-${safeId}" style="color:#9ca3af;font-size:0.75rem;">▾</span>`:''}
           </div>
-        </div>
-        ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${otherActions ? '8px' : '0'};">${chips}</div>` : ''}
-        ${otherActions ? `<div style="font-size:0.78rem;color:#9ca3af;">${escapeHtml(otherActions)}</div>` : ''}
-        ${hasDetail ? `<div id="perf-detail-${safeId}" style="display:none;margin-top:12px;border-top:1px solid #f3f4f6;padding-top:10px;">${tasksHtml}${photosHtml}${opsHtml}</div>` : ''}
-      </div>`;
-    }).join('') + `</div>`;
+          ${hasDetail?`<div id="perf-detail-${safeId}" style="display:none;padding:12px 14px;border-top:1px solid #f3f4f6;background:#fafafa;">${tasksHtml}${photosHtml}${opsHtml}</div>`:''}
+        </div>`;
+      }).join('') + `</div>`;
 
-    cardsEl.innerHTML = workflowHtml +
-      `<div style="font-size:0.82rem;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;margin-bottom:8px;">👤 Staff</div>` +
-      staffHtml;
+    cardsEl.innerHTML = staffHtml;
 
-    // ── Timeline (uses displayItems = grouped photos) ─────────────
+    // ── Vehicle turnaround (collapsed) ────────────────────────────
+    const turnaroundEl = $('perf-turnaround-wrap');
+    const turnaroundBodyEl = $('perf-turnaround-body');
+    if (platesSorted.length && turnaroundEl && turnaroundBodyEl) {
+      turnaroundEl.style.display = '';
+      turnaroundBodyEl.innerHTML = platesSorted.map(plate => {
+        const events = byPlate[plate];
+        const stepMap = {};
+        events.forEach(d => { if (!stepMap[d.action]) stepMap[d.action] = d; });
+        const photoCount = events.filter(e => e.action === 'photo_uploaded').length;
+        const retEvent  = stepMap['vehicle_returned'];
+        const doneEvent = stepMap['photo_uploaded'] || stepMap['vehicle_cleaned'];
+        let turnaround = '';
+        if (retEvent?.at && doneEvent?.at) {
+          const diffMin = Math.round((doneEvent.at.toDate().getTime() - retEvent.at.toDate().getTime()) / 60000);
+          if (diffMin >= 0) turnaround = diffMin >= 60 ? `${Math.floor(diffMin/60)}h ${diffMin%60}m` : `${diffMin}m`;
+        }
+        const pills = WORKFLOW_STEPS.map(step => {
+          const ev = stepMap[step.action];
+          if (!ev) return `<span style="padding:2px 8px;border-radius:20px;font-size:0.75rem;background:#f3f4f6;color:#d1d5db;border:1px dashed #e5e7eb;">${step.icon} ${step.label}</span>`;
+          const time = ev.at ? new Date(ev.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+          const cnt  = step.action === 'photo_uploaded' && photoCount > 0 ? ` ×${photoCount}` : '';
+          return `<span style="padding:2px 8px;border-radius:20px;font-size:0.75rem;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;" title="${escapeHtml(ev.userName||'')} · ${time}">${step.icon} ${step.label}${cnt} <span style="color:#6b7280;font-size:0.7rem;">${time}</span></span>`;
+        }).join('<span style="color:#d1d5db;font-size:0.65rem;margin:0 2px;">→</span>');
+        const doneAll = stepMap['vehicle_returned'] && stepMap['inspection_complete'] && stepMap['vehicle_cleaned'] && stepMap['photo_uploaded'];
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;background:#fff;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:7px;">
+            <span style="font-weight:700;font-size:0.9rem;">${escapeHtml(plate)}</span>
+            <div style="display:flex;align-items:center;gap:6px;">
+              ${turnaround ? `<span style="font-size:0.75rem;color:#6b7280;">⏱ ${turnaround}</span>` : ''}
+              <span style="font-size:0.72rem;font-weight:600;${doneAll ? 'background:#dcfce7;color:#15803d' : 'background:#fef9c3;color:#92400e'};border-radius:20px;padding:1px 8px;">${doneAll ? '✓ Done' : 'In Progress'}</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;">${pills}</div>
+        </div>`;
+      }).join('');
+    } else if (turnaroundEl) {
+      turnaroundEl.style.display = 'none';
+    }
+
+    // ── Full log (collapsed behind button) ───────────────────────
     if (timelineEl) timelineEl.style.display = '';
-    if (countEl) countEl.textContent = `${displayItems.length} events`;
-    feedEl.innerHTML = displayItems.map((d, i) => {
-      const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️', color: '#6b7280' };
-      const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
-      }) : '?';
-      // For grouped photos, show "Uploaded N photos · PLATE"
-      let desc;
-      if (d.action === 'photo_uploaded' && d._photoCount > 1) {
-        const det = d.details || {};
-        const plate = (typeof det === 'object' ? det.plate : null) || '';
-        desc = `Uploaded ${d._photoCount} photos${plate ? ' · ' + plate : ''}`;
-      } else {
-        desc = _perfDescribe(d);
-      }
-      const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
-      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;background:${bg};">
-        <span style="font-size:1rem;min-width:20px;text-align:center;">${meta.icon}</span>
-        <span style="font-size:0.8rem;font-weight:600;color:#374151;min-width:90px;">${escapeHtml(d.userName || '?')}</span>
-        <span style="font-size:0.82rem;color:#111827;flex:1;">${escapeHtml(desc)}</span>
-        <span style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;">${time}</span>
-      </div>`;
-    }).join('');
+    const feedEl2 = $('perf-activity-feed');
+    const countEl2 = $('perf-feed-count');
+    if (countEl2) countEl2.textContent = `(${displayItems.length})`;
+    if (feedEl2) {
+      feedEl2.innerHTML = displayItems.map((d, i) => {
+        const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️' };
+        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '?';
+        const desc = (d.action === 'photo_uploaded' && d._photoCount > 1)
+          ? `Uploaded ${d._photoCount} photos · ${(d.details||{}).plate || ''}`
+          : _perfDescribe(d);
+        const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
+        return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:${bg};font-size:0.8rem;">
+          <span style="min-width:18px;text-align:center;">${meta.icon}</span>
+          <span style="font-weight:600;color:#374151;min-width:80px;">${escapeHtml(d.userName||'?')}</span>
+          <span style="color:#111827;flex:1;">${escapeHtml(desc)}</span>
+          <span style="color:#9ca3af;white-space:nowrap;">${time}</span>
+        </div>`;
+      }).join('');
+    }
 
   } catch (e) {
     cardsEl.innerHTML = '<p class="hint">Error loading performance data.</p>';

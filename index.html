@@ -1692,9 +1692,6 @@
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
             <h3 style="margin:0;">👥 Team Performance</h3>
             <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
-            <select id="perf-filter-user" class="form-select" style="width:auto;">
-              <option value="">All Staff</option>
-            </select>
             <button class="btn btn-sm btn-primary" onclick="loadPerformanceReport()">Load</button>
           </div>
           <!-- Quick-date shortcuts -->
@@ -1705,17 +1702,19 @@
             <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-3)">3 Days Ago</button>
             <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-7)">Last Week</button>
           </div>
-          <!-- Hero stats row -->
-          <div id="perf-hero-stats" style="display:none;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px;"></div>
-          <!-- Staff breakdown cards -->
+          <!-- Hero stat chips - single compact row -->
+          <div id="perf-hero-stats" style="display:none;gap:8px;flex-wrap:wrap;margin-bottom:18px;"></div>
+          <!-- Staff scorecards -->
           <div id="perf-summary-cards"></div>
-          <!-- Timeline -->
-          <div id="perf-timeline-wrap" style="display:none;margin-top:20px;">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <h4 style="margin:0;font-size:0.82rem;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;">Full Timeline</h4>
-              <span id="perf-feed-count" style="font-size:0.8rem;color:#9ca3af;"></span>
-            </div>
-            <div id="perf-activity-feed"></div>
+          <!-- Turnaround section - collapsed by default -->
+          <div id="perf-turnaround-wrap" style="display:none;margin-top:12px;">
+            <button onclick="togglePerfTurnaround()" id="perf-turnaround-btn" style="font-size:0.82rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 0;display:flex;align-items:center;gap:4px;">▶ Vehicle Turnaround</button>
+            <div id="perf-turnaround-body" style="display:none;margin-top:10px;"></div>
+          </div>
+          <!-- Full log - hidden behind button -->
+          <div id="perf-timeline-wrap" style="display:none;margin-top:8px;">
+            <button onclick="togglePerfLog()" id="perf-log-btn" style="font-size:0.82rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 0;display:flex;align-items:center;gap:4px;">▶ Full Log <span id="perf-feed-count" style="color:#9ca3af;"></span></button>
+            <div id="perf-activity-feed" style="display:none;margin-top:10px;"></div>
           </div>
         </div>
       </div>
