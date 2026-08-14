@@ -1689,13 +1689,21 @@
       <div id="tab-performance" class="tab-content">
         <div class="card" style="padding:16px;">
           <!-- Controls row -->
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
             <h3 style="margin:0;">👥 Team Performance</h3>
             <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
             <select id="perf-filter-user" class="form-select" style="width:auto;">
               <option value="">All Staff</option>
             </select>
             <button class="btn btn-sm btn-primary" onclick="loadPerformanceReport()">Load</button>
+          </div>
+          <!-- Quick-date shortcuts -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+            <button class="btn btn-sm btn-outline" onclick="perfJumpDate(0)">Today</button>
+            <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-1)">Yesterday</button>
+            <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-2)">2 Days Ago</button>
+            <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-3)">3 Days Ago</button>
+            <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-7)">Last Week</button>
           </div>
           <!-- Hero stats row -->
           <div id="perf-hero-stats" style="display:none;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px;"></div>

@@ -7112,6 +7112,16 @@ function _renderActivityTable(items, el) {
   </table>`;
 }
 
+// Jump the performance date picker by N days from today, then auto-load
+window.perfJumpDate = function(offsetDays) {
+  const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
+  const dateStr = d.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+  const el = $('perf-filter-date');
+  if (el) el.value = dateStr;
+  loadPerformanceReport();
+};
+
 // ================================================================
 // TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
 // ================================================================
