@@ -1688,6 +1688,7 @@
       <!-- ====== Team Performance Tab (Admin) ====== -->
       <div id="tab-performance" class="tab-content">
         <div class="card" style="padding:16px;">
+          <!-- Controls row -->
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
             <h3 style="margin:0;">👥 Team Performance</h3>
             <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
@@ -1696,14 +1697,18 @@
             </select>
             <button class="btn btn-sm btn-primary" onclick="loadPerformanceReport()">Load</button>
           </div>
-          <!-- Per-user summary cards -->
-          <div id="perf-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:24px;"></div>
-          <!-- Activity feed -->
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-            <h4 style="margin:0;font-size:0.88rem;color:#6b7280;letter-spacing:0.03em;text-transform:uppercase;">Activity Feed</h4>
-            <span id="perf-feed-count" style="font-size:0.8rem;color:#9ca3af;"></span>
+          <!-- Hero stats row -->
+          <div id="perf-hero-stats" style="display:none;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:20px;"></div>
+          <!-- Staff breakdown cards -->
+          <div id="perf-summary-cards"></div>
+          <!-- Timeline -->
+          <div id="perf-timeline-wrap" style="display:none;margin-top:20px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <h4 style="margin:0;font-size:0.82rem;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;">Full Timeline</h4>
+              <span id="perf-feed-count" style="font-size:0.8rem;color:#9ca3af;"></span>
+            </div>
+            <div id="perf-activity-feed"></div>
           </div>
-          <div id="perf-activity-feed"><p class="hint">Select a date and click Load.</p></div>
         </div>
       </div>
 

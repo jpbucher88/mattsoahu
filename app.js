@@ -7113,112 +7113,192 @@ function _renderActivityTable(items, el) {
 // TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
 // ================================================================
 const PERF_ACTION_LABELS = {
-  photo_uploaded:    { icon: '📸', label: 'Photos Uploaded' },
-  vehicle_returned:  { icon: '🏠', label: 'Vehicles Returned' },
-  flag_not_returned: { icon: '🚨', label: 'Not-Return Flags' },
-  complete_task:     { icon: '✅', label: 'Tasks Completed' },
-  delete_task:       { icon: '🗑', label: 'Tasks Deleted' },
-  delete_note:       { icon: '🗑', label: 'Notes Deleted' },
-  open_task:         { icon: '📋', label: 'Tasks Opened' },
-  mileage_decrease:  { icon: '⚠️', label: 'Mileage Corrections' },
+  photo_uploaded:    { icon: '📸', label: 'Photos Uploaded',     color: '#2563eb' },
+  vehicle_returned:  { icon: '🏠', label: 'Vehicles Returned',   color: '#16a34a' },
+  flag_not_returned: { icon: '🚨', label: 'Not-Return Flags',    color: '#dc2626' },
+  complete_task:     { icon: '✅', label: 'Tasks Completed',     color: '#16a34a' },
+  delete_task:       { icon: '🗑', label: 'Tasks Deleted',       color: '#6b7280' },
+  delete_note:       { icon: '🗑', label: 'Notes Deleted',       color: '#6b7280' },
+  open_task:         { icon: '📋', label: 'Tasks Opened',        color: '#7c3aed' },
+  mileage_decrease:  { icon: '⚠️', label: 'Mileage Corrections', color: '#d97706' },
+  restore_note:      { icon: '↩️', label: 'Notes Restored',      color: '#0891b2' },
+  update_vehicle_color: { icon: '🎨', label: 'Color Updates',    color: '#db2777' },
 };
 
+// Build a plain-English sentence for an activity entry
+function _perfDescribe(d) {
+  const det = d.details || {};
+  const plate = (typeof det === 'object' ? det.plate : null) || '';
+  const plateStr = plate ? ` · ${plate}` : '';
+  switch (d.action) {
+    case 'photo_uploaded':    return `Uploaded photo${plateStr}`;
+    case 'vehicle_returned':  return `Marked returned${plateStr}`;
+    case 'flag_not_returned': return `Flagged not returned${plateStr}`;
+    case 'complete_task':     return `Completed task${plateStr}`;
+    case 'delete_task':       return `Deleted task`;
+    case 'delete_note':       return `Deleted note`;
+    case 'open_task': {
+      const text = (typeof det === 'object' ? det.text : '') || '';
+      return text ? `Opened: "${text.slice(0, 50)}"` : 'Opened task';
+    }
+    case 'mileage_decrease': {
+      const info = typeof det === 'string' ? det : (det.plate || '');
+      return `Corrected mileage${info ? ` · ${info}` : ''}`;
+    }
+    case 'update_vehicle_color': return `Updated color${plateStr}`;
+    case 'restore_note':         return `Restored deleted note`;
+    default: return d.action.replace(/_/g, ' ');
+  }
+}
+
+// Key "productivity" actions — these are what we highlight in staff cards
+const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'flag_not_returned', 'complete_task'];
+
 window.loadPerformanceReport = async function() {
-  const cardsEl = $('perf-summary-cards');
-  const feedEl  = $('perf-activity-feed');
-  const countEl = $('perf-feed-count');
+  const cardsEl    = $('perf-summary-cards');
+  const feedEl     = $('perf-activity-feed');
+  const heroEl     = $('perf-hero-stats');
+  const timelineEl = $('perf-timeline-wrap');
+  const countEl    = $('perf-feed-count');
   if (!cardsEl || !feedEl) return;
 
-  const dateVal = $('perf-filter-date')?.value || todayDateString();
+  const dateVal   = $('perf-filter-date')?.value || todayDateString();
   const userFilter = $('perf-filter-user')?.value || '';
 
-  cardsEl.innerHTML = '<p class="hint">Loading…</p>';
-  feedEl.innerHTML  = '<p class="hint">Loading…</p>';
-  if (countEl) countEl.textContent = '';
+  cardsEl.innerHTML = '<p class="hint" style="padding:20px 0;">Loading…</p>';
+  feedEl.innerHTML  = '';
+  if (heroEl)     { heroEl.style.display = 'none'; heroEl.innerHTML = ''; }
+  if (timelineEl) timelineEl.style.display = 'none';
+  if (countEl)    countEl.textContent = '';
 
   try {
-    // Pull last 500 activity entries — filter to chosen date client-side
     const snap = await db.collection('userActivity').orderBy('at', 'desc').limit(500).get();
-    let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    let allItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-    // Filter to the selected date (in Hawaii time)
-    items = items.filter(d => {
+    // Filter to selected date in Hawaii time
+    const dayItems = allItems.filter(d => {
       if (!d.at) return false;
       return new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }) === dateVal;
     });
 
-    // Apply user filter
-    if (userFilter) items = items.filter(d => (d.userName || '') === userFilter);
-
-    // Populate user filter select (all users seen across all loaded items before user-filter applied)
-    const allBeforeFilter = snap.docs.map(doc => doc.data());
+    // Populate user filter from the day's data (before user-filter applied)
     const userSelectEl = $('perf-filter-user');
     if (userSelectEl) {
       const currentVal = userSelectEl.value;
-      const names = [...new Set(allBeforeFilter.map(d => d.userName || '').filter(Boolean))].sort();
+      const names = [...new Set(dayItems.map(d => d.userName || '').filter(Boolean))].sort();
       userSelectEl.innerHTML = '<option value="">All Staff</option>' +
         names.map(n => `<option value="${escapeHtml(n)}"${n === currentVal ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
     }
 
+    // Apply user filter
+    const items = userFilter ? dayItems.filter(d => (d.userName || '') === userFilter) : dayItems;
+
+    const isToday = dateVal === todayDateString();
+    const dateFmt = isToday ? 'Today' : new Date(dateVal + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+
     if (!items.length) {
-      cardsEl.innerHTML = `<p class="hint" style="grid-column:1/-1;">No activity recorded on ${dateVal}.</p>`;
-      feedEl.innerHTML  = '';
-      if (countEl) countEl.textContent = '0 events';
+      if (heroEl) heroEl.style.display = 'none';
+      cardsEl.innerHTML = `<div style="text-align:center;padding:40px 20px;color:#9ca3af;">
+        <div style="font-size:2rem;margin-bottom:8px;">📭</div>
+        <div style="font-size:0.95rem;font-weight:600;color:#374151;margin-bottom:4px;">No activity recorded for ${dateFmt}</div>
+        <div style="font-size:0.82rem;">Activity tracking just launched — new actions will appear here going forward.</div>
+      </div>`;
+      if (timelineEl) timelineEl.style.display = 'none';
       return;
     }
 
-    // ── Per-user summary ──────────────────────────────────────────
+    // ── Hero stats ───────────────────────────────────────────────
+    const activeStaff   = new Set(items.map(d => d.userName)).size;
+    const photosTotal   = items.filter(d => d.action === 'photo_uploaded').length;
+    const returnedTotal = items.filter(d => d.action === 'vehicle_returned').length;
+    const tasksTotal    = items.filter(d => d.action === 'complete_task').length;
+    const totalActions  = items.length;
+
+    const heroStats = [
+      { icon: '👥', value: activeStaff,   label: 'Active Staff',  color: '#1d4ed8' },
+      { icon: '📸', value: photosTotal,   label: 'Photos',        color: '#2563eb' },
+      { icon: '🏠', value: returnedTotal, label: 'Returned',      color: '#16a34a' },
+      { icon: '✅', value: tasksTotal,    label: 'Tasks Done',    color: '#16a34a' },
+      { icon: '⚡', value: totalActions,  label: 'Total Actions', color: '#7c3aed' },
+    ];
+
+    if (heroEl) {
+      heroEl.style.display = 'grid';
+      heroEl.innerHTML = heroStats.map(s => `
+        <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:12px 10px;text-align:center;">
+          <div style="font-size:1.4rem;">${s.icon}</div>
+          <div style="font-size:1.6rem;font-weight:800;color:${s.color};line-height:1.1;">${s.value}</div>
+          <div style="font-size:0.72rem;color:#6b7280;margin-top:2px;">${s.label}</div>
+        </div>`).join('');
+    }
+
+    // ── Per-user breakdown cards ─────────────────────────────────
     const byUser = {};
     items.forEach(d => {
       const name = d.userName || 'Unknown';
-      if (!byUser[name]) byUser[name] = { name, counts: {}, total: 0 };
+      if (!byUser[name]) byUser[name] = { name, counts: {}, plates: new Set(), total: 0 };
       byUser[name].counts[d.action] = (byUser[name].counts[d.action] || 0) + 1;
       byUser[name].total++;
+      // Track vehicles touched
+      const det = d.details || {};
+      if (typeof det === 'object' && det.plate) byUser[name].plates.add(det.plate);
     });
     const sortedUsers = Object.values(byUser).sort((a, b) => b.total - a.total);
 
-    cardsEl.innerHTML = sortedUsers.map(u => {
-      const rows = Object.entries(u.counts)
-        .sort((a, b) => b[1] - a[1])
-        .map(([action, cnt]) => {
-          const meta = PERF_ACTION_LABELS[action] || { icon: '▪️', label: action.replace(/_/g, ' ') };
-          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;">
-            <span style="font-size:0.8rem;color:#374151;">${meta.icon} ${meta.label}</span>
-            <span style="font-size:0.85rem;font-weight:700;color:#111827;background:#f0fdf4;border-radius:9px;padding:1px 8px;">${cnt}</span>
-          </div>`;
+    cardsEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">` + sortedUsers.map(u => {
+      // Key metric chips (only show non-zero productive actions)
+      const chips = PERF_KEY_ACTIONS
+        .filter(a => u.counts[a])
+        .map(a => {
+          const m = PERF_ACTION_LABELS[a];
+          return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;color:#374151;">
+            ${m.icon} <span>${u.counts[a]}</span> <span style="font-weight:400;color:#6b7280;">${m.label}</span>
+          </span>`;
         }).join('');
-      return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#fff;">
-        <div style="font-weight:700;font-size:0.95rem;margin-bottom:8px;color:#111827;">${escapeHtml(u.name)}</div>
-        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:8px;">${u.total} action${u.total !== 1 ? 's' : ''} today</div>
-        <div>${rows}</div>
-      </div>`;
-    }).join('');
 
-    // ── Activity feed ─────────────────────────────────────────────
-    if (countEl) countEl.textContent = `${items.length} event${items.length !== 1 ? 's' : ''}`;
-    feedEl.innerHTML = items.map((d, i) => {
-      const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️', label: d.action.replace(/_/g, ' ') };
-      const time = d.atDisplay || (d.at ? new Date(d.at.toDate()).toLocaleString('en-US', {
-        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
-      }) : '?');
-      const det = d.details && typeof d.details === 'object'
-        ? Object.entries(d.details).map(([k, v]) => `${v}`).filter(v => v && v !== '[object Object]').join(' · ')
-        : (typeof d.details === 'string' ? d.details : '');
-      const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
-      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:7px;background:${bg};margin-bottom:2px;">
-        <span style="font-size:1.1rem;min-width:22px;text-align:center;">${meta.icon}</span>
-        <div style="flex:1;min-width:0;">
-          <span style="font-weight:600;font-size:0.85rem;color:#111827;">${escapeHtml(d.userName || '?')}</span>
-          <span style="color:#6b7280;font-size:0.82rem;"> · ${meta.label}</span>
-          ${det ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:1px;">${escapeHtml(det)}</div>` : ''}
+      // Other minor actions
+      const otherActions = Object.entries(u.counts)
+        .filter(([a]) => !PERF_KEY_ACTIONS.includes(a) && u.counts[a] > 0)
+        .map(([a, n]) => {
+          const m = PERF_ACTION_LABELS[a] || { icon: '▪️', label: a.replace(/_/g,' ') };
+          return `${m.icon} ${n} ${m.label}`;
+        }).join(' · ');
+
+      // Vehicles touched
+      const plates = [...u.plates];
+      const platesStr = plates.length ? plates.slice(0, 8).join(' · ') + (plates.length > 8 ? ` +${plates.length - 8} more` : '') : '';
+
+      return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <span style="font-weight:700;font-size:1rem;color:#111827;">${escapeHtml(u.name)}</span>
+          <span style="font-size:0.78rem;color:#9ca3af;background:#f9fafb;border-radius:20px;padding:2px 10px;">${u.total} action${u.total !== 1 ? 's' : ''}</span>
         </div>
-        <span style="font-size:0.78rem;color:#9ca3af;white-space:nowrap;">${time}</span>
+        ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${platesStr || otherActions ? '8px' : '0'};">${chips}</div>` : ''}
+        ${otherActions ? `<div style="font-size:0.78rem;color:#9ca3af;margin-bottom:${platesStr ? '6px' : '0'};">${escapeHtml(otherActions)}</div>` : ''}
+        ${platesStr ? `<div style="font-size:0.78rem;color:#6b7280;">🚗 <span style="font-weight:500;">${escapeHtml(platesStr)}</span></div>` : ''}
+      </div>`;
+    }).join('') + `</div>`;
+
+    // ── Timeline ─────────────────────────────────────────────────
+    if (timelineEl) timelineEl.style.display = '';
+    if (countEl) countEl.textContent = `${items.length} events`;
+    feedEl.innerHTML = items.map((d, i) => {
+      const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️', color: '#6b7280' };
+      const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
+      }) : '?';
+      const desc = _perfDescribe(d);
+      const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
+      return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;border-radius:7px;background:${bg};">
+        <span style="font-size:1rem;min-width:20px;text-align:center;">${meta.icon}</span>
+        <span style="font-size:0.8rem;font-weight:600;color:#374151;min-width:90px;">${escapeHtml(d.userName || '?')}</span>
+        <span style="font-size:0.82rem;color:#111827;flex:1;">${escapeHtml(desc)}</span>
+        <span style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;">${time}</span>
       </div>`;
     }).join('');
 
   } catch (e) {
     cardsEl.innerHTML = '<p class="hint">Error loading performance data.</p>';
-    feedEl.innerHTML = '';
     console.error('Performance report error:', e);
   }
 };
