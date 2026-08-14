@@ -7122,6 +7122,16 @@ window.perfJumpDate = function(offsetDays) {
   loadPerformanceReport();
 };
 
+// Toggle the detail panel for a staff card in the Performance tab
+window.togglePerfDetail = function(safeId) {
+  const detailEl = document.getElementById('perf-detail-' + safeId);
+  const toggleBtn = document.getElementById('perf-toggle-' + safeId);
+  if (!detailEl) return;
+  const isOpen = detailEl.style.display !== 'none';
+  detailEl.style.display = isOpen ? 'none' : '';
+  if (toggleBtn) toggleBtn.textContent = isOpen ? '▾ Details' : '▴ Hide';
+};
+
 // ================================================================
 // TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
 // ================================================================
@@ -7358,12 +7368,19 @@ window.loadPerformanceReport = async function() {
     }
 
     // ── Per-user breakdown (uses displayItems = grouped photos) ──
+    // Store by user so the toggle handler can access details
+    window._perfUserItems = {};
+    displayItems.forEach(d => {
+      const name = d.userName || 'Unknown';
+      if (!window._perfUserItems[name]) window._perfUserItems[name] = [];
+      window._perfUserItems[name].push(d);
+    });
+
     const byUser = {};
     displayItems.forEach(d => {
       const name = d.userName || 'Unknown';
       if (!byUser[name]) byUser[name] = { name, counts: {}, photoVehicles: new Set(), plates: new Set(), total: 0 };
       if (d.action === 'photo_uploaded') {
-        // Count photo sessions (one per vehicle), not individual photos
         const det = d.details || {};
         const plate = (typeof det === 'object' ? det.plate : null) || '';
         byUser[name].photoVehicles.add(plate);
@@ -7378,32 +7395,97 @@ window.loadPerformanceReport = async function() {
     const sortedUsers = Object.values(byUser).sort((a, b) => b.total - a.total);
 
     const staffHtml = `<div style="display:flex;flex-direction:column;gap:8px;">` + sortedUsers.map(u => {
+      const safeId = encodeURIComponent(u.name);
+      const userItems = window._perfUserItems[u.name] || [];
+
+      // Key metric chips
       const chips = PERF_KEY_ACTIONS.filter(a => u.counts[a]).map(a => {
         const m = PERF_ACTION_LABELS[a];
         const cnt = u.counts[a];
-        // For photos show "N vehicles" label
         const lbl = a === 'photo_uploaded' && cnt > 1 ? 'Vehicles Shot' : m.label;
-        return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;color:#374151;">
-          ${m.icon} <span>${cnt}</span> <span style="font-weight:400;color:#6b7280;">${lbl}</span>
-        </span>`;
+        return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f1f5f9;border-radius:20px;padding:3px 10px;font-size:0.82rem;font-weight:600;color:#374151;">${m.icon} <span>${cnt}</span> <span style="font-weight:400;color:#6b7280;">${lbl}</span></span>`;
       }).join('');
 
+      // Minor action chips
       const otherActions = Object.entries(u.counts)
         .filter(([a]) => !PERF_KEY_ACTIONS.includes(a) && u.counts[a] > 0)
         .map(([a, n]) => { const m = PERF_ACTION_LABELS[a] || { icon: '▪️', label: a.replace(/_/g,' ') }; return `${m.icon} ${n} ${m.label}`; })
         .join(' · ');
 
-      const plates = [...u.plates];
-      const platesStr = plates.length ? plates.slice(0, 8).join(' · ') + (plates.length > 8 ? ` +${plates.length - 8} more` : '') : '';
+      // ── Detail panel (hidden by default) ──────────────────────
+      // Tasks completed
+      const taskItems = userItems.filter(d => d.action === 'complete_task');
+      const tasksHtml = taskItems.length ? `
+        <div style="margin-bottom:10px;">
+          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:5px;">✅ Completed Tasks (${taskItems.length})</div>
+          ${taskItems.map(d => {
+            const det = d.details || {};
+            const text  = typeof det === 'object' ? (det.text || '') : '';
+            const plate = typeof det === 'object' ? (det.plate || '') : '';
+            const time  = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+            return `<div style="display:flex;align-items:flex-start;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;">
+              <span style="color:#16a34a;font-size:0.85rem;margin-top:1px;">✓</span>
+              <div style="flex:1;min-width:0;">
+                <span style="font-size:0.8rem;color:#111827;">${text ? escapeHtml(text) : '<span style="color:#9ca3af;font-style:italic;">Task completed</span>'}</span>
+                ${plate ? `<span style="font-size:0.75rem;color:#9ca3af;margin-left:6px;">· ${escapeHtml(plate)}</span>` : ''}
+              </div>
+              <span style="font-size:0.72rem;color:#9ca3af;white-space:nowrap;">${time}</span>
+            </div>`;
+          }).join('')}
+        </div>` : '';
+
+      // Photos by vehicle
+      const photoItems = userItems.filter(d => d.action === 'photo_uploaded');
+      const photosHtml = photoItems.length ? `
+        <div style="margin-bottom:10px;">
+          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:5px;">📸 Photos (${photoItems.length} vehicle${photoItems.length !== 1 ? 's' : ''})</div>
+          ${photoItems.map(d => {
+            const det = d.details || {};
+            const plate = typeof det === 'object' ? (det.plate || '?') : '?';
+            const cnt = d._photoCount || 1;
+            const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+            return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;">
+              <span style="font-size:0.8rem;color:#111827;font-weight:500;">📸 ${escapeHtml(plate)}</span>
+              <span style="font-size:0.78rem;color:#6b7280;">${cnt} photo${cnt !== 1 ? 's' : ''} · ${time}</span>
+            </div>`;
+          }).join('')}
+        </div>` : '';
+
+      // Returns & cleans
+      const retItems   = userItems.filter(d => d.action === 'vehicle_returned');
+      const cleanItems = userItems.filter(d => d.action === 'vehicle_cleaned');
+      const flagItems  = userItems.filter(d => d.action === 'flag_not_returned');
+      const opsRows = [...retItems.map(d => {
+        const plate = (d.details || {}).plate || '?';
+        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+        return `<div style="font-size:0.8rem;color:#111827;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;">
+          <span>🏠 Returned ${escapeHtml(plate)}</span><span style="color:#9ca3af;font-size:0.72rem;">${time}</span></div>`;
+      }), ...cleanItems.map(d => {
+        const plate = (d.details || {}).plate || '?';
+        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+        return `<div style="font-size:0.8rem;color:#111827;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;">
+          <span>🧹 Cleaned ${escapeHtml(plate)}</span><span style="color:#9ca3af;font-size:0.72rem;">${time}</span></div>`;
+      }), ...flagItems.map(d => {
+        const plate = (d.details || {}).plate || '?';
+        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '';
+        return `<div style="font-size:0.8rem;color:#dc2626;padding:3px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between;">
+          <span>🚨 Not returned ${escapeHtml(plate)}</span><span style="color:#9ca3af;font-size:0.72rem;">${time}</span></div>`;
+      })].join('');
+      const opsHtml = opsRows ? `<div style="margin-bottom:6px;">${opsRows}</div>` : '';
+
+      const hasDetail = tasksHtml || photosHtml || opsHtml;
 
       return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${chips ? '10px' : '0'};">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${chips ? '10px' : '4px'};">
           <span style="font-weight:700;font-size:1rem;color:#111827;">${escapeHtml(u.name)}</span>
-          <span style="font-size:0.78rem;color:#9ca3af;background:#f9fafb;border-radius:20px;padding:2px 10px;">${u.total} action${u.total !== 1 ? 's' : ''}</span>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:0.78rem;color:#9ca3af;background:#f9fafb;border-radius:20px;padding:2px 10px;">${u.total} action${u.total !== 1 ? 's' : ''}</span>
+            ${hasDetail ? `<button id="perf-toggle-${safeId}" onclick="togglePerfDetail('${safeId}')" style="font-size:0.78rem;color:#2563eb;background:none;border:none;cursor:pointer;padding:0;">▾ Details</button>` : ''}
+          </div>
         </div>
-        ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${platesStr || otherActions ? '8px' : '0'};">${chips}</div>` : ''}
-        ${otherActions ? `<div style="font-size:0.78rem;color:#9ca3af;margin-bottom:${platesStr ? '6px' : '0'};">${escapeHtml(otherActions)}</div>` : ''}
-        ${platesStr ? `<div style="font-size:0.78rem;color:#6b7280;">🚗 <span style="font-weight:500;">${escapeHtml(platesStr)}</span></div>` : ''}
+        ${chips ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${otherActions ? '8px' : '0'};">${chips}</div>` : ''}
+        ${otherActions ? `<div style="font-size:0.78rem;color:#9ca3af;">${escapeHtml(otherActions)}</div>` : ''}
+        ${hasDetail ? `<div id="perf-detail-${safeId}" style="display:none;margin-top:12px;border-top:1px solid #f3f4f6;padding-top:10px;">${tasksHtml}${photosHtml}${opsHtml}</div>` : ''}
       </div>`;
     }).join('') + `</div>`;
 
@@ -12517,6 +12599,9 @@ async function loadVehicleNotes(vehicleId) {
 
 window.markNoteDone = async function(docId) {
   try {
+    const noteSnap = await db.collection('vehicleNotes').doc(docId).get();
+    const noteText  = noteSnap.exists ? (noteSnap.data().text || '').slice(0, 120) : '';
+    const notePlate = noteSnap.exists ? ((vehiclesCache.find(v => v.id === noteSnap.data().vehicleId) || {}).plate || '') : '';
     const doneEntry = {
       text: `Completed by ${currentUser.displayName || currentUser.email}`,
       by: currentUser.displayName || currentUser.email,
@@ -12530,7 +12615,7 @@ window.markNoteDone = async function(docId) {
       completedAt: firebase.firestore.FieldValue.serverTimestamp(),
       taskLog: firebase.firestore.FieldValue.arrayUnion(doneEntry)
     });
-    logUserActivity('complete_task', { docId, collection: 'vehicleNotes' });
+    logUserActivity('complete_task', { docId, collection: 'vehicleNotes', text: noteText, plate: notePlate });
     toast('Follow-up marked done.', 'success');
     if (selectedVehicle) loadVehicleNotes(selectedVehicle.id);
   } catch (err) {
@@ -13910,6 +13995,8 @@ async function agendaMarkDoneVehicle(docId) {
     // Auto-advance compliance date by 1 year when a compliance task is marked done
     if (snap.exists) {
       const data = snap.data();
+      const taskPlate = data.vehicleId ? ((vehiclesCache.find(v => v.id === data.vehicleId) || {}).plate || '') : '';
+      logUserActivity('complete_task', { docId, collection: 'vehicleNotes', text: (data.text || '').slice(0, 120), plate: taskPlate });
       if (data.sourceType === 'compliance' && data.vehicleId && data.complianceType) {
         const fieldMap = { safety: 'complianceSafety', registration: 'complianceRegistration', insurance: 'complianceInsurance' };
         const field = fieldMap[data.complianceType];
@@ -13960,6 +14047,8 @@ window.agendaMarkGeneralDone = async function(docId) {
 
 async function agendaMarkDoneGeneral(docId) {
   try {
+    const gSnap = await db.collection('generalNotes').doc(docId).get();
+    const gText = gSnap.exists ? (gSnap.data().text || '').slice(0, 120) : '';
     await db.collection('generalNotes').doc(docId).update({
       done: true,
       completedBy: currentUser.uid,
@@ -13967,6 +14056,7 @@ async function agendaMarkDoneGeneral(docId) {
       completedAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     toast('Task completed! ✓', 'success');
+    logUserActivity('complete_task', { docId, collection: 'generalNotes', text: gText });
     loadDashboardFollowUps();
     loadGeneralNotes();
   } catch (err) {
@@ -17028,6 +17118,8 @@ async function loadGeneralNotes() {
 
 window.markGeneralNoteDone = async function(docId) {
   try {
+    const gnSnap  = await db.collection('generalNotes').doc(docId).get();
+    const gnText  = gnSnap.exists ? (gnSnap.data().text || '').slice(0, 120) : '';
     const doneEntry = {
       text: `Completed by ${currentUser.displayName || currentUser.email}`,
       by: currentUser.displayName || currentUser.email,
@@ -17041,7 +17133,7 @@ window.markGeneralNoteDone = async function(docId) {
       completedAt: firebase.firestore.FieldValue.serverTimestamp(),
       taskLog: firebase.firestore.FieldValue.arrayUnion(doneEntry)
     });
-    logUserActivity('complete_task', { docId, collection: 'generalNotes' });
+    logUserActivity('complete_task', { docId, collection: 'generalNotes', text: gnText });
     toast('Follow-up marked done.', 'success');
     loadGeneralNotes();
     loadDashboardFollowUps();
