@@ -1489,6 +1489,7 @@
         <button class="tab-btn" data-tab="tab-photos">Photos</button>
         <button class="tab-btn" data-tab="tab-users">Users</button>
         <button class="tab-btn" data-tab="tab-ops-report" id="tab-btn-ops-report">📊 Ops Report</button>
+        <button class="tab-btn" data-tab="tab-performance" id="tab-btn-performance">👥 Performance</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-deleted" data-tab="tab-deleted" style="display:none;">🗑 Deleted</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-activity" data-tab="tab-activity" style="display:none;">📋 Activity Log</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-eggs" data-tab="tab-eggs" style="display:none;">🥚 Previews</button>
@@ -1684,6 +1685,28 @@
         </div>
       </div>
 
+      <!-- ====== Team Performance Tab (Admin) ====== -->
+      <div id="tab-performance" class="tab-content">
+        <div class="card" style="padding:16px;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+            <h3 style="margin:0;">👥 Team Performance</h3>
+            <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
+            <select id="perf-filter-user" class="form-select" style="width:auto;">
+              <option value="">All Staff</option>
+            </select>
+            <button class="btn btn-sm btn-primary" onclick="loadPerformanceReport()">Load</button>
+          </div>
+          <!-- Per-user summary cards -->
+          <div id="perf-summary-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px;margin-bottom:24px;"></div>
+          <!-- Activity feed -->
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <h4 style="margin:0;font-size:0.88rem;color:#6b7280;letter-spacing:0.03em;text-transform:uppercase;">Activity Feed</h4>
+            <span id="perf-feed-count" style="font-size:0.8rem;color:#9ca3af;"></span>
+          </div>
+          <div id="perf-activity-feed"><p class="hint">Select a date and click Load.</p></div>
+        </div>
+      </div>
+
       <!-- ====== Deleted Tasks Tab (Matthew only) ====== -->
       <div id="tab-deleted" class="tab-content">
             <h3 style="margin:0;">🗑 Deleted Notes &amp; Tasks</h3>
@@ -1701,6 +1724,9 @@
             <input type="date" id="activity-filter-date" class="form-select" style="width:auto;">
             <select id="activity-filter-action" class="form-select" style="width:auto;">
               <option value="">All Actions</option>
+              <option value="photo_uploaded">Photo Uploaded</option>
+              <option value="vehicle_returned">Vehicle Returned</option>
+              <option value="flag_not_returned">Flag Not Returned</option>
               <option value="open_task">Open Task</option>
               <option value="complete_task">Complete Task</option>
               <option value="delete_task">Delete Task</option>

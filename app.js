@@ -3931,6 +3931,7 @@ async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
     uploadedBy: currentUser.uid,
     uploaderName: currentUser.displayName || currentUser.email,
   });
+  logUserActivity('photo_uploaded', { plate: v.plate, vehicleId: v.id, date });
 
   return downloadURL;
 }
@@ -5456,6 +5457,9 @@ $('btn-admin').addEventListener('click', () => {
   showPage('admin');
   loadAdminVehicles();
   loadAdminUsers();
+  // Default performance date to today
+  const perfDate = $('perf-filter-date');
+  if (perfDate && !perfDate.value) perfDate.value = todayDateString();
   // Show Matthew-only tabs
   const isMatthew = currentUser && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com';
   document.querySelectorAll('.tab-matthew-only').forEach(el => el.style.display = isMatthew ? '' : 'none');
@@ -5466,6 +5470,8 @@ $('btn-admin-from-vehicle').addEventListener('click', () => {
   showPage('admin');
   loadAdminVehicles();
   loadAdminUsers();
+  const perfDate = $('perf-filter-date');
+  if (perfDate && !perfDate.value) perfDate.value = todayDateString();
   const isMatthew = currentUser && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com';
   document.querySelectorAll('.tab-matthew-only').forEach(el => el.style.display = isMatthew ? '' : 'none');
 });
@@ -6188,6 +6194,7 @@ window.vehicleReturned = async function(vehicleId) {
     if (v.homeLocation === 'HNL') { v.parkingRow = newParkingRow; v.parkingLevel = newParkingLevel; }
     delete v.tripReturnDate;
     toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
+    logUserActivity('vehicle_returned', { plate, vehicleId });
     renderFleetDashboard();
     renderLocationsWidget();
     // Check for pending return-queue items — surface in Return Queue tab
@@ -6233,6 +6240,7 @@ window.flagVehicleNotReturned = async function(vehicleId) {
       createdByName: currentUser ? (currentUser.displayName || currentUser.email) : 'System',
     });
     toast(`🚨 ${plate} flagged as not returned — management alerted.`, 'error');
+    logUserActivity('flag_not_returned', { plate, vehicleId });
     loadDashboardFollowUps();
   } catch (err) {
     console.error('Flag not returned error:', err);
@@ -6255,8 +6263,9 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     this.classList.add('active');
     $(this.dataset.tab).classList.add('active');
     // Auto-load tabs that need data
-    if (this.dataset.tab === 'tab-deleted')    loadDeletedTasks();
-    if (this.dataset.tab === 'tab-ops-report') loadOpsReport();
+    if (this.dataset.tab === 'tab-deleted')     loadDeletedTasks();
+    if (this.dataset.tab === 'tab-ops-report')  loadOpsReport();
+    if (this.dataset.tab === 'tab-performance') loadPerformanceReport();
   });
 });
 
@@ -7099,6 +7108,120 @@ function _renderActivityTable(items, el) {
     }).join('')}</tbody>
   </table>`;
 }
+
+// ================================================================
+// TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
+// ================================================================
+const PERF_ACTION_LABELS = {
+  photo_uploaded:    { icon: '📸', label: 'Photos Uploaded' },
+  vehicle_returned:  { icon: '🏠', label: 'Vehicles Returned' },
+  flag_not_returned: { icon: '🚨', label: 'Not-Return Flags' },
+  complete_task:     { icon: '✅', label: 'Tasks Completed' },
+  delete_task:       { icon: '🗑', label: 'Tasks Deleted' },
+  delete_note:       { icon: '🗑', label: 'Notes Deleted' },
+  open_task:         { icon: '📋', label: 'Tasks Opened' },
+  mileage_decrease:  { icon: '⚠️', label: 'Mileage Corrections' },
+};
+
+window.loadPerformanceReport = async function() {
+  const cardsEl = $('perf-summary-cards');
+  const feedEl  = $('perf-activity-feed');
+  const countEl = $('perf-feed-count');
+  if (!cardsEl || !feedEl) return;
+
+  const dateVal = $('perf-filter-date')?.value || todayDateString();
+  const userFilter = $('perf-filter-user')?.value || '';
+
+  cardsEl.innerHTML = '<p class="hint">Loading…</p>';
+  feedEl.innerHTML  = '<p class="hint">Loading…</p>';
+  if (countEl) countEl.textContent = '';
+
+  try {
+    // Pull last 500 activity entries — filter to chosen date client-side
+    const snap = await db.collection('userActivity').orderBy('at', 'desc').limit(500).get();
+    let items = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // Filter to the selected date (in Hawaii time)
+    items = items.filter(d => {
+      if (!d.at) return false;
+      return new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }) === dateVal;
+    });
+
+    // Apply user filter
+    if (userFilter) items = items.filter(d => (d.userName || '') === userFilter);
+
+    // Populate user filter select (all users seen across all loaded items before user-filter applied)
+    const allBeforeFilter = snap.docs.map(doc => doc.data());
+    const userSelectEl = $('perf-filter-user');
+    if (userSelectEl) {
+      const currentVal = userSelectEl.value;
+      const names = [...new Set(allBeforeFilter.map(d => d.userName || '').filter(Boolean))].sort();
+      userSelectEl.innerHTML = '<option value="">All Staff</option>' +
+        names.map(n => `<option value="${escapeHtml(n)}"${n === currentVal ? ' selected' : ''}>${escapeHtml(n)}</option>`).join('');
+    }
+
+    if (!items.length) {
+      cardsEl.innerHTML = `<p class="hint" style="grid-column:1/-1;">No activity recorded on ${dateVal}.</p>`;
+      feedEl.innerHTML  = '';
+      if (countEl) countEl.textContent = '0 events';
+      return;
+    }
+
+    // ── Per-user summary ──────────────────────────────────────────
+    const byUser = {};
+    items.forEach(d => {
+      const name = d.userName || 'Unknown';
+      if (!byUser[name]) byUser[name] = { name, counts: {}, total: 0 };
+      byUser[name].counts[d.action] = (byUser[name].counts[d.action] || 0) + 1;
+      byUser[name].total++;
+    });
+    const sortedUsers = Object.values(byUser).sort((a, b) => b.total - a.total);
+
+    cardsEl.innerHTML = sortedUsers.map(u => {
+      const rows = Object.entries(u.counts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([action, cnt]) => {
+          const meta = PERF_ACTION_LABELS[action] || { icon: '▪️', label: action.replace(/_/g, ' ') };
+          return `<div style="display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f3f4f6;">
+            <span style="font-size:0.8rem;color:#374151;">${meta.icon} ${meta.label}</span>
+            <span style="font-size:0.85rem;font-weight:700;color:#111827;background:#f0fdf4;border-radius:9px;padding:1px 8px;">${cnt}</span>
+          </div>`;
+        }).join('');
+      return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px;background:#fff;">
+        <div style="font-weight:700;font-size:0.95rem;margin-bottom:8px;color:#111827;">${escapeHtml(u.name)}</div>
+        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:8px;">${u.total} action${u.total !== 1 ? 's' : ''} today</div>
+        <div>${rows}</div>
+      </div>`;
+    }).join('');
+
+    // ── Activity feed ─────────────────────────────────────────────
+    if (countEl) countEl.textContent = `${items.length} event${items.length !== 1 ? 's' : ''}`;
+    feedEl.innerHTML = items.map((d, i) => {
+      const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️', label: d.action.replace(/_/g, ' ') };
+      const time = d.atDisplay || (d.at ? new Date(d.at.toDate()).toLocaleString('en-US', {
+        hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
+      }) : '?');
+      const det = d.details && typeof d.details === 'object'
+        ? Object.entries(d.details).map(([k, v]) => `${v}`).filter(v => v && v !== '[object Object]').join(' · ')
+        : (typeof d.details === 'string' ? d.details : '');
+      const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
+      return `<div style="display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:7px;background:${bg};margin-bottom:2px;">
+        <span style="font-size:1.1rem;min-width:22px;text-align:center;">${meta.icon}</span>
+        <div style="flex:1;min-width:0;">
+          <span style="font-weight:600;font-size:0.85rem;color:#111827;">${escapeHtml(d.userName || '?')}</span>
+          <span style="color:#6b7280;font-size:0.82rem;"> · ${meta.label}</span>
+          ${det ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:1px;">${escapeHtml(det)}</div>` : ''}
+        </div>
+        <span style="font-size:0.78rem;color:#9ca3af;white-space:nowrap;">${time}</span>
+      </div>`;
+    }).join('');
+
+  } catch (e) {
+    cardsEl.innerHTML = '<p class="hint">Error loading performance data.</p>';
+    feedEl.innerHTML = '';
+    console.error('Performance report error:', e);
+  }
+};
 
 // ================================================================
 // OPS REPORT — Admin-only comprehensive operations snapshot
