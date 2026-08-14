@@ -2448,6 +2448,7 @@ function renderLocationsWidget() {
       e.stopPropagation();
       const vid = btn.dataset.vid;
       const v = vehiclesCache.find(x => x.id === vid);
+      logUserActivity('inspect_started', { plate: v ? v.plate : vid, vehicleId: vid });
       showDamageCheckModal(vid, v ? v.plate : 'Vehicle');
     });
   });
@@ -2471,9 +2472,10 @@ function renderLocationsWidget() {
           cached.needsDamageCheck = false;
         }
         toast('Marked as cleaned! ✓', 'success');
+        const freshV = vehiclesCache.find(v => v.id === vid);
+        logUserActivity('vehicle_cleaned', { plate: freshV ? freshV.plate : vid, vehicleId: vid });
         renderLocationsWidget();
         // Prompt for photos if none taken today
-        const freshV = vehiclesCache.find(v => v.id === vid);
         if (freshV && !hasPhotosToday(freshV)) {
           const goPhoto = await confirm('Photos Needed', `${freshV.plate} has been cleaned — but no photos have been taken today. Take photos now?`);
           if (goPhoto) openVehiclePage(vid);
@@ -2988,6 +2990,7 @@ function showDamageCheckModal(vid, plate) {
       } else {
         toast('Inspection complete - All Clear', 'success');
       }
+      logUserActivity('inspection_complete', { plate: vehicleObj ? vehicleObj.plate : vid, vehicleId: vid, issues: failItems.length });
       overlay.remove();
       renderLocationsWidget();
     } catch(err) {
@@ -7113,16 +7116,19 @@ function _renderActivityTable(items, el) {
 // TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
 // ================================================================
 const PERF_ACTION_LABELS = {
-  photo_uploaded:    { icon: '📸', label: 'Photos Uploaded',     color: '#2563eb' },
-  vehicle_returned:  { icon: '🏠', label: 'Vehicles Returned',   color: '#16a34a' },
-  flag_not_returned: { icon: '🚨', label: 'Not-Return Flags',    color: '#dc2626' },
-  complete_task:     { icon: '✅', label: 'Tasks Completed',     color: '#16a34a' },
-  delete_task:       { icon: '🗑', label: 'Tasks Deleted',       color: '#6b7280' },
-  delete_note:       { icon: '🗑', label: 'Notes Deleted',       color: '#6b7280' },
-  open_task:         { icon: '📋', label: 'Tasks Opened',        color: '#7c3aed' },
-  mileage_decrease:  { icon: '⚠️', label: 'Mileage Corrections', color: '#d97706' },
-  restore_note:      { icon: '↩️', label: 'Notes Restored',      color: '#0891b2' },
-  update_vehicle_color: { icon: '🎨', label: 'Color Updates',    color: '#db2777' },
+  photo_uploaded:       { icon: '📸', label: 'Photos Uploaded',        color: '#2563eb' },
+  vehicle_returned:     { icon: '🏠', label: 'Vehicles Returned',      color: '#16a34a' },
+  inspect_started:      { icon: '🔍', label: 'Inspections Started',    color: '#7c3aed' },
+  inspection_complete:  { icon: '✅', label: 'Inspections Done',       color: '#16a34a' },
+  vehicle_cleaned:      { icon: '🧹', label: 'Vehicles Cleaned',       color: '#0891b2' },
+  flag_not_returned:    { icon: '🚨', label: 'Not-Return Flags',       color: '#dc2626' },
+  complete_task:        { icon: '✅', label: 'Tasks Completed',        color: '#16a34a' },
+  delete_task:          { icon: '🗑', label: 'Tasks Deleted',          color: '#6b7280' },
+  delete_note:          { icon: '🗑', label: 'Notes Deleted',          color: '#6b7280' },
+  open_task:            { icon: '📋', label: 'Tasks Opened',           color: '#7c3aed' },
+  mileage_decrease:     { icon: '⚠️', label: 'Mileage Corrections',   color: '#d97706' },
+  restore_note:         { icon: '↩️', label: 'Notes Restored',         color: '#0891b2' },
+  update_vehicle_color: { icon: '🎨', label: 'Color Updates',          color: '#db2777' },
 };
 
 // Build a plain-English sentence for an activity entry
@@ -7131,12 +7137,18 @@ function _perfDescribe(d) {
   const plate = (typeof det === 'object' ? det.plate : null) || '';
   const plateStr = plate ? ` · ${plate}` : '';
   switch (d.action) {
-    case 'photo_uploaded':    return `Uploaded photo${plateStr}`;
-    case 'vehicle_returned':  return `Marked returned${plateStr}`;
-    case 'flag_not_returned': return `Flagged not returned${plateStr}`;
-    case 'complete_task':     return `Completed task${plateStr}`;
-    case 'delete_task':       return `Deleted task`;
-    case 'delete_note':       return `Deleted note`;
+    case 'photo_uploaded':       return `Uploaded photo${plateStr}`;
+    case 'vehicle_returned':     return `Marked returned${plateStr}`;
+    case 'inspect_started':      return `Started inspection${plateStr}`;
+    case 'inspection_complete': {
+      const issues = typeof det === 'object' ? (det.issues || 0) : 0;
+      return `Inspection complete${plateStr}${issues > 0 ? ` · ${issues} issue${issues !== 1 ? 's' : ''} found` : ' · All Clear'}`;
+    }
+    case 'vehicle_cleaned':      return `Marked cleaned${plateStr}`;
+    case 'flag_not_returned':    return `Flagged not returned${plateStr}`;
+    case 'complete_task':        return `Completed task${plateStr}`;
+    case 'delete_task':          return `Deleted task`;
+    case 'delete_note':          return `Deleted note`;
     case 'open_task': {
       const text = (typeof det === 'object' ? det.text : '') || '';
       return text ? `Opened: "${text.slice(0, 50)}"` : 'Opened task';
@@ -7152,7 +7164,7 @@ function _perfDescribe(d) {
 }
 
 // Key "productivity" actions — these are what we highlight in staff cards
-const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'flag_not_returned', 'complete_task'];
+const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'vehicle_cleaned', 'inspection_complete', 'flag_not_returned', 'complete_task'];
 
 window.loadPerformanceReport = async function() {
   const cardsEl    = $('perf-summary-cards');
@@ -7211,6 +7223,7 @@ window.loadPerformanceReport = async function() {
     const activeStaff   = new Set(items.map(d => d.userName)).size;
     const photosTotal   = items.filter(d => d.action === 'photo_uploaded').length;
     const returnedTotal = items.filter(d => d.action === 'vehicle_returned').length;
+    const cleanedTotal  = items.filter(d => d.action === 'vehicle_cleaned').length;
     const tasksTotal    = items.filter(d => d.action === 'complete_task').length;
     const totalActions  = items.length;
 
@@ -7218,10 +7231,12 @@ window.loadPerformanceReport = async function() {
       { icon: '👥', value: activeStaff,   label: 'Active Staff',  color: '#1d4ed8' },
       { icon: '📸', value: photosTotal,   label: 'Photos',        color: '#2563eb' },
       { icon: '🏠', value: returnedTotal, label: 'Returned',      color: '#16a34a' },
+      { icon: '🧹', value: cleanedTotal,  label: 'Cleaned',       color: '#0891b2' },
       { icon: '✅', value: tasksTotal,    label: 'Tasks Done',    color: '#16a34a' },
       { icon: '⚡', value: totalActions,  label: 'Total Actions', color: '#7c3aed' },
     ];
 
+    // ── Hero stats render ────────────────────────────────────────
     if (heroEl) {
       heroEl.style.display = 'grid';
       heroEl.innerHTML = heroStats.map(s => `
@@ -7230,6 +7245,95 @@ window.loadPerformanceReport = async function() {
           <div style="font-size:1.6rem;font-weight:800;color:${s.color};line-height:1.1;">${s.value}</div>
           <div style="font-size:0.72rem;color:#6b7280;margin-top:2px;">${s.label}</div>
         </div>`).join('');
+    }
+
+    // ── Vehicle workflow chain ────────────────────────────────────
+    // The workflow steps in order
+    const WORKFLOW_STEPS = [
+      { action: 'vehicle_returned',    icon: '🏠', label: 'Returned'  },
+      { action: 'inspect_started',     icon: '🔍', label: 'Inspecting' },
+      { action: 'inspection_complete', icon: '✅', label: 'Inspected'  },
+      { action: 'vehicle_cleaned',     icon: '🧹', label: 'Cleaned'   },
+      { action: 'photo_uploaded',      icon: '📸', label: 'Photo'     },
+    ];
+    const workflowActions = new Set(WORKFLOW_STEPS.map(s => s.action));
+
+    // Build per-plate event chains (earliest-first)
+    const byPlate = {};
+    [...items].reverse().forEach(d => {
+      if (!workflowActions.has(d.action)) return;
+      const det = d.details || {};
+      const plate = typeof det === 'object' ? det.plate : null;
+      if (!plate) return;
+      if (!byPlate[plate]) byPlate[plate] = [];
+      byPlate[plate].push(d);
+    });
+
+    // Sort plates by the earliest event
+    const platesSorted = Object.keys(byPlate).sort((a, b) => {
+      const aTime = byPlate[a][0]?.at?.toDate?.()?.getTime() || 0;
+      const bTime = byPlate[b][0]?.at?.toDate?.()?.getTime() || 0;
+      return bTime - aTime; // most recently active first
+    });
+
+    let workflowHtml = '';
+    if (platesSorted.length) {
+      const rows = platesSorted.map(plate => {
+        const events = byPlate[plate];
+        // Collect one entry per step (last occurrence wins for multi-photos)
+        const stepMap = {};
+        events.forEach(d => {
+          if (!stepMap[d.action]) stepMap[d.action] = d;
+        });
+        // Photo count
+        const photoCount = events.filter(e => e.action === 'photo_uploaded').length;
+
+        // Figure out turnaround: returned → most recent photo/cleaned
+        const retEvent  = stepMap['vehicle_returned'];
+        const doneEvent = stepMap['photo_uploaded'] || stepMap['vehicle_cleaned'];
+        let turnaround = '';
+        if (retEvent?.at && doneEvent?.at) {
+          const diffMs = doneEvent.at.toDate().getTime() - retEvent.at.toDate().getTime();
+          const diffMin = Math.round(diffMs / 60000);
+          if (diffMin >= 0) {
+            turnaround = diffMin >= 60
+              ? `${Math.floor(diffMin/60)}h ${diffMin % 60}m`
+              : `${diffMin}m`;
+          }
+        }
+
+        // Build step pills
+        const pills = WORKFLOW_STEPS.map(step => {
+          const ev = stepMap[step.action];
+          if (!ev) {
+            return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:0.78rem;background:#f3f4f6;color:#d1d5db;border:1px dashed #e5e7eb;">${step.icon} ${step.label}</span>`;
+          }
+          const time = ev.at ? new Date(ev.at.toDate()).toLocaleTimeString('en-US', {
+            hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE
+          }) : '';
+          const who  = (ev.userName || '').split(' ')[0]; // first name only
+          const cnt  = step.action === 'photo_uploaded' && photoCount > 1 ? ` ×${photoCount}` : '';
+          return `<span style="display:inline-flex;align-items:center;gap:3px;padding:3px 9px;border-radius:20px;font-size:0.78rem;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;" title="${escapeHtml(ev.userName || '')} at ${time}">${step.icon} ${step.label}${cnt} <span style="color:#6b7280;font-size:0.72rem;">${time}</span></span>`;
+        }).join('<span style="color:#d1d5db;font-size:0.7rem;padding:0 2px;">→</span>');
+
+        const doneAll = stepMap['vehicle_returned'] && stepMap['inspection_complete'] && stepMap['vehicle_cleaned'] && stepMap['photo_uploaded'];
+
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;background:#fff;margin-bottom:6px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <span style="font-weight:700;font-size:0.95rem;color:#111827;">${escapeHtml(plate)}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${turnaround ? `<span style="font-size:0.78rem;color:#6b7280;">⏱ ${turnaround}</span>` : ''}
+              ${doneAll ? '<span style="font-size:0.75rem;font-weight:600;background:#dcfce7;color:#15803d;border-radius:20px;padding:1px 9px;">✓ Complete</span>' : '<span style="font-size:0.75rem;background:#fef9c3;color:#92400e;border-radius:20px;padding:1px 9px;">In Progress</span>'}
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;">${pills}</div>
+        </div>`;
+      }).join('');
+
+      workflowHtml = `<div style="margin-bottom:20px;">
+        <div style="font-size:0.82rem;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;margin-bottom:8px;">🚗 Vehicle Turnaround</div>
+        ${rows}
+      </div>`;
     }
 
     // ── Per-user breakdown cards ─────────────────────────────────
@@ -7245,7 +7349,7 @@ window.loadPerformanceReport = async function() {
     });
     const sortedUsers = Object.values(byUser).sort((a, b) => b.total - a.total);
 
-    cardsEl.innerHTML = `<div style="display:flex;flex-direction:column;gap:10px;">` + sortedUsers.map(u => {
+    const staffHtml = `<div style="display:flex;flex-direction:column;gap:8px;">` + sortedUsers.map(u => {
       // Key metric chips (only show non-zero productive actions)
       const chips = PERF_KEY_ACTIONS
         .filter(a => u.counts[a])
@@ -7269,7 +7373,7 @@ window.loadPerformanceReport = async function() {
       const platesStr = plates.length ? plates.slice(0, 8).join(' · ') + (plates.length > 8 ? ` +${plates.length - 8} more` : '') : '';
 
       return `<div style="border:1px solid #e5e7eb;border-radius:10px;padding:14px 16px;background:#fff;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:${chips ? '10px' : '0'};">
           <span style="font-weight:700;font-size:1rem;color:#111827;">${escapeHtml(u.name)}</span>
           <span style="font-size:0.78rem;color:#9ca3af;background:#f9fafb;border-radius:20px;padding:2px 10px;">${u.total} action${u.total !== 1 ? 's' : ''}</span>
         </div>
@@ -7278,6 +7382,10 @@ window.loadPerformanceReport = async function() {
         ${platesStr ? `<div style="font-size:0.78rem;color:#6b7280;">🚗 <span style="font-weight:500;">${escapeHtml(platesStr)}</span></div>` : ''}
       </div>`;
     }).join('') + `</div>`;
+
+    cardsEl.innerHTML = workflowHtml +
+      `<div style="font-size:0.82rem;color:#9ca3af;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;margin-bottom:8px;">👤 Staff</div>` +
+      staffHtml;
 
     // ── Timeline ─────────────────────────────────────────────────
     if (timelineEl) timelineEl.style.display = '';
