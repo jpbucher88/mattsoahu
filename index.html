@@ -2274,8 +2274,9 @@
         <button id="camera-close" class="camera-btn-close">&times;</button>
         <div class="camera-zoom-row">
           <button id="camera-zoom-out" class="camera-zoom-btn">&#8722;</button>
-          <span id="camera-zoom-label" class="camera-zoom-label">1.0&times;</span>
+          <span id="camera-zoom-label" class="camera-zoom-label" onclick="window._resetCameraZoom()" title="Tap to reset zoom">1.0&times;</span>
           <button id="camera-zoom-in" class="camera-zoom-btn">+</button>
+          <button id="camera-zoom-reset" onclick="window._resetCameraZoom()" style="display:none;background:#ff3b30;color:#fff;border:none;border-radius:20px;padding:4px 12px;font-size:0.8rem;font-weight:700;cursor:pointer;margin-left:6px;">Reset 1×</button>
         </div>
         <div class="camera-top-right">
           <span id="camera-count" class="camera-count-badge">0 photos</span>

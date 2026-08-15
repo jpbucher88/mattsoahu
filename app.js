@@ -43,6 +43,7 @@ function fmtTcTime(date, tz) {
 }
 let currentUser = null;
 let currentUserRole = null;
+let currentUserDisplayName = ''; // always matches the name shown in the UI (from Firestore userData)
 let currentUserTimeclockAccess = false;
 let currentUserCanViewAllTimeclocks = false;
 let tcViewingUid = null;   // null = own timeclock
@@ -821,7 +822,7 @@ function logUserActivity(action, details = {}) {
   if (!currentUser) return;
   const entry = {
     uid: currentUser.uid,
-    userName: currentUser.displayName || currentUser.email || 'Unknown',
+    userName: currentUserDisplayName || currentUser.displayName || currentUser.email || 'Unknown',
     action,
     details,
     at: firebase.firestore.FieldValue.serverTimestamp(),
@@ -1236,6 +1237,7 @@ auth.onAuthStateChanged(async (user) => {
       }
 
       $('user-display').textContent = userData.displayName || user.email;
+      currentUserDisplayName = userData.displayName || user.email; // keep in sync for activity logging
       if (currentUserRole === 'viewer') {
         const badge = $('user-display');
         if (badge) badge.title = 'Browse Mode — view only';
@@ -4091,6 +4093,19 @@ function _updateZoomUI() {
   if (btnOut) btnOut.disabled = cameraZoomLevel <= cameraZoomMin;
   const btnIn = $('camera-zoom-in');
   if (btnIn) btnIn.disabled = cameraZoomLevel >= cameraZoomMax;
+  // Show red reset button whenever zoomed above 1× so it's always easy to find
+  const btnReset = $('camera-zoom-reset');
+  if (btnReset) btnReset.style.display = cameraZoomLevel > 1.05 ? '' : 'none';
+}
+
+// Reset camera zoom to 1× — exposed globally so the HTML onclick and double-tap both work
+window._resetCameraZoom = function() {
+  _setCameraZoom(1.0);
+};
+
+// Block iOS viewport-level pinch zoom while camera is open
+function _preventViewportZoom(e) {
+  if (e.touches && e.touches.length > 1) e.preventDefault();
 }
 
 $('btn-open-camera').addEventListener('click', async () => {
@@ -4116,6 +4131,17 @@ function _initCameraPinchZoom() {
   let pinchStartDist = null;
   let pinchStartZoom = 1;
 
+  // Double-tap on the video to reset zoom
+  let _lastTap = 0;
+  overlay.addEventListener('touchend', (e) => {
+    if (e.touches.length < 2) pinchStartDist = null;
+    if (e.changedTouches.length === 1) {
+      const now = Date.now();
+      if (now - _lastTap < 300) { window._resetCameraZoom(); }
+      _lastTap = now;
+    }
+  }, { passive: true });
+
   function _pinchDist(touches) {
     const dx = touches[0].clientX - touches[1].clientX;
     const dy = touches[0].clientY - touches[1].clientY;
@@ -4139,10 +4165,6 @@ function _initCameraPinchZoom() {
     const scale = _pinchDist(e.touches) / pinchStartDist;
     _setCameraZoom(pinchStartZoom * scale);
   }, { passive: false });
-
-  overlay.addEventListener('touchend', (e) => {
-    if (e.touches.length < 2) pinchStartDist = null;
-  }, { passive: true });
 }
 
 async function openCamera() {
@@ -4156,8 +4178,10 @@ async function openCamera() {
     cameraUploadedUrls = [];
   }
   cameraFlashOn = false;
+  cameraZoomLevel = 1.0; // always reset zoom when camera opens
   $('camera-thumbs').innerHTML = '';
   $('camera-count').textContent = '0 photos';
+  _updateZoomUI();
   _setCameraToastBadge(true); // collapse global toast to compact badge while camera is open
   updateFlashButton();
   $('camera-overlay').style.display = 'flex';
@@ -4165,6 +4189,8 @@ async function openCamera() {
   // Pinch-to-zoom on the camera video feed
   // Auto-zoom is forced to minimum on stream open; user can pinch to zoom in/out freely
   _initCameraPinchZoom();
+  // Block iOS viewport zoom while camera is open (document-level, passive:false required)
+  document.addEventListener('touchmove', _preventViewportZoom, { passive: false });
 
   try {
     await startCameraStream();
@@ -4741,6 +4767,7 @@ $('camera-close').addEventListener('click', async () => {
   $('camera-video').srcObject = null;
   $('camera-overlay').style.display = 'none';
   $('camera-note-sheet').style.display = 'none';
+  document.removeEventListener('touchmove', _preventViewportZoom);
   _setCameraToastBadge(false); // restore full toast now that camera is closed
 
   // Wait for any remaining uploads
