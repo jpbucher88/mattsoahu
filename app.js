@@ -4081,9 +4081,14 @@ function _setCameraZoom(level) {
 function _applySwZoom(level) {
   const video = $('camera-video');
   if (!video) return;
-  // scale() on the video; the wrapper clips overflow so it stays fullscreen
-  video.style.transform = level > 1 ? `scale(${level})` : '';
-  video.style.transformOrigin = 'center center';
+  // Only scale up — never apply a transform for 1.0 (removes any leftover zoom)
+  if (level <= 1.0) {
+    video.style.transform = '';
+    video.style.transformOrigin = '';
+  } else {
+    video.style.transform = `scale(${level})`;
+    video.style.transformOrigin = 'center center';
+  }
 }
 
 function _updateZoomUI() {
@@ -4239,9 +4244,10 @@ async function startCameraStream() {
 
   cameraStream = stream;
 
-  // Reset zoom state before reading capabilities — ensures no stale values from previous stream.
+  // Reset zoom state — always start at 1.0 (natural view), never auto-zoom in.
   _cameraHwZoom = false;
   cameraZoomMin = 1.0;
+  cameraZoomMax = 5.0;
   cameraZoomLevel = 1.0;
 
   const [track] = cameraStream.getVideoTracks();
@@ -4250,23 +4256,25 @@ async function startCameraStream() {
       const caps = track.getCapabilities();
       if (caps.zoom) {
         _cameraHwZoom = true;
-        // Use the hardware's actual minimum as the default — wide-angle phones report min < 1
-        cameraZoomMin = caps.zoom.min;
-        cameraZoomLevel = caps.zoom.min;
-        cameraZoomMax = caps.zoom.max;
+        // Always keep UI minimum at 1.0 — never go below native camera view.
+        // DO NOT use caps.zoom.min as the starting level: on multi-lens iPhones
+        // caps.zoom.min can be >1 (telephoto baseline), which was causing auto-zoom.
+        cameraZoomMin = 1.0;
+        cameraZoomMax = caps.zoom.max || 5.0;
+        cameraZoomLevel = 1.0; // always start at 1× regardless of hardware minimum
       }
-      // Apply minimum zoom and torch state together — prevents auto-zoom on stream open
+      // Force hardware zoom to exactly 1.0 and apply torch state
       const constraintUpdates = {};
-      if (caps.zoom) constraintUpdates.zoom = caps.zoom.min;
+      if (caps.zoom) constraintUpdates.zoom = 1.0;
       if (caps.torch) constraintUpdates.torch = cameraFlashOn;
       if (Object.keys(constraintUpdates).length) {
-        await track.applyConstraints({ advanced: [constraintUpdates] });
+        await track.applyConstraints({ advanced: [constraintUpdates] }).catch(() => {});
       }
     } catch (e) { /* zoom/torch not supported — ok */ }
   }
 
-  // Apply software zoom reset (software zoom stays at 1.0 minimum — we never downscale)
-  _applySwZoom(Math.max(1.0, cameraZoomLevel));
+  // Clear any CSS transform from a previous session
+  _applySwZoom(1.0);
   _updateZoomUI();
   updateFlashButton();
 
