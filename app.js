@@ -22623,8 +22623,9 @@ window.claimMove = async function(moveId) {
   } catch (e) { toast('Failed to claim move.', 'error'); }
 };
 
-// Cancel a move
-window.cancelMove = async function(moveId) {  const ok = await confirm('Cancel Move', 'Cancel this vehicle move?');
+// Cancel a move (sets status cancelled, stays in Firestore history)
+window.cancelMove = async function(moveId) {
+  const ok = await confirm('Cancel Move', 'Cancel this vehicle move?');
   if (!ok) return;
   try {
     await db.collection('vehicleMoves').doc(moveId).update({
@@ -22635,6 +22636,17 @@ window.cancelMove = async function(moveId) {  const ok = await confirm('Cancel M
     toast('Move cancelled.', 'success');
     _refreshRelocationsManually();
   } catch (e) { toast('Failed to cancel.', 'error'); }
+};
+
+// Permanently delete a move (admin only — for removing duplicates / test data)
+window.deleteMove = async function(moveId) {
+  const ok = await confirm('Delete Move', 'Permanently delete this move? This cannot be undone.');
+  if (!ok) return;
+  try {
+    await db.collection('vehicleMoves').doc(moveId).delete();
+    toast('Move deleted.', 'success');
+    _refreshRelocationsManually();
+  } catch (e) { toast('Failed to delete.', 'error'); }
 };
 
 // Manual one-shot fetch of active moves — used after dispatch/cancel/arrive to get immediate update
@@ -22726,6 +22738,8 @@ function renderRelocationsWidget(moves) {
       ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}')">✅ Arrived</button>` : '';
     const editBtn = isAdmin
       ? `<button class="btn btn-sm btn-outline reloc-edit-btn" onclick='editMove(${JSON.stringify(m).replace(/'/g,"&#39;")})'>✏️ Edit</button>` : '';
+    const deleteBtn = isAdmin
+      ? `<button class="btn btn-sm btn-outline reloc-delete-btn" onclick="deleteMove('${m.id}')" title="Permanently delete">🗑️</button>` : '';
     const cancelBtn = isAdmin
       ? `<button class="btn btn-sm btn-outline reloc-cancel-btn" onclick="cancelMove('${m.id}')" title="Cancel">✕</button>` : '';
 
@@ -22737,9 +22751,9 @@ function renderRelocationsWidget(moves) {
           <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} <span style="color:#9ca3af;">→</span> 🏠 <strong>${escapeHtml(m.toLocation)}</strong></div>
           ${m.notes ? `<div class="reloc-notes">📝 ${escapeHtml(m.notes)}</div>` : ''}
         </div>
-        <div class="reloc-status-col">${statusBadge}${cancelBtn}</div>
+        <div class="reloc-status-col">${statusBadge}${deleteBtn}</div>
       </div>
-      <div class="reloc-assignment-row">${assignedLabel}${editBtn}</div>
+      <div class="reloc-assignment-row">${assignedLabel}${editBtn}${cancelBtn}</div>
       ${(claimBtn || arriveBtn) ? `<div class="reloc-actions">${claimBtn}${arriveBtn}</div>` : ''}
     </div>`;
   }).join('');
