@@ -7663,12 +7663,19 @@ window.loadPerformanceReport = async function() {
         }).join('')}</div>` : '';
 
         const hasDetail = tasksHtml || photosHtml || opsHtml;
+        // UID lookup — try to get from the activity items
+        const empUid = (userItems.find(d => d.uid) || {}).uid || '';
+        const perfDateVal = $('perf-filter-date')?.value || todayDateString();
+        const calcBtn = empUid
+          ? `<button onclick="event.stopPropagation();populateProdTracker('${escapeHtml(empUid)}','${escapeHtml(u.name)}','${escapeHtml(perfDateVal)}')" title="Calculate productivity" style="background:#1d4ed8;color:#fff;border:none;border-radius:6px;padding:3px 9px;font-size:0.72rem;font-weight:700;cursor:pointer;flex-shrink:0;">📊</button>`
+          : '';
 
         return `<div style="border:1px solid #e5e7eb;border-radius:10px;background:#fff;overflow:hidden;">
           <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;${hasDetail?'cursor:pointer;':''}" onclick="${hasDetail?`togglePerfDetail('${safeId}')`:''}" >
             <span style="font-weight:700;font-size:0.95rem;color:#111827;min-width:80px;">${escapeHtml(u.name)}</span>
             <div style="flex:1;display:flex;flex-wrap:wrap;align-items:center;gap:6px;">${chips||'<span style="font-size:0.78rem;color:#9ca3af;">No activity</span>'}</div>
             <span style="font-size:0.75rem;color:#9ca3af;white-space:nowrap;">${u.total} action${u.total!==1?'s':''}</span>
+            ${calcBtn}
             ${hasDetail?`<span id="perf-toggle-${safeId}" style="color:#9ca3af;font-size:0.75rem;">▾</span>`:''}
           </div>
           ${hasDetail?`<div id="perf-detail-${safeId}" style="display:none;padding:12px 14px;border-top:1px solid #f3f4f6;background:#fafafa;">${tasksHtml}${photosHtml}${opsHtml}</div>`:''}
@@ -23004,6 +23011,36 @@ window.submitShiftLog = async function() {
 };
 
 // ---- Productivity Calculator — per-employee ----
+
+// Called from Team Performance employee row 📊 button — pre-fills the tracker
+window.populateProdTracker = async function(uid, name, date) {
+  await _initProdEmpSelect();
+  const sel = $('prod-emp-select');
+  if (sel) sel.value = uid;
+  const dateEl = $('prod-calc-date');
+  if (dateEl) dateEl.value = date;
+  // Pre-fill hours if shift was previously logged
+  try {
+    const snap = await db.collection('shiftLogs')
+      .where('employeeId', '==', uid).where('date', '==', date).get();
+    const hoursEl = $('prod-calc-hours');
+    if (!snap.empty && hoursEl) {
+      let total = 0; snap.forEach(d => { total += d.data().hoursWorked || 0; });
+      hoursEl.value = total;
+    } else if (hoursEl) { hoursEl.value = ''; hoursEl.focus(); }
+  } catch(e) {}
+  // Show a ready-state hint
+  const container = $('goals-panel-content');
+  if (container) {
+    container.innerHTML = `<div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:10px;padding:12px 16px;font-size:0.88rem;color:#1e40af;">
+      <strong>${escapeHtml(name)}</strong> selected — enter hours worked above then click <strong>Calculate</strong>.
+    </div>`;
+  }
+  // Scroll to tracker
+  const wrap = $('perf-goals-wrap');
+  if (wrap) setTimeout(() => wrap.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+};
+
 async function _initProdEmpSelect() {
   const sel = $('prod-emp-select');
   if (!sel || sel.options.length > 1) return;
@@ -23040,6 +23077,11 @@ window.loadGoalsPanel = async function() {
   await _initProdEmpSelect();
   const dateEl = $('prod-calc-date');
   if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+  // Show ready prompt if no results yet
+  const container = $('goals-panel-content');
+  if (container && (!container.innerHTML || container.innerHTML.includes('Loading'))) {
+    container.innerHTML = '<p style="font-size:0.82rem;color:#9ca3af;padding:8px 0;">Click 📊 next to any team member above, or select an employee and date then click Calculate.</p>';
+  }
 };
 
 window.runProductivityCalc = async function() {
