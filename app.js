@@ -7313,6 +7313,9 @@ window.perfJumpDate = function(offsetDays) {
   const dateStr = d.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
   const el = $('perf-filter-date');
   if (el) el.value = dateStr;
+  // Keep prod tracker date in sync
+  const prodDate = $('prod-calc-date');
+  if (prodDate) prodDate.value = dateStr;
   loadPerformanceReport();
 };
 
@@ -23049,38 +23052,69 @@ window.runProductivityCalc = async function() {
   const empName = sel?.options[sel?.selectedIndex]?.text || '';
   const date    = dateEl?.value || todayDateString();
   const hours   = parseFloat(hoursEl?.value);
-  if (!empUid)  { toast('Select an employee.', 'warning'); return; }
+  if (!empUid)  { toast('Select an employee first.', 'warning'); return; }
   if (!hours || hours <= 0) { toast('Enter hours worked.', 'warning'); return; }
   const calcBtn = document.querySelector('.prod-calc-btn');
   if (calcBtn) { calcBtn.disabled = true; calcBtn.textContent = 'Calculating…'; }
-  container.innerHTML = '<p class="hint" style="font-size:0.82rem;padding:10px 0;">Loading…</p>';
+  container.innerHTML = '<p class="hint" style="font-size:0.82rem;padding:10px 0;">Calculating…</p>';
   try {
     const settings = await _loadProdSettings();
+
     // Save / update shift log
-    const existingSnap = await db.collection('shiftLogs')
-      .where('employeeId', '==', empUid).where('date', '==', date).get();
-    if (existingSnap.empty) {
-      await db.collection('shiftLogs').add({ employeeId: empUid, employeeName: empName, date, hoursWorked: hours,
-        loggedBy: currentUserDisplayName || (currentUser?.email || ''), loggedAt: firebase.firestore.FieldValue.serverTimestamp() });
-    } else {
-      await db.collection('shiftLogs').doc(existingSnap.docs[0].id).update({ hoursWorked: hours });
-    }
-    // Fetch activity for this employee on this date, queried by UID
-    const dayStart = new Date(date + 'T00:00:00');
-    const dayEnd   = new Date(date + 'T23:59:59');
-    const actSnap  = await db.collection('userActivity')
-      .where('uid', '==', empUid)
-      .where('at', '>=', firebase.firestore.Timestamp.fromDate(dayStart))
-      .where('at', '<=', firebase.firestore.Timestamp.fromDate(dayEnd)).get();
+    try {
+      const existingSnap = await db.collection('shiftLogs')
+        .where('employeeId', '==', empUid).where('date', '==', date).get();
+      if (existingSnap.empty) {
+        await db.collection('shiftLogs').add({ employeeId: empUid, employeeName: empName, date, hoursWorked: hours,
+          loggedBy: currentUserDisplayName || (currentUser?.email || ''), loggedAt: firebase.firestore.FieldValue.serverTimestamp() });
+      } else {
+        await db.collection('shiftLogs').doc(existingSnap.docs[0].id).update({ hoursWorked: hours });
+      }
+    } catch(saveErr) { console.warn('Shift log save error (non-fatal):', saveErr); }
+
+    // ── Get activity data ────────────────────────────────────────────
+    // Strategy 1: use the already-loaded Team Performance cache (same date shown above)
+    //             _perfUserItems is keyed by userName, index by both uid and name
     let moves = [], cleans = 0, photos = 0;
-    actSnap.forEach(d => {
-      const act = d.data();
-      if (act.action === 'vehicle_move_completed') {
-        const det = act.details || {};
-        moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
-      } else if (act.action === 'vehicle_cleaned') cleans++;
-      else if (act.action === 'photo_uploaded') photos++;
-    });
+    let dataSource = 'cache';
+
+    const perfDate = $('perf-filter-date')?.value;
+    if (window._perfUserItems && perfDate === date) {
+      // Find the entry matching this employee by name (cache is keyed by display name)
+      const cachedEntry = window._perfUserItems[empName] ||
+        Object.entries(window._perfUserItems || {}).find(([, items]) =>
+          items.some(d => d.uid === empUid))?.[1] || null;
+      if (cachedEntry) {
+        cachedEntry.forEach(d => {
+          if (d.action === 'vehicle_move_completed') {
+            const det = d.details || {};
+            moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
+          } else if (d.action === 'vehicle_cleaned') cleans++;
+          else if (d.action === 'photo_uploaded') photos++;
+        });
+      }
+    } else {
+      // Strategy 2: query by date range only (no composite index needed), filter client-side by uid
+      dataSource = 'query';
+      const dayStart = new Date(date + 'T00:00:00');
+      const dayEnd   = new Date(date + 'T23:59:59');
+      const actSnap  = await db.collection('userActivity')
+        .where('at', '>=', firebase.firestore.Timestamp.fromDate(dayStart))
+        .where('at', '<=', firebase.firestore.Timestamp.fromDate(dayEnd))
+        .get();
+      actSnap.forEach(d => {
+        const act = d.data();
+        // Match by uid OR by display name
+        if (act.uid !== empUid && (act.userName || '').toLowerCase() !== empName.toLowerCase()) return;
+        if (act.action === 'vehicle_move_completed') {
+          const det = act.details || {};
+          moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
+        } else if (act.action === 'vehicle_cleaned') cleans++;
+        else if (act.action === 'photo_uploaded') photos++;
+      });
+    }
+
+    // ── Calculate ────────────────────────────────────────────────────
     const minutesWorked = hours * 60;
     const moveTarget  = settings.vehicle_move_completed?.targetMin ?? 30;
     const cleanTarget = settings.vehicle_cleaned?.targetMin ?? 40;
@@ -23096,11 +23130,14 @@ window.runProductivityCalc = async function() {
     const moveDurations = moves.filter(m => m != null);
     const avgDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
     const unaccounted = Math.max(0, minutesWorked - taskMins);
-    const bar = (mins) => {
-      const pct = minutesWorked > 0 ? Math.min(100, Math.round(mins/minutesWorked*100)) : 0;
-      return `<div class="prod-result-row-bar"><div class="prod-result-row-fill" style="width:${pct}%;background:${pct>0?'#3b82f6':'#d1d5db'};"></div></div>`;
+
+    const bar = (mins, color) => {
+      const pct = minutesWorked > 0 ? Math.min(100, Math.round(mins / minutesWorked * 100)) : 0;
+      return `<div class="prod-result-row-bar"><div class="prod-result-row-fill" style="width:${pct}%;background:${color || '#3b82f6'};"></div></div>`;
     };
+
     const coachData = JSON.stringify({ movesCount: moves.length, avgDuration: avgDur, cleans, photos, score, hoursWorked: hours });
+
     container.innerHTML = `<div class="prod-result-card" style="border-color:${scoreColor};">
       <div class="prod-result-header">
         <div>
@@ -23111,32 +23148,44 @@ window.runProductivityCalc = async function() {
       </div>
       <div class="prod-result-rows">
         <div class="prod-result-row">
-          <span class="prod-result-row-label">🚐 Moves <span style="color:#9ca3af;font-size:0.72rem;">${avgDur!=null?'avg '+avgDur+' / '+moveTarget+'min target':moveTarget+'min each'}</span></span>
-          <span class="prod-result-row-count">${moves.length}</span><span class="prod-result-row-mins">${moveMins}m</span>${bar(moveMins)}
+          <span class="prod-result-row-label">🚐 Moves<span style="color:#9ca3af;font-size:0.72rem;margin-left:4px;">${avgDur!=null?'avg '+avgDur+'m / '+moveTarget+'m target':moveTarget+'m each'}</span></span>
+          <span class="prod-result-row-count">${moves.length}</span>
+          <span class="prod-result-row-mins">${moveMins}m</span>
+          ${bar(moveMins, '#7c3aed')}
         </div>
         <div class="prod-result-row">
-          <span class="prod-result-row-label">🧹 Cleans <span style="color:#9ca3af;font-size:0.72rem;">${cleanTarget} min each</span></span>
-          <span class="prod-result-row-count">${cleans}</span><span class="prod-result-row-mins">${cleanMins}m</span>${bar(cleanMins)}
+          <span class="prod-result-row-label">🧹 Cleans<span style="color:#9ca3af;font-size:0.72rem;margin-left:4px;">${cleanTarget}m each</span></span>
+          <span class="prod-result-row-count">${cleans}</span>
+          <span class="prod-result-row-mins">${cleanMins}m</span>
+          ${bar(cleanMins, '#0891b2')}
         </div>
         <div class="prod-result-row">
-          <span class="prod-result-row-label">📸 Photo Batches <span style="color:#9ca3af;font-size:0.72rem;">${photoTarget} min each</span></span>
-          <span class="prod-result-row-count">${photos}</span><span class="prod-result-row-mins">${photoMins}m</span>${bar(photoMins)}
+          <span class="prod-result-row-label">📸 Photo Batches<span style="color:#9ca3af;font-size:0.72rem;margin-left:4px;">${photoTarget}m each</span></span>
+          <span class="prod-result-row-count">${photos}</span>
+          <span class="prod-result-row-mins">${photoMins}m</span>
+          ${bar(photoMins, '#2563eb')}
         </div>
-        <div class="prod-result-row" style="opacity:0.45;">
-          <span class="prod-result-row-label">⏱️ Unaccounted</span>
-          <span class="prod-result-row-count">—</span><span class="prod-result-row-mins">${unaccounted}m</span>${bar(unaccounted)}
+        <div class="prod-result-row" style="opacity:0.5;">
+          <span class="prod-result-row-label">⏱️ Untracked time</span>
+          <span class="prod-result-row-count">—</span>
+          <span class="prod-result-row-mins">${unaccounted}m</span>
+          ${bar(unaccounted, '#d1d5db')}
         </div>
       </div>
       <div class="prod-result-total">
-        <div><div class="prod-result-score-big" style="color:${scoreColor};">${score}%</div>
-          <div style="font-size:0.82rem;color:${scoreColor};font-weight:700;">${scoreLabel}</div></div>
-        <div class="prod-result-summary">${taskMins} of ${minutesWorked} min tracked<br>
-          <span style="color:#9ca3af;">${unaccounted}m untracked</span></div>
+        <div>
+          <div class="prod-result-score-big" style="color:${scoreColor};">${score}%</div>
+          <div style="font-size:0.82rem;color:${scoreColor};font-weight:700;">${scoreLabel}</div>
+        </div>
+        <div class="prod-result-summary">
+          ${taskMins} of ${minutesWorked} min accounted for<br>
+          <span style="color:#9ca3af;">${unaccounted}m untracked</span>
+        </div>
       </div>
     </div>`;
   } catch(e) {
     console.error('Productivity calc error:', e);
-    container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error. Try again.</p>';
+    container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error calculating. Try again.</p>';
   } finally {
     if (calcBtn) { calcBtn.disabled = false; calcBtn.textContent = 'Calculate'; }
   }
