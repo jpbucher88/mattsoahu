@@ -3294,10 +3294,10 @@ async function openVehiclePage(vid) {
   const uploadOverrideWrap = $('upload-override-wrap');
   if (uploadOverrideWrap) uploadOverrideWrap.style.display = showOverride ? 'block' : 'none';
 
-  // Skip Photos Today — visible to admin/manager whenever vehicle is at home
+  // Skip Photos Today — admin only
   const skipWrap = $('skip-photos-today-wrap');
   if (skipWrap) {
-    skipWrap.style.display = canUpload ? 'block' : 'none';
+    skipWrap.style.display = (currentUserRole === 'admin') ? 'block' : 'none';
     _updateSkipPhotosBtn();
   }
 
@@ -3585,32 +3585,68 @@ async function doPhotoOverride() {
 $('btn-photo-override').addEventListener('click', doPhotoOverride);
 $('btn-upload-override').addEventListener('click', doPhotoOverride);
 
-// Skip Photos Today — mark a specific vehicle as not needing photos for today's calendar date only
+// Skip Photos Today — admin only; logs who performed the action
 async function doSkipPhotosToday() {
   if (!selectedVehicle) return;
+  if (currentUserRole !== 'admin') {
+    toast('Only admins can skip photo requirements.', 'warning');
+    return;
+  }
   const today = todayDateString();
+  const performedBy = currentUserDisplayName || (currentUser ? currentUser.email : 'unknown');
+  const performedByEmail = currentUser ? currentUser.email : '';
+
   // If already skipped today, offer to undo
   if (selectedVehicle.photoSkipDate === today) {
     const ok = await confirm('Undo Photo Skip', `Re-enable photo requirement for ${selectedVehicle.plate} today?`);
     if (!ok) return;
     try {
-      await db.collection('vehicles').doc(selectedVehicle.id).update({ photoSkipDate: firebase.firestore.FieldValue.delete() });
+      await db.collection('vehicles').doc(selectedVehicle.id).update({
+        photoSkipDate: firebase.firestore.FieldValue.delete(),
+        photoSkipBy: firebase.firestore.FieldValue.delete(),
+      });
+      // Audit log
+      db.collection('photoSkipLog').add({
+        vehicleId: selectedVehicle.id,
+        vehiclePlate: selectedVehicle.plate || '',
+        action: 'undo',
+        date: today,
+        performedBy,
+        performedByEmail,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+      }).catch(() => {});
       selectedVehicle.photoSkipDate = null;
+      selectedVehicle.photoSkipBy = null;
       const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-      if (cached) cached.photoSkipDate = null;
+      if (cached) { cached.photoSkipDate = null; cached.photoSkipBy = null; }
       _updateSkipPhotosBtn();
       renderLocationsWidget();
       toast('Photo requirement restored for today ✓', 'success');
     } catch (err) { toast('Failed to update.', 'error'); }
     return;
   }
+
   const ok = await confirm('Skip Photos Today', `No photos needed for ${selectedVehicle.plate} today (${today})?\n\nThis only suppresses the photo reminder for today. It resets automatically tomorrow.`);
   if (!ok) return;
   try {
-    await db.collection('vehicles').doc(selectedVehicle.id).update({ photoSkipDate: today });
+    await db.collection('vehicles').doc(selectedVehicle.id).update({
+      photoSkipDate: today,
+      photoSkipBy: performedBy,
+    });
+    // Audit log
+    db.collection('photoSkipLog').add({
+      vehicleId: selectedVehicle.id,
+      vehiclePlate: selectedVehicle.plate || '',
+      action: 'skip',
+      date: today,
+      performedBy,
+      performedByEmail,
+      timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    }).catch(() => {});
     selectedVehicle.photoSkipDate = today;
+    selectedVehicle.photoSkipBy = performedBy;
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
-    if (cached) cached.photoSkipDate = today;
+    if (cached) { cached.photoSkipDate = today; cached.photoSkipBy = performedBy; }
     _updateSkipPhotosBtn();
     renderLocationsWidget();
     toast(`Photos skipped for ${selectedVehicle.plate} today ✓`, 'success');
@@ -3622,7 +3658,8 @@ function _updateSkipPhotosBtn() {
   if (!btn || !selectedVehicle) return;
   const today = todayDateString();
   if (selectedVehicle.photoSkipDate === today) {
-    btn.textContent = '✅ Photos Skipped Today — Tap to Undo';
+    const by = selectedVehicle.photoSkipBy ? ` (by ${selectedVehicle.photoSkipBy})` : '';
+    btn.textContent = `✅ Photos Skipped Today${by} — Tap to Undo`;
     btn.classList.add('btn-skip-active');
   } else {
     btn.textContent = '📅 No Photos Needed Today';
