@@ -181,5 +181,27 @@ service cloud.firestore {
       allow update: if isRegistered();
       allow delete: if isAdmin();
     }
+
+    // Vehicle Moves (relocations) — any registered user can read and update (drivers claim/arrive);
+    // only managers/admins can create or cancel (delete)
+    match /vehicleMoves/{moveId} {
+      allow read: if isRegistered();
+      allow create: if isManager();
+      allow update: if isRegistered();
+      allow delete: if isManager();
+    }
+
+    // Photo skip audit log — admins write, admins read
+    match /photoSkipLog/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+    }
+
+    // SOPs — all registered users can read; admins can create/delete
+    match /sops/{sopId} {
+      allow read: if isRegistered();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin();
+    }
   }
 }

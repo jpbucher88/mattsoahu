@@ -22180,11 +22180,9 @@ window.updateDispatchPreview = function() {
   const v = vehiclesCache.find(x => x.id === sel.value);
   if (v) {
     const emoji = _carColorEmoji(v.color);
-    const dot = v.color ? `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${_cssColor(v.color)};vertical-align:middle;margin-right:4px;"></span>` : '';
-    preview.innerHTML = `<span style="font-size:1.6rem;line-height:1;">${emoji}</span> ${dot}<strong style="font-size:1rem;">${escapeHtml(v.plate)}</strong> <span style="color:#6d28d9;font-size:0.85rem;">${escapeHtml(v.color || '')} ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span>`;
-    preview.style.display = 'flex';
-    preview.style.alignItems = 'center';
-    preview.style.gap = '6px';
+    const dot = v.color ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${_cssColor(v.color)};vertical-align:middle;margin:0 4px 1px 0;"></span>` : '';
+    preview.innerHTML = `${emoji} ${dot}<strong>${escapeHtml(v.plate)}</strong>&nbsp;<span style="color:#7c3aed;font-weight:500;">${escapeHtml(v.color||'')} ${escapeHtml(v.make||'')} ${escapeHtml(v.model||'')}</span>`;
+    preview.style.display = 'block';
   } else {
     preview.style.display = 'none';
     preview.innerHTML = '';
