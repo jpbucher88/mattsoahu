@@ -1766,29 +1766,34 @@
           </div>
 
           <!-- Goals & Coaching (admin-only) -->
-          <div id="perf-goals-wrap" style="margin-top:14px;border-top:2px solid #ede9fe;padding-top:12px;">
+          <div id="perf-goals-wrap" style="margin-top:14px;border-top:2px solid #e0e7ff;padding-top:12px;">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
               <div>
                 <h4 style="margin:0;color:#1d4ed8;">📊 Productivity Tracker</h4>
-                <p style="margin:3px 0 0;font-size:0.78rem;color:#9ca3af;">Admin only · Compare tasks completed vs hours worked</p>
+                <p style="margin:3px 0 0;font-size:0.78rem;color:#9ca3af;">Admin only · Enter hours worked then click Calculate</p>
               </div>
-              <div style="display:flex;gap:6px;">
-                <button class="btn btn-sm btn-outline" onclick="openProdSettings()" style="border-color:#374151;color:#374151;" title="Configure task targets">⚙️</button>
-                <button class="btn btn-sm btn-outline" onclick="openShiftLog()" style="border-color:#1d4ed8;color:#1d4ed8;">+ Log Shift</button>
-                <input type="date" id="goals-filter-date" style="font-size:0.82rem;border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;" value="">
-                <button class="btn btn-sm btn-outline" onclick="loadGoalsPanel()">↻ Load</button>
-              </div>
+              <button class="btn btn-sm btn-outline" onclick="openProdSettings()" style="border-color:#374151;color:#374151;" title="Configure task targets">⚙️ Settings</button>
             </div>
 
-            <!-- Goal targets legend -->
-            <div class="goals-legend">
-              <span class="goal-pill">🚐 Move: <strong>30 min</strong></span>
-              <span class="goal-pill">🧹 Clean: <strong>40 min</strong></span>
-              <span class="goal-pill">📸 Photos: <strong>5 min/car</strong></span>
-              <span class="goal-pill" style="background:#dbeafe;color:#1e40af;border-color:#bfdbfe;">Green ≥85% · Yellow 60–84% · Red &lt;60%</span>
+            <!-- Inline calculator form -->
+            <div class="prod-calc-form">
+              <select id="prod-emp-select" class="prod-calc-input" onchange="onProdEmpChange()" style="flex:2;min-width:130px;">
+                <option value="">— Select employee —</option>
+              </select>
+              <input type="date" id="prod-calc-date" class="prod-calc-input" style="flex:1;min-width:110px;">
+              <input type="number" id="prod-calc-hours" class="prod-calc-input" placeholder="Hours" min="0.5" max="16" step="0.5" style="flex:1;max-width:90px;">
+              <button class="prod-calc-btn" onclick="runProductivityCalc()">Calculate</button>
             </div>
 
-            <div id="goals-panel-content"><p class="hint" style="font-size:0.82rem;">Select a date and click Load.</p></div>
+            <!-- Targets legend -->
+            <div class="goals-legend" style="margin-top:8px;">
+              <span class="goal-pill">🚐 <strong id="legend-move">30</strong> min/move</span>
+              <span class="goal-pill">🧹 <strong id="legend-clean">40</strong> min/clean</span>
+              <span class="goal-pill">📸 <strong id="legend-photo">5</strong> min/photo batch</span>
+              <span class="goal-pill" style="background:#dbeafe;color:#1e40af;border-color:#bfdbfe;">🟢 ≥85% · 🟡 60–84% · 🔴 &lt;60%</span>
+            </div>
+
+            <div id="goals-panel-content" style="margin-top:10px;"></div>
           </div>
         </div>
       </div>

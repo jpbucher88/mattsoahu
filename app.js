@@ -23000,163 +23000,145 @@ window.submitShiftLog = async function() {
   } catch(e) { console.error('Shift log error:', e); if (errEl) errEl.textContent = 'Failed to save.'; }
 };
 
-// ---- Productivity Goals Panel ----
+// ---- Productivity Calculator — per-employee ----
+async function _initProdEmpSelect() {
+  const sel = $('prod-emp-select');
+  if (!sel || sel.options.length > 1) return;
+  if (_shiftUsersCache.length === 0) {
+    const snap = await db.collection('users').orderBy('displayName').get().catch(() => null);
+    if (snap) _shiftUsersCache = snap.docs.map(d => ({ uid: d.id, name: d.data().displayName || d.data().email || d.id }));
+  }
+  _shiftUsersCache.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.uid; opt.textContent = u.name; sel.appendChild(opt);
+  });
+  _loadProdSettings().then(s => {
+    const ml = $('legend-move');  if (ml) ml.textContent = s.vehicle_move_completed?.targetMin ?? 30;
+    const cl = $('legend-clean'); if (cl) cl.textContent = s.vehicle_cleaned?.targetMin ?? 40;
+    const pl = $('legend-photo'); if (pl) pl.textContent = s.photo_uploaded?.targetMin ?? 5;
+  });
+}
+
+window.onProdEmpChange = async function() {
+  const sel = $('prod-emp-select'); const dateEl = $('prod-calc-date');
+  if (!sel?.value) return;
+  try {
+    const snap = await db.collection('shiftLogs')
+      .where('employeeId', '==', sel.value).where('date', '==', dateEl?.value || todayDateString()).get();
+    const hoursEl = $('prod-calc-hours');
+    if (!snap.empty && hoursEl && !hoursEl.value) {
+      let total = 0; snap.forEach(d => { total += d.data().hoursWorked || 0; });
+      hoursEl.value = total;
+    }
+  } catch(e) {}
+};
+
 window.loadGoalsPanel = async function() {
+  await _initProdEmpSelect();
+  const dateEl = $('prod-calc-date');
+  if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+};
+
+window.runProductivityCalc = async function() {
+  const sel     = $('prod-emp-select');
+  const dateEl  = $('prod-calc-date');
+  const hoursEl = $('prod-calc-hours');
   const container = $('goals-panel-content');
   if (!container) return;
-  container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
-
-  const dateFilterEl = $('goals-filter-date');
-  if (dateFilterEl && !dateFilterEl.value) dateFilterEl.value = todayDateString();
-  const filterDate = dateFilterEl?.value;
-  let rangeStart, rangeEnd, rangeLabel;
-  if (filterDate) {
-    rangeStart = new Date(filterDate + 'T00:00:00');
-    rangeEnd   = new Date(filterDate + 'T23:59:59');
-    rangeLabel = filterDate;
-  } else {
-    rangeEnd   = new Date();
-    rangeStart = new Date(rangeEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
-    rangeLabel = 'Last 7 days';
-  }
-
+  const empUid  = sel?.value;
+  const empName = sel?.options[sel?.selectedIndex]?.text || '';
+  const date    = dateEl?.value || todayDateString();
+  const hours   = parseFloat(hoursEl?.value);
+  if (!empUid)  { toast('Select an employee.', 'warning'); return; }
+  if (!hours || hours <= 0) { toast('Enter hours worked.', 'warning'); return; }
+  const calcBtn = document.querySelector('.prod-calc-btn');
+  if (calcBtn) { calcBtn.disabled = true; calcBtn.textContent = 'Calculating…'; }
+  container.innerHTML = '<p class="hint" style="font-size:0.82rem;padding:10px 0;">Loading…</p>';
   try {
-    // Load settings + data in parallel
-    const [settings, shiftSnap, actSnap] = await Promise.all([
-      _loadProdSettings(),
-      db.collection('shiftLogs')
-        .where('date', '>=', rangeStart.toISOString().slice(0,10))
-        .where('date', '<=', rangeEnd.toISOString().slice(0,10))
-        .get(),
-      db.collection('userActivity')
-        .where('at', '>=', firebase.firestore.Timestamp.fromDate(rangeStart))
-        .where('at', '<=', firebase.firestore.Timestamp.fromDate(rangeEnd))
-        .get(),
-    ]);
-
-    const shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.date.localeCompare(b.date));
-    const actItems = actSnap.docs.map(d => ({ id: d.id, ...d.data() }));
-
-    // Group shift logs by employee
-    const byEmployee = {};
-    shifts.forEach(s => {
-      if (!byEmployee[s.employeeId]) byEmployee[s.employeeId] = { name: s.employeeName, uid: s.employeeId, totalHours: 0, shifts: [], customCounts: {} };
-      byEmployee[s.employeeId].totalHours += s.hoursWorked;
-      byEmployee[s.employeeId].shifts.push(s);
-      // Aggregate custom task counts from all shifts
-      if (s.customCounts) {
-        Object.entries(s.customCounts).forEach(([k, v]) => {
-          byEmployee[s.employeeId].customCounts[k] = (byEmployee[s.employeeId].customCounts[k] || 0) + (v || 0);
-        });
-      }
-    });
-
-    // Group activity by BOTH uid and name so we can match reliably
-    const actByUid  = {};
-    const actByName = {};
-    actItems.forEach(d => {
-      const uid  = d.uid  || '';
-      const name = (d.userName || '').toLowerCase().trim();
-      const key  = uid || name || 'unknown';
-      if (!actByUid[key]) actByUid[key] = { moves: [], cleans: 0, photos: 0 };
-      if (uid  && !actByName[name]) actByName[name] = actByUid[key]; // alias by name
-      if (!uid && name && !actByName[name]) actByName[name] = actByUid[key];
-      const bucket = actByUid[key];
-      if (d.action === 'vehicle_move_completed') {
-        const det = d.details || {};
-        bucket.moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
-      } else if (d.action === 'vehicle_cleaned') bucket.cleans++;
-      else if (d.action === 'photo_uploaded') bucket.photos++;
-    });
-
-    if (!Object.keys(byEmployee).length) {
-      container.innerHTML = `<div style="text-align:center;padding:20px;">
-        <p class="hint" style="font-size:0.88rem;">No shifts logged for ${escapeHtml(rangeLabel)}.</p>
-        <button class="btn btn-sm" onclick="openShiftLog()" style="background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:7px 18px;font-weight:700;cursor:pointer;margin-top:8px;">+ Log a Shift</button>
-      </div>`;
-      return;
+    const settings = await _loadProdSettings();
+    // Save / update shift log
+    const existingSnap = await db.collection('shiftLogs')
+      .where('employeeId', '==', empUid).where('date', '==', date).get();
+    if (existingSnap.empty) {
+      await db.collection('shiftLogs').add({ employeeId: empUid, employeeName: empName, date, hoursWorked: hours,
+        loggedBy: currentUserDisplayName || (currentUser?.email || ''), loggedAt: firebase.firestore.FieldValue.serverTimestamp() });
+    } else {
+      await db.collection('shiftLogs').doc(existingSnap.docs[0].id).update({ hoursWorked: hours });
     }
-
-    // Get custom task types from settings
-    const customTaskTypes = Object.entries(settings).filter(([, cfg]) => cfg.isCustom);
-
-    container.innerHTML = Object.values(byEmployee).map(emp => {
-      const minutesWorked = emp.totalHours * 60;
-      // Match by UID first, then fall back to lowercase name match
-      const empNameLower = emp.name.toLowerCase().trim();
-      const act = actByUid[emp.uid] || actByName[empNameLower] || { moves: [], cleans: 0, photos: 0 };
-
-      // Calculate minutes accounted for — auto-tracked tasks
-      const movesCount = act.moves.length;
-      const moveMins   = movesCount * (settings.vehicle_move_completed?.targetMin || 30);
-      const cleanMins  = act.cleans  * (settings.vehicle_cleaned?.targetMin        || 40);
-      const photoMins  = act.photos  * (settings.photo_uploaded?.targetMin         || 5);
-
-      // Custom task minutes
-      let customMins = 0;
-      const customRows = customTaskTypes.map(([key, cfg]) => {
-        const cnt = emp.customCounts[key] || 0;
-        const mins = cnt * (cfg.targetMin || 0);
-        customMins += mins;
-        return cnt > 0 ? `<div class="goal-metric">
-          <span class="goal-metric-label">${escapeHtml(cfg.label)}</span>
-          <span class="goal-metric-val">${cnt}</span>
-          <span class="goal-metric-detail">${mins} min est.</span>
-        </div>` : '';
-      }).filter(Boolean).join('');
-
-      const taskMins = moveMins + cleanMins + photoMins + customMins;
-      const score = minutesWorked > 0 ? Math.round((taskMins / minutesWorked) * 100) : 0;
-      const scoreColor = score >= 85 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
-      const scoreBg    = score >= 85 ? '#dcfce7' : score >= 60 ? '#fef9c3' : '#fee2e2';
-      const scoreLabel = score >= 85 ? 'On Target 🟢' : score >= 60 ? 'Below Target 🟡' : 'Needs Review 🔴';
-
-      const moveDurations = act.moves.filter(m => m != null);
-      const avgMoveDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
-      const moveTarget = settings.vehicle_move_completed?.targetMin || 30;
-
-      const shiftRows = emp.shifts.map(s => `<span style="font-size:0.72rem;color:#6b7280;">${s.date}: ${s.hoursWorked}h${s.notes?' · '+escapeHtml(s.notes):''}</span>`).join('<br>');
-      const coachData = JSON.stringify({ movesCount, avgDuration: avgMoveDur, cleans: act.cleans, photos: act.photos, score, hoursWorked: emp.totalHours });
-      const coachBtn  = emp.uid ? `<button class="btn btn-sm goal-coach-btn" onclick='openCoachingModal("${escapeHtml(emp.uid)}","${escapeHtml(emp.name)}",${coachData.replace(/"/g,"&quot;")})'>🎯 Coach</button>` : '';
-
-      return `<div class="goal-user-card" style="border-left:4px solid ${scoreColor};">
-        <div class="goal-user-top">
-          <span class="goal-user-name">${escapeHtml(emp.name)}</span>
-          <span class="prod-score-badge" style="background:${scoreBg};color:${scoreColor};">${score}% · ${scoreLabel}</span>
-          ${coachBtn}
+    // Fetch activity for this employee on this date, queried by UID
+    const dayStart = new Date(date + 'T00:00:00');
+    const dayEnd   = new Date(date + 'T23:59:59');
+    const actSnap  = await db.collection('userActivity')
+      .where('uid', '==', empUid)
+      .where('at', '>=', firebase.firestore.Timestamp.fromDate(dayStart))
+      .where('at', '<=', firebase.firestore.Timestamp.fromDate(dayEnd)).get();
+    let moves = [], cleans = 0, photos = 0;
+    actSnap.forEach(d => {
+      const act = d.data();
+      if (act.action === 'vehicle_move_completed') {
+        const det = act.details || {};
+        moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
+      } else if (act.action === 'vehicle_cleaned') cleans++;
+      else if (act.action === 'photo_uploaded') photos++;
+    });
+    const minutesWorked = hours * 60;
+    const moveTarget  = settings.vehicle_move_completed?.targetMin ?? 30;
+    const cleanTarget = settings.vehicle_cleaned?.targetMin ?? 40;
+    const photoTarget = settings.photo_uploaded?.targetMin ?? 5;
+    const moveMins  = moves.length * moveTarget;
+    const cleanMins = cleans * cleanTarget;
+    const photoMins = photos * photoTarget;
+    const taskMins  = moveMins + cleanMins + photoMins;
+    const score = minutesWorked > 0 ? Math.round((taskMins / minutesWorked) * 100) : 0;
+    const scoreColor = score >= 85 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
+    const scoreBg    = score >= 85 ? '#dcfce7' : score >= 60 ? '#fef9c3' : '#fee2e2';
+    const scoreLabel = score >= 85 ? '🟢 On Target' : score >= 60 ? '🟡 Below Target' : '🔴 Needs Review';
+    const moveDurations = moves.filter(m => m != null);
+    const avgDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
+    const unaccounted = Math.max(0, minutesWorked - taskMins);
+    const bar = (mins) => {
+      const pct = minutesWorked > 0 ? Math.min(100, Math.round(mins/minutesWorked*100)) : 0;
+      return `<div class="prod-result-row-bar"><div class="prod-result-row-fill" style="width:${pct}%;background:${pct>0?'#3b82f6':'#d1d5db'};"></div></div>`;
+    };
+    const coachData = JSON.stringify({ movesCount: moves.length, avgDuration: avgDur, cleans, photos, score, hoursWorked: hours });
+    container.innerHTML = `<div class="prod-result-card" style="border-color:${scoreColor};">
+      <div class="prod-result-header">
+        <div>
+          <div class="prod-result-name">${escapeHtml(empName)}</div>
+          <div class="prod-result-date">${date} · ${hours}h worked (${minutesWorked} min)</div>
         </div>
-        <div class="prod-hours-row">
-          <span>⏱️ <strong>${emp.totalHours}h</strong> worked · ${taskMins} of ${minutesWorked} min accounted for</span>
-          <span style="color:#9ca3af;font-size:0.72rem;">${shiftRows}</span>
+        <button class="btn btn-sm goal-coach-btn" style="margin-left:auto;" onclick='openCoachingModal("${escapeHtml(empUid)}","${escapeHtml(empName)}",${coachData.replace(/"/g,'&quot;')})'>🎯 Coach ${escapeHtml(empName.split(' ')[0])}</button>
+      </div>
+      <div class="prod-result-rows">
+        <div class="prod-result-row">
+          <span class="prod-result-row-label">🚐 Moves <span style="color:#9ca3af;font-size:0.72rem;">${avgDur!=null?'avg '+avgDur+' / '+moveTarget+'min target':moveTarget+'min each'}</span></span>
+          <span class="prod-result-row-count">${moves.length}</span><span class="prod-result-row-mins">${moveMins}m</span>${bar(moveMins)}
         </div>
-        <div class="goal-metrics">
-          <div class="goal-metric">
-            <span class="goal-metric-label">🚐 Moves</span>
-            <span class="goal-metric-val">${movesCount}</span>
-            <span class="goal-metric-detail">${avgMoveDur!=null?avgMoveDur+'min avg / '+moveTarget+' target':moveMins+'min est.'}</span>
-          </div>
-          <div class="goal-metric">
-            <span class="goal-metric-label">🧹 Cleans</span>
-            <span class="goal-metric-val">${act.cleans}</span>
-            <span class="goal-metric-detail">${cleanMins} min est.</span>
-          </div>
-          <div class="goal-metric">
-            <span class="goal-metric-label">📸 Photos</span>
-            <span class="goal-metric-val">${act.photos}</span>
-            <span class="goal-metric-detail">${photoMins} min est.</span>
-          </div>
-          ${customRows}
-          <div class="goal-metric">
-            <span class="goal-metric-label">⏱️ Unaccounted</span>
-            <span class="goal-metric-val" style="color:#9ca3af;">${Math.max(0, minutesWorked - taskMins)}m</span>
-            <span class="goal-metric-detail">of ${minutesWorked}m total</span>
-          </div>
+        <div class="prod-result-row">
+          <span class="prod-result-row-label">🧹 Cleans <span style="color:#9ca3af;font-size:0.72rem;">${cleanTarget} min each</span></span>
+          <span class="prod-result-row-count">${cleans}</span><span class="prod-result-row-mins">${cleanMins}m</span>${bar(cleanMins)}
         </div>
-      </div>`;
-    }).join('');
+        <div class="prod-result-row">
+          <span class="prod-result-row-label">📸 Photo Batches <span style="color:#9ca3af;font-size:0.72rem;">${photoTarget} min each</span></span>
+          <span class="prod-result-row-count">${photos}</span><span class="prod-result-row-mins">${photoMins}m</span>${bar(photoMins)}
+        </div>
+        <div class="prod-result-row" style="opacity:0.45;">
+          <span class="prod-result-row-label">⏱️ Unaccounted</span>
+          <span class="prod-result-row-count">—</span><span class="prod-result-row-mins">${unaccounted}m</span>${bar(unaccounted)}
+        </div>
+      </div>
+      <div class="prod-result-total">
+        <div><div class="prod-result-score-big" style="color:${scoreColor};">${score}%</div>
+          <div style="font-size:0.82rem;color:${scoreColor};font-weight:700;">${scoreLabel}</div></div>
+        <div class="prod-result-summary">${taskMins} of ${minutesWorked} min tracked<br>
+          <span style="color:#9ca3af;">${unaccounted}m untracked</span></div>
+      </div>
+    </div>`;
   } catch(e) {
-    console.error('Goals panel error:', e);
-    container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error loading. Try again.</p>';
+    console.error('Productivity calc error:', e);
+    container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error. Try again.</p>';
+  } finally {
+    if (calcBtn) { calcBtn.disabled = false; calcBtn.textContent = 'Calculate'; }
   }
 };
 
