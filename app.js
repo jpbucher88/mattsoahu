@@ -22336,12 +22336,14 @@ window.deletePartOrder = async function(partId) {
   } catch(e) { toast('Failed to cancel.', 'error'); }
 };
 
-// Load parts queue when switching to that tab
-const _origSwitchMaintTab = window.switchMaintTab;
-window.switchMaintTab = function(tabId, btn) {
-  if (typeof _origSwitchMaintTab === 'function') _origSwitchMaintTab(tabId, btn);
-  if (tabId === 'mtab-parts-queue') loadPartsQueue();
-};
+// Hook into switchMaintTab to load parts queue when that tab is selected
+(function() {
+  const _prev = window.switchMaintTab;
+  window.switchMaintTab = function(tabId, btn) {
+    if (typeof _prev === 'function') _prev(tabId, btn);
+    if (tabId === 'mtab-parts-queue') loadPartsQueue();
+  };
+})();
 let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
 let _editingMoveId = null; // ID of move being edited
 let _relocUsersCache = []; // [{name, uid}] loaded once
