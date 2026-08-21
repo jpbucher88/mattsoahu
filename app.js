@@ -23025,7 +23025,7 @@ window.recalcProdScore = function(inputEl) {
   const minutesWorked = parseFloat(card.dataset.minutes) || 0;
   if (minutesWorked <= 0) return;
 
-  // Sum up all count inputs × their target minutes
+  // Sum up all count inputs × their target minutes (misc rows included automatically)
   let taskMins = 0;
   card.querySelectorAll('.prod-count-input').forEach(inp => {
     const count  = Math.max(0, parseInt(inp.value) || 0);
@@ -23033,12 +23033,12 @@ window.recalcProdScore = function(inputEl) {
     const rowMins = count * target;
     taskMins += rowMins;
     // Update the mins label in this row
-    const minsEl = inp.closest('.prod-result-row')?.querySelector('.prod-live-mins');
+    const minsEl = inp.closest('.prod-result-row, .prod-misc-row')?.querySelector('.prod-live-mins');
     if (minsEl) minsEl.textContent = rowMins + 'm';
-    // Update the bar fill
-    const fill = inp.closest('.prod-result-row')?.querySelector('.prod-result-row-fill');
+    // Update bar fill
+    const fill = inp.closest('.prod-result-row, .prod-misc-row')?.querySelector('.prod-result-row-fill');
     if (fill) {
-      const pct = Math.min(100, Math.round(rowMins / minutesWorked * 100));
+      const pct = minutesWorked > 0 ? Math.min(100, Math.round(rowMins / minutesWorked * 100)) : 0;
       fill.style.width = pct + '%';
     }
   });
@@ -23265,13 +23265,17 @@ window.runProductivityCalc = async function() {
           <span class="prod-result-row-mins prod-live-mins">${photoMins}m</span>
           ${bar(photoMins, '#2563eb')}
         </div>
-        <div class="prod-result-row" style="opacity:0.45;">
+        <div class="prod-result-row" style="opacity:0.45;" id="prod-untracked-row">
           <span class="prod-result-row-label">⏱️ Untracked</span>
           <span class="prod-result-row-count prod-untracked-count">—</span>
           <span class="prod-result-row-mins prod-untracked-mins">${unaccounted}m</span>
           ${bar(unaccounted, '#d1d5db')}
         </div>
+        <!-- Misc task rows inserted here by addMiscProdRow() -->
+        <div id="prod-misc-rows"></div>
       </div>
+      <!-- Add misc task button -->
+      <button onclick="addMiscProdRow(this)" class="prod-add-misc-btn">+ Add Misc Task</button>
       <div class="prod-result-total">
         <div>
           <div class="prod-result-score-big prod-live-score" style="color:${scoreColor};">${score}%</div>
@@ -23288,6 +23292,45 @@ window.runProductivityCalc = async function() {
     container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error calculating. Try again.</p>';
   } finally {
     if (calcBtn) { calcBtn.disabled = false; calcBtn.textContent = 'Calculate'; }
+  }
+};
+
+// Add a misc task row inline in the productivity result card
+window.addMiscProdRow = function(btn) {
+  const card = btn.closest('.prod-result-card');
+  const miscContainer = card?.querySelector('#prod-misc-rows');
+  if (!miscContainer) return;
+
+  const row = document.createElement('div');
+  row.className = 'prod-result-row prod-misc-row';
+  row.innerHTML = `
+    <div class="prod-misc-fields">
+      <input type="text" class="prod-misc-label-input" placeholder="Task name…" maxlength="40"
+        style="flex:2;border:1px solid #e5e7eb;border-radius:6px;padding:4px 8px;font-size:0.82rem;outline:none;min-width:90px;">
+      <input type="number" class="prod-misc-target-input" placeholder="min" min="1" max="480" value="15"
+        style="width:52px;border:1px solid #e5e7eb;border-radius:6px;padding:4px 6px;font-size:0.82rem;text-align:center;outline:none;"
+        oninput="updateMiscTarget(this)">
+      <span style="font-size:0.72rem;color:#9ca3af;white-space:nowrap;">m each</span>
+    </div>
+    <input type="number" class="prod-count-input" value="1" min="0" data-target="15" data-color="#6b7280"
+      oninput="recalcProdScore(this)" style="width:48px;">
+    <span class="prod-result-row-mins prod-live-mins">15m</span>
+    <div class="prod-result-row-bar"><div class="prod-result-row-fill" style="width:0%;background:#6b7280;"></div></div>
+    <button onclick="this.closest('.prod-misc-row').remove(); recalcProdScore(document.querySelector('.prod-count-input'))"
+      style="background:none;border:none;color:#9ca3af;cursor:pointer;font-size:0.9rem;padding:0 2px;flex-shrink:0;">✕</button>`;
+  miscContainer.appendChild(row);
+  row.querySelector('.prod-misc-label-input').focus();
+  recalcProdScore(row.querySelector('.prod-count-input'));
+};
+
+// When the "min each" field changes on a misc row, update the data-target and recalc
+window.updateMiscTarget = function(targetInput) {
+  const row = targetInput.closest('.prod-misc-row');
+  if (!row) return;
+  const countInput = row.querySelector('.prod-count-input');
+  if (countInput) {
+    countInput.dataset.target = parseFloat(targetInput.value) || 0;
+    recalcProdScore(countInput);
   }
 };
 
