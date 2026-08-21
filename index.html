@@ -106,6 +106,24 @@
         </div>
       </section>
 
+      <!-- Vehicle Moves Widget -->
+      <section id="relocations-widget" class="card reloc-widget-card">
+        <div class="collapsible-header reloc-widget-header" onclick="toggleSection('relocations-widget-body', 'relocations-widget-toggle')">
+          <div class="collapsible-title">
+            <span class="reloc-widget-icon">🚐</span>
+            <h3 style="margin:0;">Vehicle Moves</h3>
+            <span id="relocations-count" class="badge reloc-count-badge" style="display:none;">0</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <button id="btn-dispatch-move" onclick="event.stopPropagation(); openDispatchModal()" class="btn-dispatch-pill" style="display:none;">+ Dispatch Move</button>
+            <button class="collapse-btn" id="relocations-widget-toggle">&#8722;</button>
+          </div>
+        </div>
+        <div id="relocations-widget-body" class="collapsible-body">
+          <div id="relocations-list" class="relocations-list"></div>
+        </div>
+      </section>
+
       <!-- Fleet Compliance Widget (hidden — access via top bar ✅ button) -->
       <section id="compliance-widget" class="card compliance-widget-section" style="display:none !important;
         pointer-events:none;">
@@ -136,21 +154,6 @@
         </div>
         <div id="locations-widget-body" class="collapsible-body">
           <div id="locations-grid" class="locations-grid"></div>
-        </div>
-      </section>
-
-      <!-- Relocations Widget — move vehicles between locations -->
-      <section id="relocations-widget" class="card">
-        <div class="collapsible-header" onclick="toggleSection('relocations-widget-body', 'relocations-widget-toggle')">
-          <div class="collapsible-title">
-            <h3>🚐 Vehicle Moves</h3>
-            <span id="relocations-count" class="badge" style="background:#7c3aed;color:#fff;display:none;">0</span>
-          </div>
-          <button class="btn btn-sm" id="btn-dispatch-move" onclick="event.stopPropagation(); openDispatchModal()" style="font-size:0.82rem;padding:5px 14px;margin-right:6px;background:#7c3aed;color:#fff;border:none;border-radius:8px;font-weight:600;">+ Dispatch Move</button>
-          <button class="collapse-btn" id="relocations-widget-toggle">&#8722;</button>
-        </div>
-        <div id="relocations-widget-body" class="collapsible-body">
-          <div id="relocations-list" class="relocations-list"></div>
         </div>
       </section>
 
@@ -1191,6 +1194,21 @@
           </div>
         </div>
         <div id="learning-items-list" class="learning-items-list"></div>
+      </section>
+
+      <!-- SOPs / Standard Operating Procedures (admin upload) -->
+      <section class="card">
+        <div class="section-header">
+          <h3>📋 Standard Operating Procedures</h3>
+          <div id="sop-admin-controls" style="display:none;">
+            <label class="btn btn-sm btn-primary" style="cursor:pointer;margin:0;">
+              ⬆️ Upload SOP
+              <input type="file" id="sop-file-input" accept=".pdf,image/*,.doc,.docx" style="display:none;" onchange="handleSopUpload(this)">
+            </label>
+          </div>
+        </div>
+        <div id="sop-upload-progress" style="display:none;padding:8px 0;font-size:0.85rem;color:#7c3aed;"></div>
+        <div id="sop-list" class="sop-list"><p class="hint">Loading SOPs…</p></div>
       </section>
 
       <!-- Shared Resources (admin-editable) -->
@@ -3005,53 +3023,56 @@
 
   <!-- ==================== DISPATCH MOVE MODAL ==================== -->
   <div id="dispatch-modal-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeDispatchModal()">
-    <div class="modal-card" style="max-width:440px;">
-      <div class="modal-header">
-        <h3 id="dispatch-modal-title">🚐 Dispatch Vehicle Move</h3>
-        <button class="modal-close-btn" onclick="closeDispatchModal()">&#10005;</button>
+    <div class="dispatch-modal-card">
+      <!-- Header -->
+      <div class="dispatch-modal-header">
+        <div class="dispatch-modal-header-left">
+          <span style="font-size:1.5rem;">🚐</span>
+          <div>
+            <div id="dispatch-modal-title" style="font-weight:700;font-size:1rem;color:#1e1b4b;">Dispatch Vehicle Move</div>
+            <div style="font-size:0.75rem;color:#7c3aed;">Assign a vehicle to a new location</div>
+          </div>
+        </div>
+        <button class="dispatch-close-btn" onclick="closeDispatchModal()">✕</button>
       </div>
-      <div class="modal-body">
-        <!-- Car preview -->
-        <div id="dispatch-vehicle-preview" class="dispatch-vehicle-preview"></div>
 
-        <!-- Vehicle picker -->
-        <div class="form-group" style="margin-top:10px;">
-          <label style="font-weight:700;font-size:0.9rem;">🚗 Vehicle</label>
-          <select id="dispatch-vehicle-select" class="form-control dispatch-big-select" onchange="updateDispatchPreview()">
-            <option value="">— Select vehicle —</option>
+      <!-- Car preview strip -->
+      <div id="dispatch-vehicle-preview" class="dispatch-vehicle-preview"></div>
+
+      <!-- Fields -->
+      <div class="dispatch-fields">
+        <div class="dispatch-field-row">
+          <span class="dispatch-field-icon">🚗</span>
+          <select id="dispatch-vehicle-select" class="dispatch-select" onchange="updateDispatchPreview()">
+            <option value="">Select vehicle…</option>
           </select>
         </div>
-
-        <!-- Destination -->
-        <div class="form-group">
-          <label style="font-weight:700;font-size:0.9rem;">📍 Move To</label>
-          <select id="dispatch-destination" class="form-control dispatch-big-select">
-            <option value="">— Select destination —</option>
-            <option value="HNL">🏠 HNL</option>
-            <option value="1585 Kapiolani">🏠 1585 Kapiolani</option>
-            <option value="94-530 Lumiauau">🏠 94-530 Lumiauau</option>
+        <div class="dispatch-field-row">
+          <span class="dispatch-field-icon">📍</span>
+          <select id="dispatch-destination" class="dispatch-select">
+            <option value="">Move to…</option>
+            <option value="HNL">HNL</option>
+            <option value="1585 Kapiolani">1585 Kapiolani</option>
+            <option value="94-530 Lumiauau">94-530 Lumiauau</option>
           </select>
         </div>
-
-        <!-- Assign driver -->
-        <div class="form-group">
-          <label style="font-weight:700;font-size:0.9rem;">👤 Assign To <span style="font-weight:400;font-size:0.78rem;color:#6b7280;">(optional)</span></label>
-          <select id="dispatch-driver-select" class="form-control dispatch-big-select">
-            <option value="">— Unassigned —</option>
+        <div class="dispatch-field-row">
+          <span class="dispatch-field-icon">👤</span>
+          <select id="dispatch-driver-select" class="dispatch-select">
+            <option value="">Assign driver… (optional)</option>
           </select>
         </div>
-
-        <!-- Notes -->
-        <div class="form-group">
-          <label style="font-size:0.85rem;color:#6b7280;">Notes (optional)</label>
-          <input type="text" id="dispatch-notes" class="form-control" placeholder="e.g. Keys in office drawer" maxlength="150">
+        <div class="dispatch-field-row">
+          <span class="dispatch-field-icon">📝</span>
+          <input type="text" id="dispatch-notes" class="dispatch-input" placeholder="Notes (optional)" maxlength="150">
         </div>
-
-        <p id="dispatch-modal-error" class="error-msg"></p>
       </div>
-      <div class="modal-footer">
-        <button class="btn btn-outline" onclick="closeDispatchModal()">Cancel</button>
-        <button class="btn btn-primary" id="dispatch-submit-btn" onclick="submitDispatch()" style="background:#7c3aed;border-color:#7c3aed;min-width:130px;">🚐 Dispatch</button>
+
+      <p id="dispatch-modal-error" class="error-msg" style="margin:0 16px 4px;"></p>
+
+      <div class="dispatch-modal-footer">
+        <button class="dispatch-cancel-btn" onclick="closeDispatchModal()">Cancel</button>
+        <button id="dispatch-submit-btn" class="dispatch-go-btn" onclick="submitDispatch()">🚐 Dispatch Move</button>
       </div>
     </div>
   </div>

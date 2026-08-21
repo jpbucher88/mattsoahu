@@ -2350,7 +2350,11 @@ function renderLocationsWidget() {
         const slotBadge = isHNL && (v.parkingRow || v.parkingLevel)
           ? `<span class="hnl-slot-badge">${escapeHtml((v.parkingRow || '') + (v.parkingLevel || ''))}</span>`
           : '';
-        html += `<div class="location-vehicle-chip-wrap"><div class="location-vehicle-chip${woCount>0?' chip-has-issues':''}" data-vid="${v.id}">${escapeHtml(v.plate)}${slotBadge}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${parkBadge}</div>`;
+        // Move badge — highlight if this vehicle has an active relocation dispatch
+        const activeMove = _activeMoves.find(m => m.vehicleId === v.id);
+        const moveBadge = activeMove ? `<span class="chip-move-badge" title="Move dispatched → ${escapeHtml(activeMove.toLocation)}">🚐</span>` : '';
+        const chipClass = `location-vehicle-chip${woCount>0?' chip-has-issues':''}${activeMove?' chip-has-move':''}`;
+        html += `<div class="location-vehicle-chip-wrap"><div class="${chipClass}" data-vid="${v.id}">${escapeHtml(v.plate)}${moveBadge}${slotBadge}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${parkBadge}</div>`;
       }
       html += '</div>';
     }
@@ -16260,6 +16264,9 @@ window.openLearningPage = function() {
   if (disp && currentUser) disp.textContent = currentUser.displayName || currentUser.email;
   const shareBtn = $('btn-add-shared-resource');
   if (shareBtn) shareBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
+  // Show SOP admin controls for admins only
+  const sopAdminCtrl = $('sop-admin-controls');
+  if (sopAdminCtrl) sopAdminCtrl.style.display = currentUserRole === 'admin' ? '' : 'none';
   // Populate admin user filter dropdown
   const filterSel = $('learning-user-filter');
   if (filterSel) {
@@ -16288,10 +16295,105 @@ window.openLearningPage = function() {
   if (pg) pg.classList.add('active');
   window.scrollTo(0, 0);
   loadLearningItems();
+  loadSOPs();
 };
 
 window.closeLearningPage = function() {
   showPage('dashboard');
+};
+
+// ================================================================
+// SOPs — Standard Operating Procedures (admin upload, all-user view)
+// ================================================================
+
+async function loadSOPs() {
+  const list = $('sop-list');
+  if (!list) return;
+  list.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const snap = await db.collection('sops').orderBy('uploadedAt', 'desc').get();
+    if (snap.empty) {
+      list.innerHTML = currentUserRole === 'admin'
+        ? '<p class="hint">No SOPs uploaded yet. Click "Upload SOP" to add the first one.</p>'
+        : '<p class="hint">No SOPs available yet.</p>';
+      return;
+    }
+    const isAdmin = currentUserRole === 'admin';
+    list.innerHTML = snap.docs.map(doc => {
+      const d = doc.data();
+      const ts = d.uploadedAt ? (d.uploadedAt.toDate ? d.uploadedAt.toDate() : new Date(d.uploadedAt)) : null;
+      const dateStr = ts ? ts.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+      const ext = (d.fileName || '').split('.').pop().toLowerCase();
+      const icon = ext === 'pdf' ? '📄' : (ext.match(/docx?/) ? '📝' : '🖼️');
+      const deleteBtn = isAdmin
+        ? `<button class="btn btn-sm btn-outline sop-delete-btn" onclick="deleteSOP('${doc.id}','${escapeHtml(d.storagePath || '')}')">🗑️</button>` : '';
+      return `<div class="sop-card">
+        <span class="sop-icon">${icon}</span>
+        <div class="sop-info">
+          <a href="${escapeHtml(d.url)}" target="_blank" class="sop-name">${escapeHtml(d.name || d.fileName || 'Untitled SOP')}</a>
+          <div class="sop-meta">${dateStr ? 'Uploaded ' + dateStr : ''}${d.uploadedBy ? ' · ' + escapeHtml(d.uploadedBy) : ''}</div>
+        </div>
+        ${deleteBtn}
+      </div>`;
+    }).join('');
+  } catch (e) {
+    console.error('Load SOPs error:', e);
+    list.innerHTML = '<p class="hint">Error loading SOPs.</p>';
+  }
+}
+
+window.handleSopUpload = async function(input) {
+  if (!input.files || !input.files[0]) return;
+  if (currentUserRole !== 'admin') { toast('Only admins can upload SOPs.', 'warning'); return; }
+  const file = input.files[0];
+  input.value = ''; // reset so same file can be re-uploaded
+  const progress = $('sop-upload-progress');
+
+  // Prompt for a friendly name
+  const name = window.prompt(`Name this SOP (leave blank to use filename):`, file.name.replace(/\.[^.]+$/, ''));
+  if (name === null) return; // cancelled
+
+  const sopName = (name && name.trim()) || file.name;
+  const storage = getStorage();
+  if (!storage) { toast('Storage not available.', 'error'); return; }
+
+  const path = `sops/${Date.now()}_${file.name}`;
+  const ref = storage.ref(path);
+
+  if (progress) { progress.style.display = ''; progress.textContent = '⬆️ Uploading…'; }
+  try {
+    const snap = await ref.put(file);
+    const url = await snap.ref.getDownloadURL();
+    await db.collection('sops').add({
+      name: sopName,
+      fileName: file.name,
+      url,
+      storagePath: path,
+      uploadedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      uploadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    if (progress) { progress.style.display = 'none'; }
+    toast(`SOP "${sopName}" uploaded ✓`, 'success');
+    loadSOPs();
+  } catch (e) {
+    console.error('SOP upload error:', e);
+    if (progress) { progress.style.display = 'none'; }
+    toast('Upload failed. Try again.', 'error');
+  }
+};
+
+window.deleteSOP = async function(docId, storagePath) {
+  const ok = await confirm('Delete SOP', 'Permanently delete this SOP?');
+  if (!ok) return;
+  try {
+    await db.collection('sops').doc(docId).delete();
+    if (storagePath) {
+      const storage = getStorage();
+      if (storage) storage.ref(storagePath).delete().catch(() => {});
+    }
+    toast('SOP deleted.', 'success');
+    loadSOPs();
+  } catch (e) { toast('Failed to delete.', 'error'); }
 };
 
 async function loadLearningItems() {
@@ -21915,6 +22017,7 @@ let _relocationsUnsub = null; // Firestore listener
 let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
 let _editingMoveId = null; // ID of move being edited
 let _relocUsersCache = []; // [{name, uid}] loaded once
+let _activeMoves = []; // current active moves — used to badge fleet chips
 
 // Color → car emoji helper
 function _carColorEmoji(color) {
@@ -22209,26 +22312,30 @@ function subscribeRelocations() {
 }
 
 function renderRelocationsWidget(moves) {
+  _activeMoves = moves; // keep module-level copy so fleet chips can reference it
   const list = $('relocations-list');
   const countBadge = $('relocations-count');
   if (!list) return;
 
-  // Badge: show count when moves exist, hide when empty
+  // Badge count
   if (countBadge) {
     countBadge.textContent = moves.length;
     countBadge.style.display = moves.length ? '' : 'none';
   }
 
-  // Show Dispatch button always (admin/manager); it's always in the header
+  // Dispatch button visible to admin/manager only
   const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
   const dispatchBtn = $('btn-dispatch-move');
   if (dispatchBtn) dispatchBtn.style.display = isAdmin ? '' : 'none';
 
+  // Re-render fleet chips so move badges appear/disappear
+  renderLocationsWidget();
+
   if (!moves.length) {
     list.innerHTML = `<div class="reloc-empty">
-      <span style="font-size:1.8rem;">🚐</span>
+      <span style="font-size:1.6rem;">🚐</span>
       <p>No active vehicle moves.</p>
-      ${isAdmin ? `<button class="btn btn-sm" onclick="openDispatchModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 18px;font-weight:600;cursor:pointer;">+ Dispatch a Move</button>` : '<p style="font-size:0.8rem;color:#9ca3af;">Check back here for assigned moves.</p>'}
+      ${isAdmin ? `<button onclick="openDispatchModal()" class="btn-dispatch-pill" style="margin-top:4px;">+ Dispatch a Move</button>` : '<p style="font-size:0.78rem;color:#9ca3af;">Moves assigned to you will appear here.</p>'}
     </div>`;
     return;
   }
@@ -22236,8 +22343,7 @@ function renderRelocationsWidget(moves) {
   const myName = (currentUserDisplayName || '').toLowerCase();
 
   list.innerHTML = moves.map(m => {
-    const v = vehiclesCache.find(x => x.id === m.vehicleId) || {};
-    const color = m.vehicleColor || v.color || '';
+    const color = m.vehicleColor || '';
     const bgColor = _cssColor(color);
     const emoji = _carColorEmoji(color);
     const isPending = m.status === 'pending';
@@ -22245,7 +22351,6 @@ function renderRelocationsWidget(moves) {
     const isMyMove = m.driverName && m.driverName.toLowerCase() === myName;
     const canAct = isMyMove || isAdmin;
 
-    // Status + driver assignment display
     const assignedLabel = m.driverName
       ? `<span class="reloc-driver-badge">👤 ${escapeHtml(m.driverName)}</span>`
       : `<span class="reloc-driver-badge reloc-unassigned">👤 Unassigned</span>`;
@@ -22254,13 +22359,12 @@ function renderRelocationsWidget(moves) {
       ? `<span class="reloc-status reloc-pending">Pending</span>`
       : `<span class="reloc-status reloc-inprogress">In Progress</span>`;
 
-    // Action buttons
     const claimBtn = (isPending && !isAdmin)
       ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This Move</button>` : '';
     const arriveBtn = (isInProgress && canAct)
       ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}')">✅ Arrived</button>` : '';
     const editBtn = isAdmin
-      ? `<button class="btn btn-sm btn-outline reloc-edit-btn" onclick='editMove(${JSON.stringify(m)})' title="Edit move">✏️ Edit</button>` : '';
+      ? `<button class="btn btn-sm btn-outline reloc-edit-btn" onclick='editMove(${JSON.stringify(m).replace(/'/g,"&#39;")})'>✏️ Edit</button>` : '';
     const cancelBtn = isAdmin
       ? `<button class="btn btn-sm btn-outline reloc-cancel-btn" onclick="cancelMove('${m.id}')" title="Cancel">✕</button>` : '';
 
