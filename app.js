@@ -21876,12 +21876,14 @@ window._vrcSkip = function(btn) {
 
 let _relocationsUnsub = null; // Firestore listener
 let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
+let _editingMoveId = null; // ID of move being edited
+let _relocUsersCache = []; // [{name, uid}] loaded once
 
-// Color → car emoji helper (picks a colored car most like the vehicle's color)
+// Color → car emoji helper
 function _carColorEmoji(color) {
   if (!color) return '🚗';
   const c = color.toLowerCase();
-  if (c.includes('red') || c.includes('crimson')) return '🚗'; // red car
+  if (c.includes('red') || c.includes('crimson')) return '🚗';
   if (c.includes('blue') || c.includes('navy')) return '🔵';
   if (c.includes('black')) return '⬛';
   if (c.includes('white') || c.includes('pearl')) return '⬜';
@@ -21894,14 +21896,12 @@ function _carColorEmoji(color) {
   return '🚗';
 }
 
-// Build a simple colored car badge from vehicle data
 function _vehicleCarBadge(v) {
   const emoji = _carColorEmoji(v.color);
-  const colorDot = v.color ? `<span class="reloc-color-dot" style="background:${_cssColor(v.color)};" title="${escapeHtml(v.color)}"></span>` : '';
+  const colorDot = v.color ? `<span class="reloc-color-dot" style="background:${_cssColor(v.color)};"></span>` : '';
   return `<span class="reloc-car-badge">${emoji}${colorDot} <strong>${escapeHtml(v.plate)}</strong> <span class="reloc-car-sub">${escapeHtml(v.color || '')} ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span></span>`;
 }
 
-// Map color name to CSS color (best-effort)
 function _cssColor(name) {
   if (!name) return '#9ca3af';
   const c = name.toLowerCase();
@@ -21913,22 +21913,72 @@ function _cssColor(name) {
   return '#9ca3af';
 }
 
-// Open dispatch modal (can be pre-filled from vehicle chip)
-window.openDispatchModal = function(vehicleId) {
+// Load all users into the driver dropdown (cached after first call)
+async function _loadRelocUsers() {
+  if (_relocUsersCache.length) return _relocUsersCache;
+  try {
+    const snap = await db.collection('users').orderBy('displayName').get();
+    _relocUsersCache = snap.docs.map(d => ({
+      name: d.data().displayName || d.data().email || d.id,
+      uid: d.id
+    })).filter(u => u.name);
+  } catch (e) { _relocUsersCache = []; }
+  return _relocUsersCache;
+}
+
+function _populateDriverSelect(selectedName) {
+  const sel = $('dispatch-driver-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Unassigned —</option>';
+  _relocUsersCache.forEach(u => {
+    const opt = document.createElement('option');
+    opt.value = u.name;
+    opt.textContent = u.name;
+    if (selectedName && u.name === selectedName) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+// Open dispatch modal — pass vehicleId to pre-select, pass existingMove to edit
+window.openDispatchModal = async function(vehicleId, existingMove) {
+  _editingMoveId = existingMove ? existingMove.id : null;
+  const titleEl = $('dispatch-modal-title');
+  const submitBtn = $('dispatch-submit-btn');
+  if (titleEl) titleEl.textContent = _editingMoveId ? '✏️ Edit Vehicle Move' : '🚐 Dispatch Vehicle Move';
+  if (submitBtn) submitBtn.textContent = _editingMoveId ? '✏️ Save Changes' : '🚐 Dispatch';
+
+  // Populate vehicle list — all at-home vehicles (or all if editing an existing move)
   const sel = $('dispatch-vehicle-select');
   if (sel) {
     sel.innerHTML = '<option value="">— Select vehicle —</option>';
-    const atHome = vehiclesCache.filter(v => v.tripStatus === 'home' || !v.tripStatus);
-    atHome.sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
-    atHome.forEach(v => {
+    const candidates = _editingMoveId
+      ? vehiclesCache  // editing: show all vehicles
+      : vehiclesCache.filter(v => !v.tripStatus || v.tripStatus === 'home');
+    candidates.sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
+    candidates.forEach(v => {
       const opt = document.createElement('option');
       opt.value = v.id;
-      opt.textContent = `${v.plate}${v.color ? ' · ' + v.color : ''}${v.make ? ' ' + v.make : ''}${v.model ? ' ' + v.model : ''}`;
+      const label = [v.plate, v.color, v.make, v.model].filter(Boolean).join(' · ');
+      opt.textContent = label;
       sel.appendChild(opt);
     });
     if (vehicleId) sel.value = vehicleId;
+    else if (existingMove) sel.value = existingMove.vehicleId || '';
   }
-  if ($('dispatch-notes')) $('dispatch-notes').value = '';
+
+  // Destination
+  const dest = $('dispatch-destination');
+  if (dest && existingMove) dest.value = existingMove.toLocation || '';
+  else if (dest) dest.value = '';
+
+  // Notes
+  const notesEl = $('dispatch-notes');
+  if (notesEl) notesEl.value = existingMove ? (existingMove.notes || '') : '';
+
+  // Load & populate drivers
+  await _loadRelocUsers();
+  _populateDriverSelect(existingMove ? (existingMove.driverName || '') : '');
+
   if ($('dispatch-modal-error')) $('dispatch-modal-error').textContent = '';
   updateDispatchPreview();
   $('dispatch-modal-overlay').style.display = 'flex';
@@ -21936,17 +21986,21 @@ window.openDispatchModal = function(vehicleId) {
 
 window.closeDispatchModal = function() {
   $('dispatch-modal-overlay').style.display = 'none';
+  _editingMoveId = null;
 };
 
 window.updateDispatchPreview = function() {
   const sel = $('dispatch-vehicle-select');
   const preview = $('dispatch-vehicle-preview');
   if (!sel || !preview) return;
-  const vid = sel.value;
-  const v = vehiclesCache.find(x => x.id === vid);
+  const v = vehiclesCache.find(x => x.id === sel.value);
   if (v) {
-    preview.innerHTML = _vehicleCarBadge(v);
-    preview.style.display = 'block';
+    const emoji = _carColorEmoji(v.color);
+    const dot = v.color ? `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${_cssColor(v.color)};vertical-align:middle;margin-right:4px;"></span>` : '';
+    preview.innerHTML = `<span style="font-size:1.6rem;line-height:1;">${emoji}</span> ${dot}<strong style="font-size:1rem;">${escapeHtml(v.plate)}</strong> <span style="color:#6d28d9;font-size:0.85rem;">${escapeHtml(v.color || '')} ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span>`;
+    preview.style.display = 'flex';
+    preview.style.alignItems = 'center';
+    preview.style.gap = '6px';
   } else {
     preview.style.display = 'none';
     preview.innerHTML = '';
@@ -21956,6 +22010,7 @@ window.updateDispatchPreview = function() {
 window.submitDispatch = async function() {
   const vid = $('dispatch-vehicle-select') ? $('dispatch-vehicle-select').value : '';
   const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
+  const driverName = $('dispatch-driver-select') ? $('dispatch-driver-select').value : '';
   const notes = $('dispatch-notes') ? $('dispatch-notes').value.trim() : '';
   const errEl = $('dispatch-modal-error');
   if (!vid) { if (errEl) errEl.textContent = 'Please select a vehicle.'; return; }
@@ -21963,38 +22018,53 @@ window.submitDispatch = async function() {
   if (errEl) errEl.textContent = '';
   const v = vehiclesCache.find(x => x.id === vid);
   if (!v) { if (errEl) errEl.textContent = 'Vehicle not found.'; return; }
+
+  const submitBtn = $('dispatch-submit-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+
   try {
-    await db.collection('vehicleMoves').add({
-      vehicleId: vid,
-      vehiclePlate: v.plate || '',
-      vehicleColor: v.color || '',
-      vehicleMake: v.make || '',
-      vehicleModel: v.model || '',
-      fromLocation: v.homeLocation || '',
-      toLocation: dest,
-      notes: notes,
-      status: 'pending',
-      dispatchedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
-      dispatchedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
+    if (_editingMoveId) {
+      // Edit existing move
+      await db.collection('vehicleMoves').doc(_editingMoveId).update({
+        vehicleId: vid,
+        vehiclePlate: v.plate || '',
+        vehicleColor: v.color || '',
+        vehicleMake: v.make || '',
+        vehicleModel: v.model || '',
+        fromLocation: v.homeLocation || '',
+        toLocation: dest,
+        notes: notes,
+        driverName: driverName || '',
+        status: driverName ? 'in-progress' : 'pending',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      });
+      toast(`Move updated for ${v.plate} ✓`, 'success');
+    } else {
+      // New dispatch
+      await db.collection('vehicleMoves').add({
+        vehicleId: vid,
+        vehiclePlate: v.plate || '',
+        vehicleColor: v.color || '',
+        vehicleMake: v.make || '',
+        vehicleModel: v.model || '',
+        fromLocation: v.homeLocation || '',
+        toLocation: dest,
+        notes: notes,
+        driverName: driverName || '',
+        status: driverName ? 'in-progress' : 'pending',
+        dispatchedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+        dispatchedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      toast(`Move dispatched for ${v.plate} → ${dest} ✓`, 'success');
+    }
     closeDispatchModal();
-    toast(`Move dispatched for ${v.plate} → ${dest} ✓`, 'success');
   } catch (e) {
     console.error('Dispatch error:', e);
-    if (errEl) errEl.textContent = 'Failed to dispatch. Try again.';
+    if (errEl) errEl.textContent = 'Failed to save. Try again.';
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = _editingMoveId ? '✏️ Save Changes' : '🚐 Dispatch'; }
   }
-};
-
-// Driver claims a move (sets status to in-progress + driverName)
-window.claimMove = async function(moveId) {
-  try {
-    await db.collection('vehicleMoves').doc(moveId).update({
-      status: 'in-progress',
-      driverName: currentUserDisplayName || (currentUser ? currentUser.email : ''),
-      claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
-    });
-    toast('Move claimed! Head to the vehicle.', 'success');
-  } catch (e) { toast('Failed to claim move.', 'error'); }
 };
 
 // Driver marks arrived — if destination is HNL, prompt for row/level
@@ -22028,11 +22098,9 @@ window.confirmHnlArrival = async function() {
 async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
   if (!moveId) return;
   try {
-    // Get the move doc to find vehicleId
     const snap = await db.collection('vehicleMoves').doc(moveId).get();
     if (!snap.exists) { toast('Move not found.', 'error'); return; }
     const move = snap.data();
-    // Mark move completed
     const update = {
       status: 'completed',
       completedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -22058,9 +22126,20 @@ async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
   }
 }
 
-// Cancel a move (admin/manager only)
-window.cancelMove = async function(moveId) {
-  const ok = await confirm('Cancel Move', 'Cancel this vehicle move?');
+// Driver self-assigns by tapping "Take This Move"
+window.claimMove = async function(moveId) {
+  try {
+    await db.collection('vehicleMoves').doc(moveId).update({
+      status: 'in-progress',
+      driverName: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast('Move claimed! You are now assigned.', 'success');
+  } catch (e) { toast('Failed to claim move.', 'error'); }
+};
+
+// Cancel a move
+window.cancelMove = async function(moveId) {  const ok = await confirm('Cancel Move', 'Cancel this vehicle move?');
   if (!ok) return;
   try {
     await db.collection('vehicleMoves').doc(moveId).update({
@@ -22072,67 +22151,104 @@ window.cancelMove = async function(moveId) {
   } catch (e) { toast('Failed to cancel.', 'error'); }
 };
 
-// Subscribe to active moves and render the widget
+// Subscribe to active moves — no orderBy to avoid composite index requirement; sort client-side
 function subscribeRelocations() {
   if (_relocationsUnsub) _relocationsUnsub();
   _relocationsUnsub = db.collection('vehicleMoves')
     .where('status', 'in', ['pending', 'in-progress'])
-    .orderBy('dispatchedAt', 'asc')
     .onSnapshot(snap => {
-      renderRelocationsWidget(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    }, e => console.warn('Relocations listener error:', e));
+      const moves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Sort by dispatchedAt ascending (oldest first) client-side
+      moves.sort((a, b) => {
+        const aT = a.dispatchedAt ? (a.dispatchedAt.toDate ? a.dispatchedAt.toDate().getTime() : new Date(a.dispatchedAt).getTime()) : 0;
+        const bT = b.dispatchedAt ? (b.dispatchedAt.toDate ? b.dispatchedAt.toDate().getTime() : new Date(b.dispatchedAt).getTime()) : 0;
+        return aT - bT;
+      });
+      renderRelocationsWidget(moves);
+    }, e => {
+      console.warn('Relocations listener error:', e);
+      renderRelocationsWidget([]); // show empty state even on error
+    });
 }
 
 function renderRelocationsWidget(moves) {
-  const widget = $('relocations-widget');
   const list = $('relocations-list');
   const countBadge = $('relocations-count');
-  if (!widget || !list) return;
+  if (!list) return;
+
+  // Badge: show count when moves exist, hide when empty
+  if (countBadge) {
+    countBadge.textContent = moves.length;
+    countBadge.style.display = moves.length ? '' : 'none';
+  }
+
+  // Show Dispatch button always (admin/manager); it's always in the header
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const dispatchBtn = $('btn-dispatch-move');
+  if (dispatchBtn) dispatchBtn.style.display = isAdmin ? '' : 'none';
 
   if (!moves.length) {
-    widget.style.display = 'none';
+    list.innerHTML = `<div class="reloc-empty">
+      <span style="font-size:1.8rem;">🚐</span>
+      <p>No active vehicle moves.</p>
+      ${isAdmin ? `<button class="btn btn-sm" onclick="openDispatchModal()" style="background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:6px 18px;font-weight:600;cursor:pointer;">+ Dispatch a Move</button>` : '<p style="font-size:0.8rem;color:#9ca3af;">Check back here for assigned moves.</p>'}
+    </div>`;
     return;
   }
-  widget.style.display = '';
-  if (countBadge) countBadge.textContent = moves.length;
 
-  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
   const myName = (currentUserDisplayName || '').toLowerCase();
 
   list.innerHTML = moves.map(m => {
     const v = vehiclesCache.find(x => x.id === m.vehicleId) || {};
-    const carBadge = `<span class="reloc-car-icon" style="background:${_cssColor(m.vehicleColor || v.color)}">${_carColorEmoji(m.vehicleColor || v.color)}</span>`;
+    const color = m.vehicleColor || v.color || '';
+    const bgColor = _cssColor(color);
+    const emoji = _carColorEmoji(color);
     const isPending = m.status === 'pending';
     const isInProgress = m.status === 'in-progress';
     const isMyMove = m.driverName && m.driverName.toLowerCase() === myName;
+    const canAct = isMyMove || isAdmin;
 
-    const claimBtn = isPending
-      ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This Move</button>` : '';
-    const arriveBtn = (isInProgress && (isMyMove || isAdmin))
-      ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}')">✅ Arrived</button>` : '';
-    const cancelBtn = isAdmin
-      ? `<button class="btn btn-sm btn-outline reloc-cancel-btn" onclick="cancelMove('${m.id}')" title="Cancel move">✕</button>` : '';
+    // Status + driver assignment display
+    const assignedLabel = m.driverName
+      ? `<span class="reloc-driver-badge">👤 ${escapeHtml(m.driverName)}</span>`
+      : `<span class="reloc-driver-badge reloc-unassigned">👤 Unassigned</span>`;
 
     const statusBadge = isPending
       ? `<span class="reloc-status reloc-pending">Pending</span>`
-      : `<span class="reloc-status reloc-inprogress">In Progress${m.driverName ? ' · ' + escapeHtml(m.driverName) : ''}</span>`;
+      : `<span class="reloc-status reloc-inprogress">In Progress</span>`;
+
+    // Action buttons
+    const claimBtn = (isPending && !isAdmin)
+      ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This Move</button>` : '';
+    const arriveBtn = (isInProgress && canAct)
+      ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}')">✅ Arrived</button>` : '';
+    const editBtn = isAdmin
+      ? `<button class="btn btn-sm btn-outline reloc-edit-btn" onclick='editMove(${JSON.stringify(m)})' title="Edit move">✏️ Edit</button>` : '';
+    const cancelBtn = isAdmin
+      ? `<button class="btn btn-sm btn-outline reloc-cancel-btn" onclick="cancelMove('${m.id}')" title="Cancel">✕</button>` : '';
 
     return `<div class="reloc-card">
       <div class="reloc-car-row">
-        ${carBadge}
+        <div class="reloc-car-icon" style="background:${bgColor};">${emoji}</div>
         <div class="reloc-info">
-          <div class="reloc-plate">${escapeHtml(m.vehiclePlate)} <span class="reloc-color-label">${escapeHtml(m.vehicleColor || '')} ${escapeHtml(m.vehicleMake || '')} ${escapeHtml(m.vehicleModel || '')}</span></div>
-          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} → 🏠 ${escapeHtml(m.toLocation)}</div>
-          ${m.notes ? `<div class="reloc-notes">${escapeHtml(m.notes)}</div>` : ''}
+          <div class="reloc-plate">${escapeHtml(m.vehiclePlate)}<span class="reloc-color-label">${color ? ' · ' + escapeHtml(color) : ''} ${escapeHtml(m.vehicleMake || '')} ${escapeHtml(m.vehicleModel || '')}</span></div>
+          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} <span style="color:#9ca3af;">→</span> 🏠 <strong>${escapeHtml(m.toLocation)}</strong></div>
+          ${m.notes ? `<div class="reloc-notes">📝 ${escapeHtml(m.notes)}</div>` : ''}
         </div>
         <div class="reloc-status-col">${statusBadge}${cancelBtn}</div>
       </div>
-      <div class="reloc-actions">${claimBtn}${arriveBtn}</div>
+      <div class="reloc-assignment-row">${assignedLabel}${editBtn}</div>
+      ${(claimBtn || arriveBtn) ? `<div class="reloc-actions">${claimBtn}${arriveBtn}</div>` : ''}
     </div>`;
   }).join('');
 }
 
-// Start listening once user logs in (called from auth state handler)
+// Edit an existing move — opens dispatch modal pre-filled
+window.editMove = function(moveData) {
+  openDispatchModal(moveData.vehicleId, moveData);
+};
+
+// Start listening once user logs in
 window._startRelocationsListener = function() {
   subscribeRelocations();
 };
