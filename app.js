@@ -22913,8 +22913,12 @@ window.loadGoalsPanel = async function() {
   if (!container) return;
   container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
 
+  // Default date filter to today if not set
+  const dateFilterEl = $('goals-filter-date');
+  if (dateFilterEl && !dateFilterEl.value) dateFilterEl.value = todayDateString();
+
   // Use the date filter if set, otherwise last 7 days
-  const filterDate = $('goals-filter-date')?.value;
+  const filterDate = dateFilterEl?.value;
   let rangeStart, rangeEnd, rangeLabel;
   if (filterDate) {
     rangeStart = new Date(filterDate + 'T00:00:00');
@@ -22932,14 +22936,14 @@ window.loadGoalsPanel = async function() {
       db.collection('shiftLogs')
         .where('date', '>=', rangeStart.toISOString().slice(0,10))
         .where('date', '<=', rangeEnd.toISOString().slice(0,10))
-        .orderBy('date', 'asc').get(),
+        .get(),   // no orderBy — avoids composite index; sorted client-side below
       db.collection('userActivity')
         .where('at', '>=', firebase.firestore.Timestamp.fromDate(rangeStart))
         .where('at', '<=', firebase.firestore.Timestamp.fromDate(rangeEnd))
         .get(),
     ]);
 
-    const shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.date.localeCompare(b.date));
     const actItems = actSnap.docs.map(d => ({ id: d.id, ...d.data() }));
 
     // Group shift logs by employee
@@ -23098,20 +23102,6 @@ window.sendCoachingMessage = async function() {
     closeCoachingModal();
     toast(`Coaching note sent to ${_coachingTargetName} ✓`, 'success');
   } catch(e) { if (errEl) errEl.textContent = 'Failed to send.'; }
-};
-
-window.loadGoalsPanel = async function() {
-  const container = $('goals-panel-content');
-  if (!container) return;
-  container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  try {
-    const snap = await db.collection('userActivity')
-      .where('at', '>=', firebase.firestore.Timestamp.fromDate(sevenDaysAgo))
-      .orderBy('at', 'desc').get();
-    // Defer to the new shift-based loadGoalsPanel below
-    window.loadGoalsPanel(); // replaced below
-  } catch(e) {}
 };
 
 // Inject 72h Lagoon Drive alerts directly into the urgent banner DOM
