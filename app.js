@@ -1262,8 +1262,10 @@ auth.onAuthStateChanged(async (user) => {
       _checkOrphanedPendingUploads();
       // Flag vehicles with no mileage update in 14+ days
       setTimeout(() => checkStaleMileage(), 3000);
-      // Start relocations real-time listener
-      if (typeof window._startRelocationsListener === 'function') window._startRelocationsListener();
+      // Start relocations real-time listener (wrapped so it never breaks login)
+      try {
+        if (typeof window._startRelocationsListener === 'function') window._startRelocationsListener();
+      } catch(relocErr) { console.warn('Relocations listener setup error:', relocErr); }
       showPage('dashboard');
       startMailListener();
       startIncidentListener();
@@ -1317,7 +1319,7 @@ auth.onAuthStateChanged(async (user) => {
       }
     } catch (err) {
       console.error('Auth state error:', err);
-      toast('Error loading profile', 'error');
+      toast('Error loading profile: ' + (err && err.message ? err.message.slice(0,80) : String(err).slice(0,80)), 'error');
     } finally {
       hideLoading();
     }
