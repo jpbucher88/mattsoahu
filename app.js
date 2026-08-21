@@ -22054,10 +22054,294 @@ window._vrcSkip = function(btn) {
 };
 
 // ================================================================
-// VEHICLE RELOCATIONS — Dispatch moves between locations
+// PARTS QUEUE — Order → Arrival → Installation tracking
 // ================================================================
 
-let _relocationsUnsub = null; // Firestore listener
+let _partLabelData = null; // current part being labelled
+
+// Open the "Order a Part" modal
+window.openNewPartOrder = function(prefillVehicleId, prefillWorkOrderId) {
+  const sel = $('po-vehicle');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Select vehicle —</option>';
+    [...vehiclesCache].sort((a,b)=>(a.plate||'').localeCompare(b.plate||'')).forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = `${v.plate}${v.color ? ' · '+v.color : ''} ${v.make||''} ${v.model||''}`.trim();
+      if (prefillVehicleId && v.id === prefillVehicleId) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  }
+  ['po-part-name','po-vendor','po-order-num','po-notes'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  const costEl = $('po-cost'); if (costEl) costEl.value = '';
+  const etaEl = $('po-eta'); if (etaEl) etaEl.value = '';
+  const errEl = $('po-error'); if (errEl) errEl.textContent = '';
+  const titleEl = $('part-order-modal-title'); if (titleEl) titleEl.textContent = 'Order a Part';
+  const submitBtn = $('po-submit-btn'); if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📦 Place Order'; }
+  // Store work order link if provided
+  $('part-order-overlay')._workOrderId = prefillWorkOrderId || null;
+  $('part-order-overlay').style.display = 'flex';
+};
+
+window.closePartOrderModal = function() {
+  $('part-order-overlay').style.display = 'none';
+};
+
+window.submitPartOrder = async function() {
+  const vid = $('po-vehicle') ? $('po-vehicle').value : '';
+  const partName = $('po-part-name') ? $('po-part-name').value.trim() : '';
+  const vendor = $('po-vendor') ? $('po-vendor').value.trim() : '';
+  const orderNum = $('po-order-num') ? $('po-order-num').value.trim().toUpperCase() : '';
+  const cost = $('po-cost') ? (parseFloat($('po-cost').value) || null) : null;
+  const eta = $('po-eta') ? $('po-eta').value : '';
+  const notes = $('po-notes') ? $('po-notes').value.trim() : '';
+  const errEl = $('po-error');
+  if (!vid) { if(errEl) errEl.textContent = 'Select a vehicle.'; return; }
+  if (!partName) { if(errEl) errEl.textContent = 'Enter the part name.'; return; }
+  if (errEl) errEl.textContent = '';
+  const v = vehiclesCache.find(x => x.id === vid);
+  const submitBtn = $('po-submit-btn');
+  if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
+  try {
+    const doc = {
+      vehicleId: vid,
+      vehiclePlate: v ? (v.plate||'') : '',
+      vehicleMake: v ? (v.make||'') : '',
+      vehicleModel: v ? (v.model||'') : '',
+      vehicleColor: v ? (v.color||'') : '',
+      partName,
+      vendor: vendor || null,
+      orderNum: orderNum || null,
+      estimatedCost: cost,
+      eta: eta || null,
+      notes: notes || null,
+      status: 'ordered',
+      orderedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      orderedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      workOrderId: $('part-order-overlay')._workOrderId || null,
+    };
+    // Remove nulls
+    Object.keys(doc).forEach(k => { if (doc[k] === null) delete doc[k]; });
+    await db.collection('partsOrders').add(doc);
+    closePartOrderModal();
+    toast(`📦 Part ordered: ${partName} for ${v ? v.plate : 'vehicle'} ✓`, 'success');
+    // Track expense if cost given
+    if (cost && v) {
+      db.collection('expenses').add({
+        vehicleId: vid, vehiclePlate: v.plate||'', category:'Parts',
+        description: partName + (vendor ? ' ('+vendor+')' : '') + (orderNum ? ' #'+orderNum : ''),
+        amount: cost, date: todayDateString(),
+        addedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+        addedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        partsOrderPending: true,
+      }).catch(()=>{});
+    }
+    loadPartsQueue();
+  } catch(e) {
+    console.error('Part order error:', e);
+    if (errEl) errEl.textContent = 'Failed to save. Try again.';
+  } finally {
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📦 Place Order'; }
+  }
+};
+
+// Load and render the parts queue
+window.loadPartsQueue = async function() {
+  const container = $('parts-queue-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
+  try {
+    const snap = await db.collection('partsOrders')
+      .where('status', 'in', ['ordered','arrived'])
+      .orderBy('orderedAt', 'asc')
+      .get();
+    if (snap.empty) {
+      container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No outstanding parts orders. 🎉</p>';
+      return;
+    }
+    const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+    const today = todayDateString();
+    const ordered = [], arrived = [];
+    snap.forEach(doc => {
+      const d = { id: doc.id, ...doc.data() };
+      if (d.status === 'arrived') arrived.push(d);
+      else ordered.push(d);
+    });
+
+    const renderCard = (d) => {
+      const isArrived = d.status === 'arrived';
+      const etaStr = d.eta ? (d.eta < today ? `<span style="color:#dc2626;">ETA ${d.eta} PAST DUE</span>` : `ETA ${d.eta}`) : '';
+      const costStr = d.estimatedCost ? `$${d.estimatedCost.toFixed(2)}` : '';
+      const orderNumBadge = d.orderNum ? `<span class="pq-order-num">#${escapeHtml(d.orderNum)}</span>` : '';
+      const arrivedBadge = isArrived ? `<span class="pq-arrived-badge">✅ Arrived</span>` : `<span class="pq-ordered-badge">📦 Ordered</span>`;
+      const markArrivedBtn = (!isArrived && isAdmin)
+        ? `<button class="btn btn-sm btn-primary pq-btn" onclick="markPartArrived('${d.id}')">✅ Mark Arrived</button>` : '';
+      const installBtn = (isArrived && isAdmin)
+        ? `<button class="btn btn-sm pq-btn" style="background:#059669;color:#fff;border:none;" onclick="markPartInstalled('${d.id}')">🔧 Mark Installed</button>` : '';
+      const labelBtn = `<button class="btn btn-sm btn-outline pq-btn" onclick="showPartLabel('${d.id}')">🏷️ Label</button>`;
+      const deleteBtn = isAdmin ? `<button class="btn btn-sm btn-outline pq-btn pq-del-btn" onclick="deletePartOrder('${d.id}')">✕</button>` : '';
+      return `<div class="pq-card${isArrived ? ' pq-arrived' : ''}">
+        <div class="pq-card-top">
+          <div class="pq-badges">${arrivedBadge}${orderNumBadge}</div>
+          <div class="pq-vehicle-tag">🚗 ${escapeHtml(d.vehiclePlate)} <span style="color:#9ca3af;font-size:0.78rem;">${escapeHtml(d.vehicleColor||'')} ${escapeHtml(d.vehicleMake||'')} ${escapeHtml(d.vehicleModel||'')}</span></div>
+          ${deleteBtn}
+        </div>
+        <div class="pq-part-name">${escapeHtml(d.partName)}</div>
+        <div class="pq-meta">
+          ${d.vendor ? `🏪 ${escapeHtml(d.vendor)}` : ''}
+          ${costStr ? ` · ${costStr}` : ''}
+          ${etaStr ? ` · ${etaStr}` : ''}
+          ${d.notes ? `<div style="color:#6b7280;font-style:italic;margin-top:2px;">${escapeHtml(d.notes)}</div>` : ''}
+        </div>
+        <div class="pq-actions">${markArrivedBtn}${installBtn}${labelBtn}</div>
+      </div>`;
+    };
+
+    let html = '';
+    if (arrived.length) {
+      html += `<div class="pq-section-header pq-arrived-header">✅ Arrived — Ready to Install <span class="pq-count">${arrived.length}</span></div>`;
+      html += arrived.map(renderCard).join('');
+    }
+    if (ordered.length) {
+      html += `<div class="pq-section-header">📦 Ordered — Waiting on Delivery <span class="pq-count">${ordered.length}</span></div>`;
+      html += ordered.map(renderCard).join('');
+    }
+    container.innerHTML = html;
+  } catch(e) {
+    console.error('Parts queue error:', e);
+    container.innerHTML = '<p class="hint" style="padding:16px;color:#dc2626;">Error loading parts. Try refreshing.</p>';
+  }
+};
+
+// Mark a part as arrived — fires notification
+window.markPartArrived = async function(partId) {
+  try {
+    const snap = await db.collection('partsOrders').doc(partId).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+    await db.collection('partsOrders').doc(partId).update({
+      status: 'arrived',
+      arrivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      arrivedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    });
+    // Create urgent notification task so it surfaces in dashboard + banner
+    await db.collection('vehicleNotes').add({
+      vehicleId: d.vehicleId,
+      type: 'parts_arrived',
+      text: `📦 Part arrived: ${d.partName}${d.orderNum ? ' #'+d.orderNum : ''} for ${d.vehiclePlate}${d.vendor ? ' ('+d.vendor+')' : ''}`,
+      urgent: true,
+      done: false,
+      partOrderId: partId,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    }).catch(()=>{});
+    toast(`✅ ${d.partName} marked as arrived! Notification sent.`, 'success');
+    loadPartsQueue();
+    loadDashboardFollowUps();
+  } catch(e) { toast('Failed to update.', 'error'); }
+};
+
+// Mark a part as installed — creates maintenance record, removes from queue
+window.markPartInstalled = async function(partId) {
+  const ok = await confirm('Mark Installed', 'Mark this part as installed? This will log it as a maintenance record on the vehicle.');
+  if (!ok) return;
+  try {
+    const snap = await db.collection('partsOrders').doc(partId).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+    await db.collection('partsOrders').doc(partId).update({
+      status: 'installed',
+      installedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      installedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    });
+    // Auto-log maintenance record
+    const maintRecord = {
+      vehicleId: d.vehicleId,
+      plate: d.vehiclePlate,
+      serviceType: d.partName,
+      date: todayDateString(),
+      cost: d.estimatedCost || null,
+      location: d.vendor || null,
+      notes: [d.orderNum ? 'Order #'+d.orderNum : '', d.notes||''].filter(Boolean).join(' · ') || null,
+      partOrderId: partId,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser ? currentUser.uid : '',
+    };
+    Object.keys(maintRecord).forEach(k => { if (maintRecord[k] === null) delete maintRecord[k]; });
+    await db.collection('maintenance').add(maintRecord);
+    toast(`🔧 ${d.partName} installed on ${d.vehiclePlate} — maintenance record created ✓`, 'success');
+    loadPartsQueue();
+  } catch(e) { toast('Failed to mark installed.', 'error'); }
+};
+
+// Show part label in modal
+window.showPartLabel = async function(partId) {
+  try {
+    const snap = await db.collection('partsOrders').doc(partId).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+    _partLabelData = d;
+    const labelBox = $('part-label-content');
+    if (labelBox) {
+      const orderedDate = d.orderedAt
+        ? (d.orderedAt.toDate ? d.orderedAt.toDate() : new Date(d.orderedAt)).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' })
+        : todayDateString();
+      labelBox.innerHTML = `
+        <div class="part-label-inner">
+          <div class="pl-header">ALOHA FLEET</div>
+          <div class="pl-part">${escapeHtml(d.partName)}</div>
+          <div class="pl-vehicle">🚗 ${escapeHtml(d.vehiclePlate)} &nbsp;·&nbsp; ${escapeHtml(d.vehicleColor||'')} ${escapeHtml(d.vehicleMake||'')} ${escapeHtml(d.vehicleModel||'')}</div>
+          ${d.vendor ? `<div class="pl-vendor">📦 ${escapeHtml(d.vendor)}</div>` : ''}
+          ${d.orderNum ? `<div class="pl-ordernum">ORDER #${escapeHtml(d.orderNum)}</div>` : ''}
+          ${d.estimatedCost ? `<div class="pl-cost">$${d.estimatedCost.toFixed(2)}</div>` : ''}
+          <div class="pl-date">Ordered ${orderedDate}</div>
+        </div>`;
+    }
+    $('part-label-overlay').style.display = 'flex';
+  } catch(e) { toast('Could not load part details.', 'error'); }
+};
+
+// Print label using browser print
+window.printPartLabel = function() {
+  const labelEl = $('part-label-content');
+  if (!labelEl) return;
+  const printWin = window.open('', '_blank', 'width=400,height=300');
+  printWin.document.write(`<!DOCTYPE html><html><head><title>Part Label</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, sans-serif; }
+    .part-label-inner { border: 2px solid #1e1b4b; border-radius: 10px; padding: 14px 16px; width: 300px; }
+    .pl-header { font-size: 0.7rem; font-weight: 800; color: #7c3aed; letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 8px; }
+    .pl-part { font-size: 1.1rem; font-weight: 800; color: #111827; margin-bottom: 6px; }
+    .pl-vehicle { font-size: 0.82rem; font-weight: 700; color: #374151; margin-bottom: 4px; }
+    .pl-vendor { font-size: 0.78rem; color: #6b7280; margin-bottom: 2px; }
+    .pl-ordernum { font-size: 1rem; font-weight: 800; color: #1d4ed8; letter-spacing: 0.08em; margin: 6px 0; }
+    .pl-cost { font-size: 0.85rem; font-weight: 700; color: #059669; margin-bottom: 2px; }
+    .pl-date { font-size: 0.7rem; color: #9ca3af; margin-top: 6px; }
+    @media print { body { -webkit-print-color-adjust: exact; } }
+  </style></head><body>
+  ${labelEl.innerHTML}
+  <script>window.onload=function(){window.print();window.close();}<\/script>
+  </body></html>`);
+  printWin.document.close();
+};
+
+// Delete/cancel a part order
+window.deletePartOrder = async function(partId) {
+  const ok = await confirm('Cancel Order', 'Cancel and remove this parts order?');
+  if (!ok) return;
+  try {
+    await db.collection('partsOrders').doc(partId).update({ status: 'cancelled' });
+    toast('Parts order cancelled.', 'success');
+    loadPartsQueue();
+  } catch(e) { toast('Failed to cancel.', 'error'); }
+};
+
+// Load parts queue when switching to that tab
+const _origSwitchMaintTab = window.switchMaintTab;
+window.switchMaintTab = function(tabId, btn) {
+  if (typeof _origSwitchMaintTab === 'function') _origSwitchMaintTab(tabId, btn);
+  if (tabId === 'mtab-parts-queue') loadPartsQueue();
+};
 let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
 let _editingMoveId = null; // ID of move being edited
 let _relocUsersCache = []; // [{name, uid}] loaded once

@@ -6,7 +6,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260722crm">
+  <link rel="stylesheet" href="style.css?v=20260820b">
   <link rel="manifest" href="manifest.json">
   <link rel="icon" type="image/png" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
   <link rel="apple-touch-icon" href="assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png">
@@ -1845,6 +1845,7 @@
 
       <div class="maint-dash-tabs">
         <button class="maint-tab-btn active" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🚨 Open Issues</button>
+        <button class="maint-tab-btn" data-mtab="mtab-parts-queue" onclick="switchMaintTab('mtab-parts-queue',this)">📦 Parts Queue</button>
         <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Vehicles</button>
         <button class="maint-tab-btn" data-mtab="mtab-vendors" onclick="switchMaintTab('mtab-vendors',this)">🔧 Vendors</button>
         <button class="maint-tab-btn" data-mtab="mtab-completed-wo" onclick="switchMaintTab('mtab-completed-wo',this)">✅ Completed</button>
@@ -1853,6 +1854,18 @@
         <button class="maint-tab-btn" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">⚙️ Overview</button>
       </div>
       <div class="maint-dash-body">
+
+        <!-- ===== Parts Queue Tab ===== -->
+        <div id="mtab-parts-queue" class="maint-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Track ordered parts from order → arrival → installation.</p>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-sm btn-primary" onclick="openNewPartOrder()">+ Order Part</button>
+              <button class="btn btn-sm btn-outline" onclick="loadPartsQueue()">↻ Refresh</button>
+            </div>
+          </div>
+          <div id="parts-queue-content"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
 
         <!-- ===== Overview Tab ===== -->
         <div id="mtab-overview" class="maint-tab-content">
@@ -3071,6 +3084,71 @@
       <div class="dm-footer">
         <button class="dm-btn-cancel" onclick="closeDispatchModal()">Cancel</button>
         <button id="dispatch-submit-btn" class="dm-btn-go" onclick="submitDispatch()">🚐 Dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ORDER PART MODAL ==================== -->
+  <div id="part-order-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closePartOrderModal()">
+    <div class="dm-card" style="max-width:420px;">
+      <div class="dm-topbar">
+        <span class="dm-topbar-icon">📦</span>
+        <span id="part-order-modal-title" class="dm-topbar-title">Order a Part</span>
+        <button class="dm-topbar-close" onclick="closePartOrderModal()">✕</button>
+      </div>
+      <div class="dm-body">
+        <div class="dm-row">
+          <label class="dm-label">🚗 Vehicle</label>
+          <select id="po-vehicle" class="dm-select"></select>
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">🔩 Part</label>
+          <input type="text" id="po-part-name" class="dm-input" placeholder="e.g. Front brake pads" maxlength="100">
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">🏪 Vendor</label>
+          <input type="text" id="po-vendor" class="dm-input" placeholder="e.g. O'Reilly, Amazon, Dealer">
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">🔢 Order # (last 6)</label>
+          <input type="text" id="po-order-num" class="dm-input" placeholder="Last 4–6 digits" maxlength="10" style="text-transform:uppercase;">
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">💵 Est. Cost</label>
+          <input type="number" id="po-cost" class="dm-input" placeholder="0.00" min="0" step="0.01">
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">📅 ETA</label>
+          <input type="date" id="po-eta" class="dm-input">
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">📝 Notes</label>
+          <input type="text" id="po-notes" class="dm-input" placeholder="Optional" maxlength="150">
+        </div>
+      </div>
+      <p id="po-error" class="error-msg" style="margin:0 14px 4px;font-size:0.82rem;"></p>
+      <div class="dm-footer">
+        <button class="dm-btn-cancel" onclick="closePartOrderModal()">Cancel</button>
+        <button id="po-submit-btn" class="dm-btn-go" onclick="submitPartOrder()" style="background:#92400e;">📦 Place Order</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PART LABEL PRINT PANEL ==================== -->
+  <div id="part-label-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)$('part-label-overlay').style.display='none'">
+    <div class="dm-card" style="max-width:340px;">
+      <div class="dm-topbar">
+        <span class="dm-topbar-icon">🏷️</span>
+        <span class="dm-topbar-title">Part Label</span>
+        <button class="dm-topbar-close" onclick="$('part-label-overlay').style.display='none'">✕</button>
+      </div>
+      <div style="padding:14px;">
+        <div id="part-label-content" class="part-label-box"></div>
+        <p style="font-size:0.78rem;color:#9ca3af;margin:8px 0 0;">Tap Print to send to your printer or save as PDF.</p>
+      </div>
+      <div class="dm-footer">
+        <button class="dm-btn-cancel" onclick="$('part-label-overlay').style.display='none'">Close</button>
+        <button class="dm-btn-go" onclick="printPartLabel()" style="background:#1d4ed8;">🖨️ Print Label</button>
       </div>
     </div>
   </div>

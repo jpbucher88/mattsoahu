@@ -203,5 +203,13 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
       allow update: if isAdmin();
     }
+
+    // Parts Orders — registered users read; managers/admins create; any registered user can update (mark arrived/installed)
+    match /partsOrders/{orderId} {
+      allow read: if isRegistered();
+      allow create: if isManager();
+      allow update: if isRegistered();
+      allow delete: if isManager();
+    }
   }
 }
