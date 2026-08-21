@@ -22349,6 +22349,7 @@ window.deletePartOrder = async function(partId) {
 let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
 let _editingMoveId = null; // ID of move being edited
 let _relocUsersCache = []; // [{name, uid}] loaded once
+let _dispatchInProgress = false; // prevents double-submit
 let _activeMoves = []; // current active moves — used to badge fleet chips
 
 // Color → car emoji helper
@@ -22459,6 +22460,7 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
 window.closeDispatchModal = function() {
   $('dispatch-modal-overlay').style.display = 'none';
   _editingMoveId = null;
+  _dispatchInProgress = false;
 };
 
 window.updateDispatchPreview = function() {
@@ -22478,16 +22480,18 @@ window.updateDispatchPreview = function() {
 };
 
 window.submitDispatch = async function() {
+  if (_dispatchInProgress) return; // prevent double-submit
+  _dispatchInProgress = true;
   const vid = $('dispatch-vehicle-select') ? $('dispatch-vehicle-select').value : '';
   const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
   const driverName = $('dispatch-driver-select') ? $('dispatch-driver-select').value : '';
   const notes = $('dispatch-notes') ? $('dispatch-notes').value.trim() : '';
   const errEl = $('dispatch-modal-error');
-  if (!vid) { if (errEl) errEl.textContent = 'Please select a vehicle.'; return; }
-  if (!dest) { if (errEl) errEl.textContent = 'Please select a destination.'; return; }
+  if (!vid) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Please select a vehicle.'; return; }
+  if (!dest) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Please select a destination.'; return; }
   if (errEl) errEl.textContent = '';
   const v = vehiclesCache.find(x => x.id === vid);
-  if (!v) { if (errEl) errEl.textContent = 'Vehicle not found.'; return; }
+  if (!v) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Vehicle not found.'; return; }
 
   const submitBtn = $('dispatch-submit-btn');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
@@ -22536,6 +22540,7 @@ window.submitDispatch = async function() {
     if (errEl) errEl.textContent = 'Failed to save. Try again.';
   } finally {
     if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = _editingMoveId ? 'Save Changes' : 'Dispatch'; }
+    _dispatchInProgress = false;
   }
 };
 
@@ -22756,6 +22761,8 @@ window.editMove = function(moveData) {
 window._startRelocationsListener = function() {
   _initRelocDispatchBtn();
   subscribeRelocations();
+  // Immediately load any existing moves so widget populates on page refresh
+  _refreshRelocationsManually();
 };
 
 // Inject 72h Lagoon Drive alerts directly into the urgent banner DOM
