@@ -2241,7 +2241,8 @@ function renderLocationsWidget() {
 
   const knownLocations = ['HNL', '1585 Kapiolani', '94-530 Lumiauau'];
   const allHomeVehicles = [...vehiclesCache.filter(v => isAtHome(v)), ...overdueTrip, ...overdueRepair];
-  const otherLocations = [...new Set(allHomeVehicles.filter(v => v.homeLocation && !knownLocations.includes(v.homeLocation)).map(v => v.homeLocation))];
+  // Treat "1 Lagoon Dr" as part of HNL for grouping — exclude from separate location list
+  const otherLocations = [...new Set(allHomeVehicles.filter(v => v.homeLocation && !knownLocations.includes(v.homeLocation) && v.homeLocation !== '1 Lagoon Dr').map(v => v.homeLocation))];
   const allLocations = [...knownLocations, ...otherLocations];
 
   let html = '';
@@ -2360,7 +2361,41 @@ function renderLocationsWidget() {
     }
 
     html += '</div>'; // end location-group-combined
+
+    // 1 Lagoon Dr — sub-location under HNL only
+    if (loc === 'HNL') {
+      const lagoonVehicles = vehiclesCache.filter(v => isAtHome(v) && v.homeLocation === '1 Lagoon Dr');
+      if (lagoonVehicles.length > 0) {
+        const MS_72H = 72 * 60 * 60 * 1000;
+        html += `<div class="location-group lagoon-subgroup">
+          <div class="location-group-header lagoon-subheader">
+            <span class="location-group-name">↳ 📍 1 Lagoon Dr</span>
+            <span class="location-group-count">${lagoonVehicles.length}</span>
+          </div>
+          <div class="location-group-vehicles lagoon-vehicles">`;
+        for (const v of lagoonVehicles) {
+          const arrivedAt = v.lagoonArrivedAt ? (v.lagoonArrivedAt.toDate ? v.lagoonArrivedAt.toDate() : new Date(v.lagoonArrivedAt)) : null;
+          const hoursParked = arrivedAt ? Math.floor((Date.now() - arrivedAt.getTime()) / (1000 * 60 * 60)) : null;
+          const is72h = hoursParked != null && hoursParked >= 72;
+          const durationBadge = hoursParked != null
+            ? `<span class="lagoon-hours-badge${is72h ? ' lagoon-overdue' : ''}">${hoursParked >= 24 ? Math.floor(hoursParked/24) + 'd ' : ''}${hoursParked % 24}h</span>`
+            : '';
+          const woCount = _woCountByVehicle[v.id] || 0;
+          const woBadge = woCount > 0 ? `<span class="chip-wo-badge">${woCount}</span>` : '';
+          const activeMove = _activeMoves.find(m => m.vehicleId === v.id);
+          const moveBadge = activeMove ? `<span class="chip-move-badge">🚐</span>` : '';
+          html += `<div class="lagoon-chip-wrap">
+            <div class="location-vehicle-chip${is72h?' lagoon-chip-alert':''}${activeMove?' chip-has-move':''}" data-vid="${v.id}">${escapeHtml(v.plate)}${moveBadge}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}${woBadge}</div>
+            ${durationBadge}
+          </div>`;
+        }
+        html += `</div></div>`;
+      }
+    }
   }
+
+  // Inject Lagoon 72h alerts into urgent banner after render
+  _injectLagoonAlerts();
 
   // No location set
   const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation);
@@ -5955,6 +5990,15 @@ $('btn-save-location').addEventListener('click', async () => {
     parkingRow: parkingRow || firebase.firestore.FieldValue.delete(),
     parkingLevel: parkingLevel || firebase.firestore.FieldValue.delete(),
   };
+
+  // Track when a vehicle first arrives at 1 Lagoon Dr (for 72h alert); clear when it leaves
+  const wasLagoon = selectedVehicle.homeLocation === '1 Lagoon Dr';
+  const nowLagoon = homeLocation === '1 Lagoon Dr';
+  if (nowLagoon && !wasLagoon) {
+    updateData.lagoonArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
+  } else if (!nowLagoon && wasLagoon) {
+    updateData.lagoonArrivedAt = firebase.firestore.FieldValue.delete();
+  }
 
   // Compute the display location for backward compat
   if (tripStatus === 'scheduled') {
@@ -22255,6 +22299,13 @@ async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
       if (hnlRow) vehicleUpdate.parkingRow = hnlRow;
       if (hnlLevel) vehicleUpdate.parkingLevel = hnlLevel;
     }
+    // Track Lagoon Dr arrival/departure for 72h alert
+    const prevLocation = (vehiclesCache.find(x => x.id === move.vehicleId) || {}).homeLocation;
+    if (toLocation === '1 Lagoon Dr' && prevLocation !== '1 Lagoon Dr') {
+      vehicleUpdate.lagoonArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
+    } else if (toLocation !== '1 Lagoon Dr' && prevLocation === '1 Lagoon Dr') {
+      vehicleUpdate.lagoonArrivedAt = firebase.firestore.FieldValue.delete();
+    }
     if (move.vehicleId) {
       await db.collection('vehicles').doc(move.vehicleId).update(vehicleUpdate);
     }
@@ -22393,3 +22444,55 @@ window.editMove = function(moveData) {
 window._startRelocationsListener = function() {
   subscribeRelocations();
 };
+
+// Inject 72h Lagoon Drive alerts directly into the urgent banner DOM
+// Called after renderLocationsWidget so we don't need to modify the task pipeline
+function _injectLagoonAlerts() {
+  const MS_72H = 72 * 60 * 60 * 1000;
+  const lagoonOverdue = vehiclesCache.filter(v => {
+    if (v.homeLocation !== '1 Lagoon Dr') return false;
+    if (!v.lagoonArrivedAt) return false;
+    const t = v.lagoonArrivedAt.toDate ? v.lagoonArrivedAt.toDate().getTime() : new Date(v.lagoonArrivedAt).getTime();
+    return (Date.now() - t) >= MS_72H;
+  });
+
+  // Remove any previously injected Lagoon alerts
+  document.querySelectorAll('.lagoon-urgent-item').forEach(el => el.remove());
+  if (!lagoonOverdue.length) return;
+
+  const banner = $('urgent-banner');
+  const list = $('urgent-banner-list');
+  if (!banner || !list) return;
+
+  // Ensure banner is visible
+  banner.style.display = '';
+  const countEl = $('urgent-banner-count');
+  if (countEl) {
+    const cur = parseInt(countEl.textContent, 10) || 0;
+    countEl.textContent = cur + lagoonOverdue.length;
+  }
+
+  const alertsHtml = lagoonOverdue.map(v => {
+    const arrivedAt = v.lagoonArrivedAt.toDate ? v.lagoonArrivedAt.toDate() : new Date(v.lagoonArrivedAt);
+    const hours = Math.floor((Date.now() - arrivedAt.getTime()) / (1000 * 60 * 60));
+    const label = hours >= 24 ? `${Math.floor(hours/24)}d ${hours%24}h` : `${hours}h`;
+    return `<div class="urgent-banner-item lagoon-urgent-item" style="cursor:pointer;" data-vid="${v.id}">
+      <div class="urgent-banner-info">
+        <div class="urgent-banner-text">🚗 ${escapeHtml(v.plate)} at 1 Lagoon Dr for <strong>${label}</strong> — move needed</div>
+        <div class="urgent-banner-meta">📍 1 Lagoon Dr · ${escapeHtml(v.color || '')} ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</div>
+      </div>
+      <span class="urgent-status-tag" style="background:#fef3c7;color:#92400e;">72h+ at Lagoon</span>
+    </div>`;
+  }).join('');
+
+  // Prepend to top of list
+  list.insertAdjacentHTML('afterbegin', alertsHtml);
+
+  // Click opens vehicle page
+  list.querySelectorAll('.lagoon-urgent-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const vid = el.dataset.vid;
+      if (vid) openVehiclePage(vid);
+    });
+  });
+}
