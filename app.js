@@ -22529,11 +22529,13 @@ window.submitDispatch = async function() {
       toast(`Move dispatched for ${v.plate} → ${dest} ✓`, 'success');
     }
     closeDispatchModal();
+    // Immediately refresh the moves widget — don't wait for onSnapshot
+    _refreshRelocationsManually();
   } catch (e) {
     console.error('Dispatch error:', e);
     if (errEl) errEl.textContent = 'Failed to save. Try again.';
   } finally {
-    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = _editingMoveId ? '✏️ Save Changes' : '🚐 Dispatch'; }
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = _editingMoveId ? 'Save Changes' : 'Dispatch'; }
   }
 };
 
@@ -22612,6 +22614,7 @@ window.claimMove = async function(moveId) {
       claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     toast('Move claimed! You are now assigned.', 'success');
+    _refreshRelocationsManually();
   } catch (e) { toast('Failed to claim move.', 'error'); }
 };
 
@@ -22625,8 +22628,28 @@ window.cancelMove = async function(moveId) {  const ok = await confirm('Cancel M
       cancelledBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
     });
     toast('Move cancelled.', 'success');
+    _refreshRelocationsManually();
   } catch (e) { toast('Failed to cancel.', 'error'); }
 };
+
+// Manual one-shot fetch of active moves — used after dispatch/cancel/arrive to get immediate update
+// without waiting for the onSnapshot which can be slow on first collection write
+function _refreshRelocationsManually() {
+  db.collection('vehicleMoves')
+    .where('status', 'in', ['pending', 'in-progress'])
+    .get()
+    .then(snap => {
+      const moves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      moves.sort((a, b) => {
+        const aT = a.dispatchedAt ? (a.dispatchedAt.toDate ? a.dispatchedAt.toDate().getTime() : new Date(a.dispatchedAt).getTime()) : 0;
+        const bT = b.dispatchedAt ? (b.dispatchedAt.toDate ? b.dispatchedAt.toDate().getTime() : new Date(b.dispatchedAt).getTime()) : 0;
+        return aT - bT;
+      });
+      _activeMoves = moves;
+      renderRelocationsWidget(moves);
+    })
+    .catch(e => console.warn('Manual reloc refresh error:', e));
+}
 
 // Subscribe to active moves — no orderBy to avoid composite index requirement; sort client-side
 function subscribeRelocations() {
