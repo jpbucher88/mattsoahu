@@ -22496,45 +22496,43 @@ window.submitDispatch = async function() {
   const submitBtn = $('dispatch-submit-btn');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
 
+  const newStatus = driverName ? 'in-progress' : 'pending';
+  const movePayload = {
+    vehicleId: vid,
+    vehiclePlate: v.plate || '',
+    vehicleColor: v.color || '',
+    vehicleMake: v.make || '',
+    vehicleModel: v.model || '',
+    fromLocation: v.homeLocation || '',
+    toLocation: dest,
+    notes: notes,
+    driverName: driverName || '',
+    status: newStatus,
+  };
+
   try {
     if (_editingMoveId) {
-      // Edit existing move
       await db.collection('vehicleMoves').doc(_editingMoveId).update({
-        vehicleId: vid,
-        vehiclePlate: v.plate || '',
-        vehicleColor: v.color || '',
-        vehicleMake: v.make || '',
-        vehicleModel: v.model || '',
-        fromLocation: v.homeLocation || '',
-        toLocation: dest,
-        notes: notes,
-        driverName: driverName || '',
-        status: driverName ? 'in-progress' : 'pending',
+        ...movePayload,
         updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         updatedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
       });
+      // Update in-memory list immediately
+      const idx = _activeMoves.findIndex(m => m.id === _editingMoveId);
+      if (idx >= 0) _activeMoves[idx] = { ..._activeMoves[idx], ...movePayload };
       toast(`Move updated for ${v.plate} ✓`, 'success');
     } else {
-      // New dispatch
-      await db.collection('vehicleMoves').add({
-        vehicleId: vid,
-        vehiclePlate: v.plate || '',
-        vehicleColor: v.color || '',
-        vehicleMake: v.make || '',
-        vehicleModel: v.model || '',
-        fromLocation: v.homeLocation || '',
-        toLocation: dest,
-        notes: notes,
-        driverName: driverName || '',
-        status: driverName ? 'in-progress' : 'pending',
+      const ref = await db.collection('vehicleMoves').add({
+        ...movePayload,
         dispatchedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
         dispatchedAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
+      // Add to in-memory list immediately — don't wait for onSnapshot
+      _activeMoves.push({ id: ref.id, ...movePayload, dispatchedAt: { toDate: () => new Date() } });
       toast(`Move dispatched for ${v.plate} → ${dest} ✓`, 'success');
     }
     closeDispatchModal();
-    // Immediately refresh the moves widget — don't wait for onSnapshot
-    _refreshRelocationsManually();
+    renderRelocationsWidget(_activeMoves); // instant update from local state
   } catch (e) {
     console.error('Dispatch error:', e);
     if (errEl) errEl.textContent = 'Failed to save. Try again.';
@@ -22603,6 +22601,9 @@ async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
       await db.collection('vehicles').doc(move.vehicleId).update(vehicleUpdate);
     }
     toast(`✅ ${move.vehiclePlate || 'Vehicle'} arrived at ${toLocation}!`, 'success');
+    // Remove from active moves immediately
+    _activeMoves = _activeMoves.filter(m => m.id !== moveId);
+    renderRelocationsWidget(_activeMoves);
     refreshDashboard();
   } catch (e) {
     console.error('Complete move error:', e);
@@ -22613,13 +22614,16 @@ async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
 // Driver self-assigns by tapping "Take This Move"
 window.claimMove = async function(moveId) {
   try {
+    const myName = currentUserDisplayName || (currentUser ? currentUser.email : '');
     await db.collection('vehicleMoves').doc(moveId).update({
       status: 'in-progress',
-      driverName: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      driverName: myName,
       claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
+    const m = _activeMoves.find(x => x.id === moveId);
+    if (m) { m.status = 'in-progress'; m.driverName = myName; }
+    renderRelocationsWidget(_activeMoves);
     toast('Move claimed! You are now assigned.', 'success');
-    _refreshRelocationsManually();
   } catch (e) { toast('Failed to claim move.', 'error'); }
 };
 
@@ -22633,8 +22637,9 @@ window.cancelMove = async function(moveId) {
       cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
       cancelledBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
     });
+    _activeMoves = _activeMoves.filter(m => m.id !== moveId);
+    renderRelocationsWidget(_activeMoves);
     toast('Move cancelled.', 'success');
-    _refreshRelocationsManually();
   } catch (e) { toast('Failed to cancel.', 'error'); }
 };
 
@@ -22644,8 +22649,9 @@ window.deleteMove = async function(moveId) {
   if (!ok) return;
   try {
     await db.collection('vehicleMoves').doc(moveId).delete();
+    _activeMoves = _activeMoves.filter(m => m.id !== moveId);
+    renderRelocationsWidget(_activeMoves);
     toast('Move deleted.', 'success');
-    _refreshRelocationsManually();
   } catch (e) { toast('Failed to delete.', 'error'); }
 };
 
@@ -22683,9 +22689,8 @@ function subscribeRelocations() {
       _activeMoves = moves;
       renderRelocationsWidget(moves);
     }, e => {
-      console.warn('Relocations listener error:', e);
-      _activeMoves = [];
-      renderRelocationsWidget([]);
+      console.warn('Relocations listener error (will retry on next refresh):', e);
+      // Don't wipe the display on listener error — keep whatever is shown
     });
 }
 
