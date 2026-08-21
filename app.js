@@ -22416,8 +22416,8 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
   _editingMoveId = existingMove ? existingMove.id : null;
   const titleEl = $('dispatch-modal-title');
   const submitBtn = $('dispatch-submit-btn');
-  if (titleEl) titleEl.textContent = _editingMoveId ? '✏️ Edit Vehicle Move' : '🚐 Dispatch Vehicle Move';
-  if (submitBtn) submitBtn.textContent = _editingMoveId ? '✏️ Save Changes' : '🚐 Dispatch';
+  if (titleEl) titleEl.textContent = _editingMoveId ? 'Edit Vehicle Move' : 'Dispatch Vehicle Move';
+  if (submitBtn) submitBtn.textContent = _editingMoveId ? 'Save Changes' : 'Dispatch';
 
   // Populate vehicle list — all at-home vehicles (or all if editing an existing move)
   const sel = $('dispatch-vehicle-select');
