@@ -1764,6 +1764,26 @@
             <button onclick="togglePerfLog()" id="perf-log-btn" style="font-size:0.82rem;color:#6b7280;background:none;border:none;cursor:pointer;padding:4px 0;display:flex;align-items:center;gap:4px;">▶ Full Log <span id="perf-feed-count" style="color:#9ca3af;"></span></button>
             <div id="perf-activity-feed" style="display:none;margin-top:10px;"></div>
           </div>
+
+          <!-- Goals & Coaching (admin-only) -->
+          <div id="perf-goals-wrap" style="margin-top:14px;border-top:2px solid #ede9fe;padding-top:12px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+              <div>
+                <h4 style="margin:0;color:#4c1d95;">🎯 Goals & Coaching</h4>
+                <p style="margin:3px 0 0;font-size:0.78rem;color:#9ca3af;">Last 7 days · Admin only</p>
+              </div>
+              <button class="btn btn-sm btn-outline" onclick="loadGoalsPanel()" style="border-color:#7c3aed;color:#7c3aed;">↻ Load</button>
+            </div>
+
+            <!-- Goal targets legend -->
+            <div class="goals-legend">
+              <span class="goal-pill">🚐 Move target: <strong>30 min</strong></span>
+              <span class="goal-pill">🧹 Clean target: <strong>40 min each</strong></span>
+              <span class="goal-pill">📸 Photo batch: <strong>5 min / car</strong></span>
+            </div>
+
+            <div id="goals-panel-content"><p class="hint" style="font-size:0.82rem;">Click Load to see goals vs actual performance.</p></div>
+          </div>
         </div>
       </div>
 
@@ -3201,6 +3221,32 @@
       <div class="modal-footer">
         <button class="btn btn-outline" onclick="closeHnlArrivalModal()">Cancel</button>
         <button class="btn btn-success" onclick="confirmHnlArrival()">✅ Confirm Arrival</button>
+      </div>
+    </div>
+  </div>
+  <!-- ==================== COACHING MESSAGE MODAL ==================== -->
+  <div id="coaching-modal-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeCoachingModal()">
+    <div class="dm-card" style="max-width:420px;">
+      <div class="dm-topbar" style="background:#4c1d95;">
+        <span class="dm-topbar-icon">🎯</span>
+        <span class="dm-topbar-title">Send Coaching Note</span>
+        <button class="dm-topbar-close" onclick="closeCoachingModal()">✕</button>
+      </div>
+      <div class="dm-body" style="padding:12px 16px 4px;">
+        <p id="coaching-to-label" style="font-size:0.85rem;font-weight:700;color:#4c1d95;margin:0 0 10px;"></p>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:0.75rem;color:#9ca3af;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px;">Quick templates:</label>
+          <div id="coaching-templates" style="display:flex;flex-direction:column;gap:5px;"></div>
+        </div>
+        <div>
+          <label style="font-size:0.75rem;color:#9ca3af;font-weight:700;text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:4px;">Message:</label>
+          <textarea id="coaching-message" rows="4" style="width:100%;border:1.5px solid #e5e7eb;border-radius:8px;padding:8px 10px;font-size:0.88rem;resize:vertical;box-sizing:border-box;font-family:inherit;"></textarea>
+        </div>
+        <p id="coaching-error" class="error-msg" style="margin:4px 0;font-size:0.82rem;"></p>
+      </div>
+      <div class="dm-footer">
+        <button class="dm-btn-cancel" onclick="closeCoachingModal()">Cancel</button>
+        <button class="dm-btn-go" style="background:#4c1d95;" onclick="sendCoachingMessage()">📨 Send Note</button>
       </div>
     </div>
   </div>

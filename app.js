@@ -7342,19 +7342,20 @@ window.togglePerfLog = function() {
 // TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
 // ================================================================
 const PERF_ACTION_LABELS = {
-  photo_uploaded:       { icon: '📸', label: 'Photos Uploaded',        color: '#2563eb' },
-  vehicle_returned:     { icon: '🏠', label: 'Vehicles Returned',      color: '#16a34a' },
-  inspect_started:      { icon: '🔍', label: 'Inspections Started',    color: '#7c3aed' },
-  inspection_complete:  { icon: '✅', label: 'Inspections Done',       color: '#16a34a' },
-  vehicle_cleaned:      { icon: '🧹', label: 'Vehicles Cleaned',       color: '#0891b2' },
-  flag_not_returned:    { icon: '🚨', label: 'Not-Return Flags',       color: '#dc2626' },
-  complete_task:        { icon: '✅', label: 'Tasks Completed',        color: '#16a34a' },
-  delete_task:          { icon: '🗑', label: 'Tasks Deleted',          color: '#6b7280' },
-  delete_note:          { icon: '🗑', label: 'Notes Deleted',          color: '#6b7280' },
-  open_task:            { icon: '📋', label: 'Tasks Opened',           color: '#7c3aed' },
-  mileage_decrease:     { icon: '⚠️', label: 'Mileage Corrections',   color: '#d97706' },
-  restore_note:         { icon: '↩️', label: 'Notes Restored',         color: '#0891b2' },
-  update_vehicle_color: { icon: '🎨', label: 'Color Updates',          color: '#db2777' },
+  photo_uploaded:           { icon: '📸', label: 'Photos Uploaded',        color: '#2563eb' },
+  vehicle_returned:         { icon: '🏠', label: 'Vehicles Returned',      color: '#16a34a' },
+  inspect_started:          { icon: '🔍', label: 'Inspections Started',    color: '#7c3aed' },
+  inspection_complete:      { icon: '✅', label: 'Inspections Done',       color: '#16a34a' },
+  vehicle_cleaned:          { icon: '🧹', label: 'Vehicles Cleaned',       color: '#0891b2' },
+  flag_not_returned:        { icon: '🚨', label: 'Not-Return Flags',       color: '#dc2626' },
+  complete_task:            { icon: '✅', label: 'Tasks Completed',        color: '#16a34a' },
+  vehicle_move_completed:   { icon: '🚐', label: 'Vehicle Moves',          color: '#7c3aed' },
+  delete_task:              { icon: '🗑', label: 'Tasks Deleted',          color: '#6b7280' },
+  delete_note:              { icon: '🗑', label: 'Notes Deleted',          color: '#6b7280' },
+  open_task:                { icon: '📋', label: 'Tasks Opened',           color: '#7c3aed' },
+  mileage_decrease:         { icon: '⚠️', label: 'Mileage Corrections',   color: '#d97706' },
+  restore_note:             { icon: '↩️', label: 'Notes Restored',         color: '#0891b2' },
+  update_vehicle_color:     { icon: '🎨', label: 'Color Updates',          color: '#db2777' },
 };
 
 // Build a plain-English sentence for an activity entry
@@ -7383,6 +7384,14 @@ function _perfDescribe(d) {
       const info = typeof det === 'string' ? det : (det.plate || '');
       return `Corrected mileage${info ? ` · ${info}` : ''}`;
     }
+    case 'vehicle_move_completed': {
+      const det2 = d.details || {};
+      const from2 = typeof det2 === 'object' ? (det2.fromLocation || '') : '';
+      const to2 = typeof det2 === 'object' ? (det2.toLocation || '') : '';
+      const dur2 = typeof det2 === 'object' ? det2.durationMinutes : null;
+      const plate2 = typeof det2 === 'object' ? (det2.plate || '') : '';
+      return `Moved ${plate2 ? escapeHtml(plate2) + ' ' : ''}${from2 ? from2 + ' → ' + to2 : to2}${dur2 ? ' (' + dur2 + 'min)' : ''}`;
+    }
     case 'update_vehicle_color': return `Updated color${plateStr}`;
     case 'restore_note':         return `Restored deleted note`;
     default: return d.action.replace(/_/g, ' ');
@@ -7390,7 +7399,7 @@ function _perfDescribe(d) {
 }
 
 // Key "productivity" actions — these are what we highlight in staff cards
-const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'vehicle_cleaned', 'inspection_complete', 'flag_not_returned', 'complete_task'];
+const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'vehicle_cleaned', 'inspection_complete', 'vehicle_move_completed', 'flag_not_returned', 'complete_task'];
 
 window.loadPerformanceReport = async function() {
   const cardsEl    = $('perf-summary-cards');
@@ -22631,6 +22640,18 @@ async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
       await db.collection('vehicles').doc(move.vehicleId).update(vehicleUpdate);
     }
     toast(`✅ ${move.vehiclePlate || 'Vehicle'} arrived at ${toLocation}!`, 'success');
+    // Log to team performance
+    const durationMinutes = move.claimedAt
+      ? Math.round((Date.now() - (move.claimedAt.toDate ? move.claimedAt.toDate().getTime() : new Date(move.claimedAt).getTime())) / 60000)
+      : null;
+    logUserActivity('vehicle_move_completed', {
+      plate: move.vehiclePlate || '',
+      vehicleId: move.vehicleId || '',
+      fromLocation: move.fromLocation || '',
+      toLocation,
+      driverName: move.driverName || currentUserDisplayName || '',
+      durationMinutes,
+    });
     // Remove from active moves immediately
     _activeMoves = _activeMoves.filter(m => m.id !== moveId);
     renderRelocationsWidget(_activeMoves);
@@ -22821,6 +22842,122 @@ window._startRelocationsListener = function() {
   _refreshRelocationsManually();
   // Then set up real-time listener for updates from other users
   setTimeout(subscribeRelocations, 1500);
+};
+
+// ================================================================
+// GOALS & COACHING — Admin-only productivity goals panel
+// ================================================================
+
+const PERF_TARGETS = {
+  vehicle_move_completed: { label: '🚐 Vehicle Moves',  targetMin: 30 },
+  vehicle_cleaned:        { label: '🧹 Cleanings',      targetMin: 40 },
+  photo_uploaded:         { label: '📸 Photo Batches',  targetMin: 5  },
+};
+
+let _coachingTargetUid = null;
+let _coachingTargetName = '';
+
+window.loadGoalsPanel = async function() {
+  const container = $('goals-panel-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  try {
+    const snap = await db.collection('userActivity')
+      .where('at', '>=', firebase.firestore.Timestamp.fromDate(sevenDaysAgo))
+      .orderBy('at', 'desc').get();
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const relevant = items.filter(d => ['vehicle_move_completed','vehicle_cleaned','photo_uploaded'].includes(d.action));
+    const byUser = {};
+    relevant.forEach(d => {
+      const name = d.userName || 'Unknown';
+      if (!byUser[name]) byUser[name] = { name, uid: d.uid || '', moves: [], cleans: 0, photos: 0 };
+      if (!byUser[name].uid && d.uid) byUser[name].uid = d.uid;
+      if (d.action === 'vehicle_move_completed') {
+        const det = d.details || {};
+        byUser[name].moves.push({ duration: typeof det === 'object' ? (det.durationMinutes || null) : null, plate: typeof det === 'object' ? (det.plate||'') : '' });
+      } else if (d.action === 'vehicle_cleaned') { byUser[name].cleans++; }
+      else if (d.action === 'photo_uploaded') { byUser[name].photos++; }
+    });
+    const users = Object.values(byUser).sort((a,b) => (b.moves.length+b.cleans+b.photos)-(a.moves.length+a.cleans+a.photos));
+    if (!users.length) { container.innerHTML = '<p class="hint" style="font-size:0.82rem;">No logged activity in the last 7 days.</p>'; return; }
+    container.innerHTML = users.map(u => {
+      const moveDurations = u.moves.filter(m => m.duration != null).map(m => m.duration);
+      const avgDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
+      const moveStatus = avgDur == null ? 'na' : avgDur <= 30 ? 'good' : avgDur <= 45 ? 'warn' : 'over';
+      const moveColor = {good:'#16a34a',warn:'#d97706',over:'#dc2626',na:'#9ca3af'}[moveStatus];
+      const cleanColor = u.cleans >= 5 ? '#16a34a' : u.cleans >= 2 ? '#d97706' : '#dc2626';
+      const photoColor = u.photos >= 5 ? '#16a34a' : u.photos >= 2 ? '#d97706' : '#dc2626';
+      const hasIssue = moveStatus === 'over' || u.cleans < 2 || u.photos < 2;
+      const statsForCoach = JSON.stringify({ movesCount: u.moves.length, avgDuration: avgDur, cleans: u.cleans, photos: u.photos });
+      const coachBtn = u.uid ? `<button class="btn btn-sm goal-coach-btn" onclick='openCoachingModal("${escapeHtml(u.uid)}","${escapeHtml(u.name)}",${statsForCoach.replace(/"/g,"&quot;")})'>🎯 Coach</button>` : '';
+      return `<div class="goal-user-card${hasIssue?' goal-user-needs-coaching':''}">
+        <div class="goal-user-top">
+          <span class="goal-user-name">${escapeHtml(u.name)}</span>
+          ${hasIssue?'<span class="goal-needs-badge">⚠️ Needs coaching</span>':'<span class="goal-ok-badge">✅ On track</span>'}
+          ${coachBtn}
+        </div>
+        <div class="goal-metrics">
+          <div class="goal-metric"><span class="goal-metric-label">🚐 Moves</span><span class="goal-metric-val">${u.moves.length}</span><span class="goal-metric-detail" style="color:${moveColor}">${avgDur!=null?avgDur+'min avg / 30min target':'no duration data'}</span></div>
+          <div class="goal-metric"><span class="goal-metric-label">🧹 Cleans</span><span class="goal-metric-val" style="color:${cleanColor}">${u.cleans}</span><span class="goal-metric-detail">~40 min each</span></div>
+          <div class="goal-metric"><span class="goal-metric-label">📸 Photos</span><span class="goal-metric-val" style="color:${photoColor}">${u.photos}</span><span class="goal-metric-detail">~5 min/car</span></div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { console.error('Goals panel error:', e); container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error loading. Try again.</p>'; }
+};
+
+window.openCoachingModal = function(uid, name, statsArg) {
+  _coachingTargetUid = uid;
+  _coachingTargetName = name;
+  const label = $('coaching-to-label');
+  if (label) label.textContent = `To: ${name}`;
+  const stats = typeof statsArg === 'string' ? JSON.parse(statsArg.replace(/&quot;/g,'"')) : (typeof statsArg === 'object' ? statsArg : {});
+  const templates = [];
+  if (stats.avgDuration != null && stats.avgDuration > 30)
+    templates.push(`Hi ${name}, our target for vehicle moves is 30 minutes and your recent average is ${stats.avgDuration} min. Let's look at ways to streamline — I'm here if you need tips! 🚐`);
+  if ((stats.cleans || 0) < 3)
+    templates.push(`Hi ${name}, just a reminder that cleanings should take about 40 minutes each — work through the checklist systematically. Let me know if you have any questions! 🧹`);
+  if ((stats.photos || 0) < 3)
+    templates.push(`Hi ${name}, photo batches should take ~5 minutes per vehicle. Make sure each car gets a complete exterior + interior set. Keep it up! 📸`);
+  if (!templates.length)
+    templates.push(`Hi ${name}, you're doing great this week! Thank you for the hard work on moves, cleanings, and photos — keep it up! 🌟`);
+  const el = $('coaching-templates');
+  if (el) {
+    el._templates = templates;
+    el.innerHTML = templates.map((t,i) => `<button class="btn btn-sm btn-outline coaching-tmpl-btn" style="text-align:left;white-space:normal;font-size:0.78rem;padding:5px 10px;" onclick="useCoachingTemplate(${i})">${escapeHtml(t.slice(0,90))}…</button>`).join('');
+  }
+  const msgEl = $('coaching-message');
+  if (msgEl) msgEl.value = templates[0] || '';
+  if ($('coaching-error')) $('coaching-error').textContent = '';
+  $('coaching-modal-overlay').style.display = 'flex';
+};
+
+window.useCoachingTemplate = function(idx) {
+  const el = $('coaching-templates');
+  if (el && el._templates) { const msgEl = $('coaching-message'); if (msgEl) msgEl.value = el._templates[idx] || ''; }
+};
+
+window.closeCoachingModal = function() {
+  $('coaching-modal-overlay').style.display = 'none';
+  _coachingTargetUid = null; _coachingTargetName = '';
+};
+
+window.sendCoachingMessage = async function() {
+  const msg = ($('coaching-message') || {}).value?.trim();
+  const errEl = $('coaching-error');
+  if (!msg) { if (errEl) errEl.textContent = 'Please enter a message.'; return; }
+  if (!_coachingTargetUid) { if (errEl) errEl.textContent = 'Recipient not found.'; return; }
+  if (errEl) errEl.textContent = '';
+  try {
+    await db.collection('messages').add({
+      from: currentUser.uid, fromName: currentUserDisplayName || currentUser.email,
+      to: _coachingTargetUid, toName: _coachingTargetName,
+      body: msg, sentAt: firebase.firestore.FieldValue.serverTimestamp(), read: false, coaching: true,
+    });
+    closeCoachingModal();
+    toast(`Coaching note sent to ${_coachingTargetName} ✓`, 'success');
+  } catch(e) { if (errEl) errEl.textContent = 'Failed to send.'; }
 };
 
 // Inject 72h Lagoon Drive alerts directly into the urgent banner DOM
