@@ -23011,6 +23011,14 @@ window.submitShiftLog = async function() {
 };
 
 // Live recalculate score when user edits a count input
+function _fmtMins(m) {
+  if (m <= 0) return '0m';
+  const h = Math.floor(m / 60);
+  const min = m % 60;
+  if (h === 0) return `${min}m`;
+  if (min === 0) return `${h}h`;
+  return `${h}h ${min}m`;
+}
 window.recalcProdScore = function(inputEl) {
   const card = inputEl.closest('.prod-result-card');
   if (!card) return;
@@ -23055,9 +23063,9 @@ window.recalcProdScore = function(inputEl) {
   card.style.borderColor = scoreColor;
 
   const summaryEl = card.querySelector('.prod-live-summary');
-  if (summaryEl) summaryEl.textContent = `${taskMins} of ${minutesWorked} min accounted for`;
+  if (summaryEl) summaryEl.textContent = `${_fmtMins(taskMins)} of ${_fmtMins(minutesWorked)} worked accounted for`;
   const untrackedLbl = card.querySelector('.prod-live-untracked');
-  if (untrackedLbl) untrackedLbl.textContent = unaccounted + 'm untracked';
+  if (untrackedLbl) untrackedLbl.textContent = `${_fmtMins(unaccounted)} untracked`;
 };
 
 // Called from Team Performance employee row 📊 button — pre-fills the tracker
@@ -23270,8 +23278,8 @@ window.runProductivityCalc = async function() {
           <div class="prod-live-label" style="font-size:0.82rem;color:${scoreColor};font-weight:700;">${scoreLabel}</div>
         </div>
         <div class="prod-result-summary">
-          <span class="prod-live-summary">${taskMins} of ${minutesWorked} min accounted for</span><br>
-          <span class="prod-live-untracked" style="color:#9ca3af;">${unaccounted}m untracked</span>
+          <span class="prod-live-summary">${_fmtMins(taskMins)} of ${_fmtMins(minutesWorked)} worked accounted for</span><br>
+          <span class="prod-live-untracked" style="color:#9ca3af;">${_fmtMins(unaccounted)} untracked</span>
         </div>
       </div>
     </div>`;
