@@ -22847,11 +22847,83 @@ window._startRelocationsListener = function() {
 // ================================================================
 // PRODUCTIVITY TRACKER — Shift-based productivity scoring (Admin only)
 // ================================================================
-// Targets in minutes per task unit
-const PROD_TARGETS = {
-  vehicle_move_completed: 30,
-  vehicle_cleaned:        40,
-  photo_uploaded:         5,
+// Defaults (overridden by Firestore prodSettings doc)
+const PROD_TARGETS_DEFAULT = {
+  vehicle_move_completed: { label: '🚐 Vehicle Move',   targetMin: 30, tracked: true },
+  vehicle_cleaned:        { label: '🧹 Cleaning',        targetMin: 40, tracked: true },
+  photo_uploaded:         { label: '📸 Photo Batch',     targetMin: 5,  tracked: true },
+};
+let _prodSettings = null;
+
+async function _loadProdSettings() {
+  if (_prodSettings) return _prodSettings;
+  try {
+    const doc = await db.collection('prodSettings').doc('targets').get();
+    _prodSettings = doc.exists ? { ...PROD_TARGETS_DEFAULT, ...doc.data() } : { ...PROD_TARGETS_DEFAULT };
+  } catch(e) { _prodSettings = { ...PROD_TARGETS_DEFAULT }; }
+  return _prodSettings;
+}
+
+// ---- Settings Modal ----
+let _editingProdSettings = {};
+
+window.openProdSettings = async function() {
+  const settings = await _loadProdSettings();
+  _editingProdSettings = JSON.parse(JSON.stringify(settings));
+  renderProdTargetsList();
+  if ($('prod-settings-error')) $('prod-settings-error').textContent = '';
+  $('prod-settings-overlay').style.display = 'flex';
+};
+
+window.closeProdSettings = function() { $('prod-settings-overlay').style.display = 'none'; };
+
+function renderProdTargetsList() {
+  const container = $('prod-targets-list');
+  if (!container) return;
+  container.innerHTML = Object.entries(_editingProdSettings).map(([key, cfg]) => {
+    const isDeletable = !!cfg.isCustom;
+    const safeKey = key.replace(/'/g, "\\'");
+    return `<div class="prod-target-row">
+      <input type="text" value="${escapeHtml(cfg.label||'')}" placeholder="Task name"
+        oninput="_editingProdSettings['${safeKey}'].label=this.value"
+        style="flex:2;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:0.85rem;background:#fff;outline:none;">
+      <input type="number" value="${cfg.targetMin||0}" min="1" max="480"
+        oninput="_editingProdSettings['${safeKey}'].targetMin=parseInt(this.value)||0"
+        style="width:60px;border:1px solid #e5e7eb;border-radius:6px;padding:6px 8px;font-size:0.85rem;text-align:center;background:#fff;outline:none;">
+      <span style="font-size:0.75rem;color:#9ca3af;">min</span>
+      ${isDeletable ? `<button onclick="deleteCustomTask('${safeKey}')" style="background:none;border:none;color:#dc2626;cursor:pointer;font-size:1rem;padding:2px;">🗑️</button>` : '<span style="width:22px;display:inline-block;"></span>'}
+    </div>`;
+  }).join('');
+}
+
+window.deleteCustomTask = function(key) {
+  delete _editingProdSettings[key];
+  renderProdTargetsList();
+};
+
+window.addCustomTaskType = function() {
+  const key = 'custom_' + Date.now();
+  _editingProdSettings[key] = { label: '', targetMin: 15, tracked: false, isCustom: true };
+  renderProdTargetsList();
+  setTimeout(() => {
+    const inputs = $('prod-targets-list')?.querySelectorAll('input[type=text]');
+    if (inputs && inputs.length) inputs[inputs.length - 1].focus();
+  }, 50);
+};
+
+window.saveProdSettings = async function() {
+  const errEl = $('prod-settings-error');
+  for (const [k, cfg] of Object.entries(_editingProdSettings)) {
+    if (!cfg.label?.trim()) { if (errEl) errEl.textContent = 'All tasks need a name.'; return; }
+    if (!cfg.targetMin || cfg.targetMin < 1) { if (errEl) errEl.textContent = 'All tasks need a valid time > 0 min.'; return; }
+  }
+  if (errEl) errEl.textContent = '';
+  try {
+    await db.collection('prodSettings').doc('targets').set(_editingProdSettings);
+    _prodSettings = { ..._editingProdSettings };
+    closeProdSettings();
+    toast('Task settings saved ✓', 'success');
+  } catch(e) { console.error(e); if (errEl) errEl.textContent = 'Failed to save.'; }
 };
 
 let _coachingTargetUid  = null;
@@ -22891,6 +22963,14 @@ window.submitShiftLog = async function() {
   if (!uid) { if (errEl) errEl.textContent = 'Select an employee.'; return; }
   if (!date) { if (errEl) errEl.textContent = 'Select a date.'; return; }
   if (!hours || hours <= 0) { if (errEl) errEl.textContent = 'Enter valid hours worked.'; return; }
+  // Collect custom task counts
+  const settings = await _loadProdSettings();
+  const customCounts = {};
+  Object.entries(settings).filter(([, cfg]) => cfg.isCustom).forEach(([key]) => {
+    const el = $('shift-custom-' + key);
+    const cnt = el ? (parseInt(el.value) || 0) : 0;
+    if (cnt > 0) customCounts[key] = cnt;
+  });
   if (errEl) errEl.textContent = '';
   const emp = _shiftUsersCache.find(u => u.uid === uid);
   const empName = emp ? emp.name : uid;
@@ -22898,12 +22978,13 @@ window.submitShiftLog = async function() {
     await db.collection('shiftLogs').add({
       employeeId: uid, employeeName: empName,
       date, hoursWorked: hours, notes: notes || null,
+      customCounts: Object.keys(customCounts).length ? customCounts : null,
       loggedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
       loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
     closeShiftLog();
     toast(`Shift logged for ${empName} ✓`, 'success');
-    loadGoalsPanel(); // refresh the panel
+    loadGoalsPanel();
   } catch(e) { console.error('Shift log error:', e); if (errEl) errEl.textContent = 'Failed to save.'; }
 };
 
@@ -22913,12 +22994,152 @@ window.loadGoalsPanel = async function() {
   if (!container) return;
   container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
 
-  // Default date filter to today if not set
   const dateFilterEl = $('goals-filter-date');
   if (dateFilterEl && !dateFilterEl.value) dateFilterEl.value = todayDateString();
-
-  // Use the date filter if set, otherwise last 7 days
   const filterDate = dateFilterEl?.value;
+  let rangeStart, rangeEnd, rangeLabel;
+  if (filterDate) {
+    rangeStart = new Date(filterDate + 'T00:00:00');
+    rangeEnd   = new Date(filterDate + 'T23:59:59');
+    rangeLabel = filterDate;
+  } else {
+    rangeEnd   = new Date();
+    rangeStart = new Date(rangeEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+    rangeLabel = 'Last 7 days';
+  }
+
+  try {
+    // Load settings + data in parallel
+    const [settings, shiftSnap, actSnap] = await Promise.all([
+      _loadProdSettings(),
+      db.collection('shiftLogs')
+        .where('date', '>=', rangeStart.toISOString().slice(0,10))
+        .where('date', '<=', rangeEnd.toISOString().slice(0,10))
+        .get(),
+      db.collection('userActivity')
+        .where('at', '>=', firebase.firestore.Timestamp.fromDate(rangeStart))
+        .where('at', '<=', firebase.firestore.Timestamp.fromDate(rangeEnd))
+        .get(),
+    ]);
+
+    const shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => a.date.localeCompare(b.date));
+    const actItems = actSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Group shift logs by employee
+    const byEmployee = {};
+    shifts.forEach(s => {
+      if (!byEmployee[s.employeeId]) byEmployee[s.employeeId] = { name: s.employeeName, uid: s.employeeId, totalHours: 0, shifts: [], customCounts: {} };
+      byEmployee[s.employeeId].totalHours += s.hoursWorked;
+      byEmployee[s.employeeId].shifts.push(s);
+      // Aggregate custom task counts from all shifts
+      if (s.customCounts) {
+        Object.entries(s.customCounts).forEach(([k, v]) => {
+          byEmployee[s.employeeId].customCounts[k] = (byEmployee[s.employeeId].customCounts[k] || 0) + (v || 0);
+        });
+      }
+    });
+
+    // Group activity by user
+    const actByName = {};
+    actItems.forEach(d => {
+      const name = d.userName || 'Unknown';
+      if (!actByName[name]) actByName[name] = { uid: d.uid || '', moves: [], cleans: 0, photos: 0 };
+      if (!actByName[name].uid && d.uid) actByName[name].uid = d.uid;
+      if (d.action === 'vehicle_move_completed') {
+        const det = d.details || {};
+        actByName[name].moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
+      } else if (d.action === 'vehicle_cleaned') actByName[name].cleans++;
+      else if (d.action === 'photo_uploaded') actByName[name].photos++;
+    });
+
+    if (!Object.keys(byEmployee).length) {
+      container.innerHTML = `<div style="text-align:center;padding:20px;">
+        <p class="hint" style="font-size:0.88rem;">No shifts logged for ${escapeHtml(rangeLabel)}.</p>
+        <button class="btn btn-sm" onclick="openShiftLog()" style="background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:7px 18px;font-weight:700;cursor:pointer;margin-top:8px;">+ Log a Shift</button>
+      </div>`;
+      return;
+    }
+
+    // Get custom task types from settings
+    const customTaskTypes = Object.entries(settings).filter(([, cfg]) => cfg.isCustom);
+
+    container.innerHTML = Object.values(byEmployee).map(emp => {
+      const minutesWorked = emp.totalHours * 60;
+      const act = actByName[emp.name] || { moves: [], cleans: 0, photos: 0 };
+
+      // Calculate minutes accounted for — auto-tracked tasks
+      const movesCount = act.moves.length;
+      const moveMins   = movesCount * (settings.vehicle_move_completed?.targetMin || 30);
+      const cleanMins  = act.cleans  * (settings.vehicle_cleaned?.targetMin        || 40);
+      const photoMins  = act.photos  * (settings.photo_uploaded?.targetMin         || 5);
+
+      // Custom task minutes
+      let customMins = 0;
+      const customRows = customTaskTypes.map(([key, cfg]) => {
+        const cnt = emp.customCounts[key] || 0;
+        const mins = cnt * (cfg.targetMin || 0);
+        customMins += mins;
+        return cnt > 0 ? `<div class="goal-metric">
+          <span class="goal-metric-label">${escapeHtml(cfg.label)}</span>
+          <span class="goal-metric-val">${cnt}</span>
+          <span class="goal-metric-detail">${mins} min est.</span>
+        </div>` : '';
+      }).filter(Boolean).join('');
+
+      const taskMins = moveMins + cleanMins + photoMins + customMins;
+      const score = minutesWorked > 0 ? Math.round((taskMins / minutesWorked) * 100) : 0;
+      const scoreColor = score >= 85 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
+      const scoreBg    = score >= 85 ? '#dcfce7' : score >= 60 ? '#fef9c3' : '#fee2e2';
+      const scoreLabel = score >= 85 ? 'On Target 🟢' : score >= 60 ? 'Below Target 🟡' : 'Needs Review 🔴';
+
+      const moveDurations = act.moves.filter(m => m != null);
+      const avgMoveDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
+      const moveTarget = settings.vehicle_move_completed?.targetMin || 30;
+
+      const shiftRows = emp.shifts.map(s => `<span style="font-size:0.72rem;color:#6b7280;">${s.date}: ${s.hoursWorked}h${s.notes?' · '+escapeHtml(s.notes):''}</span>`).join('<br>');
+      const coachData = JSON.stringify({ movesCount, avgDuration: avgMoveDur, cleans: act.cleans, photos: act.photos, score, hoursWorked: emp.totalHours });
+      const coachBtn  = emp.uid ? `<button class="btn btn-sm goal-coach-btn" onclick='openCoachingModal("${escapeHtml(emp.uid)}","${escapeHtml(emp.name)}",${coachData.replace(/"/g,"&quot;")})'>🎯 Coach</button>` : '';
+
+      return `<div class="goal-user-card" style="border-left:4px solid ${scoreColor};">
+        <div class="goal-user-top">
+          <span class="goal-user-name">${escapeHtml(emp.name)}</span>
+          <span class="prod-score-badge" style="background:${scoreBg};color:${scoreColor};">${score}% · ${scoreLabel}</span>
+          ${coachBtn}
+        </div>
+        <div class="prod-hours-row">
+          <span>⏱️ <strong>${emp.totalHours}h</strong> worked · ${taskMins} of ${minutesWorked} min accounted for</span>
+          <span style="color:#9ca3af;font-size:0.72rem;">${shiftRows}</span>
+        </div>
+        <div class="goal-metrics">
+          <div class="goal-metric">
+            <span class="goal-metric-label">🚐 Moves</span>
+            <span class="goal-metric-val">${movesCount}</span>
+            <span class="goal-metric-detail">${avgMoveDur!=null?avgMoveDur+'min avg / '+moveTarget+' target':moveMins+'min est.'}</span>
+          </div>
+          <div class="goal-metric">
+            <span class="goal-metric-label">🧹 Cleans</span>
+            <span class="goal-metric-val">${act.cleans}</span>
+            <span class="goal-metric-detail">${cleanMins} min est.</span>
+          </div>
+          <div class="goal-metric">
+            <span class="goal-metric-label">📸 Photos</span>
+            <span class="goal-metric-val">${act.photos}</span>
+            <span class="goal-metric-detail">${photoMins} min est.</span>
+          </div>
+          ${customRows}
+          <div class="goal-metric">
+            <span class="goal-metric-label">⏱️ Unaccounted</span>
+            <span class="goal-metric-val" style="color:#9ca3af;">${Math.max(0, minutesWorked - taskMins)}m</span>
+            <span class="goal-metric-detail">of ${minutesWorked}m total</span>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error('Goals panel error:', e);
+    container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error loading. Try again.</p>';
+  }
+};
   let rangeStart, rangeEnd, rangeLabel;
   if (filterDate) {
     rangeStart = new Date(filterDate + 'T00:00:00');

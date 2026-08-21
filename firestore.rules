@@ -217,5 +217,10 @@ service cloud.firestore {
       allow create, update: if isManager();
       allow delete: if isAdmin();
     }
+    // Prod Settings (productivity targets) — admins read/write
+    match /prodSettings/{docId} {
+      allow read: if isManager();
+      allow write: if isAdmin();
+    }
   }
 }
