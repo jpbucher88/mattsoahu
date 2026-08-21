@@ -23010,7 +23010,55 @@ window.submitShiftLog = async function() {
   } catch(e) { console.error('Shift log error:', e); if (errEl) errEl.textContent = 'Failed to save.'; }
 };
 
-// ---- Productivity Calculator — per-employee ----
+// Live recalculate score when user edits a count input
+window.recalcProdScore = function(inputEl) {
+  const card = inputEl.closest('.prod-result-card');
+  if (!card) return;
+  const minutesWorked = parseFloat(card.dataset.minutes) || 0;
+  if (minutesWorked <= 0) return;
+
+  // Sum up all count inputs × their target minutes
+  let taskMins = 0;
+  card.querySelectorAll('.prod-count-input').forEach(inp => {
+    const count  = Math.max(0, parseInt(inp.value) || 0);
+    const target = parseFloat(inp.dataset.target) || 0;
+    const rowMins = count * target;
+    taskMins += rowMins;
+    // Update the mins label in this row
+    const minsEl = inp.closest('.prod-result-row')?.querySelector('.prod-live-mins');
+    if (minsEl) minsEl.textContent = rowMins + 'm';
+    // Update the bar fill
+    const fill = inp.closest('.prod-result-row')?.querySelector('.prod-result-row-fill');
+    if (fill) {
+      const pct = Math.min(100, Math.round(rowMins / minutesWorked * 100));
+      fill.style.width = pct + '%';
+    }
+  });
+
+  // Untracked row
+  const unaccounted = Math.max(0, minutesWorked - taskMins);
+  const untrackedMins = card.querySelector('.prod-untracked-mins');
+  if (untrackedMins) untrackedMins.textContent = unaccounted + 'm';
+  const untrackedFill = card.querySelector('.prod-result-row:last-child .prod-result-row-fill');
+  if (untrackedFill) untrackedFill.style.width = Math.min(100, Math.round(unaccounted / minutesWorked * 100)) + '%';
+
+  // Score
+  const score = Math.round((taskMins / minutesWorked) * 100);
+  const scoreColor = score >= 85 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
+  const scoreBg    = score >= 85 ? '#dcfce7' : score >= 60 ? '#fef9c3' : '#fee2e2';
+  const scoreLabel = score >= 85 ? '🟢 On Target' : score >= 60 ? '🟡 Below Target' : '🔴 Needs Review';
+
+  const scoreEl = card.querySelector('.prod-live-score');
+  if (scoreEl) { scoreEl.textContent = score + '%'; scoreEl.style.color = scoreColor; }
+  const labelEl = card.querySelector('.prod-live-label');
+  if (labelEl) { labelEl.textContent = scoreLabel; labelEl.style.color = scoreColor; }
+  card.style.borderColor = scoreColor;
+
+  const summaryEl = card.querySelector('.prod-live-summary');
+  if (summaryEl) summaryEl.textContent = `${taskMins} of ${minutesWorked} min accounted for`;
+  const untrackedLbl = card.querySelector('.prod-live-untracked');
+  if (untrackedLbl) untrackedLbl.textContent = unaccounted + 'm untracked';
+};
 
 // Called from Team Performance employee row 📊 button — pre-fills the tracker
 window.populateProdTracker = async function(uid, name, date) {
@@ -23180,7 +23228,8 @@ window.runProductivityCalc = async function() {
 
     const coachData = JSON.stringify({ movesCount: moves.length, avgDuration: avgDur, cleans, photos, score, hoursWorked: hours });
 
-    container.innerHTML = `<div class="prod-result-card" style="border-color:${scoreColor};">
+    // Build editable rows — counts are <input> fields that live-recalculate
+    container.innerHTML = `<div class="prod-result-card" style="border-color:${scoreColor};" data-minutes="${minutesWorked}">
       <div class="prod-result-header">
         <div>
           <div class="prod-result-name">${escapeHtml(empName)}</div>
@@ -23188,40 +23237,41 @@ window.runProductivityCalc = async function() {
         </div>
         <button class="btn btn-sm goal-coach-btn" style="margin-left:auto;" onclick='openCoachingModal("${escapeHtml(empUid)}","${escapeHtml(empName)}",${coachData.replace(/"/g,'&quot;')})'>🎯 Coach ${escapeHtml(empName.split(' ')[0])}</button>
       </div>
-      <div class="prod-result-rows">
+      <p style="font-size:0.75rem;color:#9ca3af;margin:0 0 6px;font-style:italic;">✏️ Edit any count below — score recalculates automatically</p>
+      <div class="prod-result-rows" id="prod-live-rows">
         <div class="prod-result-row">
-          <span class="prod-result-row-label">🚐 Moves<span style="color:#9ca3af;font-size:0.72rem;margin-left:4px;">${avgDur!=null?'avg '+avgDur+'m / '+moveTarget+'m target':moveTarget+'m each'}</span></span>
-          <span class="prod-result-row-count">${moves.length}</span>
-          <span class="prod-result-row-mins">${moveMins}m</span>
+          <span class="prod-result-row-label">🚐 Moves<span class="prod-row-hint">${avgDur!=null?'avg '+avgDur+'m / '+moveTarget+'m target':moveTarget+'m each'}</span></span>
+          <input type="number" class="prod-count-input" value="${moves.length}" min="0" data-target="${moveTarget}" data-color="#7c3aed" oninput="recalcProdScore(this)">
+          <span class="prod-result-row-mins prod-live-mins">${moveMins}m</span>
           ${bar(moveMins, '#7c3aed')}
         </div>
         <div class="prod-result-row">
-          <span class="prod-result-row-label">🧹 Cleans<span style="color:#9ca3af;font-size:0.72rem;margin-left:4px;">${cleanTarget}m each</span></span>
-          <span class="prod-result-row-count">${cleans}</span>
-          <span class="prod-result-row-mins">${cleanMins}m</span>
+          <span class="prod-result-row-label">🧹 Cleans<span class="prod-row-hint">${cleanTarget}m each</span></span>
+          <input type="number" class="prod-count-input" value="${cleans}" min="0" data-target="${cleanTarget}" data-color="#0891b2" oninput="recalcProdScore(this)">
+          <span class="prod-result-row-mins prod-live-mins">${cleanMins}m</span>
           ${bar(cleanMins, '#0891b2')}
         </div>
         <div class="prod-result-row">
-          <span class="prod-result-row-label">📸 Photo Batches<span style="color:#9ca3af;font-size:0.72rem;margin-left:4px;">${photoTarget}m each</span></span>
-          <span class="prod-result-row-count">${photos}</span>
-          <span class="prod-result-row-mins">${photoMins}m</span>
+          <span class="prod-result-row-label">📸 Photo Batches<span class="prod-row-hint">${photoTarget}m each</span></span>
+          <input type="number" class="prod-count-input" value="${photos}" min="0" data-target="${photoTarget}" data-color="#2563eb" oninput="recalcProdScore(this)">
+          <span class="prod-result-row-mins prod-live-mins">${photoMins}m</span>
           ${bar(photoMins, '#2563eb')}
         </div>
-        <div class="prod-result-row" style="opacity:0.5;">
-          <span class="prod-result-row-label">⏱️ Untracked time</span>
-          <span class="prod-result-row-count">—</span>
-          <span class="prod-result-row-mins">${unaccounted}m</span>
+        <div class="prod-result-row" style="opacity:0.45;">
+          <span class="prod-result-row-label">⏱️ Untracked</span>
+          <span class="prod-result-row-count prod-untracked-count">—</span>
+          <span class="prod-result-row-mins prod-untracked-mins">${unaccounted}m</span>
           ${bar(unaccounted, '#d1d5db')}
         </div>
       </div>
       <div class="prod-result-total">
         <div>
-          <div class="prod-result-score-big" style="color:${scoreColor};">${score}%</div>
-          <div style="font-size:0.82rem;color:${scoreColor};font-weight:700;">${scoreLabel}</div>
+          <div class="prod-result-score-big prod-live-score" style="color:${scoreColor};">${score}%</div>
+          <div class="prod-live-label" style="font-size:0.82rem;color:${scoreColor};font-weight:700;">${scoreLabel}</div>
         </div>
         <div class="prod-result-summary">
-          ${taskMins} of ${minutesWorked} min accounted for<br>
-          <span style="color:#9ca3af;">${unaccounted}m untracked</span>
+          <span class="prod-live-summary">${taskMins} of ${minutesWorked} min accounted for</span><br>
+          <span class="prod-live-untracked" style="color:#9ca3af;">${unaccounted}m untracked</span>
         </div>
       </div>
     </div>`;
