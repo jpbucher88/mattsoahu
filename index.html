@@ -139,6 +139,21 @@
         </div>
       </section>
 
+      <!-- Relocations Widget — move vehicles between locations -->
+      <section id="relocations-widget" class="card" style="display:none;">
+        <div class="collapsible-header" onclick="toggleSection('relocations-widget-body', 'relocations-widget-toggle')">
+          <div class="collapsible-title">
+            <h3>🚐 Vehicle Moves</h3>
+            <span id="relocations-count" class="badge" style="background:#7c3aed;color:#fff;">0</span>
+          </div>
+          <button class="btn btn-sm btn-outline" id="btn-dispatch-move" onclick="event.stopPropagation(); openDispatchModal()" style="font-size:0.78rem;padding:3px 10px;margin-right:4px;border-color:#7c3aed;color:#7c3aed;">+ Dispatch Move</button>
+          <button class="collapse-btn" id="relocations-widget-toggle">&#8722;</button>
+        </div>
+        <div id="relocations-widget-body" class="collapsible-body">
+          <div id="relocations-list" class="relocations-list"></div>
+        </div>
+      </section>
+
       <section id="fleet-overview" class="card">
         <div class="collapsible-header" onclick="toggleSection('fleet-overview-body', 'fleet-overview-toggle')">
           <div class="collapsible-title">
@@ -197,6 +212,7 @@
           <span id="mail-unread-count-vehicle" class="task-alert-count count-zero">0</span>
         </button>
 
+        <button id="btn-dispatch-move-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;border-color:#7c3aed;color:#7c3aed;" title="Move this vehicle" onclick="openDispatchModal(selectedVehicle&&selectedVehicle.id)">🚐 Move</button>
         <button id="btn-admin-from-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;" title="Admin">Admin</button>
         <button id="btn-logout-vehicle" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
       </div>
@@ -491,6 +507,10 @@
             <button id="btn-upload-override" class="btn btn-sm btn-outline">📷 Mark Photos Up to Date</button>
           </div>
         </div>
+        <!-- Skip Photos Today — per-vehicle, calendar-date specific -->
+        <div id="skip-photos-today-wrap" style="display:none; margin-bottom:10px;">
+          <button id="btn-skip-photos-today" class="btn btn-sm btn-skip-today" onclick="doSkipPhotosToday()">📅 No Photos Needed Today</button>
+        </div>
 
         <!-- Mileage prompt — required before uploading -->
         <div id="mileage-prompt" class="mileage-prompt">
@@ -782,16 +802,6 @@
         <!-- Maintenance history -->
         <div id="maintenance-history" class="data-list"></div>
 
-        <!-- Provider Scoreboard -->
-        <div id="provider-scoreboard-wrap" style="display:none; margin-top:16px;">
-          <div class="collapsible-header" onclick="toggleSection('provider-scoreboard-body','provider-scoreboard-toggle')" style="cursor:pointer;">
-            <div class="collapsible-title"><h4 style="margin:0;">🏆 Provider Scoreboard</h4></div>
-            <button class="collapse-btn" id="provider-scoreboard-toggle">&#8722;</button>
-          </div>
-          <div id="provider-scoreboard-body">
-            <div id="provider-scoreboard-list" class="provider-scoreboard-list"></div>
-          </div>
-        </div>
       </section>
 
       <!-- ====== Edit Maintenance Modal ====== -->
@@ -2992,5 +3002,71 @@
     <option value="10:00"><option value="10:30">
     <option value="11:00"><option value="11:30">
   </datalist>
+
+  <!-- ==================== DISPATCH MOVE MODAL ==================== -->
+  <div id="dispatch-modal-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeDispatchModal()">
+    <div class="modal-card" style="max-width:420px;">
+      <div class="modal-header">
+        <h3>🚐 Dispatch Vehicle Move</h3>
+        <button class="modal-close-btn" onclick="closeDispatchModal()">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <div id="dispatch-vehicle-preview" class="dispatch-vehicle-preview"></div>
+        <div class="form-group" style="margin-top:12px;">
+          <label>Vehicle</label>
+          <select id="dispatch-vehicle-select" class="form-control" onchange="updateDispatchPreview()">
+            <option value="">— Select vehicle —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Move To</label>
+          <select id="dispatch-destination" class="form-control">
+            <option value="">— Select destination —</option>
+            <option value="HNL">HNL</option>
+            <option value="1585 Kapiolani">1585 Kapiolani</option>
+            <option value="94-530 Lumiauau">94-530 Lumiauau</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Driver / Notes (optional)</label>
+          <input type="text" id="dispatch-notes" class="form-control" placeholder="e.g. Alondra — bring keys from office">
+        </div>
+        <p id="dispatch-modal-error" class="error-msg"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeDispatchModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitDispatch()" style="background:#7c3aed;border-color:#7c3aed;">🚐 Dispatch</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== HNL ARRIVAL MODAL ==================== -->
+  <div id="hnl-arrival-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeHnlArrivalModal()">
+    <div class="modal-card" style="max-width:380px;">
+      <div class="modal-header">
+        <h3>🏠 Arrived at HNL</h3>
+        <button class="modal-close-btn" onclick="closeHnlArrivalModal()">&#10005;</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-bottom:12px;">Enter the parking spot for this vehicle:</p>
+        <div style="display:flex;gap:10px;">
+          <div class="form-group" style="flex:1;">
+            <label>Row</label>
+            <input type="text" id="hnl-arrive-row" class="form-control" placeholder="e.g. A" maxlength="5" style="text-transform:uppercase;">
+          </div>
+          <div class="form-group" style="flex:1;">
+            <label>Level</label>
+            <input type="text" id="hnl-arrive-level" class="form-control" placeholder="e.g. 3" maxlength="5">
+          </div>
+        </div>
+        <p id="hnl-arrival-error" class="error-msg"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closeHnlArrivalModal()">Cancel</button>
+        <button class="btn btn-success" onclick="confirmHnlArrival()">✅ Confirm Arrival</button>
+      </div>
+    </div>
+  </div>
+
 </body>
 </html>

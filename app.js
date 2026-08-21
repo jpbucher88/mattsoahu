@@ -882,7 +882,7 @@ function todayDateString() {
   return parts; // returns YYYY-MM-DD
 }
 
-// Returns true if today's photos are covered — either a real upload today, or a manual override done today (HST)
+// Returns true if today's photos are covered — either a real upload today, a manual override done today (HST), or a "skip today" flag
 function hasPhotosToday(v) {
   if (!v) return false;
   const fmt = (d) => new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year:'numeric', month:'2-digit', day:'2-digit' }).format(d);
@@ -892,6 +892,7 @@ function hasPhotosToday(v) {
     const od = v.lastPhotoOverrideAt.toDate ? v.lastPhotoOverrideAt.toDate() : new Date(v.lastPhotoOverrideAt);
     if (fmt(od) === today) return true;
   }
+  if (v.photoSkipDate === today) return true;
   return false;
 }
 
@@ -1261,6 +1262,8 @@ auth.onAuthStateChanged(async (user) => {
       _checkOrphanedPendingUploads();
       // Flag vehicles with no mileage update in 14+ days
       setTimeout(() => checkStaleMileage(), 3000);
+      // Start relocations real-time listener
+      if (typeof window._startRelocationsListener === 'function') window._startRelocationsListener();
       showPage('dashboard');
       startMailListener();
       startIncidentListener();
@@ -2177,6 +2180,23 @@ function renderLocationsWidget() {
   const MS_2H = 2 * 60 * 60 * 1000;
   const now = Date.now();
 
+  // Returns a simple, readable return-due label for "On the Road" vehicles
+  // Shows "Returns Today" / "Returns Tomorrow" badges instead of an exact timestamp
+  function _returnDueLabel(rd) {
+    const rdDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(rd);
+    const todayStr = todayDateString();
+    const tomorrowStr = (() => {
+      const t = new Date(); t.setDate(t.getDate() + 1);
+      return new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(t);
+    })();
+    if (rdDateStr === todayStr) {
+      return `<span class="trip-return-label trip-due-today">↩ Returns Today</span>`;
+    } else if (rdDateStr === tomorrowStr) {
+      return `<span class="trip-return-label trip-due-tomorrow">↩ Returns Tomorrow</span>`;
+    }
+    return `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', timeZone: APP_TIMEZONE })}</span>`;
+  }
+
   // Split on-trip into overdue (show under home location) vs. active (On the Road)
   function getReturnTime(v) {
     return v.tripReturnDate ? (v.tripReturnDate.toDate ? v.tripReturnDate.toDate().getTime() : new Date(v.tripReturnDate).getTime()) : null;
@@ -2198,6 +2218,7 @@ function renderLocationsWidget() {
   }
   function needsPhotosCheck(v) {
     if (v.photoExcluded) return false;
+    if (v.photoSkipDate === todayDateString()) return false;
     const isOnTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'scheduled';
     const isAtRepair = v.tripStatus === 'repair-shop';
     let withinGrace = false;
@@ -2386,11 +2407,11 @@ function renderLocationsWidget() {
         returnLabel = `<span class="trip-return-label" style="color:#7c3aed;">⏰ Starts ${startStr || '—'}</span>`;
         if (v.tripReturnDate) {
           const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-          returnLabel += ` <span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
+          returnLabel += ' ' + _returnDueLabel(rd);
         }
       } else if (v.tripReturnDate) {
         const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
-        returnLabel = `<span class="trip-return-label">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })}</span>`;
+        returnLabel = _returnDueLabel(rd);
       }
       html += `<div class="trip-item">
         <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span>
@@ -3273,6 +3294,13 @@ async function openVehiclePage(vid) {
   const uploadOverrideWrap = $('upload-override-wrap');
   if (uploadOverrideWrap) uploadOverrideWrap.style.display = showOverride ? 'block' : 'none';
 
+  // Skip Photos Today — visible to admin/manager whenever vehicle is at home
+  const skipWrap = $('skip-photos-today-wrap');
+  if (skipWrap) {
+    skipWrap.style.display = canUpload ? 'block' : 'none';
+    _updateSkipPhotosBtn();
+  }
+
   // Exclude toggle — restricted to matthew.fetterman@gmail.com only
   const photoExcludeWrap = $('photo-exclude-wrap');
   const canExclude = !!(currentUser && currentUser.email && currentUser.email.toLowerCase() === 'matthew.fetterman@gmail.com');
@@ -3322,6 +3350,8 @@ async function openVehiclePage(vid) {
 
   // Show admin button if admin
   $('btn-admin-from-vehicle').style.display = currentUserRole === 'admin' ? '' : 'none';
+  const dispatchVBtn = $('btn-dispatch-move-vehicle');
+  if (dispatchVBtn) dispatchVBtn.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
 
   // Load open work orders for this vehicle (Active Issues strip)
   loadVehicleOpenIssues(vid);
@@ -3343,7 +3373,6 @@ async function openVehiclePage(vid) {
   // Load maintenance data
   loadMileage(vid);
   loadMaintenanceHistory(vid);
-  loadProviderScoreboard();
   loadVehicleNotes(vid);
 
   // Load compliance data
@@ -3555,6 +3584,52 @@ async function doPhotoOverride() {
 }
 $('btn-photo-override').addEventListener('click', doPhotoOverride);
 $('btn-upload-override').addEventListener('click', doPhotoOverride);
+
+// Skip Photos Today — mark a specific vehicle as not needing photos for today's calendar date only
+async function doSkipPhotosToday() {
+  if (!selectedVehicle) return;
+  const today = todayDateString();
+  // If already skipped today, offer to undo
+  if (selectedVehicle.photoSkipDate === today) {
+    const ok = await confirm('Undo Photo Skip', `Re-enable photo requirement for ${selectedVehicle.plate} today?`);
+    if (!ok) return;
+    try {
+      await db.collection('vehicles').doc(selectedVehicle.id).update({ photoSkipDate: firebase.firestore.FieldValue.delete() });
+      selectedVehicle.photoSkipDate = null;
+      const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+      if (cached) cached.photoSkipDate = null;
+      _updateSkipPhotosBtn();
+      renderLocationsWidget();
+      toast('Photo requirement restored for today ✓', 'success');
+    } catch (err) { toast('Failed to update.', 'error'); }
+    return;
+  }
+  const ok = await confirm('Skip Photos Today', `No photos needed for ${selectedVehicle.plate} today (${today})?\n\nThis only suppresses the photo reminder for today. It resets automatically tomorrow.`);
+  if (!ok) return;
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({ photoSkipDate: today });
+    selectedVehicle.photoSkipDate = today;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) cached.photoSkipDate = today;
+    _updateSkipPhotosBtn();
+    renderLocationsWidget();
+    toast(`Photos skipped for ${selectedVehicle.plate} today ✓`, 'success');
+  } catch (err) { toast('Failed to update.', 'error'); }
+}
+
+function _updateSkipPhotosBtn() {
+  const btn = $('btn-skip-photos-today');
+  if (!btn || !selectedVehicle) return;
+  const today = todayDateString();
+  if (selectedVehicle.photoSkipDate === today) {
+    btn.textContent = '✅ Photos Skipped Today — Tap to Undo';
+    btn.classList.add('btn-skip-active');
+  } else {
+    btn.textContent = '📅 No Photos Needed Today';
+    btn.classList.remove('btn-skip-active');
+  }
+}
+window.doSkipPhotosToday = doSkipPhotosToday;
 
 // Exclude toggle — admin only — bypass photos & cleaning prompts
 $('btn-photo-exclude').addEventListener('click', async () => {
@@ -4191,17 +4266,22 @@ async function openCamera() {
   updateFlashButton();
   $('camera-overlay').style.display = 'flex';
 
-  // Pinch-to-zoom on the camera video feed
-  // Auto-zoom is forced to minimum on stream open; user can pinch to zoom in/out freely
+  // Pinch-to-zoom on the camera video feed (user-initiated only, never automatic)
   _initCameraPinchZoom();
   // Block iOS viewport zoom while camera is open (document-level, passive:false required)
   document.addEventListener('touchmove', _preventViewportZoom, { passive: false });
+  // iOS Safari-specific: prevent native gesture zoom events
+  document.addEventListener('gesturestart', _preventViewportZoom, { passive: false });
+  document.addEventListener('gesturechange', _preventViewportZoom, { passive: false });
 
   try {
     await startCameraStream();
   } catch (err) {
     console.error('Camera error:', err);
     $('camera-overlay').style.display = 'none';
+    document.removeEventListener('touchmove', _preventViewportZoom);
+    document.removeEventListener('gesturestart', _preventViewportZoom);
+    document.removeEventListener('gesturechange', _preventViewportZoom);
     toast('Could not access camera. Check permissions.', 'error');
   }
 }
@@ -4244,33 +4324,23 @@ async function startCameraStream() {
 
   cameraStream = stream;
 
-  // Reset zoom state — always start at 1.0 (natural view), never auto-zoom in.
+  // Always use software-only zoom — hardware zoom via applyConstraints is unreliable
+  // on iPhones (multi-lens devices have telephoto baselines > 1.0 that can't be un-zoomed
+  // via constraints, causing the camera to appear permanently auto-zoomed).
   _cameraHwZoom = false;
   cameraZoomMin = 1.0;
-  cameraZoomMax = 5.0;
+  cameraZoomMax = 10.0;
   cameraZoomLevel = 1.0;
 
   const [track] = cameraStream.getVideoTracks();
   if (track && track.getCapabilities) {
     try {
       const caps = track.getCapabilities();
-      if (caps.zoom) {
-        _cameraHwZoom = true;
-        // Always keep UI minimum at 1.0 — never go below native camera view.
-        // DO NOT use caps.zoom.min as the starting level: on multi-lens iPhones
-        // caps.zoom.min can be >1 (telephoto baseline), which was causing auto-zoom.
-        cameraZoomMin = 1.0;
-        cameraZoomMax = caps.zoom.max || 5.0;
-        cameraZoomLevel = 1.0; // always start at 1× regardless of hardware minimum
+      // Only apply torch — never apply zoom via applyConstraints to avoid auto-zoom
+      if (caps.torch) {
+        await track.applyConstraints({ advanced: [{ torch: cameraFlashOn }] }).catch(() => {});
       }
-      // Force hardware zoom to exactly 1.0 and apply torch state
-      const constraintUpdates = {};
-      if (caps.zoom) constraintUpdates.zoom = 1.0;
-      if (caps.torch) constraintUpdates.torch = cameraFlashOn;
-      if (Object.keys(constraintUpdates).length) {
-        await track.applyConstraints({ advanced: [constraintUpdates] }).catch(() => {});
-      }
-    } catch (e) { /* zoom/torch not supported — ok */ }
+    } catch (e) { /* torch not supported — ok */ }
   }
 
   // Clear any CSS transform from a previous session
@@ -4776,6 +4846,8 @@ $('camera-close').addEventListener('click', async () => {
   $('camera-overlay').style.display = 'none';
   $('camera-note-sheet').style.display = 'none';
   document.removeEventListener('touchmove', _preventViewportZoom);
+  document.removeEventListener('gesturestart', _preventViewportZoom);
+  document.removeEventListener('gesturechange', _preventViewportZoom);
   _setCameraToastBadge(false); // restore full toast now that camera is closed
 
   // Wait for any remaining uploads
@@ -12121,7 +12193,6 @@ $('maintenance-form').addEventListener('submit', async (e) => {
     $('m-invoice-preview-wrap').style.display = 'none';
     $('m-invoice-preview').src = '';
     loadMaintenanceHistory(selectedVehicle.id);
-    loadProviderScoreboard();
     updateRecommendedServices(selectedVehicle.id);
   } catch (err) {
     console.error('Save maintenance error:', err);
@@ -12279,51 +12350,6 @@ async function loadProviderSuggestions() {
       }
     }
   } catch(e) { /* non-critical */ }
-}
-
-// Render the provider scoreboard below maintenance history
-async function loadProviderScoreboard() {
-  const wrap = $('provider-scoreboard-wrap');
-  const list = $('provider-scoreboard-list');
-  if (!wrap || !list) return;
-  try {
-    const snap = await db.collection('serviceProviders').orderBy('serviceCount', 'desc').limit(100).get();
-    if (snap.empty) { wrap.style.display = 'none'; return; }
-    wrap.style.display = '';
-    const fmtStar = (sum, cnt) => cnt > 0 ? (sum / cnt).toFixed(1) : null;
-    const rows = [];
-    snap.forEach(doc => {
-      const d = doc.data();
-      const comm  = fmtStar(d.ratComm_sum  || 0, d.ratComm_cnt  || 0);
-      const price = fmtStar(d.ratPrice_sum || 0, d.ratPrice_cnt || 0);
-      const fixed = fmtStar(d.ratFixed_sum || 0, d.ratFixed_cnt || 0);
-      const rated = [comm, price, fixed].filter(Boolean);
-      const overall = rated.length ? (rated.reduce((s, v) => s + parseFloat(v), 0) / rated.length).toFixed(1) : null;
-      rows.push({ name: d.name || doc.id, serviceCount: d.serviceCount || 0, totalCost: d.totalCost || 0, lastUsed: d.lastUsed || '', comm, price, fixed, overall });
-    });
-    const starBar = v => {
-      if (!v) return '<span style="color:#d1d5db;">No rating</span>';
-      const full = Math.round(parseFloat(v));
-      const stars = '★'.repeat(full) + '☆'.repeat(5 - full);
-      return `<span class="provider-stars">${stars}</span> <span class="provider-score">${v}</span>`;
-    };
-    list.innerHTML = `
-      <div class="provider-sb-grid">
-        ${rows.map(r => `
-          <div class="provider-sb-card ${r.overall && parseFloat(r.overall) >= 4 ? 'provider-sb-top' : ''}">
-            <div class="provider-sb-name">${escapeHtml(r.name)}</div>
-            <div class="provider-sb-meta">${r.serviceCount} service${r.serviceCount !== 1 ? 's' : ''} · Last: ${r.lastUsed || '—'}${r.totalCost > 0 ? ' · $' + r.totalCost.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2}) + ' total spent' : ''}</div>
-            ${r.overall ? `<div class="provider-sb-overall">Overall: ${starBar(r.overall)}</div>` : ''}
-            <div class="provider-sb-ratings">
-              ${r.comm  ? `<span class="provider-sb-cat"><span class="provider-sb-cat-label">📞 Comm</span>${starBar(r.comm)}</span>` : ''}
-              ${r.price ? `<span class="provider-sb-cat"><span class="provider-sb-cat-label">💰 Price</span>${starBar(r.price)}</span>` : ''}
-              ${r.fixed ? `<span class="provider-sb-cat"><span class="provider-sb-cat-label">✅ Fixed</span>${starBar(r.fixed)}</span>` : ''}
-            </div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-  } catch(e) { console.warn('Provider scoreboard error:', e); wrap.style.display = 'none'; }
 }
 
 // ================================================================
@@ -12526,7 +12552,6 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
     $('edit-maint-overlay').style.display = 'none';
     if (selectedVehicle) {
       loadMaintenanceHistory(selectedVehicle.id);
-      loadProviderScoreboard();
       updateRecommendedServices(selectedVehicle.id);
     }
   } catch(err) {
@@ -21843,4 +21868,271 @@ window._vrcSkip = function(btn) {
   var id = btn ? btn.getAttribute('data-skip') : '';
   var el = id ? document.getElementById('vrc-item-' + id) : null;
   if (el) el.style.opacity = '0.35';
+};
+
+// ================================================================
+// VEHICLE RELOCATIONS — Dispatch moves between locations
+// ================================================================
+
+let _relocationsUnsub = null; // Firestore listener
+let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
+
+// Color → car emoji helper (picks a colored car most like the vehicle's color)
+function _carColorEmoji(color) {
+  if (!color) return '🚗';
+  const c = color.toLowerCase();
+  if (c.includes('red') || c.includes('crimson')) return '🚗'; // red car
+  if (c.includes('blue') || c.includes('navy')) return '🔵';
+  if (c.includes('black')) return '⬛';
+  if (c.includes('white') || c.includes('pearl')) return '⬜';
+  if (c.includes('silver') || c.includes('grey') || c.includes('gray')) return '🩶';
+  if (c.includes('gold') || c.includes('yellow') || c.includes('tan') || c.includes('beige')) return '🟡';
+  if (c.includes('green')) return '🟢';
+  if (c.includes('orange')) return '🟠';
+  if (c.includes('purple') || c.includes('violet')) return '🟣';
+  if (c.includes('brown') || c.includes('maroon')) return '🟤';
+  return '🚗';
+}
+
+// Build a simple colored car badge from vehicle data
+function _vehicleCarBadge(v) {
+  const emoji = _carColorEmoji(v.color);
+  const colorDot = v.color ? `<span class="reloc-color-dot" style="background:${_cssColor(v.color)};" title="${escapeHtml(v.color)}"></span>` : '';
+  return `<span class="reloc-car-badge">${emoji}${colorDot} <strong>${escapeHtml(v.plate)}</strong> <span class="reloc-car-sub">${escapeHtml(v.color || '')} ${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span></span>`;
+}
+
+// Map color name to CSS color (best-effort)
+function _cssColor(name) {
+  if (!name) return '#9ca3af';
+  const c = name.toLowerCase();
+  const map = { red:'#ef4444', blue:'#3b82f6', navy:'#1e3a5f', black:'#111827', white:'#f9fafb',
+    silver:'#c0c0c0', grey:'#9ca3af', gray:'#9ca3af', gold:'#f59e0b', yellow:'#fde047',
+    green:'#22c55e', orange:'#f97316', purple:'#a855f7', brown:'#92400e', maroon:'#7f1d1d',
+    tan:'#d4a96a', beige:'#e8d5b7', pearl:'#f9fafb', teal:'#14b8a6', pink:'#ec4899' };
+  for (const [k, v] of Object.entries(map)) { if (c.includes(k)) return v; }
+  return '#9ca3af';
+}
+
+// Open dispatch modal (can be pre-filled from vehicle chip)
+window.openDispatchModal = function(vehicleId) {
+  const sel = $('dispatch-vehicle-select');
+  if (sel) {
+    sel.innerHTML = '<option value="">— Select vehicle —</option>';
+    const atHome = vehiclesCache.filter(v => v.tripStatus === 'home' || !v.tripStatus);
+    atHome.sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
+    atHome.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.id;
+      opt.textContent = `${v.plate}${v.color ? ' · ' + v.color : ''}${v.make ? ' ' + v.make : ''}${v.model ? ' ' + v.model : ''}`;
+      sel.appendChild(opt);
+    });
+    if (vehicleId) sel.value = vehicleId;
+  }
+  if ($('dispatch-notes')) $('dispatch-notes').value = '';
+  if ($('dispatch-modal-error')) $('dispatch-modal-error').textContent = '';
+  updateDispatchPreview();
+  $('dispatch-modal-overlay').style.display = 'flex';
+};
+
+window.closeDispatchModal = function() {
+  $('dispatch-modal-overlay').style.display = 'none';
+};
+
+window.updateDispatchPreview = function() {
+  const sel = $('dispatch-vehicle-select');
+  const preview = $('dispatch-vehicle-preview');
+  if (!sel || !preview) return;
+  const vid = sel.value;
+  const v = vehiclesCache.find(x => x.id === vid);
+  if (v) {
+    preview.innerHTML = _vehicleCarBadge(v);
+    preview.style.display = 'block';
+  } else {
+    preview.style.display = 'none';
+    preview.innerHTML = '';
+  }
+};
+
+window.submitDispatch = async function() {
+  const vid = $('dispatch-vehicle-select') ? $('dispatch-vehicle-select').value : '';
+  const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
+  const notes = $('dispatch-notes') ? $('dispatch-notes').value.trim() : '';
+  const errEl = $('dispatch-modal-error');
+  if (!vid) { if (errEl) errEl.textContent = 'Please select a vehicle.'; return; }
+  if (!dest) { if (errEl) errEl.textContent = 'Please select a destination.'; return; }
+  if (errEl) errEl.textContent = '';
+  const v = vehiclesCache.find(x => x.id === vid);
+  if (!v) { if (errEl) errEl.textContent = 'Vehicle not found.'; return; }
+  try {
+    await db.collection('vehicleMoves').add({
+      vehicleId: vid,
+      vehiclePlate: v.plate || '',
+      vehicleColor: v.color || '',
+      vehicleMake: v.make || '',
+      vehicleModel: v.model || '',
+      fromLocation: v.homeLocation || '',
+      toLocation: dest,
+      notes: notes,
+      status: 'pending',
+      dispatchedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      dispatchedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    closeDispatchModal();
+    toast(`Move dispatched for ${v.plate} → ${dest} ✓`, 'success');
+  } catch (e) {
+    console.error('Dispatch error:', e);
+    if (errEl) errEl.textContent = 'Failed to dispatch. Try again.';
+  }
+};
+
+// Driver claims a move (sets status to in-progress + driverName)
+window.claimMove = async function(moveId) {
+  try {
+    await db.collection('vehicleMoves').doc(moveId).update({
+      status: 'in-progress',
+      driverName: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      claimedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast('Move claimed! Head to the vehicle.', 'success');
+  } catch (e) { toast('Failed to claim move.', 'error'); }
+};
+
+// Driver marks arrived — if destination is HNL, prompt for row/level
+window.arriveMove = async function(moveId, toLocation) {
+  if (toLocation === 'HNL') {
+    _pendingArrivalMoveId = moveId;
+    if ($('hnl-arrive-row')) $('hnl-arrive-row').value = '';
+    if ($('hnl-arrive-level')) $('hnl-arrive-level').value = '';
+    if ($('hnl-arrival-error')) $('hnl-arrival-error').textContent = '';
+    $('hnl-arrival-modal').style.display = 'flex';
+  } else {
+    await _completeMoveDoc(moveId, toLocation, '', '');
+  }
+};
+
+window.closeHnlArrivalModal = function() {
+  $('hnl-arrival-modal').style.display = 'none';
+  _pendingArrivalMoveId = null;
+};
+
+window.confirmHnlArrival = async function() {
+  const row = ($('hnl-arrive-row').value || '').trim().toUpperCase();
+  const level = ($('hnl-arrive-level').value || '').trim();
+  const errEl = $('hnl-arrival-error');
+  if (!row && !level) { if (errEl) errEl.textContent = 'Enter at least a row or level.'; return; }
+  if (errEl) errEl.textContent = '';
+  await _completeMoveDoc(_pendingArrivalMoveId, 'HNL', row, level);
+  closeHnlArrivalModal();
+};
+
+async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
+  if (!moveId) return;
+  try {
+    // Get the move doc to find vehicleId
+    const snap = await db.collection('vehicleMoves').doc(moveId).get();
+    if (!snap.exists) { toast('Move not found.', 'error'); return; }
+    const move = snap.data();
+    // Mark move completed
+    const update = {
+      status: 'completed',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      completedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    };
+    if (hnlRow) update.hnlRow = hnlRow;
+    if (hnlLevel) update.hnlLevel = hnlLevel;
+    await db.collection('vehicleMoves').doc(moveId).update(update);
+    // Update vehicle home location + HNL slot if applicable
+    const vehicleUpdate = { homeLocation: toLocation };
+    if (toLocation === 'HNL') {
+      if (hnlRow) vehicleUpdate.parkingRow = hnlRow;
+      if (hnlLevel) vehicleUpdate.parkingLevel = hnlLevel;
+    }
+    if (move.vehicleId) {
+      await db.collection('vehicles').doc(move.vehicleId).update(vehicleUpdate);
+    }
+    toast(`✅ ${move.vehiclePlate || 'Vehicle'} arrived at ${toLocation}!`, 'success');
+    refreshDashboard();
+  } catch (e) {
+    console.error('Complete move error:', e);
+    toast('Failed to complete move.', 'error');
+  }
+}
+
+// Cancel a move (admin/manager only)
+window.cancelMove = async function(moveId) {
+  const ok = await confirm('Cancel Move', 'Cancel this vehicle move?');
+  if (!ok) return;
+  try {
+    await db.collection('vehicleMoves').doc(moveId).update({
+      status: 'cancelled',
+      cancelledAt: firebase.firestore.FieldValue.serverTimestamp(),
+      cancelledBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    });
+    toast('Move cancelled.', 'success');
+  } catch (e) { toast('Failed to cancel.', 'error'); }
+};
+
+// Subscribe to active moves and render the widget
+function subscribeRelocations() {
+  if (_relocationsUnsub) _relocationsUnsub();
+  _relocationsUnsub = db.collection('vehicleMoves')
+    .where('status', 'in', ['pending', 'in-progress'])
+    .orderBy('dispatchedAt', 'asc')
+    .onSnapshot(snap => {
+      renderRelocationsWidget(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, e => console.warn('Relocations listener error:', e));
+}
+
+function renderRelocationsWidget(moves) {
+  const widget = $('relocations-widget');
+  const list = $('relocations-list');
+  const countBadge = $('relocations-count');
+  if (!widget || !list) return;
+
+  if (!moves.length) {
+    widget.style.display = 'none';
+    return;
+  }
+  widget.style.display = '';
+  if (countBadge) countBadge.textContent = moves.length;
+
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const myName = (currentUserDisplayName || '').toLowerCase();
+
+  list.innerHTML = moves.map(m => {
+    const v = vehiclesCache.find(x => x.id === m.vehicleId) || {};
+    const carBadge = `<span class="reloc-car-icon" style="background:${_cssColor(m.vehicleColor || v.color)}">${_carColorEmoji(m.vehicleColor || v.color)}</span>`;
+    const isPending = m.status === 'pending';
+    const isInProgress = m.status === 'in-progress';
+    const isMyMove = m.driverName && m.driverName.toLowerCase() === myName;
+
+    const claimBtn = isPending
+      ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This Move</button>` : '';
+    const arriveBtn = (isInProgress && (isMyMove || isAdmin))
+      ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}')">✅ Arrived</button>` : '';
+    const cancelBtn = isAdmin
+      ? `<button class="btn btn-sm btn-outline reloc-cancel-btn" onclick="cancelMove('${m.id}')" title="Cancel move">✕</button>` : '';
+
+    const statusBadge = isPending
+      ? `<span class="reloc-status reloc-pending">Pending</span>`
+      : `<span class="reloc-status reloc-inprogress">In Progress${m.driverName ? ' · ' + escapeHtml(m.driverName) : ''}</span>`;
+
+    return `<div class="reloc-card">
+      <div class="reloc-car-row">
+        ${carBadge}
+        <div class="reloc-info">
+          <div class="reloc-plate">${escapeHtml(m.vehiclePlate)} <span class="reloc-color-label">${escapeHtml(m.vehicleColor || '')} ${escapeHtml(m.vehicleMake || '')} ${escapeHtml(m.vehicleModel || '')}</span></div>
+          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} → 🏠 ${escapeHtml(m.toLocation)}</div>
+          ${m.notes ? `<div class="reloc-notes">${escapeHtml(m.notes)}</div>` : ''}
+        </div>
+        <div class="reloc-status-col">${statusBadge}${cancelBtn}</div>
+      </div>
+      <div class="reloc-actions">${claimBtn}${arriveBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+// Start listening once user logs in (called from auth state handler)
+window._startRelocationsListener = function() {
+  subscribeRelocations();
 };
