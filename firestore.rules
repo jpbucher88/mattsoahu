@@ -211,5 +211,11 @@ service cloud.firestore {
       allow update: if isRegistered();
       allow delete: if isManager();
     }
+    // Shift Logs (productivity tracking) — managers/admins write; registered can read own
+    match /shiftLogs/{logId} {
+      allow read: if isManager();
+      allow create, update: if isManager();
+      allow delete: if isAdmin();
+    }
   }
 }

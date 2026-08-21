@@ -22845,83 +22845,223 @@ window._startRelocationsListener = function() {
 };
 
 // ================================================================
-// GOALS & COACHING — Admin-only productivity goals panel
+// PRODUCTIVITY TRACKER — Shift-based productivity scoring (Admin only)
 // ================================================================
-
-const PERF_TARGETS = {
-  vehicle_move_completed: { label: '🚐 Vehicle Moves',  targetMin: 30 },
-  vehicle_cleaned:        { label: '🧹 Cleanings',      targetMin: 40 },
-  photo_uploaded:         { label: '📸 Photo Batches',  targetMin: 5  },
+// Targets in minutes per task unit
+const PROD_TARGETS = {
+  vehicle_move_completed: 30,
+  vehicle_cleaned:        40,
+  photo_uploaded:         5,
 };
 
-let _coachingTargetUid = null;
+let _coachingTargetUid  = null;
 let _coachingTargetName = '';
+let _shiftUsersCache    = [];
 
+// ---- Shift Log Modal ----
+window.openShiftLog = async function() {
+  // Populate employee dropdown
+  const sel = $('shift-employee-select');
+  if (sel) {
+    if (_shiftUsersCache.length === 0) {
+      const snap = await db.collection('users').orderBy('displayName').get().catch(() => null);
+      if (snap) _shiftUsersCache = snap.docs.map(d => ({ uid: d.id, name: d.data().displayName || d.data().email || d.id }));
+    }
+    sel.innerHTML = '<option value="">— Select employee —</option>' +
+      _shiftUsersCache.map(u => `<option value="${escapeHtml(u.uid)}">${escapeHtml(u.name)}</option>`).join('');
+  }
+  // Default to today
+  const dateEl = $('shift-date');
+  if (dateEl && !dateEl.value) dateEl.value = todayDateString();
+  const hoursEl = $('shift-hours');
+  if (hoursEl) hoursEl.value = '';
+  if ($('shift-notes')) $('shift-notes').value = '';
+  if ($('shift-log-error')) $('shift-log-error').textContent = '';
+  $('shift-log-overlay').style.display = 'flex';
+};
+
+window.closeShiftLog = function() { $('shift-log-overlay').style.display = 'none'; };
+
+window.submitShiftLog = async function() {
+  const uid   = $('shift-employee-select')?.value;
+  const date  = $('shift-date')?.value;
+  const hours = parseFloat($('shift-hours')?.value);
+  const notes = $('shift-notes')?.value.trim();
+  const errEl = $('shift-log-error');
+  if (!uid) { if (errEl) errEl.textContent = 'Select an employee.'; return; }
+  if (!date) { if (errEl) errEl.textContent = 'Select a date.'; return; }
+  if (!hours || hours <= 0) { if (errEl) errEl.textContent = 'Enter valid hours worked.'; return; }
+  if (errEl) errEl.textContent = '';
+  const emp = _shiftUsersCache.find(u => u.uid === uid);
+  const empName = emp ? emp.name : uid;
+  try {
+    await db.collection('shiftLogs').add({
+      employeeId: uid, employeeName: empName,
+      date, hoursWorked: hours, notes: notes || null,
+      loggedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      loggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    closeShiftLog();
+    toast(`Shift logged for ${empName} ✓`, 'success');
+    loadGoalsPanel(); // refresh the panel
+  } catch(e) { console.error('Shift log error:', e); if (errEl) errEl.textContent = 'Failed to save.'; }
+};
+
+// ---- Productivity Goals Panel ----
 window.loadGoalsPanel = async function() {
   const container = $('goals-panel-content');
   if (!container) return;
   container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  // Use the date filter if set, otherwise last 7 days
+  const filterDate = $('goals-filter-date')?.value;
+  let rangeStart, rangeEnd, rangeLabel;
+  if (filterDate) {
+    rangeStart = new Date(filterDate + 'T00:00:00');
+    rangeEnd   = new Date(filterDate + 'T23:59:59');
+    rangeLabel = filterDate;
+  } else {
+    rangeEnd   = new Date();
+    rangeStart = new Date(rangeEnd.getTime() - 7 * 24 * 60 * 60 * 1000);
+    rangeLabel = 'Last 7 days';
+  }
+
   try {
-    const snap = await db.collection('userActivity')
-      .where('at', '>=', firebase.firestore.Timestamp.fromDate(sevenDaysAgo))
-      .orderBy('at', 'desc').get();
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    const relevant = items.filter(d => ['vehicle_move_completed','vehicle_cleaned','photo_uploaded'].includes(d.action));
-    const byUser = {};
-    relevant.forEach(d => {
+    // Fetch shift logs for the range
+    const [shiftSnap, actSnap] = await Promise.all([
+      db.collection('shiftLogs')
+        .where('date', '>=', rangeStart.toISOString().slice(0,10))
+        .where('date', '<=', rangeEnd.toISOString().slice(0,10))
+        .orderBy('date', 'asc').get(),
+      db.collection('userActivity')
+        .where('at', '>=', firebase.firestore.Timestamp.fromDate(rangeStart))
+        .where('at', '<=', firebase.firestore.Timestamp.fromDate(rangeEnd))
+        .get(),
+    ]);
+
+    const shifts = shiftSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const actItems = actSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Group shift logs by employee
+    const byEmployee = {};
+    shifts.forEach(s => {
+      if (!byEmployee[s.employeeId]) byEmployee[s.employeeId] = { name: s.employeeName, uid: s.employeeId, totalHours: 0, shifts: [] };
+      byEmployee[s.employeeId].totalHours += s.hoursWorked;
+      byEmployee[s.employeeId].shifts.push(s);
+    });
+
+    // Group activities by user (match by userName → employeeName)
+    const actByName = {};
+    actItems.forEach(d => {
       const name = d.userName || 'Unknown';
-      if (!byUser[name]) byUser[name] = { name, uid: d.uid || '', moves: [], cleans: 0, photos: 0 };
-      if (!byUser[name].uid && d.uid) byUser[name].uid = d.uid;
+      if (!actByName[name]) actByName[name] = { uid: d.uid || '', moves: [], cleans: 0, photos: 0 };
+      if (!actByName[name].uid && d.uid) actByName[name].uid = d.uid;
       if (d.action === 'vehicle_move_completed') {
         const det = d.details || {};
-        byUser[name].moves.push({ duration: typeof det === 'object' ? (det.durationMinutes || null) : null, plate: typeof det === 'object' ? (det.plate||'') : '' });
-      } else if (d.action === 'vehicle_cleaned') { byUser[name].cleans++; }
-      else if (d.action === 'photo_uploaded') { byUser[name].photos++; }
+        actByName[name].moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
+      } else if (d.action === 'vehicle_cleaned') actByName[name].cleans++;
+      else if (d.action === 'photo_uploaded') actByName[name].photos++;
     });
-    const users = Object.values(byUser).sort((a,b) => (b.moves.length+b.cleans+b.photos)-(a.moves.length+a.cleans+a.photos));
-    if (!users.length) { container.innerHTML = '<p class="hint" style="font-size:0.82rem;">No logged activity in the last 7 days.</p>'; return; }
-    container.innerHTML = users.map(u => {
-      const moveDurations = u.moves.filter(m => m.duration != null).map(m => m.duration);
-      const avgDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
-      const moveStatus = avgDur == null ? 'na' : avgDur <= 30 ? 'good' : avgDur <= 45 ? 'warn' : 'over';
-      const moveColor = {good:'#16a34a',warn:'#d97706',over:'#dc2626',na:'#9ca3af'}[moveStatus];
-      const cleanColor = u.cleans >= 5 ? '#16a34a' : u.cleans >= 2 ? '#d97706' : '#dc2626';
-      const photoColor = u.photos >= 5 ? '#16a34a' : u.photos >= 2 ? '#d97706' : '#dc2626';
-      const hasIssue = moveStatus === 'over' || u.cleans < 2 || u.photos < 2;
-      const statsForCoach = JSON.stringify({ movesCount: u.moves.length, avgDuration: avgDur, cleans: u.cleans, photos: u.photos });
-      const coachBtn = u.uid ? `<button class="btn btn-sm goal-coach-btn" onclick='openCoachingModal("${escapeHtml(u.uid)}","${escapeHtml(u.name)}",${statsForCoach.replace(/"/g,"&quot;")})'>🎯 Coach</button>` : '';
-      return `<div class="goal-user-card${hasIssue?' goal-user-needs-coaching':''}">
+
+    if (!Object.keys(byEmployee).length) {
+      container.innerHTML = `<div style="text-align:center;padding:20px;">
+        <p class="hint" style="font-size:0.88rem;">No shifts logged for ${escapeHtml(rangeLabel)}.</p>
+        <button class="btn btn-sm" onclick="openShiftLog()" style="background:#1d4ed8;color:#fff;border:none;border-radius:8px;padding:7px 18px;font-weight:700;cursor:pointer;margin-top:8px;">+ Log a Shift</button>
+      </div>`;
+      return;
+    }
+
+    container.innerHTML = Object.values(byEmployee).map(emp => {
+      const minutesWorked = emp.totalHours * 60;
+      // Find their activity by name match
+      const act = actByName[emp.name] || { moves: [], cleans: 0, photos: 0 };
+
+      // Calculate minutes "accounted for" by tasks
+      const movesCount = act.moves.length;
+      const moveMins   = movesCount * PROD_TARGETS.vehicle_move_completed;
+      const cleanMins  = act.cleans * PROD_TARGETS.vehicle_cleaned;
+      const photoMins  = act.photos * PROD_TARGETS.photo_uploaded;
+      const taskMins   = moveMins + cleanMins + photoMins;
+
+      // Productivity score
+      const score = minutesWorked > 0 ? Math.round((taskMins / minutesWorked) * 100) : 0;
+      const scoreColor = score >= 85 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
+      const scoreBg    = score >= 85 ? '#dcfce7' : score >= 60 ? '#fef9c3' : '#fee2e2';
+      const scoreLabel = score >= 85 ? 'On Target 🟢' : score >= 60 ? 'Below Target 🟡' : 'Needs Review 🔴';
+
+      // Avg move duration
+      const moveDurations = act.moves.filter(m => m != null);
+      const avgMoveDur = moveDurations.length ? Math.round(moveDurations.reduce((a,b)=>a+b,0)/moveDurations.length) : null;
+
+      // Shift breakdown
+      const shiftRows = emp.shifts.map(s => `<span style="font-size:0.72rem;color:#6b7280;">${s.date}: ${s.hoursWorked}h${s.notes?' · '+escapeHtml(s.notes):''}</span>`).join('<br>');
+
+      // Coaching button
+      const coachData = JSON.stringify({ movesCount, avgDuration: avgMoveDur, cleans: act.cleans, photos: act.photos, score, hoursWorked: emp.totalHours });
+      const coachBtn  = emp.uid ? `<button class="btn btn-sm goal-coach-btn" onclick='openCoachingModal("${escapeHtml(emp.uid)}","${escapeHtml(emp.name)}",${coachData.replace(/"/g,"&quot;")})'>🎯 Coach</button>` : '';
+
+      return `<div class="goal-user-card" style="border-left:4px solid ${scoreColor};">
         <div class="goal-user-top">
-          <span class="goal-user-name">${escapeHtml(u.name)}</span>
-          ${hasIssue?'<span class="goal-needs-badge">⚠️ Needs coaching</span>':'<span class="goal-ok-badge">✅ On track</span>'}
+          <span class="goal-user-name">${escapeHtml(emp.name)}</span>
+          <span class="prod-score-badge" style="background:${scoreBg};color:${scoreColor};">
+            ${score}% · ${scoreLabel}
+          </span>
           ${coachBtn}
         </div>
+        <div class="prod-hours-row">
+          <span>⏱️ <strong>${emp.totalHours}h</strong> worked (${minutesWorked} min)</span>
+          <span>→ ${taskMins} min in tracked tasks</span>
+          <span style="color:#9ca3af;font-size:0.72rem;">${shiftRows}</span>
+        </div>
         <div class="goal-metrics">
-          <div class="goal-metric"><span class="goal-metric-label">🚐 Moves</span><span class="goal-metric-val">${u.moves.length}</span><span class="goal-metric-detail" style="color:${moveColor}">${avgDur!=null?avgDur+'min avg / 30min target':'no duration data'}</span></div>
-          <div class="goal-metric"><span class="goal-metric-label">🧹 Cleans</span><span class="goal-metric-val" style="color:${cleanColor}">${u.cleans}</span><span class="goal-metric-detail">~40 min each</span></div>
-          <div class="goal-metric"><span class="goal-metric-label">📸 Photos</span><span class="goal-metric-val" style="color:${photoColor}">${u.photos}</span><span class="goal-metric-detail">~5 min/car</span></div>
+          <div class="goal-metric">
+            <span class="goal-metric-label">🚐 Moves</span>
+            <span class="goal-metric-val">${movesCount}</span>
+            <span class="goal-metric-detail">${avgMoveDur!=null?avgMoveDur+'min avg / 30 target':moveMins+'min est.'}</span>
+          </div>
+          <div class="goal-metric">
+            <span class="goal-metric-label">🧹 Cleans</span>
+            <span class="goal-metric-val">${act.cleans}</span>
+            <span class="goal-metric-detail">${cleanMins} min est.</span>
+          </div>
+          <div class="goal-metric">
+            <span class="goal-metric-label">📸 Photos</span>
+            <span class="goal-metric-val">${act.photos}</span>
+            <span class="goal-metric-detail">${photoMins} min est.</span>
+          </div>
+          <div class="goal-metric">
+            <span class="goal-metric-label">⏱️ Unaccounted</span>
+            <span class="goal-metric-val" style="color:#9ca3af;">${Math.max(0, minutesWorked - taskMins)}m</span>
+            <span class="goal-metric-detail">of ${minutesWorked}m worked</span>
+          </div>
         </div>
       </div>`;
     }).join('');
-  } catch(e) { console.error('Goals panel error:', e); container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error loading. Try again.</p>'; }
+  } catch(e) {
+    console.error('Goals panel error:', e);
+    container.innerHTML = '<p class="hint" style="color:#dc2626;font-size:0.82rem;">Error loading. Try again.</p>';
+  }
 };
 
+// ---- Coaching Modal ----
 window.openCoachingModal = function(uid, name, statsArg) {
-  _coachingTargetUid = uid;
+  _coachingTargetUid  = uid;
   _coachingTargetName = name;
   const label = $('coaching-to-label');
   if (label) label.textContent = `To: ${name}`;
   const stats = typeof statsArg === 'string' ? JSON.parse(statsArg.replace(/&quot;/g,'"')) : (typeof statsArg === 'object' ? statsArg : {});
+  const score = stats.score || 0;
   const templates = [];
+  if (score < 60)
+    templates.push(`Hi ${name}, I reviewed your productivity for your recent shift. Your tracked tasks accounted for ${score}% of your working time — our target is 85%+. Let's chat about how to close the gap. 💪`);
+  if (score >= 60 && score < 85)
+    templates.push(`Hi ${name}, you're at ${score}% productivity — good effort! You're close to our 85% target. A few more tasks per shift will get you there. Keep it up! 🌟`);
   if (stats.avgDuration != null && stats.avgDuration > 30)
-    templates.push(`Hi ${name}, our target for vehicle moves is 30 minutes and your recent average is ${stats.avgDuration} min. Let's look at ways to streamline — I'm here if you need tips! 🚐`);
-  if ((stats.cleans || 0) < 3)
-    templates.push(`Hi ${name}, just a reminder that cleanings should take about 40 minutes each — work through the checklist systematically. Let me know if you have any questions! 🧹`);
-  if ((stats.photos || 0) < 3)
-    templates.push(`Hi ${name}, photo batches should take ~5 minutes per vehicle. Make sure each car gets a complete exterior + interior set. Keep it up! 📸`);
+    templates.push(`Hi ${name}, vehicle moves are averaging ${stats.avgDuration} minutes — our target is 30 minutes. Let's look at your route efficiency together. 🚐`);
+  if ((stats.cleans || 0) === 0 && (stats.photos || 0) === 0 && score < 60)
+    templates.push(`Hi ${name}, I noticed no cleanings or photo sessions logged during your last shift. Please make sure to complete the full checklist when vehicles return. 🧹📸`);
   if (!templates.length)
-    templates.push(`Hi ${name}, you're doing great this week! Thank you for the hard work on moves, cleanings, and photos — keep it up! 🌟`);
+    templates.push(`Hi ${name}, you're at ${score}% productivity — great work! Thank you for keeping up with moves, cleanings, and photos. 🌟`);
   const el = $('coaching-templates');
   if (el) {
     el._templates = templates;
@@ -22958,6 +23098,20 @@ window.sendCoachingMessage = async function() {
     closeCoachingModal();
     toast(`Coaching note sent to ${_coachingTargetName} ✓`, 'success');
   } catch(e) { if (errEl) errEl.textContent = 'Failed to send.'; }
+};
+
+window.loadGoalsPanel = async function() {
+  const container = $('goals-panel-content');
+  if (!container) return;
+  container.innerHTML = '<p class="hint" style="font-size:0.82rem;">Loading…</p>';
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  try {
+    const snap = await db.collection('userActivity')
+      .where('at', '>=', firebase.firestore.Timestamp.fromDate(sevenDaysAgo))
+      .orderBy('at', 'desc').get();
+    // Defer to the new shift-based loadGoalsPanel below
+    window.loadGoalsPanel(); // replaced below
+  } catch(e) {}
 };
 
 // Inject 72h Lagoon Drive alerts directly into the urgent banner DOM
