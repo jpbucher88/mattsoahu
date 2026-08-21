@@ -1319,7 +1319,7 @@ auth.onAuthStateChanged(async (user) => {
       }
     } catch (err) {
       console.error('Auth state error:', err);
-      toast('Error loading profile: ' + (err && err.message ? err.message.slice(0,80) : String(err).slice(0,80)), 'error');
+      toast('Error loading profile', 'error');
     } finally {
       hideLoading();
     }
@@ -22635,48 +22635,45 @@ function subscribeRelocations() {
     .where('status', 'in', ['pending', 'in-progress'])
     .onSnapshot(snap => {
       const moves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Sort by dispatchedAt ascending (oldest first) client-side
       moves.sort((a, b) => {
         const aT = a.dispatchedAt ? (a.dispatchedAt.toDate ? a.dispatchedAt.toDate().getTime() : new Date(a.dispatchedAt).getTime()) : 0;
         const bT = b.dispatchedAt ? (b.dispatchedAt.toDate ? b.dispatchedAt.toDate().getTime() : new Date(b.dispatchedAt).getTime()) : 0;
         return aT - bT;
       });
+      _activeMoves = moves;
       renderRelocationsWidget(moves);
     }, e => {
       console.warn('Relocations listener error:', e);
-      renderRelocationsWidget([]); // show empty state even on error
+      _activeMoves = [];
+      renderRelocationsWidget([]);
     });
 }
 
 function renderRelocationsWidget(moves) {
-  _activeMoves = moves; // keep module-level copy so fleet chips can reference it
   const list = $('relocations-list');
   const countBadge = $('relocations-count');
   if (!list) return;
 
-  // Badge count
+  // Count badge
   if (countBadge) {
     countBadge.textContent = moves.length;
     countBadge.style.display = moves.length ? '' : 'none';
   }
 
-  // Dispatch button visible to admin/manager only
-  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
-  const dispatchBtn = $('btn-dispatch-move');
-  if (dispatchBtn) dispatchBtn.style.display = isAdmin ? '' : 'none';
-
-  // Re-render fleet chips so move badges appear/disappear
-  renderLocationsWidget();
+  // Dispatch button — shown by _initRelocDispatchBtn() after login; just ensure it stays correct
+  _initRelocDispatchBtn();
 
   if (!moves.length) {
+    const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
     list.innerHTML = `<div class="reloc-empty">
-      <span style="font-size:1.6rem;">🚐</span>
+      <span style="font-size:1.5rem;">🚐</span>
       <p>No active vehicle moves.</p>
-      ${isAdmin ? `<button onclick="openDispatchModal()" class="btn-dispatch-pill" style="margin-top:4px;">+ Dispatch a Move</button>` : '<p style="font-size:0.78rem;color:#9ca3af;">Moves assigned to you will appear here.</p>'}
+      ${isAdmin ? `<button onclick="openDispatchModal()" class="btn-dispatch-pill">+ Dispatch a Move</button>` : '<p style="font-size:0.78rem;color:#9ca3af;">Check back here for moves assigned to you.</p>'}
     </div>`;
     return;
   }
 
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
   const myName = (currentUserDisplayName || '').toLowerCase();
 
   list.innerHTML = moves.map(m => {
@@ -22691,7 +22688,6 @@ function renderRelocationsWidget(moves) {
     const assignedLabel = m.driverName
       ? `<span class="reloc-driver-badge">👤 ${escapeHtml(m.driverName)}</span>`
       : `<span class="reloc-driver-badge reloc-unassigned">👤 Unassigned</span>`;
-
     const statusBadge = isPending
       ? `<span class="reloc-status reloc-pending">Pending</span>`
       : `<span class="reloc-status reloc-inprogress">In Progress</span>`;
@@ -22721,13 +22717,21 @@ function renderRelocationsWidget(moves) {
   }).join('');
 }
 
-// Edit an existing move — opens dispatch modal pre-filled
+// Show/hide dispatch button based on role — called once after login and again on each render
+function _initRelocDispatchBtn() {
+  const btn = $('btn-dispatch-move');
+  if (!btn) return;
+  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
+  btn.style.display = isAdmin ? '' : 'none';
+}
+
 window.editMove = function(moveData) {
   openDispatchModal(moveData.vehicleId, moveData);
 };
 
 // Start listening once user logs in
 window._startRelocationsListener = function() {
+  _initRelocDispatchBtn();
   subscribeRelocations();
 };
 
