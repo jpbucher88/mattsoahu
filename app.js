@@ -22444,9 +22444,13 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
   if (dest && existingMove) dest.value = existingMove.toLocation || '';
   else if (dest) dest.value = '';
 
-  // Notes
+  // Notes & appointment date
   const notesEl = $('dispatch-notes');
   if (notesEl) notesEl.value = existingMove ? (existingMove.notes || '') : '';
+  const apptEl = $('dispatch-appt-date');
+  if (apptEl) apptEl.value = existingMove ? (existingMove.appointmentDate || '') : '';
+  const apptRow = $('dispatch-appt-row');
+  if (apptRow) apptRow.style.display = (existingMove && existingMove.toLocation === 'Mechanic Shop') ? 'flex' : 'none';
 
   // Load & populate drivers
   await _loadRelocUsers();
@@ -22461,6 +22465,12 @@ window.closeDispatchModal = function() {
   $('dispatch-modal-overlay').style.display = 'none';
   _editingMoveId = null;
   _dispatchInProgress = false;
+};
+
+window.updateDispatchDestination = function() {
+  const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
+  const apptRow = $('dispatch-appt-row');
+  if (apptRow) apptRow.style.display = dest === 'Mechanic Shop' ? 'flex' : 'none';
 };
 
 window.updateDispatchPreview = function() {
@@ -22486,6 +22496,7 @@ window.submitDispatch = async function() {
   const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
   const driverName = $('dispatch-driver-select') ? $('dispatch-driver-select').value : '';
   const notes = $('dispatch-notes') ? $('dispatch-notes').value.trim() : '';
+  const appointmentDate = $('dispatch-appt-date') ? $('dispatch-appt-date').value : '';
   const errEl = $('dispatch-modal-error');
   if (!vid) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Please select a vehicle.'; return; }
   if (!dest) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Please select a destination.'; return; }
@@ -22508,6 +22519,7 @@ window.submitDispatch = async function() {
     notes: notes,
     driverName: driverName || '',
     status: newStatus,
+    ...(appointmentDate ? { appointmentDate } : {}),
   };
 
   try {
@@ -22542,16 +22554,34 @@ window.submitDispatch = async function() {
   }
 };
 
-// Driver marks arrived — if destination is HNL, prompt for row/level
-window.arriveMove = async function(moveId, toLocation) {
+// Driver marks arrived / dropped off
+window.arriveMove = async function(moveId, toLocation, vehicleId) {
   if (toLocation === 'HNL') {
     _pendingArrivalMoveId = moveId;
     if ($('hnl-arrive-row')) $('hnl-arrive-row').value = '';
     if ($('hnl-arrive-level')) $('hnl-arrive-level').value = '';
     if ($('hnl-arrival-error')) $('hnl-arrival-error').textContent = '';
     $('hnl-arrival-modal').style.display = 'flex';
+  } else if (toLocation === 'Mechanic Shop') {
+    // Mark dropped at shop — update vehicle status to repair-shop
+    try {
+      await db.collection('vehicleMoves').doc(moveId).update({
+        status: 'completed',
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      });
+      if (vehicleId) {
+        await db.collection('vehicles').doc(vehicleId).update({ tripStatus: 'repair-shop' });
+        const v = vehiclesCache.find(x => x.id === vehicleId);
+        if (v) { v.tripStatus = 'repair-shop'; }
+      }
+      _activeMoves = _activeMoves.filter(m => m.id !== moveId);
+      renderRelocationsWidget(_activeMoves);
+      toast('🔧 Vehicle dropped off at shop — status updated.', 'success');
+      renderLocationsWidget();
+    } catch (e) { toast('Failed to complete move.', 'error'); }
   } else {
-    await _completeMoveDoc(moveId, toLocation, '', '');
+    await _completeMoveDoc(moveId, toLocation, '', '', vehicleId);
   }
 };
 
@@ -22660,7 +22690,7 @@ window.deleteMove = async function(moveId) {
 function _refreshRelocationsManually() {
   db.collection('vehicleMoves')
     .where('status', 'in', ['pending', 'in-progress'])
-    .get()
+    .get({ source: 'server' })   // always fetch from server, not local cache
     .then(snap => {
       const moves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       moves.sort((a, b) => {
@@ -22674,23 +22704,28 @@ function _refreshRelocationsManually() {
     .catch(e => console.warn('Manual reloc refresh error:', e));
 }
 
-// Subscribe to active moves — no orderBy to avoid composite index requirement; sort client-side
+// Subscribe to active moves for real-time updates from OTHER users
 function subscribeRelocations() {
   if (_relocationsUnsub) _relocationsUnsub();
   _relocationsUnsub = db.collection('vehicleMoves')
     .where('status', 'in', ['pending', 'in-progress'])
     .onSnapshot(snap => {
+      // Only use onSnapshot updates if we already have our initial load
+      // to avoid the empty-cache flash overwriting real data
       const moves = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       moves.sort((a, b) => {
         const aT = a.dispatchedAt ? (a.dispatchedAt.toDate ? a.dispatchedAt.toDate().getTime() : new Date(a.dispatchedAt).getTime()) : 0;
         const bT = b.dispatchedAt ? (b.dispatchedAt.toDate ? b.dispatchedAt.toDate().getTime() : new Date(b.dispatchedAt).getTime()) : 0;
         return aT - bT;
       });
-      _activeMoves = moves;
-      renderRelocationsWidget(moves);
+      // Only update if the server snapshot has MORE or EQUAL moves than our local state
+      // This prevents the initial empty cache snapshot from wiping real data
+      if (moves.length >= _activeMoves.length || snap.metadata.fromCache === false) {
+        _activeMoves = moves;
+        renderRelocationsWidget(moves);
+      }
     }, e => {
-      console.warn('Relocations listener error (will retry on next refresh):', e);
-      // Don't wipe the display on listener error — keep whatever is shown
+      console.warn('Relocations listener error:', e);
     });
 }
 
@@ -22699,13 +22734,10 @@ function renderRelocationsWidget(moves) {
   const countBadge = $('relocations-count');
   if (!list) return;
 
-  // Count badge
   if (countBadge) {
     countBadge.textContent = moves.length;
     countBadge.style.display = moves.length ? '' : 'none';
   }
-
-  // Dispatch button — shown by _initRelocDispatchBtn() after login; just ensure it stays correct
   _initRelocDispatchBtn();
 
   if (!moves.length) {
@@ -22729,32 +22761,40 @@ function renderRelocationsWidget(moves) {
     const isInProgress = m.status === 'in-progress';
     const isMyMove = m.driverName && m.driverName.toLowerCase() === myName;
     const canAct = isMyMove || isAdmin;
+    const isShop = m.toLocation === 'Mechanic Shop';
 
     const assignedLabel = m.driverName
       ? `<span class="reloc-driver-badge">👤 ${escapeHtml(m.driverName)}</span>`
       : `<span class="reloc-driver-badge reloc-unassigned">👤 Unassigned</span>`;
+
     const statusBadge = isPending
-      ? `<span class="reloc-status reloc-pending">Pending</span>`
-      : `<span class="reloc-status reloc-inprogress">In Progress</span>`;
+      ? `<span class="reloc-status reloc-pending">⏳ Awaiting Departure</span>`
+      : `<span class="reloc-status reloc-inprogress">🚐 En Route</span>`;
+
+    const destIcon = isShop ? '🔧' : '🏠';
+    const apptLine = m.appointmentDate ? `<div class="reloc-notes">📅 Appt: ${escapeHtml(m.appointmentDate)}</div>` : '';
 
     const claimBtn = (isPending && !isAdmin)
-      ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This Move</button>` : '';
+      ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This</button>` : '';
+    const arriveLabel = isShop ? '🔧 Dropped Off' : '✅ Arrived';
     const arriveBtn = (isInProgress && canAct)
-      ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}')">✅ Arrived</button>` : '';
+      ? `<button class="btn btn-sm btn-success reloc-btn" onclick="arriveMove('${m.id}','${escapeHtml(m.toLocation)}','${escapeHtml(m.vehicleId || '')}')">
+          ${arriveLabel}</button>` : '';
     const editBtn = isAdmin
       ? `<button class="btn btn-sm btn-outline reloc-edit-btn" onclick='editMove(${JSON.stringify(m).replace(/'/g,"&#39;")})'>✏️ Edit</button>` : '';
     const deleteBtn = isAdmin
-      ? `<button class="btn btn-sm btn-outline reloc-delete-btn" onclick="deleteMove('${m.id}')" title="Permanently delete">🗑️</button>` : '';
+      ? `<button class="btn btn-sm btn-outline reloc-delete-btn" onclick="deleteMove('${m.id}')" title="Delete">🗑️</button>` : '';
     const cancelBtn = isAdmin
       ? `<button class="btn btn-sm btn-outline reloc-cancel-btn" onclick="cancelMove('${m.id}')" title="Cancel">✕</button>` : '';
 
-    return `<div class="reloc-card">
+    return `<div class="reloc-card${isShop ? ' reloc-shop-card' : ''}">
       <div class="reloc-car-row">
         <div class="reloc-car-icon" style="background:${bgColor};">${emoji}</div>
         <div class="reloc-info">
           <div class="reloc-plate">${escapeHtml(m.vehiclePlate)}<span class="reloc-color-label">${color ? ' · ' + escapeHtml(color) : ''} ${escapeHtml(m.vehicleMake || '')} ${escapeHtml(m.vehicleModel || '')}</span></div>
-          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} <span style="color:#9ca3af;">→</span> 🏠 <strong>${escapeHtml(m.toLocation)}</strong></div>
+          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} <span style="color:#9ca3af;">→</span> ${destIcon} <strong>${escapeHtml(m.toLocation)}</strong></div>
           ${m.notes ? `<div class="reloc-notes">📝 ${escapeHtml(m.notes)}</div>` : ''}
+          ${apptLine}
         </div>
         <div class="reloc-status-col">${statusBadge}${deleteBtn}</div>
       </div>
@@ -22764,24 +22804,23 @@ function renderRelocationsWidget(moves) {
   }).join('');
 }
 
-// Show/hide dispatch button based on role — called once after login and again on each render
 function _initRelocDispatchBtn() {
   const btn = $('btn-dispatch-move');
   if (!btn) return;
-  const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
-  btn.style.display = isAdmin ? '' : 'none';
+  btn.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
 }
 
 window.editMove = function(moveData) {
   openDispatchModal(moveData.vehicleId, moveData);
 };
 
-// Start listening once user logs in
+// Start listening once user logs in — server fetch first for guaranteed data, then listener for live updates
 window._startRelocationsListener = function() {
   _initRelocDispatchBtn();
-  subscribeRelocations();
-  // Immediately load any existing moves so widget populates on page refresh
+  // Fetch from server immediately to populate widget on page load
   _refreshRelocationsManually();
+  // Then set up real-time listener for updates from other users
+  setTimeout(subscribeRelocations, 1500);
 };
 
 // Inject 72h Lagoon Drive alerts directly into the urgent banner DOM

@@ -3077,13 +3077,18 @@
         </div>
         <div class="dm-row">
           <label class="dm-label">📍 Move To</label>
-          <select id="dispatch-destination" class="dm-select">
+          <select id="dispatch-destination" class="dm-select" onchange="updateDispatchDestination()">
             <option value="">— Select —</option>
             <option value="HNL">HNL</option>
             <option value="1 Lagoon Dr">1 Lagoon Dr</option>
             <option value="1585 Kapiolani">1585 Kapiolani</option>
             <option value="94-530 Lumiauau">94-530 Lumiauau</option>
+            <option value="Mechanic Shop">🔧 Mechanic Shop</option>
           </select>
+        </div>
+        <div class="dm-row" id="dispatch-appt-row" style="display:none;">
+          <label class="dm-label">📅 Appt Date</label>
+          <input type="date" id="dispatch-appt-date" class="dm-input">
         </div>
         <div class="dm-row">
           <label class="dm-label">👤 Assign To</label>
