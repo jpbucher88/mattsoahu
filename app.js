@@ -22859,8 +22859,20 @@ async function _loadProdSettings() {
   if (_prodSettings) return _prodSettings;
   try {
     const doc = await db.collection('prodSettings').doc('targets').get();
-    _prodSettings = doc.exists ? { ...PROD_TARGETS_DEFAULT, ...doc.data() } : { ...PROD_TARGETS_DEFAULT };
-  } catch(e) { _prodSettings = { ...PROD_TARGETS_DEFAULT }; }
+    if (doc.exists) {
+      // Merge with defaults so auto-tracked tasks always exist
+      _prodSettings = { ...PROD_TARGETS_DEFAULT };
+      const saved = doc.data();
+      Object.entries(saved).forEach(([k, v]) => {
+        _prodSettings[k] = { ...(PROD_TARGETS_DEFAULT[k] || {}), ...v };
+      });
+    } else {
+      _prodSettings = { ...PROD_TARGETS_DEFAULT };
+    }
+  } catch(e) {
+    console.warn('prodSettings load error (using defaults):', e);
+    _prodSettings = { ...PROD_TARGETS_DEFAULT };
+  }
   return _prodSettings;
 }
 
@@ -23039,17 +23051,22 @@ window.loadGoalsPanel = async function() {
       }
     });
 
-    // Group activity by user
+    // Group activity by BOTH uid and name so we can match reliably
+    const actByUid  = {};
     const actByName = {};
     actItems.forEach(d => {
-      const name = d.userName || 'Unknown';
-      if (!actByName[name]) actByName[name] = { uid: d.uid || '', moves: [], cleans: 0, photos: 0 };
-      if (!actByName[name].uid && d.uid) actByName[name].uid = d.uid;
+      const uid  = d.uid  || '';
+      const name = (d.userName || '').toLowerCase().trim();
+      const key  = uid || name || 'unknown';
+      if (!actByUid[key]) actByUid[key] = { moves: [], cleans: 0, photos: 0 };
+      if (uid  && !actByName[name]) actByName[name] = actByUid[key]; // alias by name
+      if (!uid && name && !actByName[name]) actByName[name] = actByUid[key];
+      const bucket = actByUid[key];
       if (d.action === 'vehicle_move_completed') {
         const det = d.details || {};
-        actByName[name].moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
-      } else if (d.action === 'vehicle_cleaned') actByName[name].cleans++;
-      else if (d.action === 'photo_uploaded') actByName[name].photos++;
+        bucket.moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
+      } else if (d.action === 'vehicle_cleaned') bucket.cleans++;
+      else if (d.action === 'photo_uploaded') bucket.photos++;
     });
 
     if (!Object.keys(byEmployee).length) {
@@ -23065,7 +23082,9 @@ window.loadGoalsPanel = async function() {
 
     container.innerHTML = Object.values(byEmployee).map(emp => {
       const minutesWorked = emp.totalHours * 60;
-      const act = actByName[emp.name] || { moves: [], cleans: 0, photos: 0 };
+      // Match by UID first, then fall back to lowercase name match
+      const empNameLower = emp.name.toLowerCase().trim();
+      const act = actByUid[emp.uid] || actByName[empNameLower] || { moves: [], cleans: 0, photos: 0 };
 
       // Calculate minutes accounted for — auto-tracked tasks
       const movesCount = act.moves.length;
