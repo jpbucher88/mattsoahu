@@ -4251,9 +4251,9 @@ function _updateZoomUI() {
   if (btnOut) btnOut.disabled = cameraZoomLevel <= cameraZoomMin;
   const btnIn = $('camera-zoom-in');
   if (btnIn) btnIn.disabled = cameraZoomLevel >= cameraZoomMax;
-  // Show red reset button whenever zoomed above 1× so it's always easy to find
+  // Show red reset button whenever zoomed away from 1× (above OR below 1×)
   const btnReset = $('camera-zoom-reset');
-  if (btnReset) btnReset.style.display = cameraZoomLevel > 1.05 ? '' : 'none';
+  if (btnReset) btnReset.style.display = Math.abs(cameraZoomLevel - 1.0) > 0.05 ? '' : 'none';
 }
 
 // Reset camera zoom to 1× — exposed globally so the HTML onclick and double-tap both work
@@ -4402,9 +4402,12 @@ async function startCameraStream() {
 
   cameraStream = stream;
 
-  // Always use software-only zoom — hardware zoom via applyConstraints is unreliable
-  // on iPhones (multi-lens devices have telephoto baselines > 1.0 that can't be un-zoomed
-  // via constraints, causing the camera to appear permanently auto-zoomed).
+  // ── Zoom setup ────────────────────────────────────────────────────
+  // Strategy:
+  //   • If hardware zoom min ≤ 1.0 (main lens or ultra-wide available) → allow hardware zoom
+  //     so users can pinch/button to 0.5× (ultra-wide) on supported iPhones.
+  //   • If hardware zoom min > 1.0 (telephoto-only baseline) → software only, fixed 1.0 min.
+  //     This was the original auto-zoom bug: telephoto streams look permanently zoomed in.
   _cameraHwZoom = false;
   cameraZoomMin = 1.0;
   cameraZoomMax = 10.0;
@@ -4414,11 +4417,25 @@ async function startCameraStream() {
   if (track && track.getCapabilities) {
     try {
       const caps = track.getCapabilities();
-      // Only apply torch — never apply zoom via applyConstraints to avoid auto-zoom
+      if (caps.zoom) {
+        const hwMin = typeof caps.zoom.min === 'number' ? caps.zoom.min : 1.0;
+        const hwMax = typeof caps.zoom.max === 'number' ? caps.zoom.max : 10.0;
+        if (hwMin <= 1.0) {
+          // Safe: main-wide or ultra-wide lens available at hardware level
+          _cameraHwZoom = true;
+          cameraZoomMin = hwMin;              // e.g. 0.5 for ultra-wide iPhone
+          cameraZoomMax = Math.min(hwMax, 10.0);
+          cameraZoomLevel = 1.0;              // always start at natural 1× view
+          // Push hardware to 1.0 so it starts at main wide lens, not wherever it was
+          await track.applyConstraints({ advanced: [{ zoom: 1.0 }] }).catch(() => {});
+        }
+        // hwMin > 1.0 → telephoto-only baseline → leave software-only (no applyConstraints)
+      }
+      // Apply torch state regardless
       if (caps.torch) {
         await track.applyConstraints({ advanced: [{ torch: cameraFlashOn }] }).catch(() => {});
       }
-    } catch (e) { /* torch not supported — ok */ }
+    } catch (e) { /* not supported on this device */ }
   }
 
   // Clear any CSS transform from a previous session
@@ -4912,7 +4929,11 @@ $('camera-flip').addEventListener('click', async () => {
 
 // Zoom buttons — step 0.5×, clamp to min/max
 $('camera-zoom-in').addEventListener('click', () => _setCameraZoom(cameraZoomLevel + 0.5));
-$('camera-zoom-out').addEventListener('click', () => _setCameraZoom(cameraZoomLevel - 0.5));
+$('camera-zoom-out').addEventListener('click', () => {
+  // Use smaller steps when below 1× (ultra-wide range) to avoid jumping past the min
+  const step = cameraZoomLevel <= 1.0 ? 0.1 : 0.5;
+  _setCameraZoom(cameraZoomLevel - step);
+});
 
 // Close camera
 $('camera-close').addEventListener('click', async () => {
