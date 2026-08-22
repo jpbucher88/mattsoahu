@@ -4256,9 +4256,9 @@ function _updateZoomUI() {
   if (btnReset) btnReset.style.display = Math.abs(cameraZoomLevel - 1.0) > 0.05 ? '' : 'none';
 }
 
-// Reset camera zoom to 1× — exposed globally so the HTML onclick and double-tap both work
+// Reset camera zoom to widest available view — exposed globally so HTML onclick and double-tap both work
 window._resetCameraZoom = function() {
-  _setCameraZoom(1.0);
+  _setCameraZoom(cameraZoomMin);
 };
 
 // Block iOS viewport-level pinch zoom while camera is open
@@ -4438,9 +4438,8 @@ async function startCameraStream() {
     } catch (e) { /* not supported on this device */ }
   }
 
-  // Clear any CSS transform from a previous session
-  _applySwZoom(1.0);
-  _updateZoomUI();
+  // Start at the widest available view (cameraZoomMin — 0.5× on ultra-wide, 1.0× otherwise)
+  _setCameraZoom(cameraZoomMin);
   updateFlashButton();
 
   const video = $('camera-video');
