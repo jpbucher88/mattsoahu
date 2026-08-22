@@ -4234,13 +4234,13 @@ function _setCameraZoom(level) {
 function _applySwZoom(level) {
   const video = $('camera-video');
   if (!video) return;
-  // Only scale up — never apply a transform for 1.0 (removes any leftover zoom)
+  // Use setProperty with 'important' priority so no CSS rule can block zoom
   if (level <= 1.0) {
-    video.style.transform = '';
-    video.style.transformOrigin = '';
+    video.style.setProperty('transform', 'scale(1)', 'important');
+    video.style.setProperty('transform-origin', 'center center', 'important');
   } else {
-    video.style.transform = `scale(${level})`;
-    video.style.transformOrigin = 'center center';
+    video.style.setProperty('transform', `scale(${level})`, 'important');
+    video.style.setProperty('transform-origin', 'center center', 'important');
   }
 }
 
@@ -4377,11 +4377,13 @@ async function startCameraStream() {
   // AFTER the stream starts (non-standard in getUserMedia, causes failures if included there).
   let stream = null;
   const attempts = [
-    // Best: non-exact + 4:3 resolution hint → iOS picks main wide-angle camera
-    { video: { facingMode: cameraFacingMode, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false },
-    // Fallback: non-exact, no resolution hint
+    // Best attempt: no cropping constraints — let iOS pick the widest rear camera naturally
+    // The 4:3 hint (1920×1440) is good but can cause iOS to pick the 1× lens.
+    // Asking for no size or a very wide FOV constraint gives iOS freedom to pick ultra-wide.
     { video: { facingMode: cameraFacingMode }, audio: false },
-    // Fallback: exact (may still pick telephoto on some iPhones, but better than nothing)
+    // Fallback: 4:3 resolution hint — works well on most iPhones for main wide-angle
+    { video: { facingMode: cameraFacingMode, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false },
+    // Fallback: exact facingMode
     { video: { facingMode: { exact: cameraFacingMode } }, audio: false },
     // Emergency: any camera
     { video: true, audio: false },
