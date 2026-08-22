@@ -22490,13 +22490,18 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
   if (dest && existingMove) dest.value = existingMove.toLocation || '';
   else if (dest) dest.value = '';
 
-  // Notes & appointment date
+  // Notes, appointment date & shop address
   const notesEl = $('dispatch-notes');
   if (notesEl) notesEl.value = existingMove ? (existingMove.notes || '') : '';
   const apptEl = $('dispatch-appt-date');
   if (apptEl) apptEl.value = existingMove ? (existingMove.appointmentDate || '') : '';
+  const shopEl = $('dispatch-shop-address');
+  if (shopEl) shopEl.value = existingMove ? (existingMove.shopAddress || '') : '';
+  const isShop = existingMove && existingMove.toLocation === 'Mechanic Shop';
   const apptRow = $('dispatch-appt-row');
-  if (apptRow) apptRow.style.display = (existingMove && existingMove.toLocation === 'Mechanic Shop') ? 'flex' : 'none';
+  if (apptRow) apptRow.style.display = isShop ? 'flex' : 'none';
+  const shopRow = $('dispatch-shop-row');
+  if (shopRow) shopRow.style.display = isShop ? 'flex' : 'none';
 
   // Load & populate drivers
   await _loadRelocUsers();
@@ -22515,8 +22520,18 @@ window.closeDispatchModal = function() {
 
 window.updateDispatchDestination = function() {
   const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
+  const isShop = dest === 'Mechanic Shop';
   const apptRow = $('dispatch-appt-row');
-  if (apptRow) apptRow.style.display = dest === 'Mechanic Shop' ? 'flex' : 'none';
+  if (apptRow) apptRow.style.display = isShop ? 'flex' : 'none';
+  const shopRow = $('dispatch-shop-row');
+  if (shopRow) shopRow.style.display = isShop ? 'flex' : 'none';
+  if (!isShop && $('dispatch-shop-address')) $('dispatch-shop-address').value = '';
+};
+
+// Quick-select a common shop supplier
+window.setDispatchShop = function(name) {
+  const el = $('dispatch-shop-address');
+  if (el) { el.value = name; el.focus(); }
 };
 
 window.updateDispatchPreview = function() {
@@ -22543,6 +22558,7 @@ window.submitDispatch = async function() {
   const driverName = $('dispatch-driver-select') ? $('dispatch-driver-select').value : '';
   const notes = $('dispatch-notes') ? $('dispatch-notes').value.trim() : '';
   const appointmentDate = $('dispatch-appt-date') ? $('dispatch-appt-date').value : '';
+  const shopAddress     = $('dispatch-shop-address') ? $('dispatch-shop-address').value.trim() : '';
   const errEl = $('dispatch-modal-error');
   if (!vid) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Please select a vehicle.'; return; }
   if (!dest) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Please select a destination.'; return; }
@@ -22566,6 +22582,7 @@ window.submitDispatch = async function() {
     driverName: driverName || '',
     status: newStatus,
     ...(appointmentDate ? { appointmentDate } : {}),
+    ...(shopAddress ? { shopAddress } : {}),
   };
 
   try {
@@ -22850,7 +22867,7 @@ function renderRelocationsWidget(moves) {
         <div class="reloc-car-icon" style="background:${bgColor};">${emoji}</div>
         <div class="reloc-info">
           <div class="reloc-plate">${escapeHtml(m.vehiclePlate)}<span class="reloc-color-label">${color ? ' · ' + escapeHtml(color) : ''} ${escapeHtml(m.vehicleMake || '')} ${escapeHtml(m.vehicleModel || '')}</span></div>
-          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} <span style="color:#9ca3af;">→</span> ${destIcon} <strong>${escapeHtml(m.toLocation)}</strong></div>
+          <div class="reloc-route">📍 ${escapeHtml(m.fromLocation || '—')} <span style="color:#9ca3af;">→</span> ${destIcon} <strong>${escapeHtml(m.toLocation)}</strong>${m.shopAddress ? `<span style="color:#6b7280;font-size:0.78rem;margin-left:4px;">(${escapeHtml(m.shopAddress)})</span>` : ''}</div>
           ${m.notes ? `<div class="reloc-notes">📝 ${escapeHtml(m.notes)}</div>` : ''}
           ${apptLine}
         </div>

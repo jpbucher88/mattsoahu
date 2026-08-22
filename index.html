@@ -3121,6 +3121,17 @@
           <label class="dm-label">📅 Appt Date</label>
           <input type="date" id="dispatch-appt-date" class="dm-input">
         </div>
+        <!-- Shop address — shown when Mechanic Shop is selected -->
+        <div class="dm-row" id="dispatch-shop-row" style="display:none;">
+          <label class="dm-label">🏪 Shop</label>
+          <div style="flex:1;display:flex;flex-direction:column;gap:5px;">
+            <input type="text" id="dispatch-shop-address" class="dm-input" placeholder="Address or shop name" maxlength="100">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button type="button" onclick="setDispatchShop('Fong 709 Ahua St')" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 10px;font-size:0.75rem;cursor:pointer;font-weight:600;">📍 Fong</button>
+              <button type="button" onclick="setDispatchShop('Autobiz 709 Ahua St')" style="background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;padding:3px 10px;font-size:0.75rem;cursor:pointer;font-weight:600;">📍 Autobiz</button>
+            </div>
+          </div>
+        </div>
         <div class="dm-row">
           <label class="dm-label">👤 Assign To</label>
           <select id="dispatch-driver-select" class="dm-select">
