@@ -1175,7 +1175,10 @@ function compressImage(file, maxWidth = 1920, quality = 0.85) {
 
 // Compress a blob directly (used by the in-browser camera and queue resume)
 // Defaults match the file-picker: 1920px / 85% quality
-function compressBlob(blob, maxWidth = 1920, quality = 0.85) {
+// captureTimestamp: optional Date — if provided, embeds that specific time in EXIF
+// instead of new Date(). Use this when resuming raw file-picker photos from IDB
+// so the original capture time is preserved, not the resume time.
+function compressBlob(blob, maxWidth = 1920, quality = 0.85, captureTimestamp = null) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Image processing timed out.')), 15000);
     const url = URL.createObjectURL(blob);
@@ -1197,9 +1200,8 @@ function compressBlob(blob, maxWidth = 1920, quality = 0.85) {
       ctx.drawImage(img, 0, 0, w, h);
       canvas.toBlob(async (result) => {
         if (!result) { reject(new Error('Failed to convert to JPEG.')); return; }
-        // Re-inject EXIF timestamp — canvas.toBlob() strips all metadata.
-        // Use new Date() because this is the in-browser camera: the photo was just taken.
-        resolve(await injectExifTimestamp(result, new Date()));
+        // Re-inject EXIF: use provided timestamp (file-picker resume) or now (in-browser camera)
+        resolve(await injectExifTimestamp(result, captureTimestamp || new Date()));
       }, 'image/jpeg', quality);
     };
     img.src = url;
@@ -4825,9 +4827,12 @@ async function _runCameraWorker() {
 
     try {
       // If this is a raw (uncompressed) entry from a previous session, compress first.
+      // For file-picker photos (raw=true), re-read the original EXIF before compressing
+      // so the resumed upload uses the actual capture time, not the resume time.
       if (item.raw) {
         try {
-          const compressed = await compressBlob(item.blob);
+          const originalExifDate = await readExifCaptureDate(item.blob).catch(() => null);
+          const compressed = await compressBlob(item.blob, 1920, 0.85, originalExifDate);
           const newIdbId = await _idbSavePhoto(compressed, item.vehicle, item.capturedDate, false);
           _idbDeletePhoto(item.idbId);
           item.blob = compressed;
