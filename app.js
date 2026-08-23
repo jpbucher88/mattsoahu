@@ -22466,21 +22466,23 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
   if (titleEl) titleEl.textContent = _editingMoveId ? 'Edit Vehicle Move' : 'Dispatch Vehicle Move';
   if (submitBtn) submitBtn.textContent = _editingMoveId ? 'Save Changes' : 'Dispatch';
 
-  // Populate vehicle list — all at-home vehicles (or all if editing an existing move)
+  // Populate vehicle list — ALL vehicles regardless of status
+  // (on-trip, repair-shop, scheduled, private-trip all included)
   const sel = $('dispatch-vehicle-select');
   if (sel) {
     sel.innerHTML = '<option value="">— Select vehicle —</option>';
-    const candidates = _editingMoveId
-      ? vehiclesCache  // editing: show all vehicles
-      : vehiclesCache.filter(v => !v.tripStatus || v.tripStatus === 'home');
-    candidates.sort((a, b) => (a.plate || '').localeCompare(b.plate || ''));
-    candidates.forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      const label = [v.plate, v.color, v.make, v.model].filter(Boolean).join(' · ');
-      opt.textContent = label;
-      sel.appendChild(opt);
-    });
+    [...vehiclesCache]
+      .sort((a, b) => (a.plate || '').localeCompare(b.plate || ''))
+      .forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v.id;
+        const statusTag = v.tripStatus === 'repair-shop'    ? ' [Shop]'
+                        : v.tripStatus === 'on-trip'         ? ' [On Trip]'
+                        : v.tripStatus === 'scheduled'        ? ' [Scheduled]'
+                        : v.tripStatus === 'private-trip'     ? ' [Private]' : '';
+        opt.textContent = [v.plate, v.color, v.make, v.model].filter(Boolean).join(' · ') + statusTag;
+        sel.appendChild(opt);
+      });
     if (vehicleId) sel.value = vehicleId;
     else if (existingMove) sel.value = existingMove.vehicleId || '';
   }
