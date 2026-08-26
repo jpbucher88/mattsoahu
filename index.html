@@ -1538,6 +1538,7 @@
         <button class="tab-btn" data-tab="tab-users">Users</button>
         <button class="tab-btn" data-tab="tab-ops-report" id="tab-btn-ops-report">📊 Ops Report</button>
         <button class="tab-btn" data-tab="tab-performance" id="tab-btn-performance">👥 Performance</button>
+        <button class="tab-btn" data-tab="tab-config" id="tab-btn-config">⚙️ Config</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-deleted" data-tab="tab-deleted" style="display:none;">🗑 Deleted</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-activity" data-tab="tab-activity" style="display:none;">📋 Activity Log</button>
         <button class="tab-btn tab-matthew-only" id="tab-btn-eggs" data-tab="tab-eggs" style="display:none;">🥚 Previews</button>
@@ -1845,6 +1846,40 @@
             <button class="btn btn-outline" onclick="showDanEasterEgg(true)">😈 Dan</button>
             <button class="btn btn-outline" onclick="showJasonEasterEgg(true)">👶 Jason</button>
           </div>
+        </div>
+      </div>
+
+      <!-- ====== Config Tab (Admin) ====== -->
+      <div id="tab-config" class="tab-content">
+        <div class="card">
+          <h3>📍 Geofence — Work Location</h3>
+          <p class="hint">Set the GPS center of your work location. Employees will be warned (but not blocked) when punching in from outside the radius. Their location is recorded on each punch.</p>
+          <form id="geofence-form" onsubmit="saveWorkLocation(event)">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="geo-lat">Latitude</label>
+                <input type="number" id="geo-lat" step="any" placeholder="e.g. 21.30690" required>
+              </div>
+              <div class="form-group">
+                <label for="geo-lng">Longitude</label>
+                <input type="number" id="geo-lng" step="any" placeholder="e.g. -157.85830" required>
+              </div>
+              <div class="form-group">
+                <label for="geo-radius">Radius (meters)</label>
+                <input type="number" id="geo-radius" placeholder="300" min="50" max="5000" value="300">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="geo-name">Location Name <span class="hint">(optional)</span></label>
+              <input type="text" id="geo-name" placeholder="e.g. Main Office" maxlength="100">
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+              <button type="button" class="btn btn-outline" onclick="useMyLocationForGeofence()">📍 Use My Current Location</button>
+              <button type="submit" class="btn btn-primary">Save Geofence</button>
+            </div>
+            <p id="geofence-status" class="hint"></p>
+          </form>
+          <div id="current-geofence-display" class="hint" style="margin-top:10px;"></div>
         </div>
       </div>
 

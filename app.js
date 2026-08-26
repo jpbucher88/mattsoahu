@@ -6501,6 +6501,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (this.dataset.tab === 'tab-deleted')     loadDeletedTasks();
     if (this.dataset.tab === 'tab-ops-report')  loadOpsReport();
     if (this.dataset.tab === 'tab-performance') loadPerformanceReport();
+    if (this.dataset.tab === 'tab-config')      loadGeofenceDisplay();
   });
 });
 
@@ -7623,6 +7624,32 @@ window.loadPerformanceReport = async function() {
       </div>`;
     }
 
+    // ── Timeclock data for this date (admin-only) ─────────────────
+    const nameToTcData = {};
+    try {
+      const tcSnap = await db.collection('timeclock').where('date', '==', dateVal).get();
+      const uidToName = {};
+      dayItems.forEach(d => { if (d.uid && d.userName) uidToName[d.uid] = d.userName; });
+      tcSnap.forEach(doc => {
+        const tc = doc.data();
+        if (!tc.uid) return;
+        const name = uidToName[tc.uid] || tc.email || '';
+        if (!name) return;
+        const completedMs = calcDayCompletedMs(tc);
+        let activeMs = 0;
+        if (tc.activeSession && tc.activeSession.clockIn && dateVal === todayDateString()) {
+          const inT = tc.activeSession.clockIn.toDate ? tc.activeSession.clockIn.toDate() : new Date(tc.activeSession.clockIn);
+          const brkMs = (tc.activeSession.breaks || []).filter(b => b.end).reduce((s, b) => {
+            const bs = b.start.toDate ? b.start.toDate() : new Date(b.start);
+            const be = b.end.toDate ? b.end.toDate() : new Date(b.end);
+            return s + (be - bs);
+          }, 0);
+          activeMs = Math.max(0, Date.now() - inT.getTime() - brkMs);
+        }
+        nameToTcData[name] = { ms: completedMs + activeMs, active: !!tc.activeSession, uid: tc.uid };
+      });
+    } catch(tcErr) { console.warn('Timeclock load in perf report:', tcErr); }
+
     // ── Per-user breakdown — compact scorecard rows ──────────────
     window._perfUserItems = {};
     displayItems.forEach(d => {
@@ -7653,10 +7680,15 @@ window.loadPerformanceReport = async function() {
 
         // Compact metric chips — icon + count, dot-separated
         const metricOrder = ['photo_uploaded','vehicle_returned','vehicle_cleaned','inspection_complete','flag_not_returned','complete_task'];
-        const chips = metricOrder.filter(a => u.counts[a]).map(a => {
+        const tcData = nameToTcData[u.name];
+        const tcChipHtml = tcData && tcData.ms > 0
+          ? `<span style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:20px;padding:2px 9px;font-size:0.82rem;white-space:nowrap;font-weight:600;">⏱ ${fmtMs(tcData.ms)}${tcData.active ? ' <span style="color:#16a34a;font-size:0.7rem;">●</span>' : ''}</span>`
+          : '';
+        const actChips = metricOrder.filter(a => u.counts[a]).map(a => {
           const m = PERF_ACTION_LABELS[a];
           return `<span style="font-size:0.82rem;color:#374151;white-space:nowrap;">${m.icon} ${u.counts[a]}</span>`;
-        }).join('<span style="color:#e5e7eb;margin:0 3px;">·</span>');
+        });
+        const chips = [tcChipHtml, ...actChips].filter(Boolean).join('<span style="color:#e5e7eb;margin:0 3px;">·</span>');
 
         // ── Detail panel content ────────────────────────────────
         const taskItems  = userItems.filter(d => d.action === 'complete_task');
@@ -7721,6 +7753,24 @@ window.loadPerformanceReport = async function() {
       }).join('') + `</div>`;
 
     cardsEl.innerHTML = staffHtml;
+
+    // ── Timeclock summary section (employees clocked in today) ────
+    const tcSummaryEntries = Object.entries(nameToTcData).filter(([, tc]) => tc.ms > 0 || tc.active);
+    if (tcSummaryEntries.length) {
+      tcSummaryEntries.sort((a, b) => b[1].ms - a[1].ms);
+      const tcDiv = document.createElement('div');
+      tcDiv.style.cssText = 'margin-top:10px;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;background:#eff6ff;';
+      tcDiv.innerHTML = `<div style="font-size:0.75rem;font-weight:700;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">⏱ Time Clock — ${dateFmt}</div>` +
+        tcSummaryEntries.map(([name, tc]) =>
+          `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid #dbeafe;font-size:0.85rem;">
+            <span style="font-weight:600;color:#1e3a5f;">${escapeHtml(name)}</span>
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${tc.active ? '<span style="color:#16a34a;font-size:0.75rem;font-weight:600;">● Clocked In</span>' : ''}
+              <span style="color:#1d4ed8;font-weight:700;">⏱ ${fmtMs(tc.ms)}</span>
+            </div>
+          </div>`).join('');
+      cardsEl.appendChild(tcDiv);
+    }
 
     // ── Vehicle turnaround (collapsed) ────────────────────────────
     const turnaroundEl = $('perf-turnaround-wrap');
@@ -18749,6 +18799,117 @@ window.deleteIncident = async function(docId) {
 // TIME CLOCK WIDGET (Owner Only)
 // ================================================================
 
+// ================================================================
+// GEOFENCING — Work Location Check for Timeclock
+// ================================================================
+
+// Haversine formula: returns distance in meters between two lat/lng points
+function _haversineMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
+  const Δφ = (lat2 - lat1) * Math.PI / 180;
+  const Δλ = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(Δφ/2)**2 + Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ/2)**2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+let _workLocCache = null;
+async function _getWorkLocation() {
+  if (_workLocCache) return _workLocCache;
+  try {
+    const doc = await db.collection('config').doc('workLocation').get();
+    if (doc.exists) { _workLocCache = doc.data(); return _workLocCache; }
+  } catch(e) { console.warn('_getWorkLocation error:', e); }
+  return null;
+}
+
+function _gpsPosition(timeout) {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error('Geolocation not supported')); return; }
+    navigator.geolocation.getCurrentPosition(resolve, reject,
+      { enableHighAccuracy: true, timeout: timeout || 10000, maximumAge: 60000 });
+  });
+}
+
+// Returns {lat, lng, accuracy, inside, distanceMeters} or null if GPS unavailable/denied
+async function _getLocationAndCheck() {
+  const workLoc = await _getWorkLocation();
+  try {
+    const pos = await _gpsPosition(8000);
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    const accuracy = Math.round(pos.coords.accuracy || 0);
+    let inside = true, distanceMeters = null;
+    if (workLoc && workLoc.lat && workLoc.lng) {
+      distanceMeters = _haversineMeters(lat, lng, workLoc.lat, workLoc.lng);
+      inside = distanceMeters <= (workLoc.radiusMeters || 300);
+    }
+    return { lat, lng, accuracy, inside, distanceMeters };
+  } catch(e) {
+    console.warn('Geolocation error:', e.message);
+    return null; // GPS unavailable — don't block the punch
+  }
+}
+
+// Admin: save geofence work location
+window.saveWorkLocation = async function(e) {
+  if (e) e.preventDefault();
+  if (currentUserRole !== 'admin') return;
+  const lat = parseFloat($('geo-lat')?.value);
+  const lng = parseFloat($('geo-lng')?.value);
+  const radius = parseInt($('geo-radius')?.value) || 300;
+  const name = $('geo-name')?.value?.trim() || '';
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    toast('Enter valid latitude (−90 to 90) and longitude (−180 to 180).', 'error'); return;
+  }
+  try {
+    await db.collection('config').doc('workLocation').set({
+      lat, lng, radiusMeters: radius, name,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedBy: currentUser.uid
+    });
+    _workLocCache = { lat, lng, radiusMeters: radius, name };
+    toast('Geofence saved! 📍', 'success');
+    loadGeofenceDisplay();
+  } catch(err) {
+    console.error('saveWorkLocation error:', err);
+    toast('Failed to save geofence.', 'error');
+  }
+};
+
+window.useMyLocationForGeofence = async function() {
+  const statusEl = $('geofence-status');
+  if (statusEl) statusEl.textContent = '📡 Getting location…';
+  try {
+    const pos = await _gpsPosition(10000);
+    const lat = pos.coords.latitude;
+    const lng = pos.coords.longitude;
+    if ($('geo-lat')) $('geo-lat').value = lat.toFixed(6);
+    if ($('geo-lng')) $('geo-lng').value = lng.toFixed(6);
+    if (statusEl) statusEl.textContent = `📍 Got position: ${lat.toFixed(5)}, ${lng.toFixed(5)} (accuracy ±${Math.round(pos.coords.accuracy)}m)`;
+  } catch(e) {
+    if (statusEl) statusEl.textContent = '';
+    toast('Could not get location. Check browser permissions.', 'error');
+  }
+};
+
+async function loadGeofenceDisplay() {
+  _workLocCache = null; // force refresh
+  const el = $('current-geofence-display');
+  if (!el) return;
+  const loc = await _getWorkLocation();
+  if (loc && loc.lat) {
+    el.innerHTML = `<strong>📍 Active geofence:</strong> ${loc.name ? escapeHtml(loc.name) + ' — ' : ''}${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} · Radius: <strong>${loc.radiusMeters || 300}m</strong>`;
+    if ($('geo-lat')) $('geo-lat').value = loc.lat;
+    if ($('geo-lng')) $('geo-lng').value = loc.lng;
+    if ($('geo-radius')) $('geo-radius').value = loc.radiusMeters || 300;
+    if ($('geo-name')) $('geo-name').value = loc.name || '';
+  } else {
+    el.innerHTML = '<span style="color:#9ca3af;">No geofence set — timeclock works without location check.</span>';
+  }
+}
+
+// ================================================================
 function initTimeClock() {
   if (!currentUser) return;
   const tabBtn = $('mb-tab-timeclock');
@@ -19045,6 +19206,19 @@ window.clockIn = async function() {
   const docId = currentUser.uid + '_' + today;
   const scheduledInput = $('tc-scheduled-input');
   const scheduledStart = scheduledInput ? scheduledInput.value : '';
+
+  // Geofence check — non-blocking, warns if outside but allows punch
+  showLoading('Getting location…');
+  const locResult = await _getLocationAndCheck();
+  hideLoading();
+
+  if (locResult && !locResult.inside) {
+    const workLoc = await _getWorkLocation();
+    const ok = await confirm('Outside Work Location ⚠️',
+      `You appear to be ${locResult.distanceMeters}m from the work location (allowed: ${workLoc?.radiusMeters || 300}m).\n\nYour location will be recorded. Continue punching in?`);
+    if (!ok) return;
+  }
+
   const newSession = {
     scheduledStart: scheduledStart || null,
     clockIn: firebase.firestore.FieldValue.serverTimestamp(),
@@ -19052,7 +19226,8 @@ window.clockIn = async function() {
     breaks: [],
     onBreak: false,
     currentBreakStart: null,
-    timezone: TC_TIMEZONE
+    timezone: TC_TIMEZONE,
+    ...(locResult ? { clockInLocation: { lat: locResult.lat, lng: locResult.lng, accuracy: locResult.accuracy, inside: locResult.inside, distanceMeters: locResult.distanceMeters } } : {})
   };
   try {
     const snap = await db.collection('timeclock').doc(docId).get();
@@ -19132,11 +19307,15 @@ window.clockOut = async function() {
   if (active.onBreak && active.currentBreakStart) {
     breaks.push({ start: active.currentBreakStart, end: firebase.firestore.Timestamp.now() });
   }
+  // Capture punch-out location silently (no geofence warning on clock-out)
+  const locOut = await _getLocationAndCheck().catch(() => null);
   const completed = {
     scheduledStart: active.scheduledStart || null,
     clockIn: active.clockIn,
     clockOut: firebase.firestore.Timestamp.now(),
-    breaks
+    breaks,
+    ...(active.clockInLocation ? { clockInLocation: active.clockInLocation } : {}),
+    ...(locOut ? { clockOutLocation: { lat: locOut.lat, lng: locOut.lng, accuracy: locOut.accuracy, inside: locOut.inside, distanceMeters: locOut.distanceMeters } } : {})
   };
   const sessions = d.sessions || [];
   sessions.push(completed);

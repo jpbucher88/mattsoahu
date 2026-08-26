@@ -81,7 +81,7 @@ service cloud.firestore {
       allow delete: if isRegistered() && resource.data.to == request.auth.uid;
     }
 
-    // Time clock - any registered user can read/write their own records
+    // Time clock - users can read/write their own; admins/managers can update any record
     match /timeclock/{recordId} {
       allow read: if isAuth() && (
         resource == null ||
@@ -89,8 +89,14 @@ service cloud.firestore {
         isAdmin() ||
         canViewAllTimeclocks()
       );
-      allow update, delete: if isAuth() && resource.data.uid == request.auth.uid;
+      allow update, delete: if isAuth() && (resource.data.uid == request.auth.uid || isAdmin() || isManager());
       allow create: if isAuth() && request.resource.data.uid == request.auth.uid;
+    }
+
+    // App config (geofence, etc.) — any authenticated user can read; admins can write
+    match /config/{docId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
     }
 
     // Learning items - any registered user can read all; own items writable; admins can write shared
