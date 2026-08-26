@@ -4436,7 +4436,10 @@ async function startCameraStream() {
           // Safe: main-wide or ultra-wide lens available at hardware level
           _cameraHwZoom = true;
           cameraZoomMin = hwMin;              // e.g. 0.5 for ultra-wide iPhone
-          cameraZoomMax = Math.min(hwMax, 10.0);
+          // Guarantee at least 5× zoom is available via software fallback.
+          // Some devices report zoom.max = 1.0 (no real hardware range), which would
+          // disable the + button entirely. Math.max ensures software zoom always works.
+          cameraZoomMax = Math.max(Math.min(hwMax, 10.0), 5.0);
           cameraZoomLevel = 1.0;              // always start at natural 1× view
           // Push hardware to 1.0 so it starts at main wide lens, not wherever it was
           await track.applyConstraints({ advanced: [{ zoom: 1.0 }] }).catch(() => {});
