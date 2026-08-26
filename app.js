@@ -1224,6 +1224,14 @@ auth.onAuthStateChanged(async (user) => {
         return;
       }
       const userData = userDoc.data();
+
+      // Check if account is suspended
+      if (userData.suspended === true) {
+        toast('Your account has been suspended. Contact your admin.', 'error');
+        await auth.signOut();
+        return;
+      }
+
       currentUserRole = userData.role || 'user';
       currentUserTimeclockAccess = currentUserRole === 'admin' || userData.timeclockAccess === true;
       currentUserCanViewAllTimeclocks = currentUserRole === 'admin' || userData.canViewAllTimeclocks === true;
@@ -8051,7 +8059,7 @@ async function loadAdminUsers() {
       item.className = 'data-list-item';
       item.innerHTML = `
         <div class="item-info">
-          <div class="item-title">${escapeHtml(data.displayName || 'Unknown')} ${isSelf ? '(You)' : ''}</div>
+          <div class="item-title">${escapeHtml(data.displayName || 'Unknown')} ${isSelf ? '(You)' : ''}${data.suspended ? ' <span style="color:#ef4444;font-size:0.78rem;font-weight:700;">🚫 Suspended</span>' : ''}</div>
           <div class="item-subtitle">${escapeHtml(data.email)} · <span class="badge ${roleBadgeClass}">${data.role}</span></div>
         </div>
         <div class="item-actions">
@@ -8062,6 +8070,7 @@ async function loadAdminUsers() {
             <button class="btn btn-sm ${data.timeclockAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleTimeclockAccess('${doc.id}', ${!!data.timeclockAccess})" title="Toggle time clock access">🕐 TC: ${data.timeclockAccess ? 'On' : 'Off'}</button>
             <button class="btn btn-sm ${data.canViewAllTimeclocks ? 'btn-warning' : 'btn-outline'}" onclick="toggleTimeclockViewAll('${doc.id}', ${!!data.canViewAllTimeclocks})" title="Can view all employees' timeclocks">👁 View All: ${data.canViewAllTimeclocks ? 'Yes' : 'No'}</button>
             <button class="btn btn-sm ${data.crmAccess ? 'btn-primary' : 'btn-outline'}" onclick="toggleCrmAccess('${doc.id}', ${!!data.crmAccess})" title="Toggle CRM sales dashboard access">🤝 CRM: ${data.crmAccess ? 'On' : 'Off'}</button>
+            <button class="btn btn-sm ${data.suspended ? 'btn-warning' : 'btn-outline'}" onclick="toggleSuspendUser('${doc.id}', '${escapeHtml(data.displayName)}', ${!!data.suspended})" title="${data.suspended ? 'Re-enable this user' : 'Suspend this user'}">${data.suspended ? '✅ Unsuspend' : '🚫 Suspend'}</button>
             <button class="btn btn-sm btn-danger" onclick="deleteUser('${doc.id}', '${escapeHtml(data.displayName)}')">Remove</button>
           ` : ''}
         </div>
@@ -8132,6 +8141,25 @@ window.toggleCrmAccess = async function(uid, currentAccess) {
   } catch(e) {
     console.error('toggleCrmAccess error:', e);
     toast('Failed to update CRM access.', 'error');
+  }
+};
+
+window.toggleSuspendUser = async function(uid, name, currentlySuspended) {
+  if (currentUserRole !== 'admin') return;
+  const action = currentlySuspended ? 'Unsuspend' : 'Suspend';
+  const msg = currentlySuspended
+    ? `Re-enable access for ${name}? They will be able to log in again.`
+    : `Suspend ${name}? They will be immediately blocked from logging in.`;
+  const ok = await confirm(`${action} User`, msg);
+  if (!ok) return;
+
+  try {
+    await db.collection('users').doc(uid).update({ suspended: !currentlySuspended });
+    toast(`${name} has been ${currentlySuspended ? 'unsuspended' : 'suspended'}.`, 'success');
+    loadAdminUsers();
+  } catch(e) {
+    console.error('toggleSuspendUser error:', e);
+    toast('Failed to update suspension status.', 'error');
   }
 };
 
