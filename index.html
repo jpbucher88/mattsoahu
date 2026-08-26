@@ -83,6 +83,10 @@
         <span class="task-alert-icon">📬</span>
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
       </button>
+      <button id="btn-timeclock" class="task-alert-btn" style="display:none;" title="Time Clock" onclick="openTimeClock()">
+        <span class="task-alert-icon">⏱️</span>
+        <span id="tc-active-dot" class="task-alert-count count-zero"></span>
+      </button>
 
       <button id="btn-learning" class="task-alert-btn" title="Learning Center" onclick="openLearningPage()">
         <span class="task-alert-icon">🎓</span>
@@ -232,6 +236,10 @@
         <button id="btn-mailbox-vehicle" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
           <span class="task-alert-icon">📬</span>
           <span id="mail-unread-count-vehicle" class="task-alert-count count-zero">0</span>
+        </button>
+        <button id="btn-timeclock-v" class="task-alert-btn" style="display:none;" title="Time Clock" onclick="openTimeClock()">
+          <span class="task-alert-icon">⏱️</span>
+          <span id="tc-active-dot-v" class="task-alert-count count-zero"></span>
         </button>
 
         <button id="btn-dispatch-move-vehicle" class="btn btn-sm btn-outline btn-icon-mobile" style="display:none;border-color:#7c3aed;color:#7c3aed;" title="Move this vehicle" onclick="openDispatchModal(selectedVehicle&&selectedVehicle.id)">🚐 Move</button>
@@ -2639,6 +2647,23 @@
   <input type="hidden" id="fin-ownercut-month">
 
 
+  <!-- ==================== TIMECLOCK PANEL ==================== -->
+  <div id="tc-panel-overlay" class="tc-panel-overlay" style="display:none;" onclick="if(event.target===this)closeTimeClock()">
+    <div class="tc-panel">
+      <div class="tc-panel-header">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <h3>⏱️ Time Clock</h3>
+          <span id="tc-header-badge" style="display:none;background:#dcfce7;color:#15803d;border-radius:20px;padding:2px 10px;font-size:0.75rem;font-weight:700;">● Clocked In</span>
+        </div>
+        <button class="tc-panel-close" onclick="closeTimeClock()">&times;</button>
+      </div>
+      <div class="tc-panel-body">
+        <div id="tc-view-banner" style="display:none;"></div>
+        <div id="time-clock-content" class="time-clock-content"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== MAILBOX PANEL ==================== -->
   <div id="mailbox-overlay" class="mailbox-overlay" style="display:none;" onclick="if(event.target===this)closeMailbox()">
     <div class="mailbox-panel">
@@ -2686,11 +2711,8 @@
             <button class="btn btn-primary" onclick="sendMailMessage()">✉️ Send Message</button>
           </div>
         </div>
-        <!-- Time Clock -->
-        <div id="mb-timeclock" class="mb-tab-content" style="display:none;">
-          <div id="tc-view-banner" style="display:none;"></div>
-          <div id="time-clock-content" class="time-clock-content"></div>
-        </div>
+        <!-- Time Clock (moved to dedicated panel — see tc-panel-overlay) -->
+        <div id="mb-timeclock" class="mb-tab-content" style="display:none;"></div>
       </div>
     </div>
   </div>

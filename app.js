@@ -17601,6 +17601,23 @@ window.closeMailbox = function() {
   if (overlay) overlay.style.display = 'none';
 };
 
+// ── Dedicated Time Clock panel ──
+window.openTimeClock = function() {
+  const overlay = $('tc-panel-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+  if (currentUserCanViewAllTimeclocks && tcEmployees.length === 0) {
+    loadTcEmployees().then(() => loadWeekData(currentWeekOffset));
+  } else {
+    loadWeekData(currentWeekOffset);
+  }
+};
+
+window.closeTimeClock = function() {
+  const overlay = $('tc-panel-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
 window.switchMailTab = function(tab) {
   currentMailTab = tab;
   document.querySelectorAll('.mailbox-tab').forEach(t => t.classList.remove('active'));
@@ -18910,14 +18927,33 @@ async function loadGeofenceDisplay() {
 }
 
 // ================================================================
+// Update the ⏱️ header button badge to show active punch status
+function _updateTcStatusDot() {
+  const today = todayDateString();
+  const todayData = weeklyTimeclockData[today];
+  const isActive = !!(todayData && todayData.activeSession);
+  ['tc-active-dot', 'tc-active-dot-v'].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = isActive ? 'IN' : '';
+    el.className = isActive ? 'task-alert-count' : 'task-alert-count count-zero';
+    if (isActive) { el.style.background = '#16a34a'; el.style.color = '#fff'; }
+  });
+  const badge = $('tc-header-badge');
+  if (badge) badge.style.display = isActive ? '' : 'none';
+}
+
 function initTimeClock() {
   if (!currentUser) return;
-  const tabBtn = $('mb-tab-timeclock');
+  const tcBtn  = $('btn-timeclock');
+  const tcBtnV = $('btn-timeclock-v');
   if (!currentUserTimeclockAccess) {
-    if (tabBtn) tabBtn.style.display = 'none';
+    if (tcBtn)  tcBtn.style.display  = 'none';
+    if (tcBtnV) tcBtnV.style.display = 'none';
     return;
   }
-  if (tabBtn) tabBtn.style.display = '';
+  if (tcBtn)  tcBtn.style.display  = '';
+  if (tcBtnV) tcBtnV.style.display = '';
   tcViewingUid = currentUser.uid;
   if (currentUserCanViewAllTimeclocks) {
     loadTcEmployees().then(() => loadWeekData(0));
@@ -19197,6 +19233,7 @@ function renderTimeClock() {
     const cdEl = $('tc-eliz-countdown');
     if (cdEl) _startElizabethCountdown(cdEl);
   }
+  _updateTcStatusDot();
 }
 
 

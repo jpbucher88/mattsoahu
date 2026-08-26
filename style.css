@@ -9376,3 +9376,49 @@ body {
 .gt-update-btn { background:#7c3aed; color:#fff; border:none; padding:3px 10px; border-radius:6px; font-size:0.76rem; cursor:pointer; font-weight:600; }
 .gt-update-btn:hover { background:#6d28d9; }
 
+
+/* ============ TIMECLOCK PANEL ============ */
+.tc-panel-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9100;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+}
+.tc-panel {
+  background: #fff;
+  width: min(480px, 100vw);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -4px 0 24px rgba(0,0,0,0.18);
+  animation: slideInRight 0.22s ease;
+  overflow: hidden;
+}
+.tc-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+.tc-panel-header h3 { margin: 0; font-size: 1.05rem; }
+.tc-panel-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  line-height: 1;
+  padding: 0 4px;
+}
+.tc-panel-close:hover { color: #111; }
+.tc-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
