@@ -4299,15 +4299,10 @@ function _initCameraPinchZoom() {
   let pinchStartDist = null;
   let pinchStartZoom = 1;
 
-  // Double-tap on the video to reset zoom
-  let _lastTap = 0;
+  // No auto-reset behavior here: zoom should only change by explicit user actions
+  // (pinch, +/- buttons, reset button/label), never by gesture timing side effects.
   overlay.addEventListener('touchend', (e) => {
     if (e.touches.length < 2) pinchStartDist = null;
-    if (e.changedTouches.length === 1) {
-      const now = Date.now();
-      if (now - _lastTap < 300) { window._resetCameraZoom(); }
-      _lastTap = now;
-    }
   }, { passive: true });
 
   function _pinchDist(touches) {
