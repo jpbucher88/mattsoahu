@@ -10047,3 +10047,268 @@ input[type="checkbox"], input[type="radio"] {
 }
 .mbn-more-item .mbn-badge.mbn-badge-zero { display: none; }
 
+/* ==================================================================
+   DESKTOP / WEB POLISH PASS  (2026-09-26)
+   Wider containers, denser fleet grids, hover/focus polish, sticky
+   header shadow, readable typography, table refinement.
+   ================================================================== */
+
+/* ---------- Container widths (biggest desktop win) ---------- */
+/* Old rule was `max-width: 800px` at ≥768px — kills 60% of a 1920px monitor.
+   New scale gives the app comfortable breathing room without stretching text. */
+@media (min-width: 1024px) {
+  .dashboard-main, .admin-main {
+    max-width: 1200px;
+    padding: 16px 20px;
+  }
+}
+@media (min-width: 1280px) {
+  .dashboard-main, .admin-main {
+    max-width: 1360px;
+    padding: 20px 28px;
+  }
+}
+@media (min-width: 1600px) {
+  .dashboard-main, .admin-main {
+    max-width: 1560px;
+    padding: 24px 32px;
+  }
+}
+
+/* Header gets more breathing room on desktop */
+@media (min-width: 1024px) {
+  .app-header {
+    padding: 14px 28px;
+  }
+  .app-header h2 {
+    font-size: 20px;
+  }
+  .app-header .task-alert-btn {
+    padding: 6px 10px;
+  }
+}
+@media (min-width: 1600px) {
+  .app-header {
+    padding: 16px 40px;
+  }
+}
+
+/* Sticky header: subtle shadow to establish elevation on desktop */
+@media (min-width: 768px) {
+  .app-header {
+    box-shadow: 0 1px 0 var(--border), 0 6px 16px -12px rgba(15, 23, 42, 0.18);
+  }
+}
+.app-header.app-header-scrolled {
+  box-shadow: 0 1px 0 var(--border), 0 10px 24px -14px rgba(15, 23, 42, 0.28);
+}
+
+/* ---------- Fleet dashboard density on desktop ---------- */
+@media (min-width: 1024px) {
+  .fleet-dashboard {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px;
+  }
+}
+@media (min-width: 1600px) {
+  .fleet-dashboard {
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+  }
+}
+
+/* ---------- Card hover elevation on desktop ---------- */
+@media (hover: hover) and (pointer: fine) {
+  .fleet-card {
+    transition: box-shadow 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  }
+  .fleet-card:hover {
+    border-color: var(--primary-tint);
+    box-shadow: 0 8px 20px -8px rgba(15, 23, 42, 0.18), 0 2px 6px rgba(15, 23, 42, 0.08);
+    transform: translateY(-1px);
+  }
+  .card {
+    transition: box-shadow 0.15s ease;
+  }
+  .btn {
+    transition: background 0.12s ease, border-color 0.12s ease, transform 0.08s ease, box-shadow 0.12s ease;
+  }
+  .btn:hover {
+    box-shadow: 0 4px 12px -6px rgba(15, 23, 42, 0.22);
+  }
+  .btn:active {
+    transform: translateY(1px);
+  }
+  .location-vehicle-chip,
+  .lagoon-vehicle-chip,
+  .trip-vehicle-chip {
+    transition: box-shadow 0.12s ease, transform 0.12s ease;
+  }
+  .location-vehicle-chip:hover,
+  .lagoon-vehicle-chip:hover,
+  .trip-vehicle-chip:hover {
+    box-shadow: 0 4px 12px -6px rgba(15, 23, 42, 0.25);
+    transform: translateY(-1px);
+  }
+  .urgent-banner-item,
+  .followup-item {
+    transition: background 0.12s ease, box-shadow 0.12s ease;
+  }
+}
+
+/* ---------- Typography ceiling: keep line lengths readable ---------- */
+@media (min-width: 1280px) {
+  .card p,
+  .card > div > p {
+    max-width: 78ch;
+  }
+  .hint, .note-text {
+    max-width: 78ch;
+  }
+}
+
+/* ---------- Card spacing on desktop ---------- */
+@media (min-width: 1024px) {
+  .card {
+    padding: 18px 20px;
+    margin: 12px 0;
+  }
+}
+@media (min-width: 1600px) {
+  .card {
+    padding: 22px 24px;
+    margin: 14px 0;
+  }
+}
+
+/* ---------- Section 2-column split on very wide screens ---------- */
+/* Widgets that logically pair (moves + urgent, locations + fleet compliance)
+   get side-by-side on 1440px+. Cards inside each column keep their normal
+   layout — this is purely a wrapper. Opt-in via .dashboard-two-col class. */
+@media (min-width: 1440px) {
+  .dashboard-two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+}
+
+/* ---------- Buttons: bigger click affordance on desktop ---------- */
+@media (min-width: 1024px) {
+  .btn {
+    font-size: 14px;
+  }
+  .btn-sm {
+    font-size: 13px;
+    padding: 8px 14px;
+    min-height: 36px;
+  }
+}
+
+/* ---------- Modal max-widths on desktop (they were mobile-first tight) ---------- */
+@media (min-width: 1024px) {
+  .damage-check-modal,
+  .dmg-modal-pf {
+    max-width: 640px !important;
+  }
+  .extras-modal-box {
+    max-width: 560px;
+  }
+  .modal-box {
+    max-width: min(640px, 92vw);
+  }
+}
+
+/* ---------- Tables: readable on desktop ---------- */
+@media (min-width: 1024px) {
+  .card table,
+  .maint-table,
+  .crm-lead-table,
+  .finance-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 14px;
+  }
+  .card table th,
+  .maint-table th,
+  .crm-lead-table th,
+  .finance-table th {
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-weight: 700;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+    position: sticky;
+    top: 0;
+  }
+  .card table td,
+  .maint-table td,
+  .crm-lead-table td,
+  .finance-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .card table tbody tr:hover,
+  .maint-table tbody tr:hover,
+  .crm-lead-table tbody tr:hover,
+  .finance-table tbody tr:hover {
+    background: var(--surface-2);
+  }
+}
+
+/* ---------- Forms: multi-column on desktop where appropriate ---------- */
+@media (min-width: 1024px) {
+  .vehicle-location-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px 18px;
+  }
+  .loc-field label {
+    font-weight: 600;
+  }
+}
+
+/* ---------- Consistency: header user badge less noisy on desktop ---------- */
+@media (min-width: 1024px) {
+  .user-badge {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+  }
+}
+
+/* ---------- Login page polish ---------- */
+@media (min-width: 768px) {
+  .login-container {
+    padding: 36px 32px;
+    box-shadow: var(--shadow-lg);
+    border-radius: var(--radius-lg);
+  }
+}
+
+/* ---------- Print-friendly (rarely used but professional) ---------- */
+@media print {
+  .app-header,
+  .mobile-bottom-nav,
+  .toast-container,
+  .floating-refresh-btn,
+  .fab,
+  .fab-menu,
+  .modal-overlay,
+  .damage-check-overlay {
+    display: none !important;
+  }
+  body { background: #fff; }
+  .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
+}
+
+

@@ -24420,3 +24420,59 @@ function _injectLagoonAlerts() {
     });
   });
 })();
+
+// ==============================================================
+// DESKTOP QoL: ESC closes the top-most modal / overlay, and the
+// sticky header gains a subtle "scrolled" shadow class so it lifts
+// off the page after the user scrolls.
+// ==============================================================
+(function initDesktopQoL() {
+  function onReady(fn) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn, { once: true });
+    } else {
+      fn();
+    }
+  }
+  onReady(() => {
+    // ESC closes top-most visible overlay (extras picker, damage modal, etc.)
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      // Skip if focus is inside an editable field or a native <dialog>
+      const t = document.activeElement;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) {
+        // Let inputs handle Escape natively unless there's an open overlay
+      }
+      const overlays = Array.from(document.querySelectorAll(
+        '.modal-overlay, .damage-check-overlay, .dispatch-modal-overlay, .dm-card, .lightbox'
+      )).filter(el => {
+        const cs = window.getComputedStyle(el);
+        return cs.display !== 'none' && cs.visibility !== 'hidden' && el.offsetParent !== null;
+      });
+      if (overlays.length === 0) return;
+      const top = overlays[overlays.length - 1];
+      // Prefer a close button inside the overlay
+      const closeBtn = top.querySelector(
+        '.modal-close, .dmg-cancel-btn, .dm-topbar-close, .close-btn, [data-close], .modal-close-btn'
+      );
+      if (closeBtn) { closeBtn.click(); return; }
+      // Fallback: remove/hide the overlay directly
+      if (top.classList.contains('damage-check-overlay') || top.classList.contains('lightbox')) {
+        top.remove();
+      } else {
+        top.style.display = 'none';
+      }
+    });
+
+    // Elevated sticky header when scrolled
+    const header = document.querySelector('#page-dashboard .app-header');
+    if (header) {
+      const onScroll = () => {
+        const scrolled = window.scrollY > 8;
+        header.classList.toggle('app-header-scrolled', scrolled);
+      };
+      window.addEventListener('scroll', onScroll, { passive: true });
+      onScroll();
+    }
+  });
+})();
