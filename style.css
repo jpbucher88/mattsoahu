@@ -10311,4 +10311,292 @@ input[type="checkbox"], input[type="radio"] {
   .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
 }
 
+/* ==================================================================
+   PARTS QUEUE — bin grouped layout, move picker, and return-alert modal
+   ================================================================== */
+.pq-bin-group {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.pq-bin-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  border-left: 4px solid var(--bin-accent, var(--primary));
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.pq-bin-header .pq-bin-name { flex: 1; }
+.pq-bin-count {
+  background: var(--bin-accent, var(--primary));
+  color: #fff;
+  border-radius: 999px;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+}
+.pq-bin-arrived-tag {
+  background: var(--success-tint);
+  color: var(--success);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.pq-bin-body { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+
+.pq-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pq-card.pq-arrived {
+  border-color: var(--success);
+  background: linear-gradient(to right, var(--success-tint) 0%, var(--surface) 40%);
+}
+.pq-card-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pq-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+.pq-ordered-badge, .pq-arrived-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.pq-ordered-badge { background: var(--warning-tint); color: var(--warning); }
+.pq-arrived-badge { background: var(--success-tint); color: var(--success); }
+.pq-order-num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--primary-tint);
+  color: var(--primary-dark);
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+}
+.pq-vehicle-tag {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pq-part-name { font-size: 1rem; font-weight: 800; color: var(--text); }
+.pq-meta { font-size: 0.82rem; color: var(--text-muted); }
+.pq-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.pq-btn { min-height: 34px; }
+.pq-del-btn {
+  border-color: var(--danger);
+  color: var(--danger);
+  padding: 6px 10px;
+  min-width: 34px;
+  margin-left: auto;
+}
+.pq-install-btn {
+  background: var(--success);
+  color: #fff;
+  border-color: var(--success);
+}
+.pq-install-btn:hover { background: #15803d; }
+
+/* Bin picker modal */
+.parts-bin-overlay {
+  z-index: 1200;
+}
+.parts-bin-box {
+  max-width: 420px;
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 18px 18px 14px;
+  box-shadow: var(--shadow-lg);
+}
+.parts-bin-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.parts-bin-close {
+  background: transparent;
+  border: none;
+  font-size: 1.4rem;
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 0 4px;
+  line-height: 1;
+}
+.parts-bin-list { display: flex; flex-direction: column; gap: 8px; }
+.parts-bin-opt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--bin-accent, var(--primary));
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.92rem;
+  color: var(--text);
+  text-align: left;
+  transition: background 0.12s ease, transform 0.08s ease;
+}
+.parts-bin-opt:hover:not([disabled]) {
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+.parts-bin-opt[disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.parts-bin-opt-label { flex: 1; }
+.parts-bin-opt-tag {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+/* Parts-return alert modal fired from vehicleReturned */
+.parts-return-alert-overlay { z-index: 1200; }
+.parts-return-box {
+  max-width: 520px;
+  width: 100%;
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  padding: 18px 18px 14px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.parts-return-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.parts-return-list { display: flex; flex-direction: column; gap: 8px; }
+.parts-return-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+.parts-return-part { font-weight: 800; font-size: 0.95rem; color: var(--text); }
+.parts-return-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
+.parts-return-here {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--success);
+  background: var(--success-tint);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.parts-return-elsewhere {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--warning);
+  background: var(--warning-tint);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.parts-return-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+.parts-return-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+/* ==================================================================
+   RESERVED PARKING (1585) — on-trip sub-section styling
+   ================================================================== */
+.loc-sub-reserved {
+  background: linear-gradient(90deg, #ede9fe, #f5f3ff);
+  color: #6d28d9;
+  padding: 8px 12px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+}
+.reserved-parking-trip-item {
+  background: #faf5ff;
+  border-left: 3px solid #7c3aed;
+}
+.reserved-chip {
+  background: #ede9fe !important;
+  color: #5b21b6 !important;
+  border-color: #c4b5fd !important;
+}
+.reserved-trip-tag {
+  background: var(--warning-tint);
+  color: var(--warning);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+/* Responsive: parts queue on small screens */
+@media (max-width: 480px) {
+  .pq-card-top { gap: 4px; }
+  .pq-vehicle-tag { font-size: 0.8rem; }
+  .pq-part-name { font-size: 0.92rem; }
+  .pq-actions .btn-sm { flex: 1; min-width: calc(50% - 3px); }
+  .parts-return-row { flex-direction: column; align-items: stretch; }
+  .parts-return-actions { justify-content: flex-end; }
+}
+
+
 

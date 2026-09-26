@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926b">
+  <link rel="stylesheet" href="style.css?v=20260926c">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -346,6 +346,12 @@
               <option value="1 Lagoon Dr">1 Lagoon Dr (HNL area)</option>
               <option value="94-530 Lumiauau">94-530 Lumiauau</option>
             </select>
+          </div>
+          <div id="extra-parking-row" class="loc-field" style="display:none;">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <input type="checkbox" id="vehicle-extra-parking" style="width:20px;height:20px;">
+              <span>🅿️ Reserved parking at 1585 <span style="font-size:0.75rem;color:#6b7280;font-weight:400;">(stays under 1585 while on trips)</span></span>
+            </label>
           </div>
           <div class="loc-field">
             <label for="vehicle-trip-status">📍 Status:</label>
@@ -3322,7 +3328,16 @@
           <input type="date" id="po-eta" class="dm-input">
         </div>
         <div class="dm-row">
-          <label class="dm-label">📝 Notes</label>
+          <label class="dm-label">� Ship to</label>
+          <select id="po-ship-to" class="dm-select">
+            <option value="VENDOR">🏪 Still with vendor</option>
+            <option value="HNL">🛬 HNL</option>
+            <option value="1585 Kapiolani">🏢 1585 Kapiolani</option>
+            <option value="94-530 Lumiauau">🏠 94-530 Lumiauau</option>
+          </select>
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">�📝 Notes</label>
           <input type="text" id="po-notes" class="dm-input" placeholder="Optional" maxlength="150">
         </div>
       </div>

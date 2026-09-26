@@ -2397,7 +2397,11 @@ function renderLocationsWidget() {
     const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && !v.photoExcluded && v.homeLocation === loc);
     const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !needsPhotosCheck(v) && v.homeLocation === loc);
     const overdueHere = [...overdueTrip, ...overdueRepair].filter(v => (v.homeLocation || '') === loc);
-    const total = cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length;
+    // 1585-only: on-trip vehicles that hold a reserved parking spot should also render here
+    const reservedHere = loc === '1585 Kapiolani'
+      ? onTripAll.filter(v => v.homeLocation === '1585 Kapiolani' && !!v.extraParking && !isOverdue(v))
+      : [];
+    const total = cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length + reservedHere.length;
     if (total === 0) continue;
 
     const isKapiolani = loc === '1585 Kapiolani';
@@ -2532,6 +2536,36 @@ function renderLocationsWidget() {
       html += '</div>';
     }
 
+    // 🅿️ Reserved Parking (1585 only): vehicles whose home is 1585 with extraParking flag
+    // that are currently On a Trip. They visually stay in the 1585 group so the crew
+    // knows the reserved spot is still assigned to them.
+    if (isKapiolani) {
+      const reservedOnTrip = onTripAll.filter(v => v.homeLocation === '1585 Kapiolani' && !!v.extraParking && !isOverdue(v));
+      if (reservedOnTrip.length > 0) {
+        html += `<div class="loc-sub-header loc-sub-reserved">🅿️ Reserved Spot — On a Trip <span class="loc-sub-count">${reservedOnTrip.length}</span></div>
+          <div class="location-group-vehicles trip-list">`;
+        for (const v of reservedOnTrip) {
+          let returnLabel = '';
+          if (v.tripStatus === 'scheduled' && v.tripScheduledStart) {
+            const ss = v.tripScheduledStart.toDate ? v.tripScheduledStart.toDate() : new Date(v.tripScheduledStart);
+            const startStr = ss.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
+            returnLabel = `<span class="trip-return-label" style="color:#7c3aed;">⏰ Starts ${startStr}</span>`;
+          } else if (v.tripReturnDate) {
+            const rd = v.tripReturnDate.toDate ? v.tripReturnDate.toDate() : new Date(v.tripReturnDate);
+            returnLabel = _returnDueLabel(rd);
+          }
+          const chipSub = [v.color, v.vehicleType].filter(Boolean).map(s => escapeHtml(s)).join(' · ');
+          html += `<div class="trip-item reserved-parking-trip-item">
+            <span class="location-vehicle-chip reserved-chip" data-vid="${v.id}">🅿️ ${escapeHtml(v.plate)}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}</span>
+            <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span>
+            <span class="reserved-trip-tag">On a trip</span>
+            ${returnLabel}
+          </div>`;
+        }
+        html += '</div>';
+      }
+    }
+
     html += '</div>'; // end location-group-combined
 
     // 1 Lagoon Dr — sub-location under HNL only
@@ -2602,14 +2636,16 @@ function renderLocationsWidget() {
   }
 
   // On the Road (non-overdue only)
-  if (onTrip.length > 0) {
+  // Exclude 1585-reserved-parking vehicles — they're already shown under the 1585 group.
+  const onRoadVisible = onTrip.filter(v => !(v.homeLocation === '1585 Kapiolani' && v.extraParking));
+  if (onRoadVisible.length > 0) {
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#2563eb;">
         <span class="location-group-name">🚗 On the Road</span>
-        <span class="location-group-count">${onTrip.length}</span>
+        <span class="location-group-count">${onRoadVisible.length}</span>
       </div>
       <div class="location-group-vehicles trip-list">`;
-    for (const v of onTrip) {
+    for (const v of onRoadVisible) {
       let returnLabel = '';
       if (v.tripStatus === 'scheduled') {
         // Show pickup start time for scheduled trips
@@ -3698,6 +3734,11 @@ async function openVehiclePage(vid) {
     $('hnl-parking-row').style.display = (homeLocSelect.value === 'HNL') ? '' : 'none';
     $('hnl-parking-row-val').value = selectedVehicle.parkingRow || '';
     $('hnl-parking-level').value = selectedVehicle.parkingLevel || '';
+    // Reserved parking at 1585 — only visible when home is 1585
+    const epRow = $('extra-parking-row');
+    if (epRow) epRow.style.display = homeLocSelect.value === '1585 Kapiolani' ? '' : 'none';
+    const epCb = $('vehicle-extra-parking');
+    if (epCb) epCb.checked = !!selectedVehicle.extraParking;
     $('private-trip-row').style.display = ts === 'private-trip' ? '' : 'none';
     // Populate private trip fields
     if (ts === 'private-trip') {
@@ -6295,6 +6336,8 @@ $('brand-home-admin').addEventListener('click', () => {
 // Location dropdown handlers
 $('vehicle-home-location').addEventListener('change', function() {
   $('hnl-parking-row').style.display = this.value === 'HNL' ? '' : 'none';
+  const epRow = $('extra-parking-row');
+  if (epRow) epRow.style.display = this.value === '1585 Kapiolani' ? '' : 'none';
 });
 
 // ================================================================
@@ -6583,6 +6626,13 @@ $('btn-save-location').addEventListener('click', async () => {
     parkingRow: parkingRow || firebase.firestore.FieldValue.delete(),
     parkingLevel: parkingLevel || firebase.firestore.FieldValue.delete(),
   };
+  // Extra reserved parking flag — only meaningful at 1585
+  const extraParkingChecked = !!($('vehicle-extra-parking') && $('vehicle-extra-parking').checked);
+  if (homeLocation === '1585 Kapiolani' && extraParkingChecked) {
+    updateData.extraParking = true;
+  } else {
+    updateData.extraParking = firebase.firestore.FieldValue.delete();
+  }
 
   const prevHomeLocation = selectedVehicle.homeLocation || '';
   const homeLocationChanged = prevHomeLocation !== homeLocation;
@@ -6761,6 +6811,11 @@ $('btn-save-location').addEventListener('click', async () => {
     await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
     // Update local cache
     Object.assign(selectedVehicle, { homeLocation, tripStatus, location: updateData.location });
+    if (homeLocation === '1585 Kapiolani' && extraParkingChecked) {
+      selectedVehicle.extraParking = true;
+    } else {
+      delete selectedVehicle.extraParking;
+    }
     if (homeLocationChanged) selectedVehicle.locationArrivedAt = { toDate: () => new Date() };
     if (nowLagoon && !wasLagoon) selectedVehicle.lagoonArrivedAt = { toDate: () => new Date() };
     if (!nowLagoon && wasLagoon) delete selectedVehicle.lagoonArrivedAt;
@@ -7018,11 +7073,71 @@ window.vehicleReturned = async function(vehicleId) {
         }
       })
       .catch(() => {});
+
+    // Check for arrived parts waiting on this vehicle — surface an install prompt
+    _checkArrivedPartsForVehicle(vehicleId, plate, v.homeLocation);
   } catch (err) {
     console.error('Vehicle returned error:', err);
     toast('Failed to update vehicle status.', 'error');
   }
 };
+
+// When a vehicle returns, look for arrived (bin ≠ VENDOR, status='arrived') parts
+// linked to this vehicle. If any exist, show a persistent prompt so the crew
+// can install them on this pass — matching the "receive part when trip ends" flow.
+async function _checkArrivedPartsForVehicle(vehicleId, plate, homeLocation) {
+  try {
+    const snap = await db.collection('partsOrders')
+      .where('vehicleId', '==', vehicleId)
+      .where('status', '==', 'arrived')
+      .get();
+    if (snap.empty) return;
+    const parts = [];
+    snap.forEach(doc => parts.push({ id: doc.id, ...doc.data() }));
+    // Show a modal listing all arrived parts + quick actions
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay parts-return-alert-overlay';
+    overlay.style.display = 'flex';
+    const rows = parts.map(p => {
+      const partBin = p.bin || 'HNL';
+      const atHome = homeLocation && partBin === homeLocation;
+      const binMeta = _partsBinMeta(partBin);
+      const hint = atHome
+        ? `<span class="parts-return-here">📦 Ready at ${binMeta.short}</span>`
+        : `<span class="parts-return-elsewhere">📦 At ${binMeta.short} — move it to ${escapeHtml(homeLocation || 'installation site')}</span>`;
+      return `<div class="parts-return-row">
+        <div>
+          <div class="parts-return-part">${escapeHtml(p.partName || 'Part')}</div>
+          <div class="parts-return-meta">${p.orderNum ? '#' + escapeHtml(p.orderNum) + ' · ' : ''}${p.vendor ? escapeHtml(p.vendor) : ''}</div>
+          ${hint}
+        </div>
+        <div class="parts-return-actions">
+          <button class="btn btn-sm btn-outline" onclick="movePartBin('${p.id}');">📍 Move</button>
+          <button class="btn btn-sm btn-primary" onclick="markPartInstalled('${p.id}');this.closest('.parts-return-alert-overlay')?.remove();">🔧 Installed</button>
+        </div>
+      </div>`;
+    }).join('');
+    overlay.innerHTML = `
+      <div class="modal-box parts-return-box">
+        <div class="parts-return-header">
+          <div>
+            <h3 style="margin:0;">🔧 Parts waiting for ${escapeHtml(plate)}</h3>
+            <p class="hint" style="margin:4px 0 0;font-size:0.82rem;">This vehicle has ${parts.length} arrived part${parts.length !== 1 ? 's' : ''}. Install now or move to the correct bin.</p>
+          </div>
+          <button class="modal-close" aria-label="Close" onclick="this.closest('.parts-return-alert-overlay')?.remove();">&times;</button>
+        </div>
+        <div class="parts-return-list">${rows}</div>
+        <div class="parts-return-footer">
+          <button class="btn btn-outline" onclick="this.closest('.parts-return-alert-overlay')?.remove();">Dismiss</button>
+          <button class="btn btn-primary" onclick="openMaintenanceDash();setTimeout(()=>{var wo=document.querySelector('[data-mtab=mtab-parts-queue]');if(wo)wo.click();},150);this.closest('.parts-return-alert-overlay')?.remove();">Open Parts Queue →</button>
+        </div>
+      </div>`;
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.body.appendChild(overlay);
+  } catch (e) {
+    console.error('_checkArrivedPartsForVehicle:', e);
+  }
+}
 
 // Flag a vehicle as not returned — creates urgent management task
 window.flagVehicleNotReturned = async function(vehicleId) {
@@ -22947,6 +23062,7 @@ window.openNewPartOrder = function(prefillVehicleId, prefillWorkOrderId) {
   ['po-part-name','po-vendor','po-order-num','po-notes'].forEach(id => { const el=$(id); if(el) el.value=''; });
   const costEl = $('po-cost'); if (costEl) costEl.value = '';
   const etaEl = $('po-eta'); if (etaEl) etaEl.value = '';
+  const shipToEl = $('po-ship-to'); if (shipToEl) shipToEl.value = 'VENDOR';
   const errEl = $('po-error'); if (errEl) errEl.textContent = '';
   const titleEl = $('part-order-modal-title'); if (titleEl) titleEl.textContent = 'Order a Part';
   const submitBtn = $('po-submit-btn'); if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📦 Place Order'; }
@@ -22966,6 +23082,7 @@ window.submitPartOrder = async function() {
   const orderNum = $('po-order-num') ? $('po-order-num').value.trim().toUpperCase() : '';
   const cost = $('po-cost') ? (parseFloat($('po-cost').value) || null) : null;
   const eta = $('po-eta') ? $('po-eta').value : '';
+  const shipTo = ($('po-ship-to') ? $('po-ship-to').value : 'VENDOR') || 'VENDOR';
   const notes = $('po-notes') ? $('po-notes').value.trim() : '';
   const errEl = $('po-error');
   if (!vid) { if(errEl) errEl.textContent = 'Select a vehicle.'; return; }
@@ -22975,6 +23092,7 @@ window.submitPartOrder = async function() {
   const submitBtn = $('po-submit-btn');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
   try {
+    const by = currentUserDisplayName || (currentUser ? currentUser.email : '');
     const doc = {
       vehicleId: vid,
       vehiclePlate: v ? (v.plate||'') : '',
@@ -22988,7 +23106,9 @@ window.submitPartOrder = async function() {
       eta: eta || null,
       notes: notes || null,
       status: 'ordered',
-      orderedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      bin: shipTo,
+      binHistory: [{ from: null, to: shipTo, at: new Date(), by, note: 'Ordered' }],
+      orderedBy: by,
       orderedAt: firebase.firestore.FieldValue.serverTimestamp(),
       workOrderId: $('part-order-overlay')._workOrderId || null,
     };
@@ -22996,7 +23116,7 @@ window.submitPartOrder = async function() {
     Object.keys(doc).forEach(k => { if (doc[k] === null) delete doc[k]; });
     await db.collection('partsOrders').add(doc);
     closePartOrderModal();
-    toast(`📦 Part ordered: ${partName} for ${v ? v.plate : 'vehicle'} ✓`, 'success');
+    toast(`📦 Part ordered: ${partName} for ${v ? v.plate : 'vehicle'} · Ships to ${_partsBinMeta(shipTo).short} ✓`, 'success');
     // Track expense if cost given
     if (cost && v) {
       db.collection('expenses').add({
@@ -23017,67 +23137,108 @@ window.submitPartOrder = async function() {
   }
 };
 
-// Load and render the parts queue
+// ================================================================
+// PARTS QUEUE — bin-based (VENDOR → HNL / 1585 / 94-530 → INSTALLED)
+// Every part order has a `bin` field indicating where the physical
+// part currently lives. Users can Move a part between bins as it
+// travels; when a vehicle returns from a trip we surface any parts
+// waiting for that vehicle so the crew can install them right away.
+// ================================================================
+
+// Bin identifiers — kept short in Firestore, mapped to labels here.
+const PARTS_BINS = [
+  { id: 'VENDOR',           label: '🏪 With Vendor (in transit)', short: 'Vendor',       accent: '#92400e' },
+  { id: 'HNL',              label: '🛬 HNL',                       short: 'HNL',          accent: '#0369a1' },
+  { id: '1585 Kapiolani',   label: '🏢 1585 Kapiolani',            short: '1585',         accent: '#7c3aed' },
+  { id: '94-530 Lumiauau',  label: '🏠 94-530 Lumiauau (Home)',    short: '94-530',       accent: '#166534' },
+];
+function _partsBinMeta(id) {
+  return PARTS_BINS.find(b => b.id === id) || PARTS_BINS[0];
+}
+
+// Load and render the parts queue — grouped by bin, then by status
 window.loadPartsQueue = async function() {
   const container = $('parts-queue-content');
   if (!container) return;
   container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
   try {
+    // NOTE: single-field query only — no composite index required. Sort in memory.
     const snap = await db.collection('partsOrders')
       .where('status', 'in', ['ordered','arrived'])
-      .orderBy('orderedAt', 'asc')
       .get();
-    if (snap.empty) {
+    const all = [];
+    snap.forEach(doc => all.push({ id: doc.id, ...doc.data() }));
+    all.sort((a, b) => {
+      const at = a.orderedAt && a.orderedAt.toMillis ? a.orderedAt.toMillis() : 0;
+      const bt = b.orderedAt && b.orderedAt.toMillis ? b.orderedAt.toMillis() : 0;
+      return at - bt;
+    });
+    if (all.length === 0) {
       container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">No outstanding parts orders. 🎉</p>';
       return;
     }
     const isAdmin = currentUserRole === 'admin' || currentUserRole === 'manager';
     const today = todayDateString();
-    const ordered = [], arrived = [];
-    snap.forEach(doc => {
-      const d = { id: doc.id, ...doc.data() };
-      if (d.status === 'arrived') arrived.push(d);
-      else ordered.push(d);
+
+    // Group by bin
+    const byBin = {};
+    PARTS_BINS.forEach(b => { byBin[b.id] = []; });
+    all.forEach(d => {
+      const bin = d.bin || (d.status === 'arrived' ? 'HNL' : 'VENDOR'); // migrate legacy: arrived w/o bin → HNL guess
+      if (!byBin[bin]) byBin[bin] = [];
+      byBin[bin].push(d);
     });
 
     const renderCard = (d) => {
       const isArrived = d.status === 'arrived';
-      const etaStr = d.eta ? (d.eta < today ? `<span style="color:#dc2626;">ETA ${d.eta} PAST DUE</span>` : `ETA ${d.eta}`) : '';
-      const costStr = d.estimatedCost ? `$${d.estimatedCost.toFixed(2)}` : '';
+      const bin = d.bin || (isArrived ? 'HNL' : 'VENDOR');
+      const etaStr = d.eta ? (d.eta < today ? `<span style="color:#dc2626;font-weight:700;">ETA ${d.eta} PAST DUE</span>` : `ETA ${d.eta}`) : '';
+      const costStr = d.estimatedCost ? `$${Number(d.estimatedCost).toFixed(2)}` : '';
       const orderNumBadge = d.orderNum ? `<span class="pq-order-num">#${escapeHtml(d.orderNum)}</span>` : '';
-      const arrivedBadge = isArrived ? `<span class="pq-arrived-badge">✅ Arrived</span>` : `<span class="pq-ordered-badge">📦 Ordered</span>`;
-      const markArrivedBtn = (!isArrived && isAdmin)
+      const statusBadge = isArrived
+        ? `<span class="pq-arrived-badge">✅ Arrived — ready to install</span>`
+        : `<span class="pq-ordered-badge">📦 In transit</span>`;
+      const arriveBtn = (!isArrived && isAdmin)
         ? `<button class="btn btn-sm btn-primary pq-btn" onclick="markPartArrived('${d.id}')">✅ Mark Arrived</button>` : '';
+      const moveBtn = isAdmin
+        ? `<button class="btn btn-sm btn-outline pq-btn" onclick="movePartBin('${d.id}')">📍 Move</button>` : '';
       const installBtn = (isArrived && isAdmin)
-        ? `<button class="btn btn-sm pq-btn" style="background:#059669;color:#fff;border:none;" onclick="markPartInstalled('${d.id}')">🔧 Mark Installed</button>` : '';
+        ? `<button class="btn btn-sm pq-btn pq-install-btn" onclick="markPartInstalled('${d.id}')">🔧 Mark Installed</button>` : '';
       const labelBtn = `<button class="btn btn-sm btn-outline pq-btn" onclick="showPartLabel('${d.id}')">🏷️ Label</button>`;
-      const deleteBtn = isAdmin ? `<button class="btn btn-sm btn-outline pq-btn pq-del-btn" onclick="deletePartOrder('${d.id}')">✕</button>` : '';
+      const deleteBtn = isAdmin ? `<button class="btn btn-sm btn-outline pq-btn pq-del-btn" onclick="deletePartOrder('${d.id}')" title="Cancel order">✕</button>` : '';
       return `<div class="pq-card${isArrived ? ' pq-arrived' : ''}">
         <div class="pq-card-top">
-          <div class="pq-badges">${arrivedBadge}${orderNumBadge}</div>
-          <div class="pq-vehicle-tag">🚗 ${escapeHtml(d.vehiclePlate)} <span style="color:#9ca3af;font-size:0.78rem;">${escapeHtml(d.vehicleColor||'')} ${escapeHtml(d.vehicleMake||'')} ${escapeHtml(d.vehicleModel||'')}</span></div>
+          <div class="pq-badges">${statusBadge}${orderNumBadge}</div>
+          <div class="pq-vehicle-tag">🚗 ${escapeHtml(d.vehiclePlate||'')} <span style="color:#9ca3af;font-size:0.78rem;">${escapeHtml(d.vehicleColor||'')} ${escapeHtml(d.vehicleMake||'')} ${escapeHtml(d.vehicleModel||'')}</span></div>
           ${deleteBtn}
         </div>
-        <div class="pq-part-name">${escapeHtml(d.partName)}</div>
+        <div class="pq-part-name">${escapeHtml(d.partName||'')}</div>
         <div class="pq-meta">
           ${d.vendor ? `🏪 ${escapeHtml(d.vendor)}` : ''}
           ${costStr ? ` · ${costStr}` : ''}
           ${etaStr ? ` · ${etaStr}` : ''}
           ${d.notes ? `<div style="color:#6b7280;font-style:italic;margin-top:2px;">${escapeHtml(d.notes)}</div>` : ''}
         </div>
-        <div class="pq-actions">${markArrivedBtn}${installBtn}${labelBtn}</div>
+        <div class="pq-actions">${arriveBtn}${installBtn}${moveBtn}${labelBtn}</div>
       </div>`;
     };
 
     let html = '';
-    if (arrived.length) {
-      html += `<div class="pq-section-header pq-arrived-header">✅ Arrived — Ready to Install <span class="pq-count">${arrived.length}</span></div>`;
-      html += arrived.map(renderCard).join('');
-    }
-    if (ordered.length) {
-      html += `<div class="pq-section-header">📦 Ordered — Waiting on Delivery <span class="pq-count">${ordered.length}</span></div>`;
-      html += ordered.map(renderCard).join('');
-    }
+    PARTS_BINS.forEach(binMeta => {
+      const list = byBin[binMeta.id] || [];
+      if (!list.length) return;
+      const arrivedCount = list.filter(x => x.status === 'arrived').length;
+      const arrivedTag = arrivedCount ? ` <span class="pq-bin-arrived-tag">${arrivedCount} ready</span>` : '';
+      html += `<div class="pq-bin-group">
+        <div class="pq-bin-header" style="--bin-accent:${binMeta.accent};">
+          <span class="pq-bin-name">${binMeta.label}</span>
+          <span class="pq-bin-count">${list.length}</span>${arrivedTag}
+        </div>
+        <div class="pq-bin-body">
+          ${list.map(renderCard).join('')}
+        </div>
+      </div>`;
+    });
     container.innerHTML = html;
   } catch(e) {
     console.error('Parts queue error:', e);
@@ -23085,33 +23246,138 @@ window.loadPartsQueue = async function() {
   }
 };
 
-// Mark a part as arrived — fires notification
+// Mark a part as arrived — asks WHERE it arrived, then fires notification
 window.markPartArrived = async function(partId) {
   try {
     const snap = await db.collection('partsOrders').doc(partId).get();
     if (!snap.exists) return;
     const d = snap.data();
+    // Ask for bin location. Default suggestion = existing bin (if any) else HNL.
+    const suggested = d.bin && d.bin !== 'VENDOR' ? d.bin : 'HNL';
+    const bin = await _pickPartsBin({
+      title: '✅ Where did the part arrive?',
+      subtitle: `${d.partName || 'Part'} for ${d.vehiclePlate || ''}`,
+      selected: suggested,
+      allowVendor: false,
+    });
+    if (!bin) return;
+    const by = currentUserDisplayName || (currentUser ? currentUser.email : '');
+    const historyEntry = {
+      from: d.bin || 'VENDOR',
+      to: bin,
+      at: new Date(),
+      by,
+      note: 'Arrived',
+    };
+    const prevHistory = Array.isArray(d.binHistory) ? d.binHistory : [];
     await db.collection('partsOrders').doc(partId).update({
       status: 'arrived',
+      bin,
       arrivedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      arrivedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      arrivedBy: by,
+      binHistory: [...prevHistory, historyEntry],
     });
     // Create urgent notification task so it surfaces in dashboard + banner
     await db.collection('vehicleNotes').add({
       vehicleId: d.vehicleId,
       type: 'parts_arrived',
-      text: `📦 Part arrived: ${d.partName}${d.orderNum ? ' #'+d.orderNum : ''} for ${d.vehiclePlate}${d.vendor ? ' ('+d.vendor+')' : ''}`,
+      text: `📦 Part arrived at ${_partsBinMeta(bin).short}: ${d.partName || 'Part'}${d.orderNum ? ' #'+d.orderNum : ''} for ${d.vehiclePlate || ''}${d.vendor ? ' ('+d.vendor+')' : ''}`,
       urgent: true,
       done: false,
       partOrderId: partId,
+      partBin: bin,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      createdBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+      createdBy: by,
     }).catch(()=>{});
-    toast(`✅ ${d.partName} marked as arrived! Notification sent.`, 'success');
+    toast(`✅ ${d.partName || 'Part'} arrived at ${_partsBinMeta(bin).short}. Notification sent.`, 'success');
     loadPartsQueue();
-    loadDashboardFollowUps();
-  } catch(e) { toast('Failed to update.', 'error'); }
+    loadDashboardFollowUps && loadDashboardFollowUps();
+  } catch(e) { console.error('markPartArrived:', e); toast('Failed to update.', 'error'); }
 };
+
+// Move a part between bins (or from VENDOR → a bin as an arrival shortcut)
+window.movePartBin = async function(partId) {
+  try {
+    const snap = await db.collection('partsOrders').doc(partId).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+    const currentBin = d.bin || 'VENDOR';
+    const bin = await _pickPartsBin({
+      title: '📍 Move part to…',
+      subtitle: `${d.partName || 'Part'} — currently at ${_partsBinMeta(currentBin).short}`,
+      selected: currentBin,
+      allowVendor: true,
+      excludeCurrent: true,
+    });
+    if (!bin || bin === currentBin) return;
+    const by = currentUserDisplayName || (currentUser ? currentUser.email : '');
+    const historyEntry = {
+      from: currentBin,
+      to: bin,
+      at: new Date(),
+      by,
+      note: 'Moved',
+    };
+    const prevHistory = Array.isArray(d.binHistory) ? d.binHistory : [];
+    const patch = {
+      bin,
+      binHistory: [...prevHistory, historyEntry],
+    };
+    // If moving out of VENDOR → mark arrived automatically
+    if (currentBin === 'VENDOR' && bin !== 'VENDOR' && d.status !== 'arrived') {
+      patch.status = 'arrived';
+      patch.arrivedAt = firebase.firestore.FieldValue.serverTimestamp();
+      patch.arrivedBy = by;
+    }
+    await db.collection('partsOrders').doc(partId).update(patch);
+    toast(`📍 Moved ${d.partName || 'part'} to ${_partsBinMeta(bin).short}.`, 'success');
+    loadPartsQueue();
+  } catch(e) { console.error('movePartBin:', e); toast('Failed to move.', 'error'); }
+};
+
+// Shared bin-picker modal (returns a Promise<string|null>)
+function _pickPartsBin({ title, subtitle, selected, allowVendor, excludeCurrent } = {}) {
+  return new Promise((resolve) => {
+    const options = PARTS_BINS.filter(b => allowVendor || b.id !== 'VENDOR');
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay parts-bin-overlay';
+    overlay.style.display = 'flex';
+    const rows = options.map(b => {
+      const isCurrent = b.id === selected;
+      const disabled = excludeCurrent && isCurrent;
+      return `<button class="parts-bin-opt${isCurrent ? ' parts-bin-opt-current' : ''}" data-bin="${b.id}" ${disabled ? 'disabled' : ''} style="--bin-accent:${b.accent};">
+          <span class="parts-bin-opt-label">${b.label}</span>
+          ${isCurrent ? '<span class="parts-bin-opt-tag">Current</span>' : ''}
+        </button>`;
+    }).join('');
+    overlay.innerHTML = `
+      <div class="modal-box parts-bin-box">
+        <div class="parts-bin-header">
+          <div>
+            <h3 style="margin:0;">${escapeHtml(title || 'Choose bin')}</h3>
+            ${subtitle ? `<p class="hint" style="margin:4px 0 0;font-size:0.82rem;">${escapeHtml(subtitle)}</p>` : ''}
+          </div>
+          <button class="modal-close parts-bin-close" aria-label="Close">&times;</button>
+        </div>
+        <div class="parts-bin-list">${rows}</div>
+      </div>`;
+    document.body.appendChild(overlay);
+    function done(val) {
+      overlay.remove();
+      resolve(val);
+    }
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) done(null);
+    });
+    overlay.querySelector('.parts-bin-close').addEventListener('click', () => done(null));
+    overlay.querySelectorAll('.parts-bin-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (btn.disabled) return;
+        done(btn.getAttribute('data-bin'));
+      });
+    });
+  });
+}
 
 // Mark a part as installed — creates maintenance record, removes from queue
 window.markPartInstalled = async function(partId) {
