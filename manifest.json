@@ -1,16 +1,29 @@
 {
-  "name": "Fleet Photo Manager",
-  "short_name": "FleetPhotos",
-  "description": "Car rental fleet photo documentation tool",
+  "name": "Aloha Fleet Management",
+  "short_name": "Aloha Fleet",
+  "description": "Fleet operations, dispatch, and CRM PWA",
   "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#f1f5f9",
   "theme_color": "#2563eb",
   "orientation": "portrait",
+  "categories": ["business", "productivity"],
   "icons": [
     {
+      "src": "icons/icon-192.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
       "src": "assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png",
-      "sizes": "122x90",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/e04a7d72-c977-4c2f-ac23-ee7e2800549b.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     }

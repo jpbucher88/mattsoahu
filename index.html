@@ -2,11 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2563eb">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260826a">
+  <link rel="stylesheet" href="style.css?v=20260926a">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -111,6 +114,65 @@
         <button id="btn-logout" class="btn btn-sm btn-danger btn-icon-mobile" title="Logout">Logout</button>
       </div>
     </header>
+
+    <!-- Mobile bottom nav (visible only on phones; delegates clicks to header buttons) -->
+    <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Primary">
+      <button class="mbn-item" data-mbn-target="brand-home" aria-label="Fleet home">
+        <span class="mbn-icon">🏠</span>
+        <span class="mbn-label">Fleet</span>
+      </button>
+      <button class="mbn-item" data-mbn-target="btn-tasks" aria-label="Operations hub">
+        <span class="mbn-icon">🎯</span>
+        <span class="mbn-label">Tasks</span>
+        <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="task-alert-count">0</span>
+      </button>
+      <button class="mbn-item" data-mbn-target="btn-locations" aria-label="Locations">
+        <span class="mbn-icon">📍</span>
+        <span class="mbn-label">Locations</span>
+      </button>
+      <button class="mbn-item" data-mbn-target="btn-maint-dash" aria-label="Maintenance">
+        <span class="mbn-icon">🔧</span>
+        <span class="mbn-label">Repairs</span>
+      </button>
+      <button class="mbn-item" id="mbn-more-btn" aria-label="More">
+        <span class="mbn-icon">⋯</span>
+        <span class="mbn-label">More</span>
+        <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="mail-unread-count">0</span>
+      </button>
+    </nav>
+
+    <!-- Mobile "More" bottom sheet -->
+    <div class="mbn-more-scrim" id="mbn-more-scrim"></div>
+    <div class="mbn-more-sheet" id="mbn-more-sheet" role="dialog" aria-modal="true" aria-label="More navigation">
+      <div class="mbn-more-grid">
+        <button class="mbn-more-item" data-mbn-target="btn-mailbox">
+          <span class="mbn-icon">📬</span>
+          <span>Mailbox</span>
+          <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="mail-unread-count">0</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-timeclock">
+          <span class="mbn-icon">⏱️</span>
+          <span>Time Clock</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-learning">
+          <span class="mbn-icon">🎓</span>
+          <span>Learning</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-finance">
+          <span class="mbn-icon">💵</span>
+          <span>Finance</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-crm-dash">
+          <span class="mbn-icon">🤝</span>
+          <span>CRM</span>
+          <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="crm-alert-count">0</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-admin">
+          <span class="mbn-icon">⚙️</span>
+          <span>Admin</span>
+        </button>
+      </div>
+    </div>
     <main class="dashboard-main">
       <!-- Pending photo uploads indicator (shown when photos are stuck in IDB from a backgrounded session) -->
       <div id="dashboard-pending-uploads" class="dashboard-pending-uploads" style="display:none;"></div>

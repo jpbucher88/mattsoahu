@@ -2903,8 +2903,8 @@ function showDamageCheckModal(vid, plate) {
         <div class="dmg-item-header">
           <span class="dmg-item-label">${escapeHtml(item.label)}</span>
           <div class="dmg-pf-btns">
-            <button class="dmg-pass-btn" data-check="${item.key}" style="background:#fef9c3;border-color:#ca8a04;color:#92400e;">Yes 🐞</button>
-            <button class="dmg-fail-btn" data-check="${item.key}" style="background:#f0fdf4;border-color:#16a34a;color:#15803d;">No ✅</button>
+            <button class="dmg-pass-btn dmg-yes-bug" data-check="${item.key}">Yes 🐞</button>
+            <button class="dmg-fail-btn dmg-no-bug" data-check="${item.key}">No ✅</button>
           </div>
         </div>
         <div class="dmg-bug-urgency" id="dmg-bug-urgency-${item.key}" style="display:none;">
@@ -24328,3 +24328,95 @@ function _injectLagoonAlerts() {
     });
   });
 }
+
+// ==============================================================
+// MOBILE BOTTOM NAV — click delegation + badge mirroring
+// The <nav class="mobile-bottom-nav"> in index.html forwards taps
+// to the existing header buttons so all handlers stay in one place.
+// ==============================================================
+(function initMobileBottomNav() {
+  function onReady(fn) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', fn, { once: true });
+    } else {
+      fn();
+    }
+  }
+
+  onReady(() => {
+    const nav = document.getElementById('mobile-bottom-nav');
+    if (!nav) return;
+
+    // Delegate mbn-item and mbn-more-item clicks → click the real header button.
+    function forwardClick(e) {
+      const btn = e.target.closest('[data-mbn-target]');
+      if (!btn) return;
+      e.preventDefault();
+      const targetId = btn.getAttribute('data-mbn-target');
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      // If the header button is display:none (feature not unlocked for this user),
+      // silently ignore instead of clicking a hidden button.
+      const cs = window.getComputedStyle(target);
+      if (cs.display === 'none' && targetId !== 'brand-home') {
+        try { window.toast && toast('Not available for your account', 'info'); } catch (_) {}
+        closeMoreSheet();
+        return;
+      }
+      target.click();
+      closeMoreSheet();
+    }
+    nav.addEventListener('click', forwardClick);
+
+    // "More" sheet
+    const moreBtn = document.getElementById('mbn-more-btn');
+    const sheet   = document.getElementById('mbn-more-sheet');
+    const scrim   = document.getElementById('mbn-more-scrim');
+    function openMoreSheet() {
+      if (!sheet || !scrim) return;
+      sheet.classList.add('open');
+      scrim.classList.add('open');
+    }
+    function closeMoreSheet() {
+      if (!sheet || !scrim) return;
+      sheet.classList.remove('open');
+      scrim.classList.remove('open');
+    }
+    if (moreBtn) {
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openMoreSheet();
+      });
+    }
+    if (scrim) scrim.addEventListener('click', closeMoreSheet);
+    if (sheet) sheet.addEventListener('click', forwardClick);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeMoreSheet();
+    });
+
+    // Badge mirroring: watch header count spans and mirror their text into
+    // any element that carries data-mbn-mirror="<id>".
+    const mirrors = document.querySelectorAll('[data-mbn-mirror]');
+    mirrors.forEach(m => {
+      const srcId = m.getAttribute('data-mbn-mirror');
+      const src = document.getElementById(srcId);
+      if (!src) return;
+      const sync = () => {
+        const txt = (src.textContent || '').trim();
+        m.textContent = txt || '0';
+        // hide when zero or empty
+        const n = parseInt(txt, 10);
+        if (!txt || (!isNaN(n) && n === 0)) {
+          m.classList.add('mbn-badge-zero');
+        } else {
+          m.classList.remove('mbn-badge-zero');
+        }
+      };
+      sync();
+      try {
+        const mo = new MutationObserver(sync);
+        mo.observe(src, { childList: true, characterData: true, subtree: true });
+      } catch (_) {}
+    });
+  });
+})();
