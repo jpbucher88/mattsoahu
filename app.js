@@ -813,6 +813,105 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function _asDate(value) {
+  if (!value) return null;
+  if (value.toDate) return value.toDate();
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function _formatDurationFromMs(ms) {
+  if (ms == null || isNaN(ms) || ms < 0) return '';
+  const totalMinutes = Math.floor(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days > 0) parts.push(days + 'd');
+  if (hours > 0 || days > 0) parts.push(hours + 'h');
+  if (days === 0 && hours === 0) parts.push(minutes + 'm');
+  return parts.join(' ');
+}
+
+function _vehicleLocationStamp(v) {
+  if (!v) return null;
+  return _asDate(v.locationArrivedAt || (v.homeLocation === '1 Lagoon Dr' ? v.lagoonArrivedAt : null));
+}
+
+function _vehicleLocationAgeText(v) {
+  const started = _vehicleLocationStamp(v);
+  if (!started) return '';
+  return _formatDurationFromMs(Date.now() - started.getTime());
+}
+
+function _vehicleLocationAgeLabel(v) {
+  const started = _vehicleLocationStamp(v);
+  if (!started) return '';
+  return _vehicleLocationAgeText(v) + ' at ' + (v.homeLocation || 'location');
+}
+
+// Merged operational + revenue extras. Any item can optionally have a $ amount
+// tracked for revenue reporting; all items also flow through the "loaded" flow
+// (VA adds → staff acknowledges loaded into the car).
+const EXTRAS_NEEDED_OPTIONS = {
+  'child-seat':     { label: 'Child Seat',     icon: '👶' },
+  'beach-chairs':   { label: 'Beach Chairs',   icon: '🏖️' },
+  'cooler':         { label: 'Cooler',         icon: '🧊' },
+  'umbrella':       { label: 'Umbrella',       icon: '⛱️' },
+  'beach-tent':     { label: 'Beach Tent',     icon: '⛺' },
+  'snorkeling-gear':{ label: 'Snorkel Gear',   icon: '🤿' },
+  'beach-gear':     { label: 'Beach Gear',     icon: '🏝️' },
+  'parking':        { label: 'Parking',        icon: '🅿️' },
+  'other':          { label: 'Other',          icon: '✏️' },
+};
+
+// Normalize the extrasNeeded array. Accepts legacy strings ("child-seat") or
+// objects {code, amount}. Always returns [{code, amount?}] with truthy codes.
+function _normalizeExtrasNeeded(value) {
+  const arr = Array.isArray(value) ? value : [];
+  return arr.map(item => {
+    if (!item) return null;
+    if (typeof item === 'string') return { code: item };
+    const code = item.code || item.type || item.key || '';
+    if (!code) return null;
+    const out = { code };
+    const amt = parseFloat(item.amount);
+    if (!isNaN(amt) && amt > 0) out.amount = amt;
+    return out;
+  }).filter(Boolean);
+}
+
+function _extrasMeta(code) {
+  return EXTRAS_NEEDED_OPTIONS[code] || { label: (code || '').replace(/-/g, ' '), icon: '🎒' };
+}
+
+// Render chips for the vehicle's extras. `loaded` toggles the ✓ green style.
+function _renderExtrasNeededChips(value, options = {}) {
+  const items = _normalizeExtrasNeeded(value);
+  if (!items.length) return '';
+  const loaded = !!options.loaded;
+  return items.map(({ code, amount }) => {
+    const meta = _extrasMeta(code);
+    const amt = amount ? ` <span class="vehicle-extra-amt">$${amount}</span>` : '';
+    return `<span class="vehicle-extra-chip${loaded ? ' vehicle-extra-chip-loaded' : ''}" data-extra-code="${escapeHtml(code)}">${loaded ? '✓ ' : ''}${meta.icon} ${escapeHtml(meta.label)}${amt}</span>`;
+  }).join('');
+}
+
+function _vehicleExtrasNeededText(value) {
+  const items = _normalizeExtrasNeeded(value);
+  if (!items.length) return '';
+  return items.map(({ code }) => {
+    const meta = _extrasMeta(code);
+    return `${meta.icon} ${meta.label}`;
+  }).join(' · ');
+}
+
+// Total $ across a vehicle's extras (0 if none tagged with amounts).
+function _extrasNeededTotal(value) {
+  return _normalizeExtrasNeeded(value).reduce((sum, it) => sum + (it.amount || 0), 0);
+}
+
 // ================================================================
 // USER ACTIVITY LOGGER
 // Logs significant user actions to Firestore 'userActivity' collection.
@@ -1978,6 +2077,15 @@ function renderFleetDashboard() {
       locDisplay = 'No location set';
       locCls = 'status-muted';
     }
+    const locationAge = v.tripStatus === 'home' ? _vehicleLocationAgeText(v) : '';
+    const extrasNeeded = _normalizeExtrasNeeded(v.extrasNeeded);
+    const extrasLoaded = extrasNeeded.length > 0 && !!_asDate(v.extrasLoadedAt);
+    const extrasChipHtml = extrasNeeded.length
+      ? `<div class="fleet-card-extras${extrasLoaded ? ' fleet-card-extras-loaded' : ''}">
+          ${_renderExtrasNeededChips(extrasNeeded, { loaded: extrasLoaded })}
+          ${!extrasLoaded ? `<button class="btn btn-sm btn-primary fleet-extras-ack" data-vid="${v.id}" title="Mark extras as loaded into the vehicle">✓ Loaded</button>` : ''}
+        </div>`
+      : '';
     // Compliance badge
     const compFields = [v.complianceSafety, v.complianceRegistration, v.complianceInsurance];
     const compExpired = compFields.some(f => { if (!f) return false; const [y,m] = f.split('-').map(Number); return new Date(Date.UTC(y,m,0,23,59,59)) < Date.now(); });
@@ -1991,6 +2099,8 @@ function renderFleetDashboard() {
       <div class="fleet-card-title">${escapeHtml(v.plate)}</div>
       <div class="fleet-card-subtitle">${escapeHtml(v.make)} ${escapeHtml(v.model)}</div>
       <div class="fleet-card-status ${locCls}">${locDisplay}</div>
+      ${locationAge ? `<div class="fleet-card-status status-warn">🕒 ${escapeHtml(locationAge)} at ${escapeHtml(v.homeLocation || 'location')}</div>` : ''}
+      ${extrasChipHtml}
       <div class="fleet-card-status ${photoCls}">${photoStatus}</div>
       <div class="fleet-card-status ${maintCls}">${maintStatus}</div>
     </div>`;
@@ -2026,11 +2136,22 @@ function renderFleetDashboard() {
     card.addEventListener('touchmove', () => { touchMoved = true; }, { passive: true });
     card.addEventListener('touchend', (e) => {
       if (touchMoved) return;
+      if (e.target.closest('.fleet-extras-ack')) return;
       e.preventDefault();
       openVehiclePage(card.dataset.vid);
     });
-    card.addEventListener('click', () => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.fleet-extras-ack')) return;
       openVehiclePage(card.dataset.vid);
+    });
+  });
+
+  // Wire "✓ Loaded" buttons on fleet cards
+  container.querySelectorAll('.fleet-extras-ack').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vid = btn.dataset.vid;
+      if (vid) window.acknowledgeExtrasLoaded(vid);
     });
   });
 
@@ -2287,8 +2408,11 @@ function renderLocationsWidget() {
         const returnLabel = rd ? `<span class="trip-return-label trip-overdue">↩ ${rd.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })} OVERDUE</span>` : '';
         const returnBtn = `<button class="btn btn-sm btn-returned" onclick="event.stopPropagation(); vehicleReturned('${v.id}')">🏠 Returned</button>`;
         const notReturnedBtn = `<button class="btn btn-sm btn-not-returned" onclick="event.stopPropagation(); flagVehicleNotReturned('${v.id}')" title="Flag as not returned — alerts management">🚨 Not Returned</button>`;
+        const ageText = _vehicleLocationAgeText(v);
+        const ageBadge = ageText ? `<span class="lagoon-hours-badge">${ageText}</span>` : '';
         html += `<div class="trip-item">
           <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+          ${ageBadge}
           <span class="trip-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
           ${returnLabel}
           <div class="overdue-action-btns">${notReturnedBtn}${returnBtn}</div>
@@ -2304,6 +2428,8 @@ function renderLocationsWidget() {
       for (const v of cleaning) {
         const needsDamage = v.needsDamageCheck;
         const alsoNeedsPhotos = needsPhotosCheck(v);
+        const ageText = _vehicleLocationAgeText(v);
+        const ageBadge = ageText ? `<span class="lagoon-hours-badge">${ageText}</span>` : '';
         let photoTag = '';
         if (alsoNeedsPhotos) {
           let ageText = '';
@@ -2313,12 +2439,18 @@ function renderLocationsWidget() {
         }
         const parkingBtn = (isKapiolani && v.needsParking)
           ? `<button class="btn btn-sm btn-parking parking-done-btn" data-vid="${v.id}">🅿️ Paid</button>` : '';
+        const extrasArr = _normalizeExtrasNeeded(v.extrasNeeded);
+        const extrasLoaded = extrasArr.length > 0 && !!_asDate(v.extrasLoadedAt);
+        const extrasRow = extrasArr.length
+          ? `<div class="loc-row-extras${extrasLoaded ? ' loc-row-extras-loaded' : ''}">${_renderExtrasNeededChips(extrasArr, { loaded: extrasLoaded })}${!extrasLoaded ? `<button class="btn btn-sm btn-primary extras-ack-btn" data-vid="${v.id}">✓ Loaded</button>` : ''}</div>` : '';
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
             <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}</span>
+            ${ageBadge}
             <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
             ${photoTag}
           </div>
+          ${extrasRow}
           <div class="cleaning-actions">
             ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
             <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>✓ Cleaned</button>
@@ -2338,12 +2470,20 @@ function renderLocationsWidget() {
         let ageText = '';
         if (v.lastPhotoAge === Infinity) { ageText = 'No photos yet'; }
         else { const hrs = Math.floor(v.lastPhotoAge / (1000 * 60 * 60)); const days = Math.floor(hrs / 24); ageText = days > 0 ? `${days}d ${hrs % 24}h ago` : `${hrs}h ago`; }
+        const locAgeText = _vehicleLocationAgeText(v);
+        const locAgeBadge = locAgeText ? `<span class="lagoon-hours-badge">${locAgeText}</span>` : '';
+        const extrasArr = _normalizeExtrasNeeded(v.extrasNeeded);
+        const extrasLoaded = extrasArr.length > 0 && !!_asDate(v.extrasLoadedAt);
+        const extrasRow = extrasArr.length
+          ? `<div class="loc-row-extras${extrasLoaded ? ' loc-row-extras-loaded' : ''}">${_renderExtrasNeededChips(extrasArr, { loaded: extrasLoaded })}${!extrasLoaded ? `<button class="btn btn-sm btn-primary extras-ack-btn" data-vid="${v.id}">✓ Loaded</button>` : ''}</div>` : '';
         html += `<div class="cleaning-item" data-vid="${v.id}">
           <div class="cleaning-vehicle-info">
             <span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}<span class="photo-cam-badge" title="Needs photos today">📷</span></span>
+            ${locAgeBadge}
             <span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}${v.color ? ` · ${escapeHtml(v.color)}` : ''}</span>
             <span class="photo-age-tag">${ageText}</span>
           </div>
+          ${extrasRow}
           <button class="btn btn-sm btn-primary photo-done-btn" data-vid="${v.id}">📷 Done</button>
         </div>`;
       }
@@ -2367,7 +2507,13 @@ function renderLocationsWidget() {
         const activeMove = _activeMoves.find(m => m.vehicleId === v.id);
         const moveBadge = activeMove ? `<span class="chip-move-badge" title="Move dispatched → ${escapeHtml(activeMove.toLocation)}">🚐</span>` : '';
         const chipClass = `location-vehicle-chip${woCount>0?' chip-has-issues':''}${activeMove?' chip-has-move':''}`;
-        html += `<div class="location-vehicle-chip-wrap"><div class="${chipClass}" data-vid="${v.id}">${escapeHtml(v.plate)}${moveBadge}${slotBadge}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${parkBadge}</div>`;
+        const locAgeText = _vehicleLocationAgeText(v);
+        const locAgeBadge = locAgeText ? `<span class="lagoon-hours-badge">${locAgeText}</span>` : '';
+        const extrasArr = _normalizeExtrasNeeded(v.extrasNeeded);
+        const extrasLoaded = extrasArr.length > 0 && !!_asDate(v.extrasLoadedAt);
+        const extrasRow = extrasArr.length
+          ? `<div class="loc-row-extras${extrasLoaded ? ' loc-row-extras-loaded' : ''}">${_renderExtrasNeededChips(extrasArr, { loaded: extrasLoaded })}${!extrasLoaded ? `<button class="btn btn-sm btn-primary extras-ack-btn" data-vid="${v.id}">✓ Loaded</button>` : ''}</div>` : '';
+        html += `<div class="location-vehicle-chip-wrap"><div class="${chipClass}" data-vid="${v.id}">${escapeHtml(v.plate)}${moveBadge}${slotBadge}${chipSub ? `<span class="chip-sub">${chipSub}</span>` : ''}${woBadge}</div>${locAgeBadge}${parkBadge}${extrasRow}</div>`;
       }
       html += '</div>';
     }
@@ -2386,7 +2532,7 @@ function renderLocationsWidget() {
           </div>
           <div class="location-group-vehicles lagoon-vehicles">`;
         for (const v of lagoonVehicles) {
-          const arrivedAt = v.lagoonArrivedAt ? (v.lagoonArrivedAt.toDate ? v.lagoonArrivedAt.toDate() : new Date(v.lagoonArrivedAt)) : null;
+          const arrivedAt = _vehicleLocationStamp(v);
           const hoursParked = arrivedAt ? Math.floor((Date.now() - arrivedAt.getTime()) / (1000 * 60 * 60)) : null;
           const is72h = hoursParked != null && hoursParked >= 72;
           const durationBadge = hoursParked != null
@@ -2584,6 +2730,15 @@ function renderLocationsWidget() {
         console.error('Mark parking error:', err);
         toast('Failed to update.', 'error');
       }
+    });
+  });
+
+  // Extras "✓ Loaded" acknowledgment button handler
+  container.querySelectorAll('.extras-ack-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const vid = btn.dataset.vid;
+      if (vid) window.acknowledgeExtrasLoaded(vid);
     });
   });
 
@@ -3090,6 +3245,319 @@ const INSPECTION_ITEMS = [
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
 ];
 
+function renderVehicleHeaderBadges() {
+  if (!selectedVehicle) return;
+
+  const locationSinceEl = $('vehicle-location-since');
+  const locationStamp = _vehicleLocationStamp(selectedVehicle);
+  const isHome = selectedVehicle.tripStatus === 'home' && !!selectedVehicle.homeLocation;
+  if (locationSinceEl && isHome && locationStamp) {
+    const ageMs = Date.now() - locationStamp.getTime();
+    locationSinceEl.textContent = `🏠 ${_vehicleLocationAgeText(selectedVehicle)} at ${selectedVehicle.homeLocation}`;
+    locationSinceEl.style.display = 'inline-flex';
+    locationSinceEl.classList.toggle('location-long', ageMs >= 72 * 60 * 60 * 1000);
+  } else if (locationSinceEl) {
+    locationSinceEl.style.display = 'none';
+    locationSinceEl.textContent = '';
+    locationSinceEl.classList.remove('location-long');
+  }
+
+  const extrasRow = $('vehicle-extras-row');
+  const extrasWrap = $('vehicle-extras-wrap');
+  const extrasChipsEl = $('vehicle-extras-needed');
+  const extrasEmptyEl = $('vehicle-extras-empty');
+  const extrasLoadedBtn = $('btn-ack-extras-loaded');
+  const extras = _normalizeExtrasNeeded(selectedVehicle.extrasNeeded);
+  const loadedAt = _asDate(selectedVehicle.extrasLoadedAt);
+  const isLoaded = extras.length > 0 && !!loadedAt;
+  // Hide the whole row for repair-shop; keep visible for home/scheduled/on-trip/private-trip
+  if (extrasRow) extrasRow.style.display = selectedVehicle.tripStatus === 'repair-shop' ? 'none' : '';
+  if (extrasWrap) extrasWrap.style.display = extras.length ? 'inline-flex' : 'none';
+  if (extrasEmptyEl) extrasEmptyEl.style.display = extras.length ? 'none' : '';
+  if (extrasChipsEl) {
+    extrasChipsEl.innerHTML = _renderExtrasNeededChips(extras, { loaded: isLoaded });
+    extrasChipsEl.classList.toggle('extras-loaded', isLoaded);
+  }
+  if (extrasLoadedBtn) {
+    if (extras.length && !isLoaded) {
+      extrasLoadedBtn.style.display = '';
+      extrasLoadedBtn.textContent = '✓ Loaded';
+      extrasLoadedBtn.title = 'Mark all extras as loaded into the vehicle';
+      extrasLoadedBtn.classList.remove('btn-outline');
+      extrasLoadedBtn.classList.add('btn-primary');
+      extrasLoadedBtn.onclick = () => window.acknowledgeExtrasLoaded();
+    } else if (extras.length && isLoaded) {
+      extrasLoadedBtn.style.display = '';
+      extrasLoadedBtn.textContent = '✓ Loaded · Undo';
+      extrasLoadedBtn.title = loadedAt ? `Loaded ${loadedAt.toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}${selectedVehicle.extrasLoadedByName ? ' by ' + selectedVehicle.extrasLoadedByName : ''} — click to undo` : 'Undo loaded';
+      extrasLoadedBtn.classList.remove('btn-primary');
+      extrasLoadedBtn.classList.add('btn-outline');
+      extrasLoadedBtn.onclick = () => window.unacknowledgeExtrasLoaded();
+    } else {
+      extrasLoadedBtn.style.display = 'none';
+      extrasLoadedBtn.onclick = null;
+    }
+  }
+
+  const quickWipeBtn = $('btn-quick-wipe');
+  if (quickWipeBtn) {
+    const showQuickWipe = selectedVehicle.tripStatus !== 'on-trip' && selectedVehicle.tripStatus !== 'private-trip' && selectedVehicle.tripStatus !== 'repair-shop';
+    quickWipeBtn.style.display = showQuickWipe ? '' : 'none';
+  }
+
+  const extrasBtn = $('btn-edit-extras-needed');
+  if (extrasBtn) extrasBtn.style.display = '';
+}
+
+async function _saveVehicleExtrasNeeded(nextExtras) {
+  if (!selectedVehicle) return;
+  // Dedup by code; preserve latest amount if same code appears twice
+  const map = new Map();
+  _normalizeExtrasNeeded(nextExtras).forEach(item => map.set(item.code, item));
+  const extras = Array.from(map.values());
+  try {
+    const update = {
+      extrasNeeded: extras.length ? extras : firebase.firestore.FieldValue.delete(),
+      // Any edit clears the loaded state so staff re-acknowledges the new list
+      extrasLoadedAt: firebase.firestore.FieldValue.delete(),
+      extrasLoadedByName: firebase.firestore.FieldValue.delete(),
+      extrasLoadedBy: firebase.firestore.FieldValue.delete(),
+    };
+    await db.collection('vehicles').doc(selectedVehicle.id).update(update);
+    selectedVehicle.extrasNeeded = extras;
+    delete selectedVehicle.extrasLoadedAt;
+    delete selectedVehicle.extrasLoadedByName;
+    delete selectedVehicle.extrasLoadedBy;
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) {
+      cached.extrasNeeded = extras;
+      delete cached.extrasLoadedAt;
+      delete cached.extrasLoadedByName;
+      delete cached.extrasLoadedBy;
+    }
+    renderVehicleHeaderBadges();
+    renderFleetDashboard();
+    renderLocationsWidget();
+    toast(extras.length ? 'Extras updated.' : 'Extras cleared.', 'success');
+  } catch (e) {
+    console.error('Save extras error:', e);
+    toast('Failed to update extras.', 'error');
+  }
+}
+
+// Mark all extras as loaded into the vehicle (mirrors the "📷 Done" pattern).
+// Optional: pass an explicit vehicleId to acknowledge from the dashboard.
+window.acknowledgeExtrasLoaded = async function(vehicleId) {
+  const targetId = vehicleId || (selectedVehicle && selectedVehicle.id);
+  if (!targetId) return;
+  const vehicle = vehiclesCache.find(v => v.id === targetId) || (selectedVehicle && selectedVehicle.id === targetId ? selectedVehicle : null);
+  if (!vehicle) return;
+  const extras = _normalizeExtrasNeeded(vehicle.extrasNeeded);
+  if (!extras.length) return;
+  try {
+    await db.collection('vehicles').doc(targetId).update({
+      extrasLoadedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      extrasLoadedBy: currentUser ? currentUser.uid : '',
+      extrasLoadedByName: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    });
+    const stamp = { toDate: () => new Date() };
+    vehicle.extrasLoadedAt = stamp;
+    vehicle.extrasLoadedBy = currentUser ? currentUser.uid : '';
+    vehicle.extrasLoadedByName = currentUserDisplayName || (currentUser ? currentUser.email : '');
+    if (selectedVehicle && selectedVehicle.id === targetId) {
+      selectedVehicle.extrasLoadedAt = stamp;
+      selectedVehicle.extrasLoadedBy = vehicle.extrasLoadedBy;
+      selectedVehicle.extrasLoadedByName = vehicle.extrasLoadedByName;
+    }
+    logUserActivity('extras_loaded', {
+      plate: vehicle.plate || '',
+      vehicleId: targetId,
+      items: extras.map(e => e.code),
+    });
+    toast(`Extras loaded ✓ ${vehicle.plate || ''}`.trim(), 'success');
+    if (selectedVehicle && selectedVehicle.id === targetId) renderVehicleHeaderBadges();
+    renderFleetDashboard();
+    renderLocationsWidget();
+  } catch (err) {
+    console.error('Ack extras error:', err);
+    toast('Failed to mark extras loaded.', 'error');
+  }
+};
+
+// Undo the loaded acknowledgment (in case someone tapped it too early).
+window.unacknowledgeExtrasLoaded = async function(vehicleId) {
+  const targetId = vehicleId || (selectedVehicle && selectedVehicle.id);
+  if (!targetId) return;
+  const vehicle = vehiclesCache.find(v => v.id === targetId) || (selectedVehicle && selectedVehicle.id === targetId ? selectedVehicle : null);
+  if (!vehicle) return;
+  try {
+    await db.collection('vehicles').doc(targetId).update({
+      extrasLoadedAt: firebase.firestore.FieldValue.delete(),
+      extrasLoadedBy: firebase.firestore.FieldValue.delete(),
+      extrasLoadedByName: firebase.firestore.FieldValue.delete(),
+    });
+    delete vehicle.extrasLoadedAt;
+    delete vehicle.extrasLoadedBy;
+    delete vehicle.extrasLoadedByName;
+    if (selectedVehicle && selectedVehicle.id === targetId) {
+      delete selectedVehicle.extrasLoadedAt;
+      delete selectedVehicle.extrasLoadedBy;
+      delete selectedVehicle.extrasLoadedByName;
+    }
+    toast('Loaded status cleared.', 'info');
+    if (selectedVehicle && selectedVehicle.id === targetId) renderVehicleHeaderBadges();
+    renderFleetDashboard();
+    renderLocationsWidget();
+  } catch (err) {
+    console.error('Undo ack extras error:', err);
+    toast('Failed to undo loaded status.', 'error');
+  }
+};
+
+window.openExtrasNeededPicker = function() {
+  if (!selectedVehicle) return;
+  const existing = document.getElementById('extras-needed-overlay');
+  if (existing) existing.remove();
+
+  // Build current state: Map<code, {selected, amount}>
+  const state = new Map();
+  Object.keys(EXTRAS_NEEDED_OPTIONS).forEach(code => state.set(code, { selected: false, amount: '' }));
+  _normalizeExtrasNeeded(selectedVehicle.extrasNeeded).forEach(item => {
+    if (!state.has(item.code)) state.set(item.code, { selected: true, amount: item.amount ? String(item.amount) : '' });
+    else state.set(item.code, { selected: true, amount: item.amount ? String(item.amount) : '' });
+  });
+
+  const overlay = document.createElement('div');
+  overlay.id = 'extras-needed-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.style.display = 'flex';
+  const rowsHtml = Array.from(state.entries()).map(([code, s]) => {
+    const meta = _extrasMeta(code);
+    const activeCls = s.selected ? ' extras-row-active' : '';
+    return `
+      <div class="extras-row${activeCls}" data-extra-code="${escapeHtml(code)}">
+        <button type="button" class="extras-row-toggle" data-extra-code="${escapeHtml(code)}">
+          <span class="extras-row-icon">${meta.icon}</span>
+          <span class="extras-row-label">${escapeHtml(meta.label)}</span>
+          <span class="extras-row-check">${s.selected ? '✓' : ''}</span>
+        </button>
+        <label class="extras-row-amt-wrap" title="Optional revenue amount">
+          <span class="extras-row-amt-prefix">$</span>
+          <input type="number" min="0" step="1" inputmode="decimal" class="extras-row-amt" data-extra-code="${escapeHtml(code)}" placeholder="0" value="${escapeHtml(s.amount)}" ${s.selected ? '' : 'disabled'}>
+        </label>
+      </div>`;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div class="modal-box extras-modal-box">
+      <div class="modal-header extras-modal-header">
+        <h3>🎒 Extras Needed</h3>
+        <button class="modal-close" id="extras-needed-close" aria-label="Close">&times;</button>
+      </div>
+      <p class="hint extras-modal-hint">Tap an item to request it. Add an optional $ amount if it's a paid extra. Staff will confirm ✓ Loaded once it's in the car.</p>
+      <div id="extras-needed-grid" class="extras-grid">${rowsHtml}</div>
+      <div class="extras-modal-actions">
+        <button type="button" class="btn btn-outline" id="extras-needed-clear">Clear All</button>
+        <button type="button" class="btn btn-primary" id="extras-needed-save">Save</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const syncRow = (code) => {
+    const s = state.get(code);
+    const row = overlay.querySelector(`.extras-row[data-extra-code="${code}"]`);
+    if (!row) return;
+    row.classList.toggle('extras-row-active', s.selected);
+    const check = row.querySelector('.extras-row-check');
+    if (check) check.textContent = s.selected ? '✓' : '';
+    const amt = row.querySelector('.extras-row-amt');
+    if (amt) amt.disabled = !s.selected;
+  };
+
+  overlay.querySelectorAll('.extras-row-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const code = btn.dataset.extraCode;
+      const s = state.get(code);
+      if (!s) return;
+      s.selected = !s.selected;
+      if (!s.selected) s.amount = '';
+      syncRow(code);
+    });
+  });
+  overlay.querySelectorAll('.extras-row-amt').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const code = inp.dataset.extraCode;
+      const s = state.get(code);
+      if (!s) return;
+      s.amount = inp.value.trim();
+      if (s.amount && !s.selected) {
+        s.selected = true;
+        syncRow(code);
+      }
+    });
+  });
+
+  overlay.querySelector('#extras-needed-save').onclick = async () => {
+    const next = [];
+    state.forEach((s, code) => {
+      if (!s.selected) return;
+      const amt = parseFloat(s.amount);
+      const entry = { code };
+      if (!isNaN(amt) && amt > 0) entry.amount = amt;
+      next.push(entry);
+    });
+    overlay.remove();
+    await _saveVehicleExtrasNeeded(next);
+  };
+  overlay.querySelector('#extras-needed-clear').onclick = async () => {
+    overlay.remove();
+    await _saveVehicleExtrasNeeded([]);
+  };
+  overlay.querySelector('#extras-needed-close').onclick = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+};
+
+window.quickWipeVehicle = async function() {
+  if (!selectedVehicle) return;
+  const ok = await confirm('Quick Wipe', `Log a quick wipe for ${selectedVehicle.plate}? This credits 6 productivity minutes.`);
+  if (!ok) return;
+  try {
+    await db.collection('vehicles').doc(selectedVehicle.id).update({
+      needsCleaning: false,
+      cleaningFlaggedAt: firebase.firestore.FieldValue.delete(),
+      lastCleanedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      lastCleanedBy: currentUserDisplayName || (currentUser ? currentUser.email : ''),
+    });
+    selectedVehicle.needsCleaning = false;
+    delete selectedVehicle.cleaningFlaggedAt;
+    selectedVehicle.lastCleanedAt = { toDate: () => new Date() };
+    selectedVehicle.lastCleanedBy = currentUserDisplayName || (currentUser ? currentUser.email : '');
+    const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
+    if (cached) Object.assign(cached, {
+      needsCleaning: false,
+      cleaningFlaggedAt: undefined,
+      lastCleanedAt: selectedVehicle.lastCleanedAt,
+      lastCleanedBy: selectedVehicle.lastCleanedBy,
+    });
+    logUserActivity('vehicle_quick_wipe', {
+      plate: selectedVehicle.plate || '',
+      vehicleId: selectedVehicle.id || '',
+      durationMinutes: 6,
+    });
+    toast('Quick wipe logged ✓', 'success');
+    renderFleetDashboard();
+    renderLocationsWidget();
+    renderVehicleHeaderBadges();
+    if (selectedVehicle && !hasPhotosToday(selectedVehicle)) {
+      const goPhoto = await confirm('Photos Needed', `${selectedVehicle.plate} was quick-wiped — take photos now?`);
+      if (goPhoto) openVehiclePage(selectedVehicle.id);
+    }
+  } catch (err) {
+    console.error('Quick wipe error:', err);
+    toast('Failed to log quick wipe.', 'error');
+  }
+};
+
 // Open the vehicle detail page
 async function openVehiclePage(vid) {
   selectedVehicle = vehiclesCache.find(v => v.id === vid);
@@ -3128,6 +3596,7 @@ async function openVehiclePage(vid) {
       fuelBadgeEl.style.display = 'none';
     }
   }
+  renderVehicleHeaderBadges();
 
   // Show color edit button for admins/managers
   const colorEditBtn = $('btn-edit-vehicle-color');
@@ -3246,6 +3715,12 @@ async function openVehiclePage(vid) {
   if (needsCleanBtn) {
     const showCleanBtn = selectedVehicle.tripStatus !== 'on-trip' && selectedVehicle.tripStatus !== 'repair-shop' && !selectedVehicle.needsCleaning;
     needsCleanBtn.style.display = showCleanBtn ? '' : 'none';
+  }
+
+  const quickWipeBtn = $('btn-quick-wipe');
+  if (quickWipeBtn) {
+    const showQuickWipe = selectedVehicle.tripStatus !== 'on-trip' && selectedVehicle.tripStatus !== 'private-trip' && selectedVehicle.tripStatus !== 'repair-shop';
+    quickWipeBtn.style.display = showQuickWipe ? '' : 'none';
   }
 
   // Show Queue Maintenance button for all roles (useful for vehicles on trip or at home)
@@ -6001,6 +6476,13 @@ $('btn-needs-cleaning').addEventListener('click', async () => {
   }
 });
 
+const quickWipeBtn = $('btn-quick-wipe');
+if (quickWipeBtn) {
+  quickWipeBtn.addEventListener('click', async () => {
+    await quickWipeVehicle();
+  });
+}
+
 $('btn-save-location').addEventListener('click', async () => {
   if (!selectedVehicle) return;
   const homeLocation = $('vehicle-home-location').value;
@@ -6026,8 +6508,14 @@ $('btn-save-location').addEventListener('click', async () => {
     parkingLevel: parkingLevel || firebase.firestore.FieldValue.delete(),
   };
 
+  const prevHomeLocation = selectedVehicle.homeLocation || '';
+  const homeLocationChanged = prevHomeLocation !== homeLocation;
+  if (homeLocationChanged) {
+    updateData.locationArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
+  }
+
   // Track when a vehicle first arrives at 1 Lagoon Dr (for 72h alert); clear when it leaves
-  const wasLagoon = selectedVehicle.homeLocation === '1 Lagoon Dr';
+  const wasLagoon = prevHomeLocation === '1 Lagoon Dr';
   const nowLagoon = homeLocation === '1 Lagoon Dr';
   if (nowLagoon && !wasLagoon) {
     updateData.lagoonArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -6186,6 +6674,13 @@ $('btn-save-location').addEventListener('click', async () => {
       updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.delete();
     }
   }
+  // Fresh trip cycle → clear extras request + loaded flags when a trip ends
+  if (wasOnTrip && nowHome) {
+    updateData.extrasNeeded = firebase.firestore.FieldValue.delete();
+    updateData.extrasLoadedAt = firebase.firestore.FieldValue.delete();
+    updateData.extrasLoadedBy = firebase.firestore.FieldValue.delete();
+    updateData.extrasLoadedByName = firebase.firestore.FieldValue.delete();
+  }
   // Auto-clear trip-scoped photoExcluded whenever vehicle returns home
   if (nowHome && selectedVehicle.photoExcluded) {
     updateData.photoExcluded = firebase.firestore.FieldValue.delete();
@@ -6195,6 +6690,9 @@ $('btn-save-location').addEventListener('click', async () => {
     await db.collection('vehicles').doc(selectedVehicle.id).update(updateData);
     // Update local cache
     Object.assign(selectedVehicle, { homeLocation, tripStatus, location: updateData.location });
+    if (homeLocationChanged) selectedVehicle.locationArrivedAt = { toDate: () => new Date() };
+    if (nowLagoon && !wasLagoon) selectedVehicle.lagoonArrivedAt = { toDate: () => new Date() };
+    if (!nowLagoon && wasLagoon) delete selectedVehicle.lagoonArrivedAt;
     if (ownershipVal) selectedVehicle.ownershipType = ownershipVal;
     else delete selectedVehicle.ownershipType;
     if (tripReturnVal && (tripStatus === 'on-trip' || tripStatus === 'repair-shop')) {
@@ -6228,6 +6726,7 @@ $('btn-save-location').addEventListener('click', async () => {
     }
     const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
     if (cached) Object.assign(cached, selectedVehicle);
+    renderVehicleHeaderBadges();
     toast('Location saved!', 'success');
     renderFleetDashboard();
 
@@ -6406,23 +6905,37 @@ window.vehicleReturned = async function(vehicleId) {
       tripReturnDate: firebase.firestore.FieldValue.delete(),
       needsCleaning: true,
       needsDamageCheck: true,
-      cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp()
+      cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      locationArrivedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      // Fresh trip → clear any prior extras request + loaded state
+      extrasNeeded: firebase.firestore.FieldValue.delete(),
+      extrasLoadedAt: firebase.firestore.FieldValue.delete(),
+      extrasLoadedBy: firebase.firestore.FieldValue.delete(),
+      extrasLoadedByName: firebase.firestore.FieldValue.delete(),
     };
     if (v.homeLocation === '1585 Kapiolani') updateData.needsParking = true;
     if (v.homeLocation === 'HNL') {
       updateData.parkingRow   = newParkingRow   || firebase.firestore.FieldValue.delete();
       updateData.parkingLevel = newParkingLevel || firebase.firestore.FieldValue.delete();
     }
+    if (v.homeLocation === '1 Lagoon Dr') updateData.lagoonArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
     await db.collection('vehicles').doc(vehicleId).update(updateData);
     Object.assign(v, {
       tripStatus: 'home',
       needsCleaning: true,
       needsDamageCheck: true,
-      cleaningFlaggedAt: { toDate: () => new Date() }
+      cleaningFlaggedAt: { toDate: () => new Date() },
+      locationArrivedAt: { toDate: () => new Date() },
     });
+    delete v.extrasNeeded;
+    delete v.extrasLoadedAt;
+    delete v.extrasLoadedBy;
+    delete v.extrasLoadedByName;
     if (v.homeLocation === '1585 Kapiolani') v.needsParking = true;
     if (v.homeLocation === 'HNL') { v.parkingRow = newParkingRow; v.parkingLevel = newParkingLevel; }
+    if (v.homeLocation === '1 Lagoon Dr') v.lagoonArrivedAt = { toDate: () => new Date() };
     delete v.tripReturnDate;
+    renderVehicleHeaderBadges();
     toast(`${plate} marked as returned — please complete cleaning & photos.`, 'success');
     logUserActivity('vehicle_returned', { plate, vehicleId });
     renderFleetDashboard();
@@ -7384,6 +7897,7 @@ const PERF_ACTION_LABELS = {
   inspect_started:          { icon: '🔍', label: 'Inspections Started',    color: '#7c3aed' },
   inspection_complete:      { icon: '✅', label: 'Inspections Done',       color: '#16a34a' },
   vehicle_cleaned:          { icon: '🧹', label: 'Vehicles Cleaned',       color: '#0891b2' },
+  vehicle_quick_wipe:       { icon: '🧽', label: 'Quick Wipes',            color: '#8b5cf6' },
   flag_not_returned:        { icon: '🚨', label: 'Not-Return Flags',       color: '#dc2626' },
   complete_task:            { icon: '✅', label: 'Tasks Completed',        color: '#16a34a' },
   vehicle_move_completed:   { icon: '🚐', label: 'Vehicle Moves',          color: '#7c3aed' },
@@ -7409,6 +7923,7 @@ function _perfDescribe(d) {
       return `Inspection complete${plateStr}${issues > 0 ? ` · ${issues} issue${issues !== 1 ? 's' : ''} found` : ' · All Clear'}`;
     }
     case 'vehicle_cleaned':      return `Marked cleaned${plateStr}`;
+    case 'vehicle_quick_wipe':   return `Quick wipe${plateStr}`;
     case 'flag_not_returned':    return `Flagged not returned${plateStr}`;
     case 'complete_task':        return `Completed task${plateStr}`;
     case 'delete_task':          return `Deleted task`;
@@ -7436,7 +7951,7 @@ function _perfDescribe(d) {
 }
 
 // Key "productivity" actions — these are what we highlight in staff cards
-const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'vehicle_cleaned', 'inspection_complete', 'vehicle_move_completed', 'flag_not_returned', 'complete_task'];
+const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'vehicle_cleaned', 'vehicle_quick_wipe', 'inspection_complete', 'vehicle_move_completed', 'flag_not_returned', 'complete_task'];
 
 window.loadPerformanceReport = async function() {
   const cardsEl    = $('perf-summary-cards');
@@ -7527,6 +8042,7 @@ window.loadPerformanceReport = async function() {
     const vehiclesShot    = groupedPhotoItems.length;               // unique plate+user photo sessions
     const returnedTotal   = items.filter(d => d.action === 'vehicle_returned').length;
     const cleanedTotal    = items.filter(d => d.action === 'vehicle_cleaned').length;
+    const quickWipeTotal  = items.filter(d => d.action === 'vehicle_quick_wipe').length;
     const tasksTotal      = items.filter(d => d.action === 'complete_task').length;
     const totalActions    = displayItems.length;
 
@@ -7535,6 +8051,7 @@ window.loadPerformanceReport = async function() {
       { icon: '📸', value: vehiclesShot,  label: 'Vehicles Shot', color: '#2563eb' },
       { icon: '🏠', value: returnedTotal, label: 'Returned',      color: '#16a34a' },
       { icon: '🧹', value: cleanedTotal,  label: 'Cleaned',       color: '#0891b2' },
+      { icon: '🧽', value: quickWipeTotal, label: 'Quick Wipes',   color: '#8b5cf6' },
       { icon: '✅', value: tasksTotal,    label: 'Tasks Done',    color: '#16a34a' },
       { icon: '⚡', value: totalActions,  label: 'Total Actions', color: '#7c3aed' },
     ];
@@ -7674,7 +8191,7 @@ window.loadPerformanceReport = async function() {
         const userItems = window._perfUserItems[u.name] || [];
 
         // Compact metric chips — icon + count, dot-separated
-        const metricOrder = ['photo_uploaded','vehicle_returned','vehicle_cleaned','inspection_complete','flag_not_returned','complete_task'];
+        const metricOrder = ['photo_uploaded','vehicle_returned','vehicle_cleaned','vehicle_quick_wipe','inspection_complete','flag_not_returned','complete_task'];
         const tcData = nameToTcData[u.name];
         const tcChipHtml = tcData && tcData.ms > 0
           ? `<span style="display:inline-flex;align-items:center;gap:3px;background:#dbeafe;color:#1e40af;border:1px solid #bfdbfe;border-radius:20px;padding:2px 9px;font-size:0.82rem;white-space:nowrap;font-weight:600;">⏱ ${fmtMs(tcData.ms)}${tcData.active ? ' <span style="color:#16a34a;font-size:0.7rem;">●</span>' : ''}</span>`
@@ -7688,7 +8205,7 @@ window.loadPerformanceReport = async function() {
         // ── Detail panel content ────────────────────────────────
         const taskItems  = userItems.filter(d => d.action === 'complete_task');
         const photoItems = userItems.filter(d => d.action === 'photo_uploaded');
-        const opItems    = userItems.filter(d => ['vehicle_returned','vehicle_cleaned','flag_not_returned'].includes(d.action));
+        const opItems    = userItems.filter(d => ['vehicle_returned','vehicle_cleaned','vehicle_quick_wipe','flag_not_returned'].includes(d.action));
 
         const tasksHtml = taskItems.length ? `<div style="margin-bottom:10px;">
           <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:5px;">✅ Completed Tasks (${taskItems.length})</div>
@@ -22923,12 +23440,15 @@ async function _completeMoveDoc(moveId, toLocation, hnlRow, hnlLevel) {
     await db.collection('vehicleMoves').doc(moveId).update(update);
     // Update vehicle home location + HNL slot if applicable
     const vehicleUpdate = { homeLocation: toLocation };
+    const prevLocation = (vehiclesCache.find(x => x.id === move.vehicleId) || {}).homeLocation;
+    if (prevLocation !== toLocation) {
+      vehicleUpdate.locationArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
+    }
     if (toLocation === 'HNL') {
       if (hnlRow) vehicleUpdate.parkingRow = hnlRow;
       if (hnlLevel) vehicleUpdate.parkingLevel = hnlLevel;
     }
     // Track Lagoon Dr arrival/departure for 72h alert
-    const prevLocation = (vehiclesCache.find(x => x.id === move.vehicleId) || {}).homeLocation;
     if (toLocation === '1 Lagoon Dr' && prevLocation !== '1 Lagoon Dr') {
       vehicleUpdate.lagoonArrivedAt = firebase.firestore.FieldValue.serverTimestamp();
     } else if (toLocation !== '1 Lagoon Dr' && prevLocation === '1 Lagoon Dr') {
@@ -23149,6 +23669,7 @@ window._startRelocationsListener = function() {
 const PROD_TARGETS_DEFAULT = {
   vehicle_move_completed: { label: '🚐 Vehicle Move',   targetMin: 30, tracked: true },
   vehicle_cleaned:        { label: '🧹 Cleaning',        targetMin: 40, tracked: true },
+  vehicle_quick_wipe:     { label: '🧽 Quick Wipe',      targetMin: 6,  tracked: true },
   photo_uploaded:         { label: '📸 Photo Batch',     targetMin: 5,  tracked: true },
 };
 let _prodSettings = null;
@@ -23399,6 +23920,7 @@ async function _initProdEmpSelect() {
   _loadProdSettings().then(s => {
     const ml = $('legend-move');  if (ml) ml.textContent = s.vehicle_move_completed?.targetMin ?? 30;
     const cl = $('legend-clean'); if (cl) cl.textContent = s.vehicle_cleaned?.targetMin ?? 40;
+    const wl = $('legend-wipe'); if (wl) wl.textContent = s.vehicle_quick_wipe?.targetMin ?? 6;
     const pl = $('legend-photo'); if (pl) pl.textContent = s.photo_uploaded?.targetMin ?? 5;
   });
 }
@@ -23461,7 +23983,7 @@ window.runProductivityCalc = async function() {
     // ── Get activity data ────────────────────────────────────────────
     // Strategy 1: use the already-loaded Team Performance cache (same date shown above)
     //             _perfUserItems is keyed by userName, index by both uid and name
-    let moves = [], cleans = 0, photos = 0;
+    let moves = [], cleans = 0, wipes = 0, photos = 0;
     let dataSource = 'cache';
 
     const perfDate = $('perf-filter-date')?.value;
@@ -23476,6 +23998,7 @@ window.runProductivityCalc = async function() {
             const det = d.details || {};
             moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
           } else if (d.action === 'vehicle_cleaned') cleans++;
+          else if (d.action === 'vehicle_quick_wipe') wipes++;
           else if (d.action === 'photo_uploaded') photos++;
         });
       }
@@ -23496,6 +24019,7 @@ window.runProductivityCalc = async function() {
           const det = act.details || {};
           moves.push(typeof det === 'object' ? (det.durationMinutes || null) : null);
         } else if (act.action === 'vehicle_cleaned') cleans++;
+        else if (act.action === 'vehicle_quick_wipe') wipes++;
         else if (act.action === 'photo_uploaded') photos++;
       });
     }
@@ -23504,11 +24028,13 @@ window.runProductivityCalc = async function() {
     const minutesWorked = hours * 60;
     const moveTarget  = settings.vehicle_move_completed?.targetMin ?? 30;
     const cleanTarget = settings.vehicle_cleaned?.targetMin ?? 40;
+    const wipeTarget  = settings.vehicle_quick_wipe?.targetMin ?? 6;
     const photoTarget = settings.photo_uploaded?.targetMin ?? 5;
     const moveMins  = moves.length * moveTarget;
     const cleanMins = cleans * cleanTarget;
+    const wipeMins  = wipes * wipeTarget;
     const photoMins = photos * photoTarget;
-    const taskMins  = moveMins + cleanMins + photoMins;
+    const taskMins  = moveMins + cleanMins + wipeMins + photoMins;
     const score = minutesWorked > 0 ? Math.round((taskMins / minutesWorked) * 100) : 0;
     const scoreColor = score >= 85 ? '#16a34a' : score >= 60 ? '#d97706' : '#dc2626';
     const scoreBg    = score >= 85 ? '#dcfce7' : score >= 60 ? '#fef9c3' : '#fee2e2';
@@ -23522,7 +24048,7 @@ window.runProductivityCalc = async function() {
       return `<div class="prod-result-row-bar"><div class="prod-result-row-fill" style="width:${pct}%;background:${color || '#3b82f6'};"></div></div>`;
     };
 
-    const coachData = JSON.stringify({ movesCount: moves.length, avgDuration: avgDur, cleans, photos, score, hoursWorked: hours });
+    const coachData = JSON.stringify({ movesCount: moves.length, avgDuration: avgDur, cleans, quickWipes: wipes, photos, score, hoursWorked: hours });
 
     // Build editable rows — counts are <input> fields that live-recalculate
     container.innerHTML = `<div class="prod-result-card" style="border-color:${scoreColor};" data-minutes="${minutesWorked}">
@@ -23546,6 +24072,12 @@ window.runProductivityCalc = async function() {
           <input type="number" class="prod-count-input" value="${cleans}" min="0" data-target="${cleanTarget}" data-color="#0891b2" oninput="recalcProdScore(this)">
           <span class="prod-result-row-mins prod-live-mins">${cleanMins}m</span>
           ${bar(cleanMins, '#0891b2')}
+        </div>
+        <div class="prod-result-row">
+          <span class="prod-result-row-label">🧽 Quick Wipes<span class="prod-row-hint">${wipeTarget}m each</span></span>
+          <input type="number" class="prod-count-input" value="${wipes}" min="0" data-target="${wipeTarget}" data-color="#8b5cf6" oninput="recalcProdScore(this)">
+          <span class="prod-result-row-mins prod-live-mins">${wipeMins}m</span>
+          ${bar(wipeMins, '#8b5cf6')}
         </div>
         <div class="prod-result-row">
           <span class="prod-result-row-label">📸 Photo Batches<span class="prod-row-hint">${photoTarget}m each</span></span>
@@ -23685,8 +24217,9 @@ function _injectLagoonAlerts() {
   const MS_72H = 72 * 60 * 60 * 1000;
   const lagoonOverdue = vehiclesCache.filter(v => {
     if (v.homeLocation !== '1 Lagoon Dr') return false;
-    if (!v.lagoonArrivedAt) return false;
-    const t = v.lagoonArrivedAt.toDate ? v.lagoonArrivedAt.toDate().getTime() : new Date(v.lagoonArrivedAt).getTime();
+    const stamp = _vehicleLocationStamp(v);
+    if (!stamp) return false;
+    const t = stamp.getTime();
     return (Date.now() - t) >= MS_72H;
   });
 
@@ -23707,7 +24240,7 @@ function _injectLagoonAlerts() {
   }
 
   const alertsHtml = lagoonOverdue.map(v => {
-    const arrivedAt = v.lagoonArrivedAt.toDate ? v.lagoonArrivedAt.toDate() : new Date(v.lagoonArrivedAt);
+    const arrivedAt = _vehicleLocationStamp(v);
     const hours = Math.floor((Date.now() - arrivedAt.getTime()) / (1000 * 60 * 60));
     const label = hours >= 24 ? `${Math.floor(hours/24)}d ${hours%24}h` : `${hours}h`;
     return `<div class="urgent-banner-item lagoon-urgent-item" style="cursor:pointer;" data-vid="${v.id}">

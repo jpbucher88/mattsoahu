@@ -260,6 +260,19 @@
           <button id="btn-edit-vehicle-color" class="btn-color-edit" title="Edit color" style="display:none;" onclick="openVehicleColorEdit()">✏️</button>
           <span id="vehicle-fuel-badge" style="display:none;"></span>
           <span id="vehicle-photo-count" class="badge"></span>
+          <span id="vehicle-location-since" class="vehicle-location-since" style="display:none;"></span>
+        </div>
+        <!-- Extras row: label + chips + edit + acknowledge -->
+        <div id="vehicle-extras-row" class="vehicle-extras-row">
+          <span class="vehicle-extras-label">🎒 Extras</span>
+          <span id="vehicle-extras-wrap" class="vehicle-extras-wrap" style="display:none;">
+            <span id="vehicle-extras-needed" class="vehicle-extras-needed"></span>
+          </span>
+          <span id="vehicle-extras-empty" class="vehicle-extras-empty">None</span>
+          <div class="vehicle-extras-actions">
+            <button id="btn-ack-extras-loaded" type="button" class="btn btn-xs btn-primary vehicle-extras-ack-btn" style="display:none;">✓ Loaded</button>
+            <button id="btn-edit-extras-needed" type="button" class="btn btn-xs btn-outline vehicle-extras-btn" onclick="openExtrasNeededPicker()">✎ Edit</button>
+          </div>
         </div>
         <div id="vehicle-location-row" class="vehicle-location-row">
           <div class="loc-field">
@@ -453,6 +466,7 @@
             </div>
           </div>
           <button id="btn-save-location" class="btn btn-sm btn-primary">Save</button>
+          <button id="btn-quick-wipe" class="btn btn-sm btn-outline" style="display:none;" title="Log a quick wipe and credit 6 minutes of productivity">🧽 Quick Wipe</button>
           <button id="btn-needs-cleaning" class="btn btn-sm btn-outline" style="display:none;">🧹 Mark Needs Cleaning</button>
           <button id="btn-queue-maintenance" class="btn btn-sm btn-outline" onclick="_openReturnQueueAdd(selectedVehicle && selectedVehicle.id)" title="Queue maintenance for when this vehicle returns" style="display:none;">🔁 Queue Maintenance</button>
           <button id="btn-log-issue" class="btn btn-sm btn-outline" onclick="openNewWorkOrder(selectedVehicle && selectedVehicle.id)" title="Log a repair issue or problem" style="display:none;">🔧 Log Issue</button>
@@ -1798,6 +1812,7 @@
             <div class="goals-legend" style="margin-top:8px;">
               <span class="goal-pill">🚐 <strong id="legend-move">30</strong> min/move</span>
               <span class="goal-pill">🧹 <strong id="legend-clean">40</strong> min/clean</span>
+              <span class="goal-pill">🧽 <strong id="legend-wipe">6</strong> min/quick wipe</span>
               <span class="goal-pill">📸 <strong id="legend-photo">5</strong> min/photo batch</span>
               <span class="goal-pill" style="background:#dbeafe;color:#1e40af;border-color:#bfdbfe;">🟢 ≥85% · 🟡 60–84% · 🔴 &lt;60%</span>
             </div>
