@@ -7948,7 +7948,11 @@ body {
 
 /* ── Kapiolani parking feature ──────────────────────────────── */
 .location-vehicle-chip-wrap {
-  position: relative; display: inline-flex;
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
 }
 .parking-badge {
   position: absolute; top: -6px; right: -8px;
@@ -7956,6 +7960,28 @@ body {
   border-radius: 50%; width: 18px; height: 18px;
   display: flex; align-items: center; justify-content: center;
   font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+/* Clean per-vehicle location timer — sits under the plate chip */
+.lagoon-hours-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 1px 2px;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+/* Long-park emphasis (kept for the Lagoon 72h subgroup only) */
+.lagoon-hours-badge.lagoon-overdue {
+  color: #b91c1c;
+  font-weight: 700;
+}
+/* Backwards-compat: some older wraps use a slightly different container */
+.lagoon-chip-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
 }
 .btn-parking {
   background: #2563eb; color: #fff; border: none;
@@ -9424,7 +9450,7 @@ body {
 }
 
 /* ============================================================
-   EXTRAS FEATURE � added by extras UX pass
+   EXTRAS FEATURE � added by extras UX pass
    ============================================================ */
 
 /* Location timer badge on vehicle detail header */

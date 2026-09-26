@@ -2880,12 +2880,17 @@ function showDamageCheckModal(vid, plate) {
   const existing = document.querySelector('.damage-check-overlay');
   if (existing) existing.remove();
 
+  // Only show the extras-return check when this vehicle actually has extras on it
+  const vehicleForInspection = vehiclesCache.find(v => v.id === vid);
+  const vehicleExtras = _normalizeExtrasNeeded(vehicleForInspection ? vehicleForInspection.extrasNeeded : []);
+  const items = INSPECTION_ITEMS.filter(i => !i.extrasCheck || vehicleExtras.length > 0);
+
   // Per-item state: 'none' | 'pass' | 'fail'
   const itemState = {};
-  INSPECTION_ITEMS.forEach(i => { itemState[i.key] = 'none'; });
+  items.forEach(i => { itemState[i.key] = 'none'; });
   const failFiles = {}; // key -> File[]
   const bugUrgency = {}; // yesno key -> 'urgent' | 'monitoring' | null
-  INSPECTION_ITEMS.forEach(i => { if (i.yesno) bugUrgency[i.key] = null; });
+  items.forEach(i => { if (i.yesno) bugUrgency[i.key] = null; });
 
   const overlay = document.createElement('div');
   overlay.className = 'damage-check-overlay';
@@ -2944,7 +2949,7 @@ function showDamageCheckModal(vid, plate) {
         <p>Mark each item Pass or Fail. Issues will be logged as urgent follow-ups.</p>
       </div>
       <div class="damage-checklist dmg-pf-list">
-        ${INSPECTION_ITEMS.map(buildItemHTML).join('')}
+        ${items.map(buildItemHTML).join('')}
       </div>
       <div class="dmg-all-pass-row">
         <button class="btn btn-primary dmg-all-pass-btn">✅ All Pass — No Issues</button>
@@ -2960,16 +2965,16 @@ function showDamageCheckModal(vid, plate) {
   const confirmBtn = overlay.querySelector('.dmg-confirm-btn');
 
   function refreshConfirmBtn() {
-    const allDecided = INSPECTION_ITEMS.every(i => {
+    const allDecided = items.every(i => {
       if (itemState[i.key] === 'none') return false;
       if (i.yesno && itemState[i.key] === 'pass') return bugUrgency[i.key] !== null;
       return true;
     });
     confirmBtn.disabled = !allDecided;
-    const failCount = INSPECTION_ITEMS.filter(i => !i.yesno && itemState[i.key] === 'fail').length;
-    const bugsYes = INSPECTION_ITEMS.filter(i => i.yesno).some(i => itemState[i.key] === 'pass');
-    const bugsNow = bugsYes && INSPECTION_ITEMS.filter(i => i.yesno).some(i => bugUrgency[i.key] === 'urgent');
-    const extras = bugsNow ? ' +🚨 bugs' : (bugsYes && bugUrgency[INSPECTION_ITEMS.find(i=>i.yesno)?.key] === 'monitoring' ? ' +👁️ bugs' : '');
+    const failCount = items.filter(i => !i.yesno && itemState[i.key] === 'fail').length;
+    const bugsYes = items.filter(i => i.yesno).some(i => itemState[i.key] === 'pass');
+    const bugsNow = bugsYes && items.filter(i => i.yesno).some(i => bugUrgency[i.key] === 'urgent');
+    const extras = bugsNow ? ' +🚨 bugs' : (bugsYes && bugUrgency[items.find(i=>i.yesno)?.key] === 'monitoring' ? ' +👁️ bugs' : '');
     confirmBtn.textContent = failCount > 0
       ? `Submit (${failCount} issue${failCount > 1 ? 's' : ''}${extras})`
       : (bugsYes ? `Submit — Bugs Noted${extras}` : 'Submit — All Clear');
@@ -3068,7 +3073,7 @@ function showDamageCheckModal(vid, plate) {
 
   // All Pass — set every item to pass/no-bugs in one click
   overlay.querySelector('.dmg-all-pass-btn').addEventListener('click', () => {
-    INSPECTION_ITEMS.forEach(item => {
+    items.forEach(item => {
       if (item.yesno) {
         // "No" = no bugs = the fail button for yesno items
         itemState[item.key] = 'fail';
@@ -3091,10 +3096,14 @@ function showDamageCheckModal(vid, plate) {
   confirmBtn.addEventListener('click', async () => {
     confirmBtn.disabled = true;
     confirmBtn.textContent = 'Submitting...';
-    const failItems = INSPECTION_ITEMS.filter(i => {
+    const failItems = items.filter(i => {
       if (i.yesno) return itemState[i.key] === 'pass'; // 'pass' = yes bugs spotted
       return itemState[i.key] === 'fail';
     });
+    // Was the extras-return item passed? → clear extras on the vehicle.
+    const extrasItem = items.find(i => i.extrasCheck);
+    const extrasPassed = extrasItem && itemState[extrasItem.key] === 'pass';
+    const extrasFailed = extrasItem && itemState[extrasItem.key] === 'fail';
     const st = getStorage();
     const vehicleObj = vehiclesCache.find(v => v.id === vid);
     const safePlate = vehicleObj ? sanitizePlate(vehicleObj.plate) : 'unknown';
@@ -3117,6 +3126,24 @@ function showDamageCheckModal(vid, plate) {
             createdBy: currentUser.uid,
             createdByName: currentUser.displayName || currentUser.email,
           });
+          continue;
+        }
+        // ── Extras-return fail: log which items are missing, keep them on vehicle ──
+        if (item.extrasCheck) {
+          const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
+          const missingList = vehicleExtras.map(e => (_extrasMeta(e.code).icon + ' ' + _extrasMeta(e.code).label)).join(', ');
+          await db.collection('vehicleNotes').add({
+            vehicleId: vid,
+            text: '🎒 EXTRAS NOT RETURNED — ' + missingList + (notes ? ' · ' + notes : ''),
+            isFollowUp: true, done: false,
+            urgent: true, taskStatus: 'urgent',
+            sourceType: 'inspection', inspectionKey: item.key,
+            missingExtras: vehicleExtras,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            createdBy: currentUser.uid,
+            createdByName: currentUser.displayName || currentUser.email,
+          });
+          newTaskCount++;
           continue;
         }
 
@@ -3223,13 +3250,29 @@ function showDamageCheckModal(vid, plate) {
         }
       }
 
-      await db.collection('vehicles').doc(vid).update({
+      const vehicleUpdate = {
         needsDamageCheck: false,
         lastInspectedAt: firebase.firestore.FieldValue.serverTimestamp(),
         lastInspectedBy: currentUser.displayName || currentUser.email,
-      });
+      };
+      // Extras returned → remove them from the vehicle so it's fresh for the next trip
+      if (extrasPassed) {
+        vehicleUpdate.extrasNeeded = firebase.firestore.FieldValue.delete();
+        vehicleUpdate.extrasLoadedAt = firebase.firestore.FieldValue.delete();
+        vehicleUpdate.extrasLoadedBy = firebase.firestore.FieldValue.delete();
+        vehicleUpdate.extrasLoadedByName = firebase.firestore.FieldValue.delete();
+      }
+      await db.collection('vehicles').doc(vid).update(vehicleUpdate);
       const cached = vehiclesCache.find(v => v.id === vid);
-      if (cached) cached.needsDamageCheck = false;
+      if (cached) {
+        cached.needsDamageCheck = false;
+        if (extrasPassed) {
+          delete cached.extrasNeeded;
+          delete cached.extrasLoadedAt;
+          delete cached.extrasLoadedBy;
+          delete cached.extrasLoadedByName;
+        }
+      }
 
       if (failItems.length > 0) {
         const parts = [];
@@ -3258,11 +3301,15 @@ function showDamageCheckModal(vid, plate) {
 // ================================================================
 // incidentType: if set, a failed item auto-creates an Incident Report + (if Turo-eligible) a 24h claim task.
 // Items without incidentType (clean, refueled) create a plain vehicleNotes urgent task.
+// extrasCheck: shown only when the vehicle has extrasNeeded on it (e.g. after a trip).
+//   Pass  → clears the extras from the vehicle (customer returned them).
+//   Fail  → creates a "missing extras" urgent task and keeps them on the vehicle.
 const INSPECTION_ITEMS = [
   { key: 'exterior', label: 'Exterior - No new damage',        incidentType: 'damage'  },
   { key: 'interior', label: 'Interior - No new damage',        incidentType: 'damage'  },
   { key: 'tires',    label: 'Tires - Good condition',          incidentType: 'damage'  },
   { key: 'smoking',  label: 'Smoking / Odor - None detected',  incidentType: 'smoking' },
+  { key: 'extras',   label: '🎒 Extras Returned - All items back', extrasCheck: true },
   { key: 'clean',    label: 'Vehicle Cleaned' },
   { key: 'refueled', label: 'Vehicle Refueled ⛽' },
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
@@ -6703,13 +6750,8 @@ $('btn-save-location').addEventListener('click', async () => {
       updateData.cleaningFlaggedAt = firebase.firestore.FieldValue.delete();
     }
   }
-  // Fresh trip cycle → clear extras request + loaded flags when a trip ends
-  if (wasOnTrip && nowHome) {
-    updateData.extrasNeeded = firebase.firestore.FieldValue.delete();
-    updateData.extrasLoadedAt = firebase.firestore.FieldValue.delete();
-    updateData.extrasLoadedBy = firebase.firestore.FieldValue.delete();
-    updateData.extrasLoadedByName = firebase.firestore.FieldValue.delete();
-  }
+  // NOTE: extras (extrasNeeded/extrasLoadedAt) intentionally NOT cleared here.
+  // They persist so the Inspection step surfaces a "🎒 Extras Returned" check.
   // Auto-clear trip-scoped photoExcluded whenever vehicle returns home
   if (nowHome && selectedVehicle.photoExcluded) {
     updateData.photoExcluded = firebase.firestore.FieldValue.delete();
@@ -6936,11 +6978,9 @@ window.vehicleReturned = async function(vehicleId) {
       needsDamageCheck: true,
       cleaningFlaggedAt: firebase.firestore.FieldValue.serverTimestamp(),
       locationArrivedAt: firebase.firestore.FieldValue.serverTimestamp(),
-      // Fresh trip → clear any prior extras request + loaded state
-      extrasNeeded: firebase.firestore.FieldValue.delete(),
-      extrasLoadedAt: firebase.firestore.FieldValue.delete(),
-      extrasLoadedBy: firebase.firestore.FieldValue.delete(),
-      extrasLoadedByName: firebase.firestore.FieldValue.delete(),
+      // NOTE: extrasNeeded and extrasLoadedAt are intentionally preserved so the
+      // Inspection step surfaces a "🎒 Extras Returned" check. Passing that check
+      // clears them; failing creates an urgent missing-extras task.
     };
     if (v.homeLocation === '1585 Kapiolani') updateData.needsParking = true;
     if (v.homeLocation === 'HNL') {
@@ -6956,10 +6996,6 @@ window.vehicleReturned = async function(vehicleId) {
       cleaningFlaggedAt: { toDate: () => new Date() },
       locationArrivedAt: { toDate: () => new Date() },
     });
-    delete v.extrasNeeded;
-    delete v.extrasLoadedAt;
-    delete v.extrasLoadedBy;
-    delete v.extrasLoadedByName;
     if (v.homeLocation === '1585 Kapiolani') v.needsParking = true;
     if (v.homeLocation === 'HNL') { v.parkingRow = newParkingRow; v.parkingLevel = newParkingLevel; }
     if (v.homeLocation === '1 Lagoon Dr') v.lagoonArrivedAt = { toDate: () => new Date() };
