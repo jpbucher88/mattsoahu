@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926c">
+  <link rel="stylesheet" href="style.css?v=20260926d">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -3335,6 +3335,10 @@
             <option value="1585 Kapiolani">🏢 1585 Kapiolani</option>
             <option value="94-530 Lumiauau">🏠 94-530 Lumiauau</option>
           </select>
+        </div>
+        <div class="dm-row">
+          <label class="dm-label">📌 Where exactly? <span class="hint" style="font-weight:400;">(optional)</span></label>
+          <input type="text" id="po-bin-location" class="dm-input" placeholder="e.g. Black bin inside van, Office shelf" maxlength="80">
         </div>
         <div class="dm-row">
           <label class="dm-label">�📝 Notes</label>

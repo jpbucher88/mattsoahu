@@ -7102,9 +7102,10 @@ async function _checkArrivedPartsForVehicle(vehicleId, plate, homeLocation) {
       const partBin = p.bin || 'HNL';
       const atHome = homeLocation && partBin === homeLocation;
       const binMeta = _partsBinMeta(partBin);
+      const binLoc = p.binLocation ? ` — 📌 ${escapeHtml(p.binLocation)}` : '';
       const hint = atHome
-        ? `<span class="parts-return-here">📦 Ready at ${binMeta.short}</span>`
-        : `<span class="parts-return-elsewhere">📦 At ${binMeta.short} — move it to ${escapeHtml(homeLocation || 'installation site')}</span>`;
+        ? `<span class="parts-return-here">📦 Ready at ${binMeta.short}${binLoc}</span>`
+        : `<span class="parts-return-elsewhere">📦 At ${binMeta.short}${binLoc} — move it to ${escapeHtml(homeLocation || 'installation site')}</span>`;
       return `<div class="parts-return-row">
         <div>
           <div class="parts-return-part">${escapeHtml(p.partName || 'Part')}</div>
@@ -23059,7 +23060,7 @@ window.openNewPartOrder = function(prefillVehicleId, prefillWorkOrderId) {
       sel.appendChild(opt);
     });
   }
-  ['po-part-name','po-vendor','po-order-num','po-notes'].forEach(id => { const el=$(id); if(el) el.value=''; });
+  ['po-part-name','po-vendor','po-order-num','po-notes','po-bin-location'].forEach(id => { const el=$(id); if(el) el.value=''; });
   const costEl = $('po-cost'); if (costEl) costEl.value = '';
   const etaEl = $('po-eta'); if (etaEl) etaEl.value = '';
   const shipToEl = $('po-ship-to'); if (shipToEl) shipToEl.value = 'VENDOR';
@@ -23083,6 +23084,7 @@ window.submitPartOrder = async function() {
   const cost = $('po-cost') ? (parseFloat($('po-cost').value) || null) : null;
   const eta = $('po-eta') ? $('po-eta').value : '';
   const shipTo = ($('po-ship-to') ? $('po-ship-to').value : 'VENDOR') || 'VENDOR';
+  const binLocation = $('po-bin-location') ? $('po-bin-location').value.trim() : '';
   const notes = $('po-notes') ? $('po-notes').value.trim() : '';
   const errEl = $('po-error');
   if (!vid) { if(errEl) errEl.textContent = 'Select a vehicle.'; return; }
@@ -23107,7 +23109,8 @@ window.submitPartOrder = async function() {
       notes: notes || null,
       status: 'ordered',
       bin: shipTo,
-      binHistory: [{ from: null, to: shipTo, at: new Date(), by, note: 'Ordered' }],
+      binLocation: binLocation || null,
+      binHistory: [{ from: null, to: shipTo, at: new Date(), by, note: binLocation ? `Ordered — ${binLocation}` : 'Ordered', binLocation: binLocation || null }],
       orderedBy: by,
       orderedAt: firebase.firestore.FieldValue.serverTimestamp(),
       workOrderId: $('part-order-overlay')._workOrderId || null,
@@ -23116,7 +23119,7 @@ window.submitPartOrder = async function() {
     Object.keys(doc).forEach(k => { if (doc[k] === null) delete doc[k]; });
     await db.collection('partsOrders').add(doc);
     closePartOrderModal();
-    toast(`📦 Part ordered: ${partName} for ${v ? v.plate : 'vehicle'} · Ships to ${_partsBinMeta(shipTo).short} ✓`, 'success');
+    toast(`📦 Part ordered: ${partName} for ${v ? v.plate : 'vehicle'} · Ships to ${_partsBinMeta(shipTo).short}${binLocation ? ' (' + binLocation + ')' : ''} ✓`, 'success');
     // Track expense if cost given
     if (cost && v) {
       db.collection('expenses').add({
@@ -23198,6 +23201,9 @@ window.loadPartsQueue = async function() {
       const statusBadge = isArrived
         ? `<span class="pq-arrived-badge">✅ Arrived — ready to install</span>`
         : `<span class="pq-ordered-badge">📦 In transit</span>`;
+      const binLocLine = d.binLocation
+        ? `<div class="pq-bin-location">📌 <span>${escapeHtml(d.binLocation)}</span></div>`
+        : '';
       const arriveBtn = (!isArrived && isAdmin)
         ? `<button class="btn btn-sm btn-primary pq-btn" onclick="markPartArrived('${d.id}')">✅ Mark Arrived</button>` : '';
       const moveBtn = isAdmin
@@ -23205,6 +23211,7 @@ window.loadPartsQueue = async function() {
       const installBtn = (isArrived && isAdmin)
         ? `<button class="btn btn-sm pq-btn pq-install-btn" onclick="markPartInstalled('${d.id}')">🔧 Mark Installed</button>` : '';
       const labelBtn = `<button class="btn btn-sm btn-outline pq-btn" onclick="showPartLabel('${d.id}')">🏷️ Label</button>`;
+      const editLocBtn = isAdmin ? `<button class="btn btn-sm btn-outline pq-btn" onclick="editPartBinLocation('${d.id}')" title="Edit specific location">✏️ Edit Spot</button>` : '';
       const deleteBtn = isAdmin ? `<button class="btn btn-sm btn-outline pq-btn pq-del-btn" onclick="deletePartOrder('${d.id}')" title="Cancel order">✕</button>` : '';
       return `<div class="pq-card${isArrived ? ' pq-arrived' : ''}">
         <div class="pq-card-top">
@@ -23213,13 +23220,14 @@ window.loadPartsQueue = async function() {
           ${deleteBtn}
         </div>
         <div class="pq-part-name">${escapeHtml(d.partName||'')}</div>
+        ${binLocLine}
         <div class="pq-meta">
           ${d.vendor ? `🏪 ${escapeHtml(d.vendor)}` : ''}
           ${costStr ? ` · ${costStr}` : ''}
           ${etaStr ? ` · ${etaStr}` : ''}
           ${d.notes ? `<div style="color:#6b7280;font-style:italic;margin-top:2px;">${escapeHtml(d.notes)}</div>` : ''}
         </div>
-        <div class="pq-actions">${arriveBtn}${installBtn}${moveBtn}${labelBtn}</div>
+        <div class="pq-actions">${arriveBtn}${installBtn}${moveBtn}${editLocBtn}${labelBtn}</div>
       </div>`;
     };
 
@@ -23254,25 +23262,29 @@ window.markPartArrived = async function(partId) {
     const d = snap.data();
     // Ask for bin location. Default suggestion = existing bin (if any) else HNL.
     const suggested = d.bin && d.bin !== 'VENDOR' ? d.bin : 'HNL';
-    const bin = await _pickPartsBin({
+    const picked = await _pickPartsBin({
       title: '✅ Where did the part arrive?',
       subtitle: `${d.partName || 'Part'} for ${d.vehiclePlate || ''}`,
       selected: suggested,
+      selectedLocation: d.binLocation || '',
       allowVendor: false,
     });
-    if (!bin) return;
+    if (!picked) return;
+    const { bin, binLocation } = picked;
     const by = currentUserDisplayName || (currentUser ? currentUser.email : '');
     const historyEntry = {
       from: d.bin || 'VENDOR',
       to: bin,
       at: new Date(),
       by,
-      note: 'Arrived',
+      note: binLocation ? `Arrived — ${binLocation}` : 'Arrived',
     };
+    if (binLocation) historyEntry.binLocation = binLocation;
     const prevHistory = Array.isArray(d.binHistory) ? d.binHistory : [];
     await db.collection('partsOrders').doc(partId).update({
       status: 'arrived',
       bin,
+      binLocation: binLocation || firebase.firestore.FieldValue.delete(),
       arrivedAt: firebase.firestore.FieldValue.serverTimestamp(),
       arrivedBy: by,
       binHistory: [...prevHistory, historyEntry],
@@ -23281,15 +23293,16 @@ window.markPartArrived = async function(partId) {
     await db.collection('vehicleNotes').add({
       vehicleId: d.vehicleId,
       type: 'parts_arrived',
-      text: `📦 Part arrived at ${_partsBinMeta(bin).short}: ${d.partName || 'Part'}${d.orderNum ? ' #'+d.orderNum : ''} for ${d.vehiclePlate || ''}${d.vendor ? ' ('+d.vendor+')' : ''}`,
+      text: `📦 Part arrived at ${_partsBinMeta(bin).short}${binLocation ? ' — ' + binLocation : ''}: ${d.partName || 'Part'}${d.orderNum ? ' #'+d.orderNum : ''} for ${d.vehiclePlate || ''}${d.vendor ? ' ('+d.vendor+')' : ''}`,
       urgent: true,
       done: false,
       partOrderId: partId,
       partBin: bin,
+      partBinLocation: binLocation || null,
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: by,
     }).catch(()=>{});
-    toast(`✅ ${d.partName || 'Part'} arrived at ${_partsBinMeta(bin).short}. Notification sent.`, 'success');
+    toast(`✅ ${d.partName || 'Part'} arrived at ${_partsBinMeta(bin).short}${binLocation ? ' (' + binLocation + ')' : ''}. Notification sent.`, 'success');
     loadPartsQueue();
     loadDashboardFollowUps && loadDashboardFollowUps();
   } catch(e) { console.error('markPartArrived:', e); toast('Failed to update.', 'error'); }
@@ -23302,13 +23315,16 @@ window.movePartBin = async function(partId) {
     if (!snap.exists) return;
     const d = snap.data();
     const currentBin = d.bin || 'VENDOR';
-    const bin = await _pickPartsBin({
+    const picked = await _pickPartsBin({
       title: '📍 Move part to…',
-      subtitle: `${d.partName || 'Part'} — currently at ${_partsBinMeta(currentBin).short}`,
+      subtitle: `${d.partName || 'Part'} — currently at ${_partsBinMeta(currentBin).short}${d.binLocation ? ' (' + d.binLocation + ')' : ''}`,
       selected: currentBin,
+      selectedLocation: '',
       allowVendor: true,
       excludeCurrent: true,
     });
+    if (!picked) return;
+    const { bin, binLocation } = picked;
     if (!bin || bin === currentBin) return;
     const by = currentUserDisplayName || (currentUser ? currentUser.email : '');
     const historyEntry = {
@@ -23316,11 +23332,13 @@ window.movePartBin = async function(partId) {
       to: bin,
       at: new Date(),
       by,
-      note: 'Moved',
+      note: binLocation ? `Moved — ${binLocation}` : 'Moved',
     };
+    if (binLocation) historyEntry.binLocation = binLocation;
     const prevHistory = Array.isArray(d.binHistory) ? d.binHistory : [];
     const patch = {
       bin,
+      binLocation: binLocation || firebase.firestore.FieldValue.delete(),
       binHistory: [...prevHistory, historyEntry],
     };
     // If moving out of VENDOR → mark arrived automatically
@@ -23330,13 +23348,43 @@ window.movePartBin = async function(partId) {
       patch.arrivedBy = by;
     }
     await db.collection('partsOrders').doc(partId).update(patch);
-    toast(`📍 Moved ${d.partName || 'part'} to ${_partsBinMeta(bin).short}.`, 'success');
+    toast(`📍 Moved ${d.partName || 'part'} to ${_partsBinMeta(bin).short}${binLocation ? ' (' + binLocation + ')' : ''}.`, 'success');
     loadPartsQueue();
   } catch(e) { console.error('movePartBin:', e); toast('Failed to move.', 'error'); }
 };
 
-// Shared bin-picker modal (returns a Promise<string|null>)
-function _pickPartsBin({ title, subtitle, selected, allowVendor, excludeCurrent } = {}) {
+// Edit only the "where exactly" text for a part (no bin change)
+window.editPartBinLocation = async function(partId) {
+  try {
+    const snap = await db.collection('partsOrders').doc(partId).get();
+    if (!snap.exists) return;
+    const d = snap.data();
+    const current = d.binLocation || '';
+    const next = prompt(`📌 Where is this part stored inside ${_partsBinMeta(d.bin || 'HNL').short}?\n(e.g. Black bin inside van, Office shelf, Under desk)`, current);
+    if (next === null) return; // cancelled
+    const trimmed = (next || '').trim();
+    if (trimmed === current) return;
+    const by = currentUserDisplayName || (currentUser ? currentUser.email : '');
+    const prevHistory = Array.isArray(d.binHistory) ? d.binHistory : [];
+    const entry = {
+      from: d.bin || 'HNL',
+      to: d.bin || 'HNL',
+      at: new Date(),
+      by,
+      note: trimmed ? `Location updated — ${trimmed}` : 'Location cleared',
+    };
+    if (trimmed) entry.binLocation = trimmed;
+    await db.collection('partsOrders').doc(partId).update({
+      binLocation: trimmed || firebase.firestore.FieldValue.delete(),
+      binHistory: [...prevHistory, entry],
+    });
+    toast(trimmed ? `📌 Location updated: ${trimmed}` : '📌 Location cleared', 'success');
+    loadPartsQueue();
+  } catch(e) { console.error('editPartBinLocation:', e); toast('Failed to update location.', 'error'); }
+};
+
+// Shared bin-picker modal (returns a Promise<{bin, binLocation}|null>)
+function _pickPartsBin({ title, subtitle, selected, selectedLocation, allowVendor, excludeCurrent } = {}) {
   return new Promise((resolve) => {
     const options = PARTS_BINS.filter(b => allowVendor || b.id !== 'VENDOR');
     const overlay = document.createElement('div');
@@ -23345,11 +23393,12 @@ function _pickPartsBin({ title, subtitle, selected, allowVendor, excludeCurrent 
     const rows = options.map(b => {
       const isCurrent = b.id === selected;
       const disabled = excludeCurrent && isCurrent;
-      return `<button class="parts-bin-opt${isCurrent ? ' parts-bin-opt-current' : ''}" data-bin="${b.id}" ${disabled ? 'disabled' : ''} style="--bin-accent:${b.accent};">
+      return `<button class="parts-bin-opt${isCurrent ? ' parts-bin-opt-current parts-bin-opt-selected' : ''}" data-bin="${b.id}" ${disabled ? 'disabled' : ''} style="--bin-accent:${b.accent};">
           <span class="parts-bin-opt-label">${b.label}</span>
           ${isCurrent ? '<span class="parts-bin-opt-tag">Current</span>' : ''}
         </button>`;
     }).join('');
+    const initialBin = (!excludeCurrent && selected) ? selected : '';
     overlay.innerHTML = `
       <div class="modal-box parts-bin-box">
         <div class="parts-bin-header">
@@ -23360,8 +23409,21 @@ function _pickPartsBin({ title, subtitle, selected, allowVendor, excludeCurrent 
           <button class="modal-close parts-bin-close" aria-label="Close">&times;</button>
         </div>
         <div class="parts-bin-list">${rows}</div>
+        <div class="parts-bin-location-row">
+          <label for="parts-bin-location-input" class="parts-bin-location-label">📌 Where exactly? <span class="hint" style="font-weight:400;">(e.g. Black bin inside van, Office shelf, Under desk)</span></label>
+          <input id="parts-bin-location-input" type="text" class="parts-bin-location-input" maxlength="80" placeholder="Optional — describe the spot" value="${escapeHtml(selectedLocation || '')}">
+        </div>
+        <div class="parts-bin-footer">
+          <button class="btn btn-outline parts-bin-cancel">Cancel</button>
+          <button class="btn btn-primary parts-bin-confirm" disabled>Confirm</button>
+        </div>
       </div>`;
     document.body.appendChild(overlay);
+    let chosenBin = initialBin;
+    const confirmBtn = overlay.querySelector('.parts-bin-confirm');
+    const locInput = overlay.querySelector('#parts-bin-location-input');
+    const updateConfirm = () => { confirmBtn.disabled = !chosenBin; };
+    updateConfirm();
     function done(val) {
       overlay.remove();
       resolve(val);
@@ -23370,11 +23432,24 @@ function _pickPartsBin({ title, subtitle, selected, allowVendor, excludeCurrent 
       if (e.target === overlay) done(null);
     });
     overlay.querySelector('.parts-bin-close').addEventListener('click', () => done(null));
+    overlay.querySelector('.parts-bin-cancel').addEventListener('click', () => done(null));
     overlay.querySelectorAll('.parts-bin-opt').forEach(btn => {
       btn.addEventListener('click', () => {
         if (btn.disabled) return;
-        done(btn.getAttribute('data-bin'));
+        chosenBin = btn.getAttribute('data-bin');
+        overlay.querySelectorAll('.parts-bin-opt').forEach(x => x.classList.remove('parts-bin-opt-selected'));
+        btn.classList.add('parts-bin-opt-selected');
+        updateConfirm();
+        // Focus the location field so user can immediately type "Black bin inside van"
+        setTimeout(() => { try { locInput.focus(); } catch(_){} }, 30);
       });
+    });
+    locInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && chosenBin) { e.preventDefault(); confirmBtn.click(); }
+    });
+    confirmBtn.addEventListener('click', () => {
+      if (!chosenBin) return;
+      done({ bin: chosenBin, binLocation: (locInput.value || '').trim() });
     });
   });
 }

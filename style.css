@@ -10482,6 +10482,11 @@ input[type="checkbox"], input[type="radio"] {
   cursor: not-allowed;
 }
 .parts-bin-opt-label { flex: 1; }
+.parts-bin-opt-selected {
+  background: var(--primary-tint) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px var(--primary-tint);
+}
 .parts-bin-opt-tag {
   font-size: 0.72rem;
   font-weight: 700;
@@ -10491,6 +10496,55 @@ input[type="checkbox"], input[type="radio"] {
   border-radius: 999px;
   text-transform: uppercase;
 }
+
+.parts-bin-location-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.parts-bin-location-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+}
+.parts-bin-location-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  background: var(--surface);
+  color: var(--text);
+  min-height: 42px;
+}
+.parts-bin-location-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-tint);
+}
+.parts-bin-footer {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.pq-bin-location {
+  font-size: 0.82rem;
+  color: #6d28d9;
+  background: #f5f3ff;
+  border-left: 3px solid #7c3aed;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pq-bin-location span { color: #4c1d95; }
 
 /* Parts-return alert modal fired from vehicleReturned */
 .parts-return-alert-overlay { z-index: 1200; }
