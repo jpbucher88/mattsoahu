@@ -8228,6 +8228,31 @@ function _perfDescribe(d) {
 // Key "productivity" actions — these are what we highlight in staff cards
 const PERF_KEY_ACTIONS = ['photo_uploaded', 'vehicle_returned', 'vehicle_cleaned', 'vehicle_quick_wipe', 'inspection_complete', 'vehicle_move_completed', 'flag_not_returned', 'complete_task'];
 
+// Current view mode for the Team Performance tab: 'day' | 'week' | 'month'
+let perfViewMode = 'day';
+
+window.setPerfView = function(mode) {
+  if (mode !== 'day' && mode !== 'week' && mode !== 'month') return;
+  perfViewMode = mode;
+  document.querySelectorAll('.perf-view-btn').forEach(b => {
+    b.classList.toggle('perf-view-active', b.dataset.perfView === mode);
+  });
+  loadPerformanceReport();
+};
+
+// Returns the UTC Date object for HST-midnight on the given YYYY-MM-DD string.
+// HST = UTC-10, no DST — so 00:00 HST = 10:00 UTC of the same date.
+function _perfHstMidnightUtc(dateStr) {
+  return new Date(dateStr + 'T00:00:00-10:00');
+}
+
+// Format YYYY-MM-DD offset by N days (positive or negative)
+function _perfShiftDate(dateStr, offsetDays) {
+  const d = _perfHstMidnightUtc(dateStr);
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+}
+
 window.loadPerformanceReport = async function() {
   const cardsEl    = $('perf-summary-cards');
   const feedEl     = $('perf-activity-feed');
@@ -8245,15 +8270,24 @@ window.loadPerformanceReport = async function() {
   if (timelineEl) timelineEl.style.display = 'none';
   if (countEl)    countEl.textContent = '';
 
-  try {
-    const snap = await db.collection('userActivity').orderBy('at', 'desc').limit(2000).get();
-    let allItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  // Compute the date range for the selected view mode.
+  // Week = 7 days ending on dateVal; Month = 30 days ending on dateVal.
+  const spanDays = perfViewMode === 'week' ? 7 : perfViewMode === 'month' ? 30 : 1;
+  const startDate = _perfShiftDate(dateVal, -(spanDays - 1));    // inclusive start (YYYY-MM-DD)
+  const endDate   = dateVal;                                     // inclusive end
+  const rangeStartTs = _perfHstMidnightUtc(startDate);           // >= this
+  const rangeEndTs   = _perfHstMidnightUtc(_perfShiftDate(endDate, 1)); // < next-day midnight
 
-    // Filter to selected date in Hawaii time
-    const dayItems = allItems.filter(d => {
-      if (!d.at) return false;
-      return new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }) === dateVal;
-    });
+  try {
+    // Query only the requested date range so history isn't capped by a global top-N limit.
+    // Requires the single-field ascending index on `at` (created automatically by Firestore).
+    const snap = await db.collection('userActivity')
+      .where('at', '>=', rangeStartTs)
+      .where('at', '<',  rangeEndTs)
+      .orderBy('at', 'desc')
+      .limit(10000)
+      .get();
+    const dayItems = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     // Populate user filter from ALL users seen today (before user-filter)
     const userSelectEl = $('perf-filter-user');
@@ -8272,7 +8306,16 @@ window.loadPerformanceReport = async function() {
     const items = userFilter ? dayItems.filter(d => (d.userName || '') === userFilter) : dayItems;
 
     const isToday = dateVal === todayDateString();
-    const dateFmt = isToday ? 'Today' : new Date(dateVal + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    const _fmtShort = (s) => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const _fmtLong  = (s) => new Date(s + 'T12:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+    let dateFmt;
+    if (perfViewMode === 'day') {
+      dateFmt = isToday ? 'Today' : _fmtLong(dateVal);
+    } else if (perfViewMode === 'week') {
+      dateFmt = `Week of ${_fmtShort(startDate)} – ${_fmtShort(endDate)}`;
+    } else {
+      dateFmt = `30 days · ${_fmtShort(startDate)} – ${_fmtShort(endDate)}`;
+    }
 
     if (!items.length) {
       if (heroEl) heroEl.style.display = 'none';
@@ -8285,13 +8328,15 @@ window.loadPerformanceReport = async function() {
       return;
     }
 
-    // ── Group photo uploads: one entry per (user, plate) session ──
+    // ── Group photo uploads: one entry per (user, plate, day) session ──
     // Raw items keep all photos for the workflow chain; displayItems collapses them
     const photoGroups = {};
     items.filter(d => d.action === 'photo_uploaded').forEach(d => {
       const det = d.details || {};
       const plate = (typeof det === 'object' ? det.plate : null) || '';
-      const key = `${d.userName || ''}___${plate}`;
+      // Include the calendar day in the key so week/month views don't merge sessions from different days
+      const day = d.at ? new Date(d.at.toDate()).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE }) : '';
+      const key = `${d.userName || ''}___${plate}___${day}`;
       if (!photoGroups[key]) {
         photoGroups[key] = { ...d, _photoCount: 1 };
       } else {
@@ -8411,8 +8456,9 @@ window.loadPerformanceReport = async function() {
       </div>`;
     }
 
-    // ── Timeclock data for this date (admin-only) ─────────────────
+    // ── Timeclock data for this date (admin-only, day view only) ──
     const nameToTcData = {};
+    if (perfViewMode === 'day') {
     try {
       const tcSnap = await db.collection('timeclock').where('date', '==', dateVal).get();
       const uidToName = {};
@@ -8436,6 +8482,7 @@ window.loadPerformanceReport = async function() {
         nameToTcData[name] = { ms: completedMs + activeMs, active: !!tc.activeSession, uid: tc.uid };
       });
     } catch(tcErr) { console.warn('Timeclock load in perf report:', tcErr); }
+    } // end if perfViewMode === 'day'
 
     // ── Per-user breakdown — compact scorecard rows ──────────────
     window._perfUserItems = {};
@@ -8559,10 +8606,10 @@ window.loadPerformanceReport = async function() {
       cardsEl.appendChild(tcDiv);
     }
 
-    // ── Vehicle turnaround (collapsed) ────────────────────────────
+    // ── Vehicle turnaround (day view only — timing per vehicle is a same-day concept) ──
     const turnaroundEl = $('perf-turnaround-wrap');
     const turnaroundBodyEl = $('perf-turnaround-body');
-    if (platesSorted.length && turnaroundEl && turnaroundBodyEl) {
+    if (perfViewMode === 'day' && platesSorted.length && turnaroundEl && turnaroundBodyEl) {
       turnaroundEl.style.display = '';
       turnaroundBodyEl.innerHTML = platesSorted.map(plate => {
         const events = byPlate[plate];
@@ -8605,20 +8652,26 @@ window.loadPerformanceReport = async function() {
     const countEl2 = $('perf-feed-count');
     if (countEl2) countEl2.textContent = `(${displayItems.length})`;
     if (feedEl2) {
-      feedEl2.innerHTML = displayItems.map((d, i) => {
+      // In week/month view, cap the log at 500 rows to keep the DOM light
+      const logItems = perfViewMode === 'day' ? displayItems : displayItems.slice(0, 500);
+      const showDate = perfViewMode !== 'day';
+      feedEl2.innerHTML = logItems.map((d, i) => {
         const meta = PERF_ACTION_LABELS[d.action] || { icon: '▪️' };
-        const time = d.at ? new Date(d.at.toDate()).toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '?';
+        const dt = d.at ? new Date(d.at.toDate()) : null;
+        const time = dt ? dt.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true, timeZone:APP_TIMEZONE }) : '?';
+        const dateLabel = showDate && dt ? dt.toLocaleDateString('en-US', { month:'short', day:'numeric', timeZone:APP_TIMEZONE }) : '';
         const desc = (d.action === 'photo_uploaded' && d._photoCount > 1)
           ? `Uploaded ${d._photoCount} photos · ${(d.details||{}).plate || ''}`
           : _perfDescribe(d);
         const bg = i % 2 === 0 ? '#fff' : '#f9fafb';
+        const timeCell = dateLabel ? `${dateLabel} · ${time}` : time;
         return `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;background:${bg};font-size:0.8rem;">
           <span style="min-width:18px;text-align:center;">${meta.icon}</span>
           <span style="font-weight:600;color:#374151;min-width:80px;">${escapeHtml(d.userName||'?')}</span>
           <span style="color:#111827;flex:1;">${escapeHtml(desc)}</span>
-          <span style="color:#9ca3af;white-space:nowrap;">${time}</span>
+          <span style="color:#9ca3af;white-space:nowrap;">${timeCell}</span>
         </div>`;
-      }).join('');
+      }).join('') + (logItems.length < displayItems.length ? `<div style="text-align:center;padding:8px;font-size:0.78rem;color:#9ca3af;">Showing first ${logItems.length} of ${displayItems.length} entries</div>` : '');
     }
 
   } catch (e) {

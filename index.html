@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926f">
+  <link rel="stylesheet" href="style.css?v=20260926g">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -81,31 +81,39 @@
       <button id="btn-tasks" class="task-alert-btn ops-hub-btn" style="display:none;" title="Operations Hub" onclick="openTaskPanel()">
         <span class="task-alert-icon ops-hub-dart-icon">🎯</span>
         <span id="task-alert-count" class="task-alert-count count-zero">0</span>
+        <span class="task-alert-label">Tasks</span>
       </button>
       <button id="btn-mailbox" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
         <span class="task-alert-icon">📬</span>
         <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
+        <span class="task-alert-label">Mail</span>
       </button>
       <button id="btn-timeclock" class="task-alert-btn" style="display:none;" title="Time Clock" onclick="openTimeClock()">
         <span class="task-alert-icon">⏱️</span>
         <span id="tc-active-dot" class="task-alert-count count-zero"></span>
+        <span class="task-alert-label">Clock</span>
       </button>
 
       <button id="btn-learning" class="task-alert-btn" title="Learning Center" onclick="openLearningPage()">
         <span class="task-alert-icon">🎓</span>
+        <span class="task-alert-label">Learn</span>
       </button>
       <button id="btn-finance" class="task-alert-btn" title="Finance" onclick="openFinance()" style="display:none;">
         <span class="task-alert-icon">💵</span>
+        <span class="task-alert-label">Finance</span>
       </button>
       <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
         <span class="task-alert-icon">🔧</span>
+        <span class="task-alert-label">Repairs</span>
       </button>
       <button id="btn-crm-dash" class="task-alert-btn" title="CRM — Sales Dashboard" onclick="openCrmDash()" style="display:none;">
         <span class="task-alert-icon">🤝</span>
         <span id="crm-alert-count" class="task-alert-count count-zero">0</span>
+        <span class="task-alert-label">CRM</span>
       </button>
       <button id="btn-locations" class="task-alert-btn" title="Locations">
         <span class="task-alert-icon">📍</span>
+        <span class="task-alert-label">Locations</span>
       </button>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
@@ -176,40 +184,6 @@
     <main class="dashboard-main">
       <!-- Pending photo uploads indicator (shown when photos are stuck in IDB from a backgrounded session) -->
       <div id="dashboard-pending-uploads" class="dashboard-pending-uploads" style="display:none;"></div>
-
-      <!-- Live KPI strip — today's state at a glance (clickable chips) -->
-      <section id="kpi-strip" class="kpi-strip" aria-label="Today at a glance">
-        <button class="kpi-chip kpi-chip-urgent" data-kpi="urgent" type="button" title="View urgent tasks">
-          <span class="kpi-icon">🚨</span>
-          <span class="kpi-num" id="kpi-urgent">0</span>
-          <span class="kpi-label">Urgent</span>
-        </button>
-        <button class="kpi-chip kpi-chip-clean" data-kpi="cleaning" type="button" title="Vehicles needing cleaning">
-          <span class="kpi-icon">🧹</span>
-          <span class="kpi-num" id="kpi-cleaning">0</span>
-          <span class="kpi-label">Clean</span>
-        </button>
-        <button class="kpi-chip kpi-chip-photo" data-kpi="photos" type="button" title="Vehicles needing photos">
-          <span class="kpi-icon">📷</span>
-          <span class="kpi-num" id="kpi-photos">0</span>
-          <span class="kpi-label">Photos</span>
-        </button>
-        <button class="kpi-chip kpi-chip-road" data-kpi="road" type="button" title="Vehicles on the road">
-          <span class="kpi-icon">🚗</span>
-          <span class="kpi-num" id="kpi-road">0</span>
-          <span class="kpi-label">On Road</span>
-        </button>
-        <button class="kpi-chip kpi-chip-parts" data-kpi="parts" type="button" title="Parts arrived — ready to install">
-          <span class="kpi-icon">📦</span>
-          <span class="kpi-num" id="kpi-parts">0</span>
-          <span class="kpi-label">Parts</span>
-        </button>
-        <button class="kpi-chip kpi-chip-compliance" data-kpi="compliance" type="button" title="Compliance items due or expired">
-          <span class="kpi-icon">📋</span>
-          <span class="kpi-num" id="kpi-compliance">0</span>
-          <span class="kpi-label">Compliance</span>
-        </button>
-      </section>
 
       <!-- Urgent Notifications Banner -->
       <section id="urgent-banner" class="card urgent-banner" style="display:none;">
@@ -1867,6 +1841,12 @@
             <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
             <button class="btn btn-sm btn-primary" onclick="loadPerformanceReport()">Load</button>
           </div>
+          <!-- View mode toggle: Day / Week / Month -->
+          <div id="perf-view-toggle" role="tablist" aria-label="View range" style="display:inline-flex;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:3px;margin-bottom:10px;gap:2px;">
+            <button type="button" role="tab" data-perf-view="day"   class="perf-view-btn perf-view-active" onclick="setPerfView('day')">Day</button>
+            <button type="button" role="tab" data-perf-view="week"  class="perf-view-btn" onclick="setPerfView('week')">Week</button>
+            <button type="button" role="tab" data-perf-view="month" class="perf-view-btn" onclick="setPerfView('month')">Month</button>
+          </div>
           <!-- Quick-date shortcuts -->
           <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
             <button class="btn btn-sm btn-outline" onclick="perfJumpDate(0)">Today</button>
@@ -3184,7 +3164,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260905a"></script>
+  <script src="app.js?v=20260926g"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

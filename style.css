@@ -2298,16 +2298,40 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px 8px;
-  margin-left: 8px;
-  font-size: 1.4rem;
+  padding: 4px 10px;
+  margin-left: 4px;
   line-height: 1;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  /* Nav-bar style: icon stacked over a small label */
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 56px;
+  border-radius: 8px;
+  color: #475569;
+  transition: background 0.15s, color 0.15s;
 }
+.task-alert-btn:hover {
+  background: #f1f5f9;
+  color: #1d4ed8;
+}
+.task-alert-btn .task-alert-icon {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+.task-alert-btn .task-alert-label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  white-space: nowrap;
+}
+.task-alert-btn:hover .task-alert-label { color: #1d4ed8; }
 .task-alert-count {
   position: absolute;
-  top: -4px; right: -4px;
+  top: 0; right: 2px;
   background: #dc2626;
   color: #fff;
   font-size: 0.7rem;
@@ -10650,6 +10674,25 @@ input[type="checkbox"], input[type="radio"] {
   .pq-actions .btn-sm { flex: 1; min-width: calc(50% - 3px); }
   .parts-return-row { flex-direction: column; align-items: stretch; }
   .parts-return-actions { justify-content: flex-end; }
+}
+
+/* ============ Team Performance — Day / Week / Month toggle ============ */
+.perf-view-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.perf-view-btn:hover { color: #1d4ed8; }
+.perf-view-btn.perf-view-active {
+  background: #fff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
 }
 
 /* ================================================================
