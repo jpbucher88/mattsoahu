@@ -25400,10 +25400,16 @@ function _injectLagoonAlerts() {
       const targetId = btn.getAttribute('data-mbn-target');
       const target = document.getElementById(targetId);
       if (!target) return;
-      // If the header button is display:none (feature not unlocked for this user),
-      // silently ignore instead of clicking a hidden button.
-      const cs = window.getComputedStyle(target);
-      if (cs.display === 'none' && targetId !== 'brand-home') {
+      // Role gating sets inline style.display = 'none' when a feature is locked.
+      // We deliberately do NOT use getComputedStyle here because the desktop
+      // header is hidden on mobile via a media query — computed display would be
+      // 'none' for every header button on a phone and refuse every click.
+      const inlineDisplay = target.style.display;
+      // Also walk up the tree — for buttons nested in header-menu-wrap the wrapper
+      // itself may be inline-hidden when the whole group is locked.
+      let wrap = target.closest('.header-menu-wrap');
+      const wrapInlineHidden = wrap && wrap.style.display === 'none';
+      if ((inlineDisplay === 'none' || wrapInlineHidden) && targetId !== 'brand-home') {
         try { window.toast && toast('Not available for your account', 'info'); } catch (_) {}
         closeMoreSheet();
         return;
