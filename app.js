@@ -4032,6 +4032,8 @@ async function openVehiclePage(vid) {
     if (newBtn) newBtn.style.display = canUpload ? '' : 'none';
     if (typeof loadVehicleInspections === 'function') loadVehicleInspections(selectedVehicle.id);
   }
+  // Last known Oil Change + Inspection milestones bar (above the maintenance form)
+  if (typeof renderLastMilestonesBar === 'function') renderLastMilestonesBar(selectedVehicle.id);
   // Load guest tickets for this vehicle
   if (typeof _loadVehicleTickets === 'function') {
     _loadVehicleTickets(selectedVehicle.id);
@@ -9782,6 +9784,375 @@ window.printCurrentInspection = function() {
   w.document.open(); w.document.write(html); w.document.close();
 };
 
+// ================================================================
+// FLEET-WIDE INSPECTIONS TAB (Maintenance Dashboard)
+// One row per vehicle with last-inspection status + Run/Schedule actions
+// ================================================================
+let _inspFleetFilter = 'all';
+let _inspFleetData = []; // populated by loadInspectionsTab
+
+window.setInspFleetFilter = function(key, btn) {
+  _inspFleetFilter = key;
+  document.querySelectorAll('#insp-fleet-filter .maint-chip').forEach(c => c.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  _renderInspFleetList();
+};
+
+async function loadInspectionsTab() {
+  const listEl = document.getElementById('insp-fleet-list');
+  const sumEl  = document.getElementById('insp-fleet-summary');
+  if (!listEl) return;
+  listEl.innerHTML = '<p class="hint" style="padding:20px;text-align:center;">Loading…</p>';
+
+  try {
+    // Get the most recent inspection per vehicle
+    const snap = await db.collection('vehicleInspections')
+      .orderBy('inspectionDate', 'desc')
+      .limit(1000)
+      .get();
+    const latestByVid = {};
+    snap.forEach(d => {
+      const data = d.data();
+      if (!data.vehicleId) return;
+      if (!latestByVid[data.vehicleId]) latestByVid[data.vehicleId] = { id: d.id, ...data };
+    });
+
+    // Also fetch scheduled inspection follow-ups so we can show "scheduled Nov 12"
+    const notesSnap = await db.collection('vehicleNotes')
+      .where('sourceType', '==', 'inspection')
+      .where('done', '==', false)
+      .get();
+    const notesByVid = {};
+    notesSnap.forEach(d => {
+      const data = d.data();
+      if (!data.vehicleId) return;
+      if (!notesByVid[data.vehicleId] || (data.dueDate < (notesByVid[data.vehicleId].dueDate || '9999'))) {
+        notesByVid[data.vehicleId] = { id: d.id, ...data };
+      }
+    });
+
+    const today = todayDateString();
+    _inspFleetData = vehiclesCache.map(v => {
+      const last = latestByVid[v.id] || null;
+      const note = notesByVid[v.id] || null;
+      let status = 'never', daysUntilDue = null, dueDate = null;
+      if (last) {
+        dueDate = last.nextDueDate || note?.dueDate || null;
+        if (dueDate) {
+          const dueMs = new Date(dueDate + 'T00:00:00').getTime();
+          const nowMs = new Date(today + 'T00:00:00').getTime();
+          daysUntilDue = Math.round((dueMs - nowMs) / 86400000);
+          if (daysUntilDue < 0) status = 'overdue';
+          else if (daysUntilDue <= 15) status = 'due-soon';
+          else status = 'ok';
+        } else status = 'ok';
+      }
+      return { vehicle: v, last, note, status, daysUntilDue, dueDate };
+    });
+
+    _renderInspFleetList();
+  } catch (e) {
+    console.error('Load inspections tab error:', e);
+    listEl.innerHTML = '<p class="hint" style="padding:20px;text-align:center;color:#dc2626;">Error loading inspections.</p>';
+  }
+}
+
+function _renderInspFleetList() {
+  const listEl = document.getElementById('insp-fleet-list');
+  const sumEl  = document.getElementById('insp-fleet-summary');
+  if (!listEl) return;
+  const filtered = _inspFleetFilter === 'all'
+    ? _inspFleetData
+    : _inspFleetData.filter(r => r.status === _inspFleetFilter);
+
+  const counts = _inspFleetData.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+  if (sumEl) {
+    sumEl.innerHTML = `📊 <strong>${_inspFleetData.length}</strong> vehicles · ` +
+      `<span style="color:#dc2626;">🔴 ${counts.overdue || 0} overdue</span> · ` +
+      `<span style="color:#d97706;">🟡 ${counts['due-soon'] || 0} due soon</span> · ` +
+      `<span style="color:#9ca3af;">⚠️ ${counts.never || 0} never inspected</span> · ` +
+      `<span style="color:#16a34a;">🟢 ${counts.ok || 0} on schedule</span>`;
+  }
+
+  if (filtered.length === 0) {
+    listEl.innerHTML = '<p class="hint" style="padding:20px;text-align:center;">No vehicles match this filter.</p>';
+    return;
+  }
+
+  // Sort: overdue first, then due-soon, then never, then ok — inside each group by daysUntilDue ascending
+  const rank = { overdue: 0, 'due-soon': 1, never: 2, ok: 3 };
+  filtered.sort((a, b) => (rank[a.status] - rank[b.status]) || ((a.daysUntilDue ?? 9999) - (b.daysUntilDue ?? 9999)));
+
+  const canRun = currentUserRole === 'admin' || currentUserRole === 'manager';
+  listEl.innerHTML = filtered.map(r => {
+    const v = r.vehicle;
+    const last = r.last;
+    const badge = r.status === 'overdue'
+      ? `<span class="insp-badge insp-badge-fail">${Math.abs(r.daysUntilDue)}d OVERDUE</span>`
+      : r.status === 'due-soon'
+        ? `<span class="insp-badge insp-badge-inc">Due in ${r.daysUntilDue}d</span>`
+        : r.status === 'never'
+          ? `<span class="insp-badge insp-badge-inc">NEVER</span>`
+          : `<span class="insp-badge insp-badge-pass">${r.daysUntilDue}d</span>`;
+    const lastLine = last
+      ? `Last: <strong>${last.inspectionDate}</strong> · ${last.overallStatus?.toUpperCase() || 'INCOMPLETE'} (${last.failCount || 0} fail)`
+      : '<em>No inspection on record</em>';
+    const dueLine = r.dueDate ? `<br>Next due: <strong>${r.dueDate}</strong>` : '';
+    const runBtn = canRun
+      ? `<button class="btn btn-sm btn-primary" onclick="_openInspFromMaintDash('${v.id}')">🔍 Run</button>`
+      : '';
+    const schedBtn = canRun
+      ? `<button class="btn btn-sm btn-outline" onclick="assignInspection('${v.id}')" title="Set a due date to assign this inspection">📅 Schedule</button>`
+      : '';
+    return `<div class="insp-fleet-row insp-fleet-${r.status}">
+      <div class="insp-fleet-main">
+        <div class="insp-fleet-plate">🚗 <strong>${escapeHtml(v.plate)}</strong> <span style="color:#9ca3af;font-size:0.8rem;">${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span></div>
+        <div class="insp-fleet-meta">${lastLine}${dueLine}</div>
+      </div>
+      ${badge}
+      <div class="insp-fleet-actions">${runBtn} ${schedBtn}</div>
+    </div>`;
+  }).join('');
+}
+
+window._openInspFromMaintDash = function(vehicleId) {
+  closeMaintenanceDash();
+  setTimeout(() => {
+    openVehiclePage(vehicleId);
+    setTimeout(() => openBiMonthlyInspection(vehicleId), 500);
+  }, 100);
+};
+
+// Called from openMaintenanceDash — if any inspections are overdue, drop a
+// small banner above the tab body pointing to the Inspections tab. Non-blocking.
+async function _checkOverdueInspections() {
+  try {
+    const notesSnap = await db.collection('vehicleNotes')
+      .where('sourceType', '==', 'inspection')
+      .where('done', '==', false)
+      .get();
+    const today = todayDateString();
+    let overdueCount = 0;
+    notesSnap.forEach(d => {
+      const data = d.data();
+      if (data.dueDate && data.dueDate < today) overdueCount++;
+    });
+    // Also count vehicles that have never been inspected
+    const inspSnap = await db.collection('vehicleInspections').limit(1000).get();
+    const inspectedVids = new Set();
+    inspSnap.forEach(d => { if (d.data().vehicleId) inspectedVids.add(d.data().vehicleId); });
+    const neverCount = vehiclesCache.filter(v => !inspectedVids.has(v.id)).length;
+
+    const body = document.querySelector('.maint-dash-body');
+    if (!body) return;
+    let banner = document.getElementById('maint-insp-alert-banner');
+    const total = overdueCount + neverCount;
+    if (total === 0) { if (banner) banner.remove(); return; }
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.id = 'maint-insp-alert-banner';
+      banner.className = 'maint-insp-alert';
+      body.prepend(banner);
+    }
+    banner.innerHTML = `<div>
+        <strong>🔍 Turo Inspections need attention</strong>
+        <div style="font-size:0.82rem;margin-top:2px;">
+          ${overdueCount > 0 ? `${overdueCount} overdue` : ''}${overdueCount > 0 && neverCount > 0 ? ' · ' : ''}${neverCount > 0 ? `${neverCount} never inspected` : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-sm btn-primary" onclick="var b=document.querySelector('[data-mtab=mtab-inspections]');if(b)switchMaintTab('mtab-inspections',b);">Open Inspections →</button>
+        <button class="btn btn-sm btn-outline" onclick="document.getElementById('maint-insp-alert-banner').remove()">✕</button>
+      </div>`;
+  } catch (e) { console.warn('Overdue inspection check failed:', e); }
+}
+
+// Schedule an inspection — creates or updates the auto-follow-up dueDate
+window.assignInspection = async function(vehicleId) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  const suggest = new Date(); suggest.setDate(suggest.getDate() + 7);
+  const suggestStr = suggest.toISOString().slice(0, 10);
+  const input = window.prompt(`Assign inspection due date for ${v?.plate || 'vehicle'} (YYYY-MM-DD):`, suggestStr);
+  if (!input) return;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input)) { toast('Enter date as YYYY-MM-DD.', 'warning'); return; }
+  try {
+    const existing = await db.collection('vehicleNotes')
+      .where('vehicleId', '==', vehicleId)
+      .where('sourceType', '==', 'inspection')
+      .where('done', '==', false)
+      .limit(1)
+      .get();
+    if (!existing.empty) {
+      await existing.docs[0].ref.update({ dueDate: input });
+    } else {
+      await db.collection('vehicleNotes').add({
+        vehicleId,
+        text: `🔍 Bi-Monthly Turo Inspection due (every 2 Months)`,
+        isFollowUp: true,
+        done: false,
+        urgent: false,
+        dueDate: input,
+        sourceType: 'inspection',
+        taskStatus: 'maintenance',
+        maintenanceService: 'Bi-Monthly Inspection',
+        autoCreated: true,
+        intervalType: 'time',
+        intervalMonths: 2,
+        workOrder: true,
+        repairStatus: 'open',
+        repairPriority: 'monitor',
+        scheduledDate: null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdByName: (currentUser?.displayName || currentUser?.email || 'Manager'),
+      });
+    }
+    toast(`✅ Inspection scheduled for ${input}`, 'success');
+    loadInspectionsTab();
+  } catch (e) {
+    console.error('Assign inspection error:', e);
+    toast('Failed to schedule.', 'error');
+  }
+};
+
+// Redistribute existing inspection due dates so no calendar day carries more than
+// 2 inspections. Vehicles with no scheduled inspection get a new date created.
+window.spreadInspectionsAcrossMonth = async function() {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  const overdueAndDue = _inspFleetData.filter(r => r.status === 'overdue' || r.status === 'due-soon' || r.status === 'never');
+  if (overdueAndDue.length === 0) { toast('Nothing to spread — all vehicles are on schedule.', 'info'); return; }
+  const ok = await confirm('Auto-Spread Inspections', `${overdueAndDue.length} vehicles need attention. Spread them across the next 30 days (max 2 per day)?`);
+  if (!ok) return;
+
+  // Group vehicles by preferred slot (business days, max 2/day)
+  const startDate = new Date();
+  const perDay = 2;
+  let slotIndex = 0;
+  try {
+    for (const r of overdueAndDue) {
+      const dayOffset = Math.floor(slotIndex / perDay);
+      const target = new Date(startDate);
+      target.setDate(target.getDate() + dayOffset);
+      const dueStr = target.toISOString().slice(0, 10);
+      slotIndex++;
+
+      // Upsert the follow-up note
+      const existing = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', r.vehicle.id)
+        .where('sourceType', '==', 'inspection')
+        .where('done', '==', false)
+        .limit(1)
+        .get();
+      if (!existing.empty) {
+        await existing.docs[0].ref.update({ dueDate: dueStr });
+      } else {
+        await db.collection('vehicleNotes').add({
+          vehicleId: r.vehicle.id,
+          text: `🔍 Bi-Monthly Turo Inspection due (every 2 Months)`,
+          isFollowUp: true,
+          done: false,
+          urgent: false,
+          dueDate: dueStr,
+          sourceType: 'inspection',
+          taskStatus: 'maintenance',
+          maintenanceService: 'Bi-Monthly Inspection',
+          autoCreated: true,
+          intervalType: 'time',
+          intervalMonths: 2,
+          workOrder: true,
+          repairStatus: 'open',
+          repairPriority: 'monitor',
+          scheduledDate: null,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdByName: (currentUser?.displayName || currentUser?.email || 'System'),
+        });
+      }
+    }
+    toast(`✅ Spread ${overdueAndDue.length} inspections across the next ${Math.ceil(overdueAndDue.length/perDay)} days`, 'success');
+    loadInspectionsTab();
+  } catch (e) {
+    console.error('Spread error:', e);
+    toast('Failed to spread inspections.', 'error');
+  }
+};
+
+// ================================================================
+// LAST KNOWN MILESTONES (Oil Change + Inspection) on the vehicle page
+// ================================================================
+async function renderLastMilestonesBar(vehicleId) {
+  const bar = document.getElementById('last-milestones-bar');
+  if (!bar || !vehicleId) return;
+  bar.style.display = 'none';
+  bar.innerHTML = '';
+  try {
+    const [maintSnap, inspSnap] = await Promise.all([
+      db.collection('maintenance').where('vehicleId', '==', vehicleId).orderBy('date', 'desc').limit(30).get(),
+      db.collection('vehicleInspections').where('vehicleId', '==', vehicleId).orderBy('inspectionDate', 'desc').limit(1).get(),
+    ]);
+
+    // Find most recent oil change
+    let oil = null;
+    maintSnap.forEach(d => {
+      const data = d.data();
+      const t = (data.serviceType || '').toLowerCase();
+      if (!oil && t.includes('oil')) oil = data;
+    });
+    const insp = inspSnap.docs[0]?.data() || null;
+    if (!oil && !insp) return;
+
+    const today = todayDateString();
+    const _daysAgo = (dateStr) => {
+      const then = new Date(dateStr + 'T00:00:00').getTime();
+      const now = new Date(today + 'T00:00:00').getTime();
+      return Math.round((now - then) / 86400000);
+    };
+    const _milesAgo = (mi) => {
+      const cur = (vehiclesCache.find(x => x.id === vehicleId) || {}).mileage || 0;
+      if (!cur || !mi) return null;
+      return cur - mi;
+    };
+
+    let html = '';
+    if (oil) {
+      const days = _daysAgo(oil.date);
+      const milesAgo = _milesAgo(oil.mileage);
+      const overdueClass = days > 90 ? 'lmb-warn' : '';
+      html += `<div class="lmb-card ${overdueClass}">
+        <div class="lmb-title">🛢 Last Oil Change</div>
+        <div class="lmb-value">${escapeHtml(oil.date)}</div>
+        <div class="lmb-meta">${days}d ago${oil.mileage ? ' · at ' + oil.mileage.toLocaleString() + ' mi' : ''}${milesAgo !== null ? ' · <strong>' + milesAgo.toLocaleString() + ' mi ago</strong>' : ''}</div>
+      </div>`;
+    } else {
+      html += `<div class="lmb-card lmb-warn">
+        <div class="lmb-title">🛢 Last Oil Change</div>
+        <div class="lmb-value">—</div>
+        <div class="lmb-meta">No oil change on record</div>
+      </div>`;
+    }
+    if (insp) {
+      const days = _daysAgo(insp.inspectionDate);
+      const statusText = (insp.overallStatus || 'incomplete').toUpperCase();
+      const dueOverdue = insp.nextDueDate && insp.nextDueDate < today;
+      const overdueClass = days > 60 || dueOverdue ? 'lmb-warn' : '';
+      html += `<div class="lmb-card ${overdueClass}" onclick="if(document.getElementById('inspection-section')) document.getElementById('inspection-section').scrollIntoView({behavior:'smooth'})" style="cursor:pointer;">
+        <div class="lmb-title">🔍 Last Inspection</div>
+        <div class="lmb-value">${escapeHtml(insp.inspectionDate)} <span style="font-size:0.72rem;color:${insp.overallStatus==='pass'?'#16a34a':insp.overallStatus==='fail'?'#dc2626':'#92400e'};font-weight:800;">${statusText}</span></div>
+        <div class="lmb-meta">${days}d ago${insp.nextDueDate ? ' · next due ' + insp.nextDueDate + (dueOverdue ? ' <strong style="color:#dc2626;">OVERDUE</strong>' : '') : ''}</div>
+      </div>`;
+    } else {
+      html += `<div class="lmb-card lmb-warn" onclick="if(document.getElementById('inspection-section')) document.getElementById('inspection-section').scrollIntoView({behavior:'smooth'})" style="cursor:pointer;">
+        <div class="lmb-title">🔍 Last Inspection</div>
+        <div class="lmb-value">—</div>
+        <div class="lmb-meta">Never inspected — run the bi-monthly check</div>
+      </div>`;
+    }
+    bar.innerHTML = html;
+    bar.style.display = 'flex';
+  } catch (e) {
+    console.warn('Last milestones bar error:', e);
+  }
+}
+
 $('btn-save-mileage').addEventListener('click', async () => {
   if (!selectedVehicle) return;
   const raw = Math.floor(parseFloat($('vehicle-mileage').value) || 0);
@@ -9903,6 +10274,8 @@ window.openMaintenanceDash = function() {
     if (woBtn) switchMaintTab('mtab-work-orders', woBtn);
     else _loadWorkOrders();
   }
+  // Fire-and-forget: check for overdue 60-day inspections and surface a banner
+  setTimeout(_checkOverdueInspections, 400);
 };
 
 window.closeMaintenanceDash = function() {
@@ -10603,6 +10976,7 @@ window.switchMaintTab = function(tabId, btn) {
   if (tabId === 'mtab-work-orders') _loadWorkOrders();
   if (tabId === 'mtab-completed-wo') window._loadCompletedWO(30);
   if (tabId === 'mtab-vendors') window._loadVendorsTab();
+  if (tabId === 'mtab-inspections') loadInspectionsTab();
 };
 
 // ================================================================
@@ -15471,7 +15845,8 @@ function renderTaskAgenda(allItems) {
   } else if (currentTaskTab === 'maintenance') {
     items = allItems.filter(i => i.sourceType === 'maintenance');
   } else if (currentTaskTab === 'compliance') {
-    items = allItems.filter(i => i.sourceType === 'compliance');
+    // Compliance tab includes both Safety/Reg/Insurance notes AND bi-monthly inspection reminders
+    items = allItems.filter(i => i.sourceType === 'compliance' || i.sourceType === 'inspection');
   } else if (currentTaskTab === 'mine') {
     // Show tasks assigned to me OR unassigned (team tasks visible to everyone)
     items = allItems.filter(i => !i.assignedTo || i.assignedTo === currentUser.uid);
@@ -15923,6 +16298,7 @@ function renderTaskAgenda(allItems) {
             ? new Date(group.month + '-01').toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
             : 'No Due Date';
           const typeTags = group.items.map(i => {
+            if (i.sourceType === 'inspection') return '<span class="ctag ctag-insp">🔍 Turo Inspection</span>';
             if (i.complianceType === 'safety') return '<span class="ctag ctag-safety">🔧 Safety</span>';
             if (i.complianceType === 'registration') return '<span class="ctag ctag-reg">📝 Registration</span>';
             return '<span class="ctag">📄 Insurance</span>';

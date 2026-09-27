@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926s">
+  <link rel="stylesheet" href="style.css?v=20260926t">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -785,6 +785,9 @@
           <h3>Maintenance</h3>
           <button id="btn-add-maintenance" class="btn btn-sm btn-primary">+ Log Service</button>
         </div>
+
+        <!-- Last-known milestones bar: oil change + inspection at a glance -->
+        <div id="last-milestones-bar" class="last-milestones-bar" style="display:none;"></div>
 
         <!-- Mileage input & recommended services -->
         <div id="mileage-edit-row" class="mileage-row">
@@ -2238,6 +2241,7 @@
 
       <div class="maint-dash-tabs">
         <button class="maint-tab-btn active" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🚨 Open Issues</button>
+        <button class="maint-tab-btn" data-mtab="mtab-inspections" onclick="switchMaintTab('mtab-inspections',this)">🔍 Inspections</button>
         <button class="maint-tab-btn" data-mtab="mtab-parts-queue" onclick="switchMaintTab('mtab-parts-queue',this)">📦 Parts Queue</button>
         <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Vehicles</button>
         <button class="maint-tab-btn" data-mtab="mtab-vendors" onclick="switchMaintTab('mtab-vendors',this)">🔧 Vendors</button>
@@ -2258,6 +2262,30 @@
             </div>
           </div>
           <div id="parts-queue-content"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
+        </div>
+
+        <!-- ===== Inspections Tab (bi-monthly Turo checklist across the fleet) ===== -->
+        <div id="mtab-inspections" class="maint-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <div>
+              <p style="margin:0;font-size:0.85rem;color:#6b7280;">Every rental vehicle needs a Turo-format 21-point inspection every 60 days.</p>
+              <p style="margin:2px 0 0;font-size:0.78rem;color:#9ca3af;">Assign due dates below to spread inspections across the month.</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-sm btn-outline" onclick="spreadInspectionsAcrossMonth()" title="Auto-assign due dates so no more than 2 inspections come due on the same day">📅 Auto-Spread</button>
+              <button class="btn btn-sm btn-outline" onclick="loadInspectionsTab()">↻ Refresh</button>
+            </div>
+          </div>
+          <!-- Filter chips -->
+          <div id="insp-fleet-filter" class="maint-chip-grid" style="margin-bottom:12px;">
+            <button type="button" class="maint-chip active" data-insp-filter="all" onclick="setInspFleetFilter('all',this)">All Vehicles</button>
+            <button type="button" class="maint-chip" data-insp-filter="overdue" onclick="setInspFleetFilter('overdue',this)">🔴 Overdue</button>
+            <button type="button" class="maint-chip" data-insp-filter="due-soon" onclick="setInspFleetFilter('due-soon',this)">🟡 Due &lt; 15d</button>
+            <button type="button" class="maint-chip" data-insp-filter="never" onclick="setInspFleetFilter('never',this)">⚠️ Never Inspected</button>
+            <button type="button" class="maint-chip" data-insp-filter="ok" onclick="setInspFleetFilter('ok',this)">🟢 OK</button>
+          </div>
+          <div id="insp-fleet-summary" style="font-size:0.82rem;color:#6b7280;margin-bottom:8px;">Loading…</div>
+          <div id="insp-fleet-list" class="data-list"></div>
         </div>
 
         <!-- ===== Overview Tab ===== -->
@@ -3367,7 +3395,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260926s"></script>
+  <script src="app.js?v=20260926t"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">
