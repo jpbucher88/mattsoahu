@@ -2027,6 +2027,26 @@ body {
   line-height: 1.4;
 }
 
+/* Editable Service Reminder rows — click opens the schedule editor */
+.rec-item.rec-editable {
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s, border-color 0.12s, transform 0.06s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.rec-item.rec-editable:hover { transform: translateY(-1px); }
+.rec-item.rec-editable:active { transform: translateY(0); }
+.rec-item.rec-editable .rec-edit-hint {
+  margin-left: auto;
+  font-size: 0.85rem;
+  opacity: 0.35;
+  transition: opacity 0.12s;
+  flex-shrink: 0;
+}
+.rec-item.rec-editable:hover .rec-edit-hint { opacity: 0.95; }
+
 .rec-overdue {
   background: #fef2f2;
   border-left: 3px solid var(--danger);

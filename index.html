@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926l">
+  <link rel="stylesheet" href="style.css?v=20260926m">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -827,8 +827,8 @@
                 <input type="date" id="m-date" required>
               </div>
               <div class="form-group">
-                <label for="m-mileage">Mileage at Service</label>
-                <input type="number" id="m-mileage" placeholder="e.g. 45000" min="0" max="999999">
+                <label for="m-mileage">Mileage at Service <span style="color:#dc2626;">*</span></label>
+                <input type="number" id="m-mileage" placeholder="e.g. 45000" min="0" max="999999" required>
               </div>
               <div class="form-group">
                 <label for="m-cost">Cost ($)</label>
@@ -1004,8 +1004,8 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label for="em-mileage">Mileage at Service</label>
-                <input type="number" id="em-mileage" placeholder="e.g. 45000" min="0" max="999999">
+                <label for="em-mileage">Mileage at Service <span style="color:#dc2626;">*</span></label>
+                <input type="number" id="em-mileage" placeholder="e.g. 45000" min="0" max="999999" required>
               </div>
               <div class="form-group">
                 <label for="em-cost">Cost ($)</label>
@@ -3222,7 +3222,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260926l"></script>
+  <script src="app.js?v=20260926m"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

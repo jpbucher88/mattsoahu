@@ -9178,7 +9178,7 @@ async function updateRecommendedServices(vehicleId) {
       if (d.intervalMonths && d.nextDueDate && !seenInterval.has(d.serviceType)) {
         seenInterval.add(d.serviceType);
         const lbl = d.intervalMonths === 1 ? '1 Month' : d.intervalMonths === 12 ? '1 Year' : d.intervalMonths === 24 ? '2 Years' : `${d.intervalMonths} Months`;
-        const entry = { service: d.serviceType, nextDueDate: d.nextDueDate, label: lbl };
+        const entry = { id: doc.id, service: d.serviceType, nextDueDate: d.nextDueDate, label: lbl };
         if (d.nextDueDate <= today) {
           timeDue.push(entry);
         } else {
@@ -9208,9 +9208,9 @@ async function updateRecommendedServices(vehicleId) {
         if (!d.nextDueMileage || !d.intervalMiles) return;
         const milesLeft = d.nextDueMileage - mileage;
         if (milesLeft <= 0) {
-          miIntervalDue.push({ service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
+          miIntervalDue.push({ id: doc.id, service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
         } else if (milesLeft <= 1500) {
-          miIntervalWarn.push({ service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
+          miIntervalWarn.push({ id: doc.id, service: d.maintenanceService, nextDueMileage: d.nextDueMileage, intervalMiles: d.intervalMiles, milesLeft });
         }
       });
     } catch (e) { /* ignore */ }
@@ -9230,11 +9230,11 @@ async function updateRecommendedServices(vehicleId) {
     if (timeDue.length > 0 || miIntervalDue.length > 0) html += '';
     timeDue.sort((a, b) => a.nextDueDate.localeCompare(b.nextDueDate));
     timeDue.forEach(s => {
-      html += `<div class="rec-item rec-time rec-time-overdue">🗓️ <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue</span> · Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span></div>`;
+      html += `<div class="rec-item rec-time rec-time-overdue rec-editable" data-src="maint" data-id="${escapeHtml(s.id)}" title="Click to edit schedule">🗓️ <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue</span> · Was due ${s.nextDueDate} <span class="hint">(every ${s.label})</span><span class="rec-edit-hint">✏️</span></div>`;
     });
     timeUpcoming.sort((a, b) => a.daysUntil - b.daysUntil);
     timeUpcoming.forEach(s => {
-      html += `<div class="rec-item rec-time rec-time-upcoming">🗓️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span></div>`;
+      html += `<div class="rec-item rec-time rec-time-upcoming rec-editable" data-src="maint" data-id="${escapeHtml(s.id)}" title="Click to edit schedule">🗓️ <strong>${escapeHtml(s.service)}</strong> — Due in ${s.daysUntil} day${s.daysUntil === 1 ? '' : 's'} <span class="hint">(every ${s.label})</span><span class="rec-edit-hint">✏️</span></div>`;
     });
   }
 
@@ -9242,16 +9242,30 @@ async function updateRecommendedServices(vehicleId) {
   miIntervalDue.sort((a, b) => a.milesLeft - b.milesLeft);
   miIntervalDue.forEach(s => {
     const over = Math.abs(s.milesLeft).toLocaleString();
-    html += `<div class="rec-item rec-overdue">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> <span class="hint">(due at ${s.nextDueMileage.toLocaleString()} mi · every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+    html += `<div class="rec-item rec-overdue rec-editable" data-src="note" data-id="${escapeHtml(s.id)}" title="Click to adjust due date / miles">🔧 <strong>${escapeHtml(s.service)}</strong> — <span class="text-danger">Overdue by ${over} mi</span> <span class="hint">(due at ${s.nextDueMileage.toLocaleString()} mi · every ${s.intervalMiles.toLocaleString()} mi)</span><span class="rec-edit-hint">✏️</span></div>`;
   });
   miIntervalWarn.sort((a, b) => a.milesLeft - b.milesLeft);
   miIntervalWarn.forEach(s => {
     const urgCls = s.milesLeft <= 500 ? 'rec-overdue' : s.milesLeft <= 1000 ? 'rec-upcoming' : '';
     const urgLabel = s.milesLeft <= 500 ? `<span class="text-danger">Due in ${s.milesLeft.toLocaleString()} mi</span>` : `<span style="color:#d97706;">Due in ${s.milesLeft.toLocaleString()} mi</span>`;
-    html += `<div class="rec-item ${urgCls}">⚠️ <strong>${escapeHtml(s.service)}</strong> — ${urgLabel} <span class="hint">(at ${s.nextDueMileage.toLocaleString()} mi · every ${s.intervalMiles.toLocaleString()} mi)</span></div>`;
+    html += `<div class="rec-item ${urgCls} rec-editable" data-src="note" data-id="${escapeHtml(s.id)}" title="Click to adjust due date / miles">⚠️ <strong>${escapeHtml(s.service)}</strong> — ${urgLabel} <span class="hint">(at ${s.nextDueMileage.toLocaleString()} mi · every ${s.intervalMiles.toLocaleString()} mi)</span><span class="rec-edit-hint">✏️</span></div>`;
   });
 
   list.innerHTML = html;
+
+  // Wire click handlers once per render — clicking a reminder opens the right editor
+  list.querySelectorAll('.rec-editable').forEach(el => {
+    el.addEventListener('click', () => {
+      const src = el.dataset.src;
+      const id = el.dataset.id;
+      if (!id) return;
+      if (src === 'maint' && typeof window.openEditMaintenance === 'function') {
+        window.openEditMaintenance(id);
+      } else if (src === 'note' && typeof window.openAdjustMaintDueModal === 'function') {
+        window.openAdjustMaintDueModal(id);
+      }
+    });
+  });
 }
 
 $('btn-save-mileage').addEventListener('click', async () => {
@@ -13462,8 +13476,28 @@ $('maintenance-form').addEventListener('submit', async (e) => {
   const serviceMileage = mileage || (selectedVehicle && selectedVehicle.mileage) || null;
   const nextDueMileage = (intervalMiles && serviceMileage) ? serviceMileage + intervalMiles : null;
 
-  if (!serviceType || !date) {
-    toast('Please enter a service type and date.', 'warning');
+  // Require a service type chip (or the "Other" chip with typed text) so free-form
+  // saves can't slip past the shared MAINT_TEMPLATES tracking system.
+  const anyChipActive = document.querySelectorAll('#service-chips .maint-chip.active').length > 0;
+  if (!anyChipActive) {
+    toast('Tap a service type chip above (or ✏️ Other to type your own).', 'warning');
+    document.getElementById('service-chips')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  if (!serviceType) {
+    toast('Enter a service type.', 'warning');
+    return;
+  }
+  if (!date) {
+    toast('Enter the service date.', 'warning');
+    $('m-date')?.focus();
+    return;
+  }
+  // Mileage is required — every service log needs to anchor to a mileage so
+  // the mileage-based due tracking stays accurate.
+  if (!mileage || mileage <= 0) {
+    toast('Enter the current vehicle mileage.', 'warning');
+    $('m-mileage')?.focus();
     return;
   }
 
@@ -13951,12 +13985,23 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
   if (!_editMaintDocId) return;
   if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
 
+  const anyChipActive = document.querySelectorAll('#em-service-chips .maint-chip.active').length > 0;
+  if (!anyChipActive) {
+    toast('Tap a service type chip above (or ✏️ Other to type your own).', 'warning');
+    document.getElementById('em-service-chips')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
   const serviceType = ($('em-type').value || '').trim();
   if (!serviceType) { toast('Enter a service type.', 'warning'); return; }
   const date = $('em-date').value;
   if (!date) { toast('Enter a date.', 'warning'); return; }
 
   const mileage = $('em-mileage').value ? parseInt($('em-mileage').value) : null;
+  if (!mileage || mileage <= 0) {
+    toast('Enter the current vehicle mileage.', 'warning');
+    $('em-mileage')?.focus();
+    return;
+  }
   const cost = $('em-cost').value !== '' ? parseFloat($('em-cost').value) : null;
   const location = $('em-location').value.trim() || null;
   const notes = $('em-notes').value.trim() || null;
