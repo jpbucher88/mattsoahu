@@ -10222,6 +10222,14 @@ input[type="checkbox"], input[type="radio"] {
   opacity: 1;
   pointer-events: auto;
 }
+.mbn-sheet-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+  text-align: center;
+  margin: 0 0 12px;
+  letter-spacing: 0.01em;
+}
 .mbn-more-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

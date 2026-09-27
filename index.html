@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926o">
+  <link rel="stylesheet" href="style.css?v=20260926p">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -144,7 +144,7 @@
       </div>
     </header>
 
-    <!-- Mobile bottom nav (visible only on phones; delegates clicks to header buttons) -->
+    <!-- Mobile bottom nav — mirrors the desktop header groupings -->
     <nav class="mobile-bottom-nav" id="mobile-bottom-nav" aria-label="Primary">
       <button class="mbn-item" data-mbn-target="brand-home" aria-label="Fleet home">
         <span class="mbn-icon">🏠</span>
@@ -155,24 +155,26 @@
         <span class="mbn-label">Tasks</span>
         <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="task-alert-count">0</span>
       </button>
-      <button class="mbn-item" onclick="scrollToLocationsWidget()" aria-label="Locations">
-        <span class="mbn-icon">📍</span>
-        <span class="mbn-label">Locations</span>
+      <button class="mbn-item" id="mbn-hub-btn" aria-label="Hub — Mail, Time Clock, Learning">
+        <span class="mbn-icon">📚</span>
+        <span class="mbn-label">Hub</span>
+        <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="mail-unread-count">0</span>
       </button>
-      <button class="mbn-item" data-mbn-target="btn-maint-dash" aria-label="Maintenance">
-        <span class="mbn-icon">🔧</span>
-        <span class="mbn-label">Repairs</span>
+      <button class="mbn-item" id="mbn-mgr-btn" aria-label="Manager Portal">
+        <span class="mbn-icon">💼</span>
+        <span class="mbn-label">Manager</span>
+        <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="crm-alert-count">0</span>
       </button>
       <button class="mbn-item" id="mbn-more-btn" aria-label="More">
         <span class="mbn-icon">⋯</span>
         <span class="mbn-label">More</span>
-        <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="mail-unread-count">0</span>
       </button>
     </nav>
 
-    <!-- Mobile "More" bottom sheet -->
-    <div class="mbn-more-scrim" id="mbn-more-scrim"></div>
-    <div class="mbn-more-sheet" id="mbn-more-sheet" role="dialog" aria-modal="true" aria-label="More navigation">
+    <!-- Mobile Hub bottom sheet -->
+    <div class="mbn-more-scrim" id="mbn-hub-scrim"></div>
+    <div class="mbn-more-sheet" id="mbn-hub-sheet" role="dialog" aria-modal="true" aria-label="Hub">
+      <div class="mbn-sheet-title">📚 Hub</div>
       <div class="mbn-more-grid">
         <button class="mbn-more-item" data-mbn-target="btn-mailbox">
           <span class="mbn-icon">📬</span>
@@ -185,11 +187,23 @@
         </button>
         <button class="mbn-more-item" data-mbn-target="btn-learning">
           <span class="mbn-icon">🎓</span>
-          <span>Learning</span>
+          <span>Learning Center</span>
         </button>
+      </div>
+    </div>
+
+    <!-- Mobile Manager Portal bottom sheet -->
+    <div class="mbn-more-scrim" id="mbn-mgr-scrim"></div>
+    <div class="mbn-more-sheet" id="mbn-mgr-sheet" role="dialog" aria-modal="true" aria-label="Manager Portal">
+      <div class="mbn-sheet-title">💼 Manager Portal</div>
+      <div class="mbn-more-grid">
         <button class="mbn-more-item" data-mbn-target="btn-finance">
           <span class="mbn-icon">💵</span>
           <span>Finance</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-maint-dash">
+          <span class="mbn-icon">🔧</span>
+          <span>Repairs</span>
         </button>
         <button class="mbn-more-item" data-mbn-target="btn-compliance-view">
           <span class="mbn-icon">📋</span>
@@ -197,12 +211,32 @@
         </button>
         <button class="mbn-more-item" data-mbn-target="btn-crm-dash">
           <span class="mbn-icon">🤝</span>
-          <span>CRM</span>
+          <span>CRM — Sales</span>
           <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="crm-alert-count">0</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Mobile "More" bottom sheet — utility items -->
+    <div class="mbn-more-scrim" id="mbn-more-scrim"></div>
+    <div class="mbn-more-sheet" id="mbn-more-sheet" role="dialog" aria-modal="true" aria-label="More">
+      <div class="mbn-sheet-title">⋯ More</div>
+      <div class="mbn-more-grid">
+        <button class="mbn-more-item" onclick="scrollToLocationsWidget()">
+          <span class="mbn-icon">📍</span>
+          <span>Locations</span>
         </button>
         <button class="mbn-more-item" data-mbn-target="btn-admin">
           <span class="mbn-icon">⚙️</span>
           <span>Admin</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-change-password">
+          <span class="mbn-icon">🔑</span>
+          <span>Change Password</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-logout">
+          <span class="mbn-icon">🚪</span>
+          <span>Logout</span>
         </button>
       </div>
     </div>
@@ -3226,7 +3260,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260926o"></script>
+  <script src="app.js?v=20260926p"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

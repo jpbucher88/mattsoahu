@@ -25419,30 +25419,41 @@ function _injectLagoonAlerts() {
     }
     nav.addEventListener('click', forwardClick);
 
-    // "More" sheet
-    const moreBtn = document.getElementById('mbn-more-btn');
-    const sheet   = document.getElementById('mbn-more-sheet');
-    const scrim   = document.getElementById('mbn-more-scrim');
-    function openMoreSheet() {
-      if (!sheet || !scrim) return;
-      sheet.classList.add('open');
-      scrim.classList.add('open');
-    }
-    function closeMoreSheet() {
-      if (!sheet || !scrim) return;
-      sheet.classList.remove('open');
-      scrim.classList.remove('open');
-    }
-    if (moreBtn) {
-      moreBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        openMoreSheet();
+    // Mobile bottom-nav sheets: Hub, Manager, More.
+    // All three follow the same open/close pattern — using a shared helper.
+    const sheets = [
+      { btnId: 'mbn-hub-btn',  sheetId: 'mbn-hub-sheet',  scrimId: 'mbn-hub-scrim'  },
+      { btnId: 'mbn-mgr-btn',  sheetId: 'mbn-mgr-sheet',  scrimId: 'mbn-mgr-scrim'  },
+      { btnId: 'mbn-more-btn', sheetId: 'mbn-more-sheet', scrimId: 'mbn-more-scrim' },
+    ];
+    function closeAllSheets() {
+      sheets.forEach(({ sheetId, scrimId }) => {
+        document.getElementById(sheetId)?.classList.remove('open');
+        document.getElementById(scrimId)?.classList.remove('open');
       });
     }
-    if (scrim) scrim.addEventListener('click', closeMoreSheet);
-    if (sheet) sheet.addEventListener('click', forwardClick);
+    function closeMoreSheet() { closeAllSheets(); }
+    function openSheet(sheetId, scrimId) {
+      closeAllSheets();
+      document.getElementById(sheetId)?.classList.add('open');
+      document.getElementById(scrimId)?.classList.add('open');
+    }
+    sheets.forEach(({ btnId, sheetId, scrimId }) => {
+      const btn = document.getElementById(btnId);
+      const sheet = document.getElementById(sheetId);
+      const scrim = document.getElementById(scrimId);
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const isOpen = sheet?.classList.contains('open');
+          if (isOpen) closeAllSheets(); else openSheet(sheetId, scrimId);
+        });
+      }
+      if (scrim) scrim.addEventListener('click', closeAllSheets);
+      if (sheet) sheet.addEventListener('click', forwardClick);
+    });
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') closeMoreSheet();
+      if (e.key === 'Escape') closeAllSheets();
     });
 
     // Badge mirroring: watch header count spans and mirror their text into
