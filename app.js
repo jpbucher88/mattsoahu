@@ -11377,7 +11377,7 @@ window.openQuickDoneModal = async function(noteId) {
   overlay.id = 'qd-modal-overlay';
   overlay.className = 'confirm-overlay';
   overlay.innerHTML = `
-    <div class="confirm-dialog" style="max-width:440px;text-align:left;">
+    <div class="confirm-dialog confirm-dialog-lg" style="max-width:440px;text-align:left;">
       <h4 style="text-align:left;">⚡ Quick Done — What was fixed?</h4>
       <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.85rem;color:#374151;">
         ${plate ? `<strong>${escapeHtml(plate)}</strong> · ` : ''}${escapeHtml(issue).slice(0, 200)}
@@ -11503,13 +11503,13 @@ window.openAdjustMaintDueModal = async function(noteId) {
   overlay.id = 'amd-modal-overlay';
   overlay.className = 'confirm-overlay';
   overlay.innerHTML = `
-    <div class="confirm-dialog" style="max-width:460px;text-align:left;">
+    <div class="confirm-dialog confirm-dialog-lg" style="max-width:460px;text-align:left;">
       <h4 style="text-align:left;">🕓 Adjust Maintenance Schedule</h4>
       <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.85rem;color:#374151;">
         <strong>${escapeHtml(plate || 'Vehicle')}</strong> · ${escapeHtml(service)}
         ${currentMi ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:3px;">Current mileage: ${currentMi.toLocaleString()} mi</div>` : ''}
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:10px;">
         <div>
           <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Next Due Date</label>
           <input type="date" id="amd-due-date" value="${nd.dueDate || ''}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;">
@@ -11519,7 +11519,7 @@ window.openAdjustMaintDueModal = async function(noteId) {
           <input type="number" id="amd-due-mi" min="0" max="999999" placeholder="e.g. 48000" value="${nd.nextDueMileage || ''}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;">
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px;">
         <div>
           <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">🔁 Repeat Every (Time)</label>
           <select id="amd-months" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;background:#fff;">

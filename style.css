@@ -1203,6 +1203,33 @@ body {
   justify-content: center;
 }
 
+/* Mobile: my larger inline confirm-dialogs (Quick Done, Adjust Due) turn into
+   a bottom sheet so long forms stay usable on phones. Small yes/no confirms
+   remain centered dialogs. */
+@media (max-width: 520px) {
+  .confirm-overlay:has(.confirm-dialog-lg) {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .confirm-dialog-lg {
+    width: 100%;
+    max-width: 100% !important;
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - 24px);
+    overflow-y: auto;
+    border-radius: 20px 20px 0 0;
+    padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+    animation: sheetSlideUp 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .confirm-dialog-lg .confirm-actions {
+    justify-content: flex-end;
+  }
+  .confirm-dialog-lg .confirm-actions .btn {
+    flex: 1;
+    padding: 12px 16px;
+    font-size: 0.92rem;
+  }
+}
+
 /* ============ EMPTY STATE ============ */
 .empty-state {
   text-align: center;
@@ -10852,6 +10879,11 @@ input[type="checkbox"], input[type="radio"] {
   background: #fff;
   color: #1d4ed8;
   box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+/* Bigger tap targets on phones */
+@media (max-width: 640px) {
+  #perf-view-toggle { display: flex !important; width: 100%; }
+  .perf-view-btn { flex: 1; padding: 10px 8px; font-size: 0.88rem; }
 }
 
 /* ================================================================
