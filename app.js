@@ -8163,6 +8163,17 @@ window.togglePerfLog = function() {
   if (btn) btn.innerHTML = (open ? '▶' : '▼') + ` Full Log <span id="perf-feed-count" style="color:#9ca3af;">${cntTxt}</span>`;
 };
 
+// Expand/collapse a staff row on the Team Performance tab (per-user detail).
+// safeId comes in URL-encoded (encodeURIComponent) so it's safe to embed in the onclick attr.
+window.togglePerfDetail = function(safeId) {
+  const body = document.getElementById('perf-detail-' + safeId);
+  const arrow = document.getElementById('perf-toggle-' + safeId);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (arrow) arrow.textContent = open ? '▾' : '▴';
+};
+
 // ================================================================
 // TEAM PERFORMANCE REPORT — Admin-only daily activity tracker
 // ================================================================
