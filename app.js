@@ -1413,6 +1413,12 @@ auth.onAuthStateChanged(async (user) => {
         if (crmBtn) crmBtn.style.display = '';
       }
 
+      // HI Compliance view — admins and managers
+      if (currentUserRole === 'admin' || currentUserRole === 'manager') {
+        const compBtn = $('btn-compliance-view');
+        if (compBtn) compBtn.style.display = '';
+      }
+
       // Reveal the Manager Portal wrapper if any Finance / Repairs / CRM child is visible
       if (typeof window._syncHeaderManagerVisibility === 'function') {
         window._syncHeaderManagerVisibility();
@@ -7309,7 +7315,7 @@ document.addEventListener('keydown', (e) => {
 window._syncHeaderManagerVisibility = function() {
   const wrap = $('header-manager-wrap');
   if (!wrap) return;
-  const anyVisible = ['btn-finance','btn-maint-dash','btn-crm-dash'].some(id => {
+  const anyVisible = ['btn-finance','btn-maint-dash','btn-compliance-view','btn-crm-dash'].some(id => {
     const el = document.getElementById(id);
     return el && el.style.display !== 'none';
   });
@@ -13038,6 +13044,97 @@ document.addEventListener('click', function(e) {
   if (loc) loc.value = pChip.dataset.provider;
 });
 
+// ── Edit Maintenance modal: same chip picker as the add form ──────
+// Uses `em-` field ids and #em-service-chips / #em-tire-position-picker.
+function _emUpdateChipResult() {
+  const grid = $('em-service-chips');
+  if (!grid) return;
+  const activeKeys = Array.from(grid.querySelectorAll('.maint-chip.active')).map(b => b.dataset.key);
+  if (activeKeys.length === 0) { _updateEmNextDuePreview(); return; }
+  const templates = activeKeys.filter(k => k !== 'other').map(k => MAINT_TEMPLATES[k]).filter(Boolean);
+  const typeStr = templates.map(t => t.type).join(' + ');
+  if (typeStr) $('em-type').value = typeStr;
+  const monthsVals = templates.map(t => t.months).filter(Boolean);
+  if (monthsVals.length) $('em-interval').value = String(Math.min(...monthsVals));
+  const milesVals = templates.map(t => t.miles).filter(Boolean);
+  if (milesVals.length) $('em-mile-interval').value = String(Math.min(...milesVals));
+  _updateEmNextDuePreview();
+}
+
+function applyEmServiceChip(key) {
+  const grid = $('em-service-chips');
+  if (!grid) return;
+  const btn = grid.querySelector(`[data-key="${key}"]`);
+  if (!btn) return;
+  if (key === 'other') {
+    grid.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    $('em-type').focus();
+    return;
+  }
+  const otherBtn = grid.querySelector('[data-key="other"]');
+  if (otherBtn) otherBtn.classList.remove('active');
+  btn.classList.toggle('active');
+  _emUpdateChipResult();
+  const anyTirePicker = Array.from(grid.querySelectorAll('.maint-chip.active'))
+    .some(b => MAINT_TEMPLATES[b.dataset.key]?.tirePicker);
+  const tpp = $('em-tire-position-picker');
+  if (tpp) {
+    tpp.style.display = anyTirePicker ? '' : 'none';
+    if (!anyTirePicker) tpp.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active'));
+  }
+}
+
+// Highlight whichever preset chip matches an existing serviceType string,
+// so opening an edit for "Oil Change" activates the Oil chip.
+function _emPreselectChipFromType(typeStr) {
+  const grid = $('em-service-chips');
+  if (!grid) return;
+  grid.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+  const tpp = $('em-tire-position-picker');
+  if (tpp) { tpp.style.display = 'none'; tpp.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active')); }
+  if (!typeStr) return;
+  // Support combined labels ("Oil Change + Tire Rotation")
+  const parts = typeStr.split(/\s*\+\s*/);
+  parts.forEach(part => {
+    const base = part.split(/\s+—\s+/)[0].trim().toLowerCase();
+    const entry = Object.entries(MAINT_TEMPLATES).find(([, t]) => t.type.toLowerCase() === base);
+    if (entry) {
+      const chip = grid.querySelector(`[data-key="${entry[0]}"]`);
+      if (chip) chip.classList.add('active');
+      if (entry[1].tirePicker && tpp) tpp.style.display = '';
+    }
+  });
+}
+
+(function _wireEmChips() {
+  const grid = $('em-service-chips');
+  if (grid) {
+    grid.addEventListener('click', (e) => {
+      const chip = e.target.closest('.maint-chip');
+      if (!chip) return;
+      applyEmServiceChip(chip.dataset.key);
+    });
+  }
+  const tpp = $('em-tire-position-picker');
+  if (tpp) {
+    tpp.addEventListener('click', (e) => {
+      const btn = e.target.closest('.tire-pos-btn');
+      if (!btn) return;
+      tpp.querySelectorAll('.tire-pos-btn').forEach(b => b.classList.remove('tire-pos-active'));
+      btn.classList.add('tire-pos-active');
+      const pos = btn.dataset.pos;
+      const grid2 = $('em-service-chips');
+      const activeKeys = grid2 ? Array.from(grid2.querySelectorAll('.maint-chip.active')).map(b => b.dataset.key) : [];
+      const baseParts = activeKeys.filter(k => k !== 'other').map(k => MAINT_TEMPLATES[k]?.type).filter(Boolean);
+      const baseType = baseParts.join(' + ');
+      const fullType = pos ? baseType + ' — ' + pos : baseType;
+      const emType = $('em-type');
+      if (emType) emType.value = fullType;
+    });
+  }
+})();
+
 $('btn-cancel-maintenance').addEventListener('click', () => {
   $('maintenance-form-wrap').style.display = 'none';
   $('maintenance-form').reset();
@@ -13482,6 +13579,9 @@ window.openEditMaintenance = async function(docId) {
     $('em-cost').value = d.cost != null ? d.cost : '';
     $('em-location').value = d.location || '';
     $('em-notes').value = d.notes || '';
+
+    // Pre-highlight the chip that matches the existing serviceType
+    _emPreselectChipFromType(d.serviceType || '');
 
     // Interval / next-due
     $('em-interval').value = d.intervalMonths ? String(d.intervalMonths) : '';
@@ -21354,20 +21454,24 @@ function _applyRoleToNav() {
   const finBtn    = $('btn-finance');
   const maintBtn  = $('btn-maint-dash');
   const prodBtn   = $('productivity-open-btn');
+  const compBtn   = $('btn-compliance-view');
 
   if (currentUserRole === 'admin') {
     if (finBtn)   { finBtn.style.display = '';     finBtn.title = 'Finance'; }
     if (maintBtn)  maintBtn.style.display = '';
     if (prodBtn)   prodBtn.style.display  = '';
+    if (compBtn)   compBtn.style.display  = '';
   } else if (currentUserRole === 'manager') {
     if (finBtn)   { finBtn.style.display = '';     finBtn.title = 'Add Expense'; }
     if (maintBtn)  maintBtn.style.display = '';
     if (prodBtn)   prodBtn.style.display  = '';
+    if (compBtn)   compBtn.style.display  = '';
   } else {
     if (finBtn)   { finBtn.style.display = currentUserRole === 'viewer' ? 'none' : ''; finBtn.title = 'Add Expense'; }
     if (maintBtn)  maintBtn.style.display = 'none';
     if (billsBtn)  billsBtn.style.display = 'none';
     if (prodBtn)   prodBtn.style.display  = 'none';
+    if (compBtn)   compBtn.style.display  = 'none';
   }
 
   if (typeof window._syncHeaderManagerVisibility === 'function') window._syncHeaderManagerVisibility();
