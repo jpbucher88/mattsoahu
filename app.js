@@ -17824,6 +17824,12 @@ window.openLearningPage = function() {
   // Show SOP admin controls for admins only
   const sopAdminCtrl = $('sop-admin-controls');
   if (sopAdminCtrl) sopAdminCtrl.style.display = currentUserRole === 'admin' ? '' : 'none';
+  // First-visit auto-seed: if admin and no shared curriculum is published yet,
+  // silently publish it so the training material appears without an extra click.
+  if (currentUserRole === 'admin' && !window._trainingAutoSeedAttempted) {
+    window._trainingAutoSeedAttempted = true;
+    setTimeout(() => _maybeAutoSeedCurriculum(), 500);
+  }
   // Populate admin user filter dropdown
   const filterSel = $('learning-user-filter');
   if (filterSel) {
@@ -19354,6 +19360,44 @@ CHECK YOURSELF
 ? Do I know which level of priority to assign to a broken AC?
 ? What's the message-manager threshold in days?`, type: 'text' },
 ];
+
+// Silent auto-seed helper — publishes the curriculum on an admin's first
+// Learning Center visit if no training modules exist yet. No confirm dialog.
+async function _maybeAutoSeedCurriculum() {
+  if (currentUserRole !== 'admin') return;
+  try {
+    const anyTraining = await db.collection('learningItems')
+      .where('scope', '==', 'shared')
+      .where('createdByName', '==', 'Aloha Fleet Training Team')
+      .limit(1)
+      .get();
+    if (!anyTraining.empty) return;                    // already published
+    const existingSnap = await db.collection('learningItems').where('scope', '==', 'shared').get();
+    const existingTitles = new Set(existingSnap.docs.map(d => (d.data().title || '').trim()));
+    let added = 0;
+    for (let i = TRAINING_CURRICULUM.length - 1; i >= 0; i--) {
+      const item = TRAINING_CURRICULUM[i];
+      if (existingTitles.has(item.title.trim())) continue;
+      try {
+        await db.collection('learningItems').add({
+          title: item.title,
+          content: item.content,
+          type: item.type || 'text',
+          scope: 'shared',
+          uid: currentUser.uid,
+          createdByName: 'Aloha Fleet Training Team',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          completions: [],
+        });
+        added++;
+      } catch (_) {}
+    }
+    if (added > 0) {
+      toast(`🌱 Training curriculum published — ${added} modules & SOPs added`, 'success');
+      loadLearningItems();
+    }
+  } catch (e) { console.warn('Auto-seed curriculum skipped:', e); }
+}
 
 // Publish the training curriculum to Shared Resources. Idempotent — items with
 // the same title are skipped, so this can be re-run after edits to add new modules
