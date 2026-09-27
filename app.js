@@ -13726,7 +13726,9 @@ function loadComplianceData(v) {
   // Show the compliance bar wrap (it's now baked into the main vehicle card)
   const barWrap = $('compliance-bar-wrap');
   if (barWrap) barWrap.style.display = '';
-  const canEditCompliance = (currentUserRole === 'admin');
+  // Admins AND managers can edit compliance dates (matches Firestore rules).
+  // Field ops managers frequently update Safety inspection & Registration renewal dates.
+  const canEditCompliance = (currentUserRole === 'admin' || currentUserRole === 'manager');
   // Show/hide Save button and lock inputs for non-admins
   const saveBtn = $('btn-save-compliance');
   if (saveBtn) saveBtn.style.display = 'none'; // always hidden — auto-save used instead
@@ -13893,12 +13895,16 @@ $('btn-save-compliance').addEventListener('click', async () => {
   // Legacy handler — kept so the DOM doesn't throw; actual saving is auto via change listeners
 });
 
-// Auto-save compliance data whenever an admin changes a field
+// Auto-save compliance data whenever an admin OR manager changes a field.
+// Non-editors bail out silently — the fields are also disabled for them so this
+// is defense-in-depth. A tiny inline "Saving…"/"Saved" pill appears next to the
+// compliance bar so mobile users see the state without waiting for a toast.
 let _complianceSaveTimer = null;
 async function autoSaveCompliance() {
-  if (currentUserRole !== 'admin') return;
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
   if (!selectedVehicle) return;
   clearTimeout(_complianceSaveTimer);
+  _setComplianceSaveState('pending');
   _complianceSaveTimer = setTimeout(async () => {
     const data = {
       complianceSafety: $('compliance-safety').value || null,
@@ -13906,18 +13912,42 @@ async function autoSaveCompliance() {
       complianceInsurance: $('compliance-insurance').value || null,
       vin: $('compliance-vin').value.toUpperCase().trim() || null,
     };
+    _setComplianceSaveState('saving');
     try {
       await db.collection('vehicles').doc(selectedVehicle.id).update(data);
       Object.assign(selectedVehicle, data);
       const cached = vehiclesCache.find(v => v.id === selectedVehicle.id);
       if (cached) Object.assign(cached, data);
       loadComplianceData(selectedVehicle);
-      toast('Saved \u2705', 'success');
+      _setComplianceSaveState('saved');
+      toast('Compliance saved ✅', 'success');
     } catch (e) {
       console.error('Auto-save compliance error:', e);
-      toast('Failed to save.', 'error');
+      _setComplianceSaveState('error');
+      const msg = (e && e.code === 'permission-denied')
+        ? 'Not allowed to save compliance — contact an admin.'
+        : 'Failed to save compliance. Check connection.';
+      toast(msg, 'error');
     }
   }, 800);
+}
+
+// Small pill next to "📋 Compliance & Info" so mobile users get instant feedback
+function _setComplianceSaveState(state) {
+  const pillsEl = $('compliance-bar-pills');
+  if (!pillsEl) return;
+  let el = pillsEl.querySelector('.cbp-save-state');
+  if (!el) {
+    el = document.createElement('span');
+    el.className = 'cbp cbp-save-state';
+    pillsEl.appendChild(el);
+  }
+  if (state === 'pending')      { el.textContent = '✏️ Editing…';   el.style.background = '#fef3c7'; el.style.color = '#92400e'; }
+  else if (state === 'saving')  { el.textContent = '💾 Saving…';    el.style.background = '#dbeafe'; el.style.color = '#1e40af'; }
+  else if (state === 'saved')   { el.textContent = '✅ Saved';       el.style.background = '#dcfce7'; el.style.color = '#166534';
+    setTimeout(() => { if (el.parentNode) el.remove(); }, 1800);
+  }
+  else if (state === 'error')   { el.textContent = '⚠ Not saved';   el.style.background = '#fee2e2'; el.style.color = '#991b1b'; }
 }
 
 // Live preview next-due when compliance month inputs change
