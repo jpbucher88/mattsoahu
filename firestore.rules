@@ -59,6 +59,13 @@ service cloud.firestore {
       allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
     }
 
+    // Vehicle inspections (bi-monthly Turo-format checklist) — all registered can
+    // read the fleet-wide history; managers and admins can create/edit/delete.
+    match /vehicleInspections/{inspId} {
+      allow read: if isRegistered();
+      allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+    }
+
     // Vehicle notes - all registered can read, managers/admins can write
     match /vehicleNotes/{noteId} {
       allow read: if isRegistered();

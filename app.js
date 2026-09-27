@@ -4024,6 +4024,14 @@ async function openVehiclePage(vid) {
   $('upload-section').style.display = canUpload ? 'block' : 'none';
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
+  // Bi-Monthly Inspection section — visible to everyone, only admin/manager can create
+  const inspSection = $('inspection-section');
+  if (inspSection) {
+    inspSection.style.display = 'block';
+    const newBtn = $('btn-new-inspection');
+    if (newBtn) newBtn.style.display = canUpload ? '' : 'none';
+    if (typeof loadVehicleInspections === 'function') loadVehicleInspections(selectedVehicle.id);
+  }
   // Load guest tickets for this vehicle
   if (typeof _loadVehicleTickets === 'function') {
     _loadVehicleTickets(selectedVehicle.id);
@@ -9267,6 +9275,512 @@ async function updateRecommendedServices(vehicleId) {
     });
   });
 }
+
+// ================================================================
+// BI-MONTHLY TURO INSPECTION — 21-point vehicle safety checklist
+// Every rental vehicle needs one every 60 days.
+// ================================================================
+const TURO_INSPECTION_ITEMS = [
+  { key: 'brakes',          label: 'Brakes — shoes & pads', hint: '2.3mm thick minimum' },
+  { key: 'ebrake',          label: 'Emergency brake (parking brake)' },
+  { key: 'steering',        label: 'Steering mechanism' },
+  { key: 'windshield',      label: 'Windshield', hint: 'Large crack (>1") = FAIL · Small crack (<1") = pass' },
+  { key: 'rearGlass',       label: 'Rear window and other glass' },
+  { key: 'wipers',          label: 'Windshield wipers' },
+  { key: 'headTailLights',  label: 'Headlights and tail lights' },
+  { key: 'turnLights',      label: 'Turn indicator lights' },
+  { key: 'brakeLights',     label: 'Brake lights' },
+  { key: 'seatAdjust',      label: 'Front seat adjustment' },
+  { key: 'doors',           label: 'Doors (open, close, lock)' },
+  { key: 'horn',            label: 'Horn' },
+  { key: 'speedometer',     label: 'Speedometer & warning lights' },
+  { key: 'bumpers',         label: 'Bumpers' },
+  { key: 'exhaust',         label: 'Muffler & exhaust system' },
+  { key: 'tireAge',         label: 'Tire manufacture date < 6 years?', hint: 'Check DOT stamp on sidewall' },
+  { key: 'tires',           label: 'Tires — tread depth', hint: '4/32" minimum · enter each corner', measurements: ['RF','LF','RR','LR'] },
+  { key: 'mirrors',         label: 'Interior & exterior mirrors' },
+  { key: 'seatbelts',       label: 'Seat belts (driver + passenger)' },
+  { key: 'batteryAge',      label: 'Battery < 5 years old?' },
+  { key: 'batteryVoltage',  label: 'If battery ≥ 5 yrs: voltage > 12.1V?', hint: 'Skip if battery is new — use multimeter' },
+];
+
+let _currentInspectionId = null;
+
+// Compute the aggregate result by scanning every checkbox in the modal.
+// Also updates the summary banner.
+function _computeInspectionResult() {
+  const grid = document.getElementById('insp-items-grid');
+  if (!grid) return { status: 'incomplete', passCount: 0, failCount: 0, unchecked: 0 };
+  let passCount = 0, failCount = 0, unchecked = 0;
+  TURO_INSPECTION_ITEMS.forEach(item => {
+    const passEl = grid.querySelector(`input[name="insp-${item.key}"][value="pass"]`);
+    const failEl = grid.querySelector(`input[name="insp-${item.key}"][value="fail"]`);
+    if (failEl?.checked) failCount++;
+    else if (passEl?.checked) passCount++;
+    else unchecked++;
+  });
+  const status = failCount > 0 ? 'fail' : (unchecked > 0 ? 'incomplete' : 'pass');
+  const banner = document.getElementById('insp-overall-banner');
+  if (banner) {
+    banner.classList.remove('insp-overall-pass','insp-overall-fail','insp-overall-incomplete');
+    if (status === 'pass') {
+      banner.classList.add('insp-overall-pass');
+      banner.textContent = `✅ Overall: PASS — all ${passCount} points cleared`;
+    } else if (status === 'fail') {
+      banner.classList.add('insp-overall-fail');
+      banner.textContent = `❌ Overall: FAIL — ${failCount} failing item${failCount > 1 ? 's' : ''} · vehicle CANNOT rent until repaired`;
+    } else {
+      banner.classList.add('insp-overall-incomplete');
+      banner.textContent = `⏳ Incomplete — ${unchecked} of ${TURO_INSPECTION_ITEMS.length} points not yet checked`;
+    }
+  }
+  return { status, passCount, failCount, unchecked };
+}
+
+window.setAllInspStatus = function(status) {
+  const grid = document.getElementById('insp-items-grid');
+  if (!grid) return;
+  TURO_INSPECTION_ITEMS.forEach(item => {
+    const el = grid.querySelector(`input[name="insp-${item.key}"][value="${status}"]`);
+    if (el) el.checked = !!status;
+    if (!status) {
+      grid.querySelectorAll(`input[name="insp-${item.key}"]`).forEach(inp => inp.checked = false);
+    }
+  });
+  _computeInspectionResult();
+};
+
+// Build the 21-point grid HTML
+function _renderInspItemsGrid(prefill) {
+  const items = TURO_INSPECTION_ITEMS.map((item, idx) => {
+    const num = idx + 1;
+    const cur = prefill?.items?.[item.key] || '';
+    const passChecked = cur === 'pass' ? 'checked' : '';
+    const failChecked = cur === 'fail' ? 'checked' : '';
+    const measurements = item.measurements
+      ? `<div class="insp-measurements">${item.measurements.map(pos => {
+          const val = prefill?.items?.[`${item.key}_${pos}`] || '';
+          return `<label class="insp-mm"><span>${pos}</span><input type="text" name="insp-${item.key}-${pos}" value="${escapeHtml(val)}" maxlength="10" placeholder="e.g. 5/32"></label>`;
+        }).join('')}</div>`
+      : '';
+    return `
+      <div class="insp-item">
+        <div class="insp-item-hdr">
+          <span class="insp-item-num">${num}</span>
+          <div class="insp-item-title">${escapeHtml(item.label)}${item.hint ? `<div class="insp-item-hint">${escapeHtml(item.hint)}</div>` : ''}</div>
+        </div>
+        <div class="insp-toggle" role="radiogroup">
+          <label class="insp-pass"><input type="radio" name="insp-${item.key}" value="pass" ${passChecked}><span>✓ PASS</span></label>
+          <label class="insp-fail"><input type="radio" name="insp-${item.key}" value="fail" ${failChecked}><span>✕ FAIL</span></label>
+        </div>
+        ${measurements}
+      </div>`;
+  }).join('');
+  return items;
+}
+
+window.openBiMonthlyInspection = async function(vehicleId, existingId) {
+  if (!vehicleId) { toast('Open a vehicle first.', 'warning'); return; }
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') {
+    toast('Only managers can create inspections.', 'warning');
+    return;
+  }
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  if (!v) return;
+  _currentInspectionId = existingId || null;
+
+  let existing = null;
+  if (existingId) {
+    try {
+      const snap = await db.collection('vehicleInspections').doc(existingId).get();
+      if (snap.exists) existing = snap.data();
+    } catch(e) { console.warn('Load inspection:', e); }
+  }
+
+  // Vehicle info bar
+  const bar = document.getElementById('insp-vehicle-bar');
+  if (bar) {
+    bar.innerHTML = `
+      <div><span class="insp-vlabel">PLATE</span> <strong>${escapeHtml(v.plate || '—')}</strong></div>
+      <div><span class="insp-vlabel">MAKE</span> ${escapeHtml(v.make || '—')}</div>
+      <div><span class="insp-vlabel">MODEL</span> ${escapeHtml(v.model || '—')}</div>
+      <div><span class="insp-vlabel">YEAR</span> ${escapeHtml(String(v.year || '—'))}</div>
+      <div><span class="insp-vlabel">VIN</span> ${escapeHtml(v.vin || '—')}</div>`;
+  }
+  document.getElementById('insp-vehicle-id').value = vehicleId;
+  document.getElementById('insp-id').value = existingId || '';
+  document.getElementById('insp-date').value = existing?.inspectionDate || todayDateString();
+  document.getElementById('insp-mileage').value = existing?.mileage ?? v.mileage ?? '';
+  document.getElementById('insp-inspector-name').value = existing?.inspectorName || '';
+  document.getElementById('insp-ase-id').value = existing?.aseId || '';
+  document.getElementById('insp-inspector-company').value = existing?.inspectorCompany || '';
+  document.getElementById('insp-host-sig').value = existing?.hostSignature || (currentUser?.displayName || '');
+  document.getElementById('insp-inspector-sig').value = existing?.inspectorSignature || '';
+  document.getElementById('insp-notes').value = existing?.notes || '';
+
+  const grid = document.getElementById('insp-items-grid');
+  if (grid) grid.innerHTML = _renderInspItemsGrid(existing);
+  _computeInspectionResult();
+
+  // Wire change → recompute
+  if (grid && !grid.dataset.wired) {
+    grid.dataset.wired = '1';
+    grid.addEventListener('change', _computeInspectionResult);
+  }
+
+  document.getElementById('inspection-modal-title').textContent = existing ? '✏️ Edit Inspection' : '🔍 New Bi-Monthly Turo Inspection';
+  document.getElementById('inspection-overlay').style.display = 'flex';
+};
+
+window.closeBiMonthlyInspection = function() {
+  document.getElementById('inspection-overlay').style.display = 'none';
+  _currentInspectionId = null;
+};
+
+window.saveBiMonthlyInspection = async function() {
+  const vehicleId = document.getElementById('insp-vehicle-id').value;
+  const existingId = document.getElementById('insp-id').value || null;
+  const inspectionDate = document.getElementById('insp-date').value;
+  const mileage = parseInt(document.getElementById('insp-mileage').value);
+  if (!vehicleId || !inspectionDate) { toast('Vehicle and date are required.', 'warning'); return; }
+  if (!mileage || mileage <= 0) { toast('Enter the current mileage.', 'warning'); return; }
+
+  const v = vehiclesCache.find(x => x.id === vehicleId);
+  const result = _computeInspectionResult();
+  if (result.status === 'incomplete') {
+    const ok = await confirm('Incomplete Inspection', `${result.unchecked} points are unchecked. Save as INCOMPLETE and finish later?`);
+    if (!ok) return;
+  }
+
+  // Collect item statuses + measurements
+  const grid = document.getElementById('insp-items-grid');
+  const items = {};
+  TURO_INSPECTION_ITEMS.forEach(item => {
+    const passEl = grid.querySelector(`input[name="insp-${item.key}"][value="pass"]`);
+    const failEl = grid.querySelector(`input[name="insp-${item.key}"][value="fail"]`);
+    items[item.key] = failEl?.checked ? 'fail' : (passEl?.checked ? 'pass' : '');
+    if (item.measurements) {
+      item.measurements.forEach(pos => {
+        const mEl = grid.querySelector(`input[name="insp-${item.key}-${pos}"]`);
+        if (mEl && mEl.value) items[`${item.key}_${pos}`] = mEl.value.trim();
+      });
+    }
+  });
+
+  // Next due date = +60 days (bi-monthly)
+  const nextDue = new Date(inspectionDate + 'T12:00:00');
+  nextDue.setDate(nextDue.getDate() + 60);
+  const nextDueDate = nextDue.toISOString().slice(0, 10);
+
+  const record = {
+    vehicleId,
+    plate: v?.plate || '',
+    make: v?.make || '',
+    model: v?.model || '',
+    year: v?.year || null,
+    vin: v?.vin || '',
+    mileage,
+    inspectionDate,
+    inspectorName: document.getElementById('insp-inspector-name').value.trim(),
+    aseId: document.getElementById('insp-ase-id').value.trim(),
+    inspectorCompany: document.getElementById('insp-inspector-company').value.trim(),
+    hostSignature: document.getElementById('insp-host-sig').value.trim(),
+    inspectorSignature: document.getElementById('insp-inspector-sig').value.trim(),
+    notes: document.getElementById('insp-notes').value.trim(),
+    items,
+    overallStatus: result.status, // 'pass' | 'fail' | 'incomplete'
+    passCount: result.passCount,
+    failCount: result.failCount,
+    nextDueDate,
+    createdBy: currentUser?.uid || null,
+    createdByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  if (!existingId) record.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+  showLoading('Saving inspection…');
+  try {
+    let inspRef;
+    if (existingId) {
+      await db.collection('vehicleInspections').doc(existingId).update(record);
+      inspRef = { id: existingId };
+    } else {
+      inspRef = await db.collection('vehicleInspections').add(record);
+    }
+
+    // Mirror to the maintenance stream so it appears in Service Reminders + auto-schedules the next one
+    try {
+      // Remove prior auto-scheduled inspection reminders for this vehicle
+      const oldInsp = await db.collection('vehicleNotes')
+        .where('vehicleId', '==', vehicleId)
+        .where('sourceType', '==', 'inspection')
+        .where('autoCreated', '==', true)
+        .get();
+      const batch = db.batch();
+      oldInsp.forEach(d => batch.delete(d.ref));
+      // Also clean out prior maintenance records tagged for inspection so we don't stack
+      const oldMaint = await db.collection('maintenance')
+        .where('vehicleId', '==', vehicleId)
+        .where('serviceType', '==', 'Bi-Monthly Inspection')
+        .get();
+      oldMaint.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+
+      // Add the current inspection as a maintenance record so it shows in history + drives the reminder
+      const maintRef = await db.collection('maintenance').add({
+        vehicleId,
+        plate: v?.plate || '',
+        serviceType: 'Bi-Monthly Inspection',
+        date: inspectionDate,
+        mileage,
+        cost: 0,
+        notes: `Overall: ${result.status.toUpperCase()} · ${result.passCount} pass / ${result.failCount} fail${record.inspectorName ? ' · ' + record.inspectorName : ''}`,
+        intervalMonths: 2,
+        nextDueDate,
+        inspectionId: inspRef.id,
+        loggedBy: currentUser?.uid || null,
+        loggedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+
+      // Create the follow-up work order for the next due date
+      await db.collection('vehicleNotes').add({
+        vehicleId,
+        text: `🔍 Bi-Monthly Turo Inspection due (every 2 Months)`,
+        isFollowUp: true,
+        done: false,
+        urgent: false,
+        dueDate: nextDueDate,
+        sourceType: 'inspection',
+        taskStatus: 'maintenance',
+        maintenanceService: 'Bi-Monthly Inspection',
+        maintenanceRecordId: maintRef.id,
+        autoCreated: true,
+        intervalType: 'time',
+        intervalMonths: 2,
+        workOrder: true,
+        repairStatus: 'open',
+        repairPriority: 'monitor',
+        scheduledDate: null,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        createdByName: 'System (auto follow-up)',
+      });
+    } catch(reminderErr) { console.warn('Reminder sync error:', reminderErr); }
+
+    // Audit trail
+    try {
+      logUserActivity('vehicle_inspection', {
+        plate: v?.plate || '',
+        vehicleId,
+        overallStatus: result.status,
+        passCount: result.passCount,
+        failCount: result.failCount,
+      });
+    } catch(_) {}
+
+    toast(`✅ Inspection saved — ${result.status.toUpperCase()}`, 'success');
+    closeBiMonthlyInspection();
+    loadVehicleInspections(vehicleId);
+    if (typeof updateRecommendedServices === 'function') updateRecommendedServices(vehicleId);
+  } catch(e) {
+    console.error('Save inspection error:', e);
+    toast('Failed to save inspection.', 'error');
+  } finally {
+    hideLoading();
+  }
+};
+
+window.loadVehicleInspections = async function(vehicleId) {
+  const listEl = document.getElementById('inspection-history');
+  const statusEl = document.getElementById('inspection-status-line');
+  if (!listEl) return;
+  listEl.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const snap = await db.collection('vehicleInspections')
+      .where('vehicleId', '==', vehicleId)
+      .get();
+    const docs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (b.inspectionDate || '').localeCompare(a.inspectionDate || ''));
+
+    if (docs.length === 0) {
+      listEl.innerHTML = '<p class="hint">No inspections logged yet. Click "New Inspection" to run the first one.</p>';
+      if (statusEl) statusEl.innerHTML = '⏳ <strong>No inspection on record</strong> — this vehicle needs a bi-monthly Turo inspection.';
+      return;
+    }
+    const latest = docs[0];
+    const today = todayDateString();
+    if (statusEl) {
+      const overdue = latest.nextDueDate && latest.nextDueDate < today;
+      const statusEmoji = latest.overallStatus === 'pass' ? '✅' : latest.overallStatus === 'fail' ? '❌' : '⏳';
+      const statusText = (latest.overallStatus || 'incomplete').toUpperCase();
+      const dueText = latest.nextDueDate
+        ? (overdue
+            ? `<span style="color:#dc2626;font-weight:700;">Next due ${latest.nextDueDate} · OVERDUE</span>`
+            : `Next due ${latest.nextDueDate}`)
+        : '';
+      statusEl.innerHTML = `${statusEmoji} <strong>Last inspection: ${latest.inspectionDate} · ${statusText}</strong> · ${dueText}`;
+    }
+    const canEdit = (currentUserRole === 'admin' || currentUserRole === 'manager');
+    listEl.innerHTML = docs.map(d => {
+      const badgeCls = d.overallStatus === 'pass' ? 'insp-badge-pass' : d.overallStatus === 'fail' ? 'insp-badge-fail' : 'insp-badge-inc';
+      const badgeTxt = (d.overallStatus || 'incomplete').toUpperCase();
+      const miles = d.mileage ? ` · ${d.mileage.toLocaleString()} mi` : '';
+      const inspector = d.inspectorName ? ` · ${escapeHtml(d.inspectorName)}` : '';
+      const nextDue = d.nextDueDate ? ` · next due ${d.nextDueDate}` : '';
+      const editBtn = canEdit ? `<button class="btn btn-sm btn-outline" onclick="openBiMonthlyInspection('${vehicleId}','${d.id}')">✏️ Edit</button>` : '';
+      const delBtn = (currentUserRole === 'admin')
+        ? `<button class="btn btn-sm btn-outline" style="border-color:#fecaca;color:#b91c1c;" onclick="deleteInspection('${d.id}','${vehicleId}')">🗑</button>`
+        : '';
+      return `<div class="insp-history-row">
+        <div class="insp-history-main" onclick="viewInspection('${d.id}')">
+          <span class="insp-history-date">${d.inspectionDate}</span>
+          <span class="insp-badge ${badgeCls}">${badgeTxt}</span>
+          <span class="insp-history-meta">${d.failCount || 0} fail${miles}${inspector}${nextDue}</span>
+        </div>
+        <div class="insp-history-actions">
+          <button class="btn btn-sm btn-outline" onclick="viewInspection('${d.id}')">👁 View</button>
+          ${editBtn}
+          ${delBtn}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    console.error('Load inspections error:', e);
+    listEl.innerHTML = '<p class="hint">Error loading inspections.</p>';
+  }
+};
+
+window.deleteInspection = async function(id, vehicleId) {
+  if (currentUserRole !== 'admin') return;
+  const ok = await confirm('Delete Inspection', 'Permanently remove this inspection record?');
+  if (!ok) return;
+  try {
+    await db.collection('vehicleInspections').doc(id).delete();
+    toast('Deleted.', 'success');
+    loadVehicleInspections(vehicleId);
+  } catch(e) { toast('Delete failed.', 'error'); }
+};
+
+let _viewingInspection = null;
+window.viewInspection = async function(id) {
+  try {
+    const snap = await db.collection('vehicleInspections').doc(id).get();
+    if (!snap.exists) { toast('Not found.', 'error'); return; }
+    const d = snap.data();
+    _viewingInspection = { id, ...d };
+    const rows = TURO_INSPECTION_ITEMS.map((item, idx) => {
+      const val = d.items?.[item.key] || '';
+      const badge = val === 'pass'
+        ? '<span class="insp-vw-badge insp-vw-pass">✓ PASS</span>'
+        : val === 'fail'
+          ? '<span class="insp-vw-badge insp-vw-fail">✕ FAIL</span>'
+          : '<span class="insp-vw-badge insp-vw-none">—</span>';
+      let measurements = '';
+      if (item.measurements) {
+        measurements = '<div class="insp-vw-mm">' + item.measurements.map(pos => {
+          const mv = d.items?.[`${item.key}_${pos}`] || '—';
+          return `<span><strong>${pos}:</strong> ${escapeHtml(mv)}</span>`;
+        }).join(' · ') + '</div>';
+      }
+      return `<div class="insp-vw-row"><span class="insp-vw-n">${idx+1}</span><div style="flex:1;"><div>${escapeHtml(item.label)}</div>${measurements}</div>${badge}</div>`;
+    }).join('');
+    const overallCls = d.overallStatus === 'pass' ? 'insp-overall-pass' : d.overallStatus === 'fail' ? 'insp-overall-fail' : 'insp-overall-incomplete';
+    const overallLbl = d.overallStatus === 'pass' ? '✅ PASS' : d.overallStatus === 'fail' ? '❌ FAIL' : '⏳ INCOMPLETE';
+    const body = document.getElementById('inspection-view-body');
+    if (body) body.innerHTML = `
+      <div class="insp-vehicle-bar">
+        <div><span class="insp-vlabel">PLATE</span> <strong>${escapeHtml(d.plate || '—')}</strong></div>
+        <div><span class="insp-vlabel">MAKE</span> ${escapeHtml(d.make || '—')}</div>
+        <div><span class="insp-vlabel">MODEL</span> ${escapeHtml(d.model || '—')}</div>
+        <div><span class="insp-vlabel">YEAR</span> ${escapeHtml(String(d.year || '—'))}</div>
+        <div><span class="insp-vlabel">VIN</span> ${escapeHtml(d.vin || '—')}</div>
+        <div><span class="insp-vlabel">DATE</span> ${escapeHtml(d.inspectionDate || '—')}</div>
+        <div><span class="insp-vlabel">MILEAGE</span> ${d.mileage ? d.mileage.toLocaleString() + ' mi' : '—'}</div>
+      </div>
+      <div class="insp-overall ${overallCls}" style="margin:10px 0;">${overallLbl} · ${d.passCount || 0} pass · ${d.failCount || 0} fail${d.nextDueDate ? ' · next due ' + d.nextDueDate : ''}</div>
+      <div class="insp-vw-list">${rows}</div>
+      ${d.notes ? `<div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px;"><strong>Notes:</strong> ${escapeHtml(d.notes)}</div>` : ''}
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px;font-size:0.85rem;">
+        <div><strong>Host Signature:</strong> ${escapeHtml(d.hostSignature || '—')}</div>
+        <div><strong>Inspector:</strong> ${escapeHtml(d.inspectorName || '—')}${d.aseId ? ' · ASE ' + escapeHtml(d.aseId) : ''}</div>
+        <div><strong>Inspector Signature:</strong> ${escapeHtml(d.inspectorSignature || '—')}</div>
+        <div><strong>Company:</strong> ${escapeHtml(d.inspectorCompany || '—')}</div>
+      </div>`;
+    document.getElementById('inspection-view-overlay').style.display = 'flex';
+  } catch(e) {
+    console.error('View inspection error:', e);
+    toast('Could not load inspection.', 'error');
+  }
+};
+
+window.printCurrentInspection = function() {
+  if (!_viewingInspection) return;
+  const d = _viewingInspection;
+  const rows = TURO_INSPECTION_ITEMS.map((item, idx) => {
+    const val = d.items?.[item.key] || '';
+    const status = val === 'pass' ? '✓ PASS' : val === 'fail' ? '✕ FAIL' : '—';
+    const cls = val === 'pass' ? 'p-pass' : val === 'fail' ? 'p-fail' : '';
+    let measurements = '';
+    if (item.measurements) {
+      measurements = ' · ' + item.measurements.map(pos => {
+        const mv = d.items?.[`${item.key}_${pos}`] || '—';
+        return `${pos}: ${mv}`;
+      }).join(' · ');
+    }
+    return `<tr><td>${idx+1}</td><td>${escapeHtml(item.label)}${measurements}</td><td class="${cls}">${status}</td></tr>`;
+  }).join('');
+  const overall = (d.overallStatus || 'incomplete').toUpperCase();
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Inspection ${d.plate} ${d.inspectionDate}</title>
+    <style>
+      body{font-family:-apple-system,system-ui,sans-serif;padding:24px;color:#111;}
+      h1{margin:0 0 4px;font-size:18px;}
+      h2{margin:16px 0 6px;font-size:14px;}
+      .info{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;font-size:12px;margin:12px 0;padding:10px;border:1px solid #ccc;border-radius:6px;}
+      .info div{border-right:1px solid #eee;padding-right:8px;}
+      .info div:last-child{border-right:none;}
+      .info span{color:#666;font-size:10px;text-transform:uppercase;display:block;}
+      table{width:100%;border-collapse:collapse;font-size:12px;}
+      th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;}
+      th{background:#f3f4f6;}
+      .p-pass{color:#166534;font-weight:700;background:#dcfce7;}
+      .p-fail{color:#991b1b;font-weight:700;background:#fee2e2;}
+      .overall{padding:12px;margin:12px 0;border-radius:6px;font-weight:700;text-align:center;font-size:14px;}
+      .o-pass{background:#dcfce7;color:#166534;}
+      .o-fail{background:#fee2e2;color:#991b1b;}
+      .o-inc{background:#fef3c7;color:#92400e;}
+      .sig{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:12px;}
+      .sig div{border-bottom:1px solid #999;padding-bottom:2px;}
+      @media print { body { padding:0; } }
+    </style></head><body>
+    <h1>🔍 Bi-Monthly Turo Inspection</h1>
+    <div style="font-size:12px;color:#666;">Aloha Fleet · Generated ${new Date().toLocaleString()}</div>
+    <div class="info">
+      <div><span>Plate</span>${escapeHtml(d.plate||'—')}</div>
+      <div><span>Make</span>${escapeHtml(d.make||'—')}</div>
+      <div><span>Model</span>${escapeHtml(d.model||'—')}</div>
+      <div><span>Year</span>${escapeHtml(String(d.year||'—'))}</div>
+      <div><span>VIN</span>${escapeHtml(d.vin||'—')}</div>
+      <div><span>Mileage</span>${d.mileage ? d.mileage.toLocaleString()+' mi' : '—'}</div>
+      <div><span>Inspection Date</span>${escapeHtml(d.inspectionDate||'—')}</div>
+      <div><span>Next Due</span>${escapeHtml(d.nextDueDate||'—')}</div>
+    </div>
+    <div class="overall ${d.overallStatus==='pass'?'o-pass':d.overallStatus==='fail'?'o-fail':'o-inc'}">Overall: ${overall} · ${d.passCount||0} pass · ${d.failCount||0} fail</div>
+    <h2>Inspection Points</h2>
+    <table><thead><tr><th style="width:40px;">#</th><th>Item</th><th style="width:100px;">Result</th></tr></thead><tbody>${rows}</tbody></table>
+    ${d.notes ? `<h2>Notes</h2><div style="font-size:12px;">${escapeHtml(d.notes)}</div>` : ''}
+    <div class="sig">
+      <div><span style="color:#666;font-size:10px;">HOST SIGNATURE</span><br>${escapeHtml(d.hostSignature||'')}</div>
+      <div><span style="color:#666;font-size:10px;">INSPECTOR SIGNATURE</span><br>${escapeHtml(d.inspectorSignature||'')}</div>
+      <div><span style="color:#666;font-size:10px;">INSPECTOR NAME / ASE</span><br>${escapeHtml(d.inspectorName||'')}${d.aseId?' · ASE '+escapeHtml(d.aseId):''}</div>
+      <div><span style="color:#666;font-size:10px;">COMPANY</span><br>${escapeHtml(d.inspectorCompany||'')}</div>
+    </div>
+    <script>window.onload=function(){setTimeout(function(){window.print();},250);};</script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { toast('Popup blocked — allow popups to print.', 'warning'); return; }
+  w.document.open(); w.document.write(html); w.document.close();
+};
 
 $('btn-save-mileage').addEventListener('click', async () => {
   if (!selectedVehicle) return;

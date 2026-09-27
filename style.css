@@ -1589,6 +1589,233 @@ body {
   margin-top: 12px;
 }
 
+/* ============ Bi-Monthly Turo Inspection ============ */
+.insp-vehicle-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px 16px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  color: #111827;
+}
+.insp-vehicle-bar strong { font-size: 0.95rem; }
+.insp-vlabel {
+  display: block;
+  font-size: 0.68rem;
+  color: #9ca3af;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.insp-section-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  margin: 14px 0 6px;
+  letter-spacing: 0.02em;
+}
+.insp-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.insp-item {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.insp-item-hdr {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.insp-item-num {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.insp-item-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #111827;
+  flex: 1;
+  line-height: 1.3;
+}
+.insp-item-hint {
+  font-size: 0.72rem;
+  color: #6b7280;
+  font-weight: 400;
+  margin-top: 2px;
+}
+.insp-toggle {
+  display: flex;
+  gap: 6px;
+}
+.insp-toggle label {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1.5px solid #d1d5db;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #6b7280;
+  transition: all 0.12s;
+  background: #fff;
+}
+.insp-toggle label input { display: none; }
+.insp-toggle label:hover { background: #f8fafc; }
+.insp-toggle .insp-pass:has(input:checked) {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+.insp-toggle .insp-fail:has(input:checked) {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.insp-measurements {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #e5e7eb;
+}
+.insp-mm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.insp-mm span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #6b7280;
+  letter-spacing: 0.05em;
+}
+.insp-mm input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  text-align: center;
+}
+.insp-overall {
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-weight: 700;
+  text-align: center;
+  margin: 8px 0;
+  font-size: 0.95rem;
+}
+.insp-overall-pass { background: #dcfce7; color: #166534; border: 1.5px solid #86efac; }
+.insp-overall-fail { background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
+.insp-overall-incomplete { background: #fef3c7; color: #92400e; border: 1.5px solid #fde68a; }
+
+/* Inspection history rows on the vehicle page */
+.insp-history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  margin-bottom: 6px;
+}
+.insp-history-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.insp-history-date { font-weight: 700; color: #111827; white-space: nowrap; }
+.insp-history-meta { color: #6b7280; font-size: 0.82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.insp-history-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
+.insp-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+.insp-badge-pass { background: #dcfce7; color: #166534; }
+.insp-badge-fail { background: #fee2e2; color: #991b1b; }
+.insp-badge-inc  { background: #fef3c7; color: #92400e; }
+
+/* View-only inspection modal */
+.insp-vw-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.insp-vw-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: #f9fafb;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+.insp-vw-n {
+  min-width: 22px; height: 22px;
+  border-radius: 50%;
+  background: #1d4ed8;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.insp-vw-mm { font-size: 0.75rem; color: #6b7280; margin-top: 2px; }
+.insp-vw-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.insp-vw-pass { background: #dcfce7; color: #166534; }
+.insp-vw-fail { background: #fee2e2; color: #991b1b; }
+.insp-vw-none { background: #f3f4f6; color: #9ca3af; }
+
+@media (max-width: 520px) {
+  .insp-items-grid { grid-template-columns: 1fr; }
+  .insp-measurements { grid-template-columns: repeat(2, 1fr); }
+  .insp-history-row { flex-wrap: wrap; }
+  .insp-history-actions { width: 100%; }
+}
+
 .ev-photo-current {
   display: flex;
   align-items: flex-end;

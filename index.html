@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926r">
+  <link rel="stylesheet" href="style.css?v=20260926s">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -983,6 +983,110 @@
         <div id="maintenance-history" class="data-list"></div>
 
       </section>
+
+      <!-- ====== Bi-Monthly Turo Inspection Section ====== -->
+      <section id="inspection-section" class="card" style="display:none;">
+        <div class="section-header">
+          <h3>🔍 Bi-Monthly Turo Inspection</h3>
+          <button id="btn-new-inspection" class="btn btn-sm btn-primary" onclick="openBiMonthlyInspection(selectedVehicle && selectedVehicle.id)">+ New Inspection</button>
+        </div>
+        <div id="inspection-status-line" class="hint" style="margin:8px 0;">—</div>
+        <div id="inspection-history" class="data-list"></div>
+      </section>
+
+      <!-- ====== Bi-Monthly Inspection Modal ====== -->
+      <div id="inspection-overlay" class="edit-vehicle-overlay" style="display:none;">
+        <div class="edit-vehicle-modal" style="max-width:820px;">
+          <div class="edit-vehicle-header">
+            <h3 id="inspection-modal-title">🔍 Bi-Monthly Turo Inspection</h3>
+            <button class="btn-close" onclick="closeBiMonthlyInspection()">&times;</button>
+          </div>
+          <form id="inspection-form" onsubmit="event.preventDefault();saveBiMonthlyInspection();">
+            <input type="hidden" id="insp-id">
+            <input type="hidden" id="insp-vehicle-id">
+            <!-- Vehicle info bar (auto-filled) -->
+            <div class="insp-vehicle-bar" id="insp-vehicle-bar">—</div>
+
+            <!-- Inspection date + inspector info -->
+            <div class="form-row">
+              <div class="form-group">
+                <label for="insp-date">Inspection Date <span style="color:#dc2626;">*</span></label>
+                <input type="date" id="insp-date" required>
+              </div>
+              <div class="form-group">
+                <label for="insp-mileage">Mileage at Inspection <span style="color:#dc2626;">*</span></label>
+                <input type="number" id="insp-mileage" min="0" max="999999" required>
+              </div>
+            </div>
+
+            <div class="insp-section-title">👨‍🔧 Inspector (Qualified Mechanic)</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="insp-inspector-name">Inspector Name</label>
+                <input type="text" id="insp-inspector-name" maxlength="100" placeholder="John Doe">
+              </div>
+              <div class="form-group">
+                <label for="insp-ase-id">ASE ID #</label>
+                <input type="text" id="insp-ase-id" maxlength="30" placeholder="ASE12345">
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="insp-inspector-company">Inspector Company &amp; Address</label>
+                <input type="text" id="insp-inspector-company" maxlength="200" placeholder="ABC Auto — 123 Main St, Honolulu HI">
+              </div>
+            </div>
+
+            <!-- 21 inspection points -->
+            <div class="insp-section-title">✅ Inspection Points (21)</div>
+            <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm btn-outline" onclick="setAllInspStatus('pass')">✔ Mark All Pass</button>
+              <button type="button" class="btn btn-sm btn-outline" onclick="setAllInspStatus('')">🔄 Reset All</button>
+            </div>
+            <div id="insp-items-grid" class="insp-items-grid"></div>
+
+            <!-- Notes -->
+            <div class="insp-section-title">📝 Notes</div>
+            <textarea id="insp-notes" rows="2" maxlength="500" placeholder="Anything the inspector or host wants recorded"></textarea>
+
+            <!-- Signatures -->
+            <div class="insp-section-title">✍️ Signatures</div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="insp-host-sig">Host Signature (type name)</label>
+                <input type="text" id="insp-host-sig" maxlength="100" placeholder="Matthew Fetterman">
+              </div>
+              <div class="form-group">
+                <label for="insp-inspector-sig">Inspector Signature (type name)</label>
+                <input type="text" id="insp-inspector-sig" maxlength="100" placeholder="John Doe">
+              </div>
+            </div>
+
+            <!-- Overall result banner (auto-computed) -->
+            <div id="insp-overall-banner" class="insp-overall insp-overall-incomplete">Result: incomplete — check every item</div>
+
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary" onclick="closeBiMonthlyInspection()">Cancel</button>
+              <button type="submit" class="btn btn-primary">💾 Save Inspection</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ====== Inspection View / Print Modal ====== -->
+      <div id="inspection-view-overlay" class="edit-vehicle-overlay" style="display:none;">
+        <div class="edit-vehicle-modal" style="max-width:820px;">
+          <div class="edit-vehicle-header">
+            <h3>🔍 Inspection Record</h3>
+            <button class="btn-close" onclick="document.getElementById('inspection-view-overlay').style.display='none'">&times;</button>
+          </div>
+          <div id="inspection-view-body" style="padding:4px;"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap;">
+            <button type="button" class="btn btn-outline" onclick="printCurrentInspection()">🖨 Print</button>
+            <button type="button" class="btn btn-secondary" onclick="document.getElementById('inspection-view-overlay').style.display='none'">Close</button>
+          </div>
+        </div>
+      </div>
 
       <!-- ====== Edit Maintenance Modal ====== -->
       <div id="edit-maint-overlay" class="edit-vehicle-overlay" style="display:none;">
@@ -3263,7 +3367,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260926r"></script>
+  <script src="app.js?v=20260926s"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">
