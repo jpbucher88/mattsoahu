@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926g">
+  <link rel="stylesheet" href="style.css?v=20260926i">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -83,38 +83,55 @@
         <span id="task-alert-count" class="task-alert-count count-zero">0</span>
         <span class="task-alert-label">Tasks</span>
       </button>
-      <button id="btn-mailbox" class="task-alert-btn" title="Mailbox" onclick="openMailbox()">
-        <span class="task-alert-icon">📬</span>
-        <span id="mail-unread-count" class="task-alert-count count-zero">0</span>
-        <span class="task-alert-label">Mail</span>
-      </button>
-      <button id="btn-timeclock" class="task-alert-btn" style="display:none;" title="Time Clock" onclick="openTimeClock()">
-        <span class="task-alert-icon">⏱️</span>
-        <span id="tc-active-dot" class="task-alert-count count-zero"></span>
-        <span class="task-alert-label">Clock</span>
-      </button>
 
-      <button id="btn-learning" class="task-alert-btn" title="Learning Center" onclick="openLearningPage()">
-        <span class="task-alert-icon">🎓</span>
-        <span class="task-alert-label">Learn</span>
-      </button>
-      <button id="btn-finance" class="task-alert-btn" title="Finance" onclick="openFinance()" style="display:none;">
-        <span class="task-alert-icon">💵</span>
-        <span class="task-alert-label">Finance</span>
-      </button>
-      <button id="btn-maint-dash" class="task-alert-btn" title="Maintenance Dashboard" onclick="openMaintenanceDash()" style="display:none;">
-        <span class="task-alert-icon">🔧</span>
-        <span class="task-alert-label">Repairs</span>
-      </button>
-      <button id="btn-crm-dash" class="task-alert-btn" title="CRM — Sales Dashboard" onclick="openCrmDash()" style="display:none;">
-        <span class="task-alert-icon">🤝</span>
-        <span id="crm-alert-count" class="task-alert-count count-zero">0</span>
-        <span class="task-alert-label">CRM</span>
-      </button>
-      <button id="btn-locations" class="task-alert-btn" title="Locations">
-        <span class="task-alert-icon">📍</span>
-        <span class="task-alert-label">Locations</span>
-      </button>
+      <!-- Hub dropdown: Mailbox · Time Clock · Learning Center -->
+      <div class="header-menu-wrap">
+        <button id="btn-hub" class="task-alert-btn" title="Communication &amp; Learning Hub" onclick="toggleHeaderMenu(event,'hub')">
+          <span class="task-alert-icon">📚</span>
+          <span class="task-alert-count count-zero" data-mbn-mirror="mail-unread-count">0</span>
+          <span class="task-alert-label">Hub</span>
+        </button>
+        <div id="menu-hub" class="header-menu" role="menu" hidden>
+          <button id="btn-mailbox" class="header-menu-item" role="menuitem" onclick="closeHeaderMenu();openMailbox()">
+            <span class="hm-icon">📬</span>
+            <span class="hm-label">Mailbox</span>
+            <span id="mail-unread-count" class="hm-badge count-zero">0</span>
+          </button>
+          <button id="btn-timeclock" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openTimeClock()">
+            <span class="hm-icon">⏱️</span>
+            <span class="hm-label">Time Clock</span>
+            <span id="tc-active-dot" class="hm-badge count-zero"></span>
+          </button>
+          <button id="btn-learning" class="header-menu-item" role="menuitem" onclick="closeHeaderMenu();openLearningPage()">
+            <span class="hm-icon">🎓</span>
+            <span class="hm-label">Learning Center</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Manager Portal dropdown: Finance · Repairs · CRM -->
+      <div id="header-manager-wrap" class="header-menu-wrap" style="display:none;">
+        <button id="btn-manager" class="task-alert-btn" title="Manager Portal" onclick="toggleHeaderMenu(event,'manager')">
+          <span class="task-alert-icon">💼</span>
+          <span class="task-alert-count count-zero" data-mbn-mirror="crm-alert-count">0</span>
+          <span class="task-alert-label">Manager</span>
+        </button>
+        <div id="menu-manager" class="header-menu" role="menu" hidden>
+          <button id="btn-finance" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openFinance()">
+            <span class="hm-icon">💵</span>
+            <span class="hm-label">Finance</span>
+          </button>
+          <button id="btn-maint-dash" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openMaintenanceDash()">
+            <span class="hm-icon">🔧</span>
+            <span class="hm-label">Repairs</span>
+          </button>
+          <button id="btn-crm-dash" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openCrmDash()">
+            <span class="hm-icon">🤝</span>
+            <span class="hm-label">CRM — Sales Dashboard</span>
+            <span id="crm-alert-count" class="hm-badge count-zero">0</span>
+          </button>
+        </div>
+      </div>
       <div class="header-actions">
         <span id="user-display" class="user-badge"></span>
         <button id="btn-change-password" class="btn btn-sm btn-outline btn-icon-mobile" title="Change Password">Change Password</button>
@@ -134,7 +151,7 @@
         <span class="mbn-label">Tasks</span>
         <span class="mbn-badge mbn-badge-zero" data-mbn-mirror="task-alert-count">0</span>
       </button>
-      <button class="mbn-item" data-mbn-target="btn-locations" aria-label="Locations">
+      <button class="mbn-item" onclick="scrollToLocationsWidget()" aria-label="Locations">
         <span class="mbn-icon">📍</span>
         <span class="mbn-label">Locations</span>
       </button>
@@ -3164,7 +3181,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20260926h"></script>
+  <script src="app.js?v=20260926i"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

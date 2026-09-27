@@ -1413,6 +1413,11 @@ auth.onAuthStateChanged(async (user) => {
         if (crmBtn) crmBtn.style.display = '';
       }
 
+      // Reveal the Manager Portal wrapper if any Finance / Repairs / CRM child is visible
+      if (typeof window._syncHeaderManagerVisibility === 'function') {
+        window._syncHeaderManagerVisibility();
+      }
+
       // Easter eggs: fire AFTER page is visible so they don't block the loading spinner
       if (uName.includes('dan')) {
         setTimeout(() => showDanEasterEgg(), 80);
@@ -7266,12 +7271,50 @@ window.flagVehicleNotReturned = async function(vehicleId) {
   }
 };
 
-// Locations button — scroll to Locations widget
-$('btn-locations').addEventListener('click', () => {  const widget = $('locations-widget');
-  if (widget) {
-    widget.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
+// Locations button — scroll to Locations widget (button was retired from the
+// desktop header; the Locations widget is already visible on the dashboard).
+// Kept as a global so the mobile bottom-nav Locations tile can still target it.
+window.scrollToLocationsWidget = function() {
+  const widget = $('locations-widget');
+  if (widget) widget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+};
+const _legacyLocBtn = $('btn-locations');
+if (_legacyLocBtn) _legacyLocBtn.addEventListener('click', window.scrollToLocationsWidget);
+
+// ================================================================
+// HEADER DROPDOWN MENUS — Hub (Mail/Clock/Learn) & Manager (Finance/Repairs/CRM)
+// ================================================================
+window.toggleHeaderMenu = function(evt, key) {
+  if (evt) evt.stopPropagation();
+  const menu = document.getElementById('menu-' + key);
+  if (!menu) return;
+  const isOpen = !menu.hasAttribute('hidden');
+  // Close any other open header menus first
+  document.querySelectorAll('.header-menu').forEach(m => m.setAttribute('hidden', ''));
+  if (!isOpen) menu.removeAttribute('hidden');
+};
+window.closeHeaderMenu = function() {
+  document.querySelectorAll('.header-menu').forEach(m => m.setAttribute('hidden', ''));
+};
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.header-menu-wrap')) return;
+  window.closeHeaderMenu();
 });
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') window.closeHeaderMenu();
+});
+
+// Show/hide the Manager Portal wrapper based on whether any of its child buttons
+// are currently visible. Called after the role-based init logic sets child display.
+window._syncHeaderManagerVisibility = function() {
+  const wrap = $('header-manager-wrap');
+  if (!wrap) return;
+  const anyVisible = ['btn-finance','btn-maint-dash','btn-crm-dash'].some(id => {
+    const el = document.getElementById(id);
+    return el && el.style.display !== 'none';
+  });
+  wrap.style.display = anyVisible ? '' : 'none';
+};
 
 // Tab switching
 document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -7283,7 +7326,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // Auto-load tabs that need data
     if (this.dataset.tab === 'tab-deleted')     loadDeletedTasks();
     if (this.dataset.tab === 'tab-ops-report')  loadOpsReport();
-    if (this.dataset.tab === 'tab-performance') loadPerformanceReport();
+    if (this.dataset.tab === 'tab-performance') { loadPerformanceReport(); loadGoalsPanel(); }
     if (this.dataset.tab === 'tab-config')      loadGeofenceDisplay();
   });
 });
@@ -21326,6 +21369,8 @@ function _applyRoleToNav() {
     if (billsBtn)  billsBtn.style.display = 'none';
     if (prodBtn)   prodBtn.style.display  = 'none';
   }
+
+  if (typeof window._syncHeaderManagerVisibility === 'function') window._syncHeaderManagerVisibility();
 
   // Refresh current view so role-gated elements update
   renderFleetDashboard();
