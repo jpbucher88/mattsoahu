@@ -10485,7 +10485,7 @@ async function _loadWorkOrders() {
             <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
         } else {
           statusActions = `
-            <button class="btn btn-sm wo-btn-quick-done" onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</button>
+            <button class="btn btn-sm wo-btn-quick-done" onclick="window.openQuickDoneModal('${item.id}')">⚡ Quick Done</button>
             <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</button>
             <button class="btn btn-sm wo-btn-drop" onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</button>
             <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
@@ -10667,7 +10667,7 @@ async function _loadWorkOrders() {
         secondaryBtn = `<button class="wo-secondary-btn" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Reschedule</button>`;
         moreActions  = isMaintAuto2
           ? `<li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</li>`
-          : `<li onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</li>
+          : `<li onclick="window.openQuickDoneModal('${item.id}')">⚡ Quick Done</li>
              <li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</li>`;
       } else if (isMaintAuto2) {
         primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
@@ -10675,7 +10675,7 @@ async function _loadWorkOrders() {
         moreActions  = `<li onclick="window.snoozeWorkOrder('${item.id}',30)">⏸️ Snooze 30d</li>`;
       } else {
         primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
-        secondaryBtn = `<button class="wo-secondary-btn" onclick="window.quickResolveWorkOrder('${item.id}','completed','Completed.')">⚡ Quick Done</button>`;
+        secondaryBtn = `<button class="wo-secondary-btn" onclick="window.openQuickDoneModal('${item.id}')">⚡ Quick Done</button>`;
         moreActions  = `<li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</li>
           <li onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</li>
           <li onclick="window.quickResolveWorkOrder('${item.id}','no_fault','No fault found.')">🔍 No Fault</li>`;
@@ -11322,6 +11322,94 @@ window._saveAwaitingParts = async function(noteId) {
 
 window.quickResolveWorkOrder = async function(noteId, resStatus, resText) {
   if (!await confirm('Confirm Resolution', `Mark as "${resStatus === 'no_fault' ? 'No Fault Found' : resStatus}"?\n\n${resText}`)) return;
+  return _performQuickResolve(noteId, resStatus, resText);
+};
+
+// Interactive "Quick Done" — asks the user WHAT was fixed before closing the
+// work order, so the resolution field carries real info instead of "Completed."
+window.openQuickDoneModal = async function(noteId) {
+  if (document.getElementById('qd-modal-overlay')) return;
+  let noteData = {};
+  try {
+    const snap = await db.collection('vehicleNotes').doc(noteId).get();
+    if (snap.exists) noteData = snap.data();
+  } catch (_) {}
+  const plate = noteData.plate || (vehiclesCache.find(x => x.id === noteData.vehicleId) || {}).plate || '';
+  const issue = noteData.text || '';
+
+  const presets = [
+    { key: 'fixed',    label: '✅ Fixed / Repaired' },
+    { key: 'replaced', label: '🔄 Replaced Part' },
+    { key: 'adjusted', label: '🔧 Cleaned / Adjusted' },
+    { key: 'topped',   label: '💧 Topped Off Fluid' },
+    { key: 'tighten',  label: '🔩 Tightened / Reseated' },
+    { key: 'diag',     label: '🔍 Diagnosed Only' },
+    { key: 'temp',     label: '🩹 Temporary Fix' },
+    { key: 'nofault',  label: '🚫 No Fault Found' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.id = 'qd-modal-overlay';
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-dialog" style="max-width:440px;text-align:left;">
+      <h4 style="text-align:left;">⚡ Quick Done — What was fixed?</h4>
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.85rem;color:#374151;">
+        ${plate ? `<strong>${escapeHtml(plate)}</strong> · ` : ''}${escapeHtml(issue).slice(0, 200)}
+      </div>
+      <div style="font-size:0.78rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px;">Pick one</div>
+      <div id="qd-chips" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;">
+        ${presets.map(p => `<button type="button" class="maint-chip" data-qd="${p.key}" data-label="${escapeHtml(p.label)}">${p.label}</button>`).join('')}
+      </div>
+      <label style="display:block;font-size:0.78rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Details (optional)</label>
+      <textarea id="qd-details" rows="2" maxlength="500" placeholder="e.g. Replaced front wiper blades. New blades installed." style="width:100%;border:1px solid #d1d5db;border-radius:8px;padding:8px 10px;font:inherit;font-size:0.9rem;resize:vertical;margin-bottom:14px;"></textarea>
+      <div class="confirm-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary" id="qd-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="qd-save" disabled>Mark Done</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const chips = overlay.querySelector('#qd-chips');
+  const details = overlay.querySelector('#qd-details');
+  const saveBtn = overlay.querySelector('#qd-save');
+  let pickedLabel = '';
+  let pickedKey = '';
+
+  const refreshSaveState = () => {
+    saveBtn.disabled = !pickedLabel && !details.value.trim();
+  };
+
+  chips.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-qd]');
+    if (!btn) return;
+    chips.querySelectorAll('.maint-chip').forEach(c => c.classList.remove('active'));
+    btn.classList.add('active');
+    pickedKey = btn.dataset.qd;
+    pickedLabel = btn.dataset.label.replace(/^[^A-Za-z]+/, '').trim();
+    refreshSaveState();
+  });
+  details.addEventListener('input', refreshSaveState);
+
+  overlay.querySelector('#qd-cancel').onclick = () => overlay.remove();
+  saveBtn.onclick = async () => {
+    const extra = details.value.trim();
+    const resolutionText = extra
+      ? (pickedLabel ? `${pickedLabel} — ${extra}` : extra)
+      : pickedLabel;
+    if (!resolutionText) { refreshSaveState(); return; }
+    const status = pickedKey === 'nofault' ? 'no_fault' : 'completed';
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    try {
+      await _performQuickResolve(noteId, status, resolutionText);
+    } finally {
+      overlay.remove();
+    }
+  };
+};
+
+async function _performQuickResolve(noteId, resStatus, resText) {
   try {
     const noteSnap = await db.collection('vehicleNotes').doc(noteId).get().catch(() => null);
     const nd = noteSnap && noteSnap.exists ? noteSnap.data() : {};
@@ -14618,13 +14706,13 @@ function renderTaskAgenda(allItems) {
       bannerEl.style.display = '';
       if (bannerCountEl) bannerCountEl.textContent = allOverdue.length;
       if (bannerListEl) {
-        allOverdue.sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || (a.dueDate || '').localeCompare(b.dueDate || ''));
-        bannerListEl.innerHTML = allOverdue.map(item => renderAgendaItem(item)).join('');
-        bannerListEl.querySelectorAll('.followup-item').forEach(el => {
+        // Sort by most overdue first (oldest dueDate on top); urgent items float up within the same day
+        allOverdue.sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || '') || (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0));
+        bannerListEl.innerHTML = allOverdue.map(item => renderOverdueBannerItem(item, today)).join('');
+        bannerListEl.querySelectorAll('.qd-banner-item').forEach(el => {
           el.addEventListener('click', e => {
             if (e.target.closest('button')) return;
-            const wrap = el.closest('.followup-item-wrap');
-            const dd = wrap ? wrap.dataset.due : '';
+            const dd = el.dataset.due || '';
             if (dd) jumpToCalendarDay(dd);
           });
         });
@@ -14788,6 +14876,52 @@ function renderTaskAgenda(allItems) {
             ${menuBtn}
           </div>
         </div>
+      </div>`;
+  }
+
+  // Compact renderer for the top-of-hub overdue banner: strips repetitive
+  // "(every N Months)" cruft, shows a big "Nd late" pill, keeps meta on one line.
+  function renderOverdueBannerItem(item, todayStr) {
+    const isVehicle = item.type === 'vehicle';
+    const v = isVehicle ? vehiclesCache.find(x => x.id === item.vehicleId) : null;
+    const plate = v ? v.plate : (isVehicle ? 'Unknown' : 'General');
+
+    // Days late from the ISO due date string
+    let daysLate = 0;
+    if (item.dueDate) {
+      const dueMs = new Date(item.dueDate + 'T00:00:00').getTime();
+      const nowMs = new Date(todayStr + 'T00:00:00').getTime();
+      daysLate = Math.max(1, Math.round((nowMs - dueMs) / 86400000));
+    }
+    const lateSeverity = daysLate >= 14 ? 'qd-late-critical' : daysLate >= 4 ? 'qd-late-high' : 'qd-late-warn';
+    const dueLbl = item.dueDate
+      ? new Date(item.dueDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: APP_TIMEZONE })
+      : '';
+
+    // Strip "(every N Month/Miles)" and other interval clutter from the title
+    const cleanTitle = (item.text || '')
+      .replace(/\s*\(every[^)]*\)\s*/gi, '')
+      .replace(/\s+due\b/i, '')
+      .trim() || (item.text || '');
+
+    const assignee = item.assignedToName
+      ? escapeHtml(item.assignedToName.split('@')[0])
+      : (item.assignedTo ? '' : 'Team');
+    const urgentBadge = item.urgent ? '<span class="qd-banner-urgent">🚨</span>' : '';
+
+    const canDelete = (currentUserRole === 'admin');
+    const doneBtn = `<button class="qd-banner-done" onclick="event.stopPropagation();agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark done">✓</button>`;
+    const menuBtn = `<button class="qd-banner-menu" onclick="event.stopPropagation();openTaskContextMenu('${item.id}','${item.collection}',this)" title="Options">⋯</button>`;
+
+    return `
+      <div class="qd-banner-item" data-id="${item.id}" data-col="${item.collection}" data-due="${item.dueDate || ''}">
+        <div class="qd-banner-main">
+          <div class="qd-banner-title">${urgentBadge}${escapeHtml(cleanTitle)}</div>
+          <div class="qd-banner-meta">🚗 <strong>${escapeHtml(plate)}</strong>${assignee ? ' · ' + assignee : ''}${dueLbl ? ' · was due ' + dueLbl : ''}</div>
+        </div>
+        <div class="qd-banner-late ${lateSeverity}">${daysLate}d late</div>
+        ${doneBtn}
+        ${menuBtn}
       </div>`;
   }
 

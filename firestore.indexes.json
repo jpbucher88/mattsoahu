@@ -1,4 +1,4 @@
-﻿{
+{
   "indexes": [
     {
       "collectionGroup": "photos",
@@ -59,15 +59,6 @@
       ]
     },
     {
-      "collectionGroup": "vehicleNotes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "done", "order": "ASCENDING" },
-        { "fieldPath": "isFollowUp", "order": "ASCENDING" },
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
-      ]
-    },
-    {
       "collectionGroup": "generalNotes",
       "queryScope": "COLLECTION",
       "fields": [
@@ -94,27 +85,7 @@
         { "fieldPath": "maintenanceService", "order": "ASCENDING" },
         { "fieldPath": "autoCreated", "order": "ASCENDING" }
       ]
-    },
-    {
-      "collectionGroup": "incidents",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "vehicleId", "order": "ASCENDING" },
-        { "fieldPath": "inspectionKey", "order": "ASCENDING" },
-        { "fieldPath": "status", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "vehicleNotes",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "vehicleId", "order": "ASCENDING" },
-        { "fieldPath": "workOrder", "order": "ASCENDING" },
-        { "fieldPath": "done", "order": "ASCENDING" },
-        { "fieldPath": "resolutionDate", "order": "DESCENDING" }
-      ]
     }
   ],
   "fieldOverrides": []
 }
-
