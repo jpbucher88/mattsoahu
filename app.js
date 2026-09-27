@@ -17819,6 +17819,8 @@ window.openLearningPage = function() {
   if (disp && currentUser) disp.textContent = currentUser.displayName || currentUser.email;
   const shareBtn = $('btn-add-shared-resource');
   if (shareBtn) shareBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
+  const seedBtn = $('btn-seed-training');
+  if (seedBtn) seedBtn.style.display = currentUserRole === 'admin' ? '' : 'none';
   // Show SOP admin controls for admins only
   const sopAdminCtrl = $('sop-admin-controls');
   if (sopAdminCtrl) sopAdminCtrl.style.display = currentUserRole === 'admin' ? '' : 'none';
@@ -18270,6 +18272,1136 @@ window.deleteLearningItem = async function(docId) {
     loadLearningItems();
     toast('Deleted.', 'success');
   } catch(e) { toast('Delete failed.', 'error'); }
+};
+
+// ================================================================
+// ALOHA FLEET TRAINING CURRICULUM
+// A structured e-learning program that publishes to Shared Resources
+// on the Learning Center. Idempotent — safe to click multiple times;
+// existing items with the same title are skipped.
+// ================================================================
+const TRAINING_CURRICULUM = [
+  // ── FOUNDATIONS ─────────────────────────────────────────────────
+  { title: '🎓 M1.1 — Welcome to Aloha Fleet', content:
+`WHAT THIS COURSE IS
+Aloha Fleet is our command center for every vehicle, task, repair, and inspection. This first module gets you oriented so you can start contributing on day one.
+
+WHAT YOU'LL LEARN
+▪ What the app tracks and why it matters
+▪ Your role and what you're expected to log
+▪ How to get help when you're stuck
+
+THE BIG IDEA
+Every action a driver, cleaner, or manager takes leaves a trail. That trail becomes our history: which vehicles run clean, who follows through, and where we lose time. Your job is to keep that trail honest — log what happened, when it happened, and to which vehicle.
+
+YOUR THREE PROMISES
+1. When you touch a vehicle, log it in the app the same day.
+2. Photos on any return — every wheel, every panel, every scratch.
+3. If a repair needs to happen, it goes into Repairs — not a text message.
+
+WHERE TO GET HELP
+▪ Learning Center → this training curriculum
+▪ Mailbox → message your manager
+▪ Tasks → your daily action board
+
+WHY IT MATTERS
+A missing photo can cost us a $1,200 damage claim. A missed oil change can end a transmission. This app pays for itself many times over — as long as you use it correctly.
+
+CHECK YOURSELF
+? Can I name the three promises above?
+? Do I know how to open the Learning Center?
+? Do I know how to send a message to my manager?`, type: 'text' },
+
+  { title: '🎓 M1.2 — Logging In & Password Safety', content:
+`YOU WILL LEARN HOW TO
+▪ Log in for the first time
+▪ Change your password
+▪ Recover from a forgotten password
+▪ Keep your account secure
+
+FIRST-TIME LOGIN
+1. Open mattsoahu.web.app
+2. Tap the "Add to Home Screen" prompt so it lives as an app icon on your phone
+3. Enter the email your manager set you up with
+4. Enter the temporary password
+5. IMMEDIATELY tap "Change Password" (top right on web, or More → Change Password on mobile)
+
+STRONG PASSWORD RULES
+▪ At least 8 characters
+▪ Mix of letters, numbers, and one symbol
+▪ NOT the same as your email or phone number
+▪ Do not share it — even with coworkers
+
+FORGOT PASSWORD
+On the login screen tap "Forgot Password?" and enter your email. Firebase will email you a reset link within 60 seconds. Check spam if it doesn't arrive.
+
+WHEN TO CHANGE YOUR PASSWORD
+▪ First login (mandatory)
+▪ If you suspect anyone else has seen you type it
+▪ Every 6 months as a habit
+
+SECURITY RED FLAGS — CALL YOUR MANAGER
+✗ You get a login-alert email you didn't trigger
+✗ Someone asks for your password by text or phone
+✗ Data changes appear that you didn't make
+
+CHECK YOURSELF
+? Have I changed my temporary password?
+? Do I know how to reset a forgotten password?`, type: 'text' },
+
+  { title: '🎓 M1.3 — The Dashboard at a Glance', content:
+`YOU WILL LEARN HOW TO
+▪ Read the fleet dashboard
+▪ Find any vehicle in under 5 seconds
+▪ Understand each icon and color code
+
+THE HOME SCREEN
+When you log in you land on the Fleet Dashboard. This is a live view of every vehicle grouped by home location.
+
+VEHICLE CARDS EXPLAINED
+▪ Green border  → Vehicle is home, clean, and ready
+▪ Yellow border → Needs cleaning or photos
+▪ Red border    → Overdue: not returned, or urgent flag
+▪ Camera icon 📷 → tap to open the vehicle and start uploading photos
+
+STATUS TAGS
+▪ On Trip → out with a customer
+▪ Home → returned to a location
+▪ Repair Shop → out for service
+
+TOP NAV BAR
+▪ 🎯 Tasks — your action board, urgent to-dos
+▪ 📚 Hub — Mail, Time Clock, Learning
+▪ 💼 Manager — Finance, Repairs, HI Compliance, CRM (managers/admins only)
+▪ 📍 Locations — click any location tile to jump to it
+
+FINDING A SPECIFIC VEHICLE
+Every card shows the plate front and center. On desktop use Cmd/Ctrl+F to search. On mobile scroll — plates are grouped by location.
+
+REFRESH BUTTON
+The "Refresh Photos" button reloads the current view. Use it if a photo doesn't appear right away.
+
+CHECK YOURSELF
+? What color border means "urgent"?
+? Where do I go to find my assigned tasks?
+? Where is the mailbox?`, type: 'text' },
+
+  // ── DAILY OPERATIONS ────────────────────────────────────────────
+  { title: '🚗 M2.1 — Understanding Vehicle Status', content:
+`YOU WILL LEARN HOW TO
+▪ Read the four vehicle states
+▪ Change status correctly when a trip starts or ends
+▪ Prevent the most common status mistake
+
+THE FOUR STATES
+1. HOME — the vehicle is parked at one of our locations, ready for the next trip
+2. ON TRIP — a customer has it (Turo, private hire, whatever the platform)
+3. PRIVATE TRIP — used internally (e.g. staff errand)
+4. REPAIR SHOP — out at a vendor for service
+
+STATUS TRANSITIONS
+When a vehicle leaves for a trip: mark ON TRIP.
+When it returns: mark HOME immediately, even if it's dirty.
+When it drops at a shop: mark REPAIR SHOP with the shop name.
+
+THE #1 MISTAKE
+Leaving a vehicle marked "On Trip" after it's back. This breaks the return queue for cleaning and makes managers chase phantom trips. When in doubt: mark it home now, adjust later if wrong.
+
+WHEN TO FLAG "NOT RETURNED"
+If the trip end-date has passed and you can't confirm the vehicle is back, tap 🚨 Flag Not Returned on the vehicle card. This alerts admin instantly.
+
+CLEANLINESS FLAG
+Toggle "Needs Cleaning" the moment you see the interior. Don't wait until end of day.
+
+CHECK YOURSELF
+? Name the four vehicle states
+? What do I do if a trip end-date has passed and I'm not sure the car is back?`, type: 'text' },
+
+  { title: '📸 M2.2 — Photo Uploads Done Right', content:
+`YOU WILL LEARN HOW TO
+▪ Take the correct photos for a return
+▪ Upload them quickly
+▪ Handle photo errors
+
+WHY WE PHOTO EVERYTHING
+Photos are our legal record. If a customer disputes damage, our claim starts and ends with the photos we took at pickup and return.
+
+THE RETURN PHOTO SET (11 shots minimum)
+1. Front three-quarter
+2. Rear three-quarter
+3. Driver-side full
+4. Passenger-side full
+5. Interior — dashboard + odometer clearly visible
+6. Interior — front seats
+7. Interior — back seats
+8. Interior — cargo/trunk area
+9. Any visible damage close-up
+10. Any warning light close-up (if lit)
+11. Fuel gauge
+
+HOW TO UPLOAD
+1. Open the vehicle's card
+2. Tap the 📷 Upload Photos button
+3. Take or select photos (up to 20 at a time)
+4. Wait for the green ✓ before closing the app
+
+IF YOU SEE DAMAGE
+Take THREE shots of it: wide, medium, close-up. Then create a task in the Repairs Dashboard.
+
+MISTAKES TO AVOID
+✗ Photos taken hours after return — timestamp matters
+✗ Sun glare hiding half the panel — reshoot in shade
+✗ Dashboard photo without odometer visible
+
+WHEN A PHOTO FAILS TO UPLOAD
+Look for the "Pending photo uploads" banner at the top of the dashboard. Tap it to retry. The app queues failed photos and will keep trying until they land.
+
+CHECK YOURSELF
+? What are the 11 minimum shots?
+? What do I do when I see damage?`, type: 'text' },
+
+  { title: '🧹 M2.3 — Cleaning: Full Clean vs Quick Wipe', content:
+`YOU WILL LEARN HOW TO
+▪ Tell the difference between a full clean and a quick wipe
+▪ Log each correctly
+▪ Know the target time for each
+
+FULL CLEAN (~40 minutes target)
+▪ Vacuum all carpets and mats
+▪ Wipe every hard surface with disinfectant
+▪ Clean windows inside and out
+▪ Remove any customer belongings (mail to mailbox for return)
+▪ Refill washer fluid if low
+
+QUICK WIPE (~6 minutes target)
+▪ Wipe steering wheel, gearshift, door handles
+▪ Empty visible trash
+▪ Fog the interior
+▪ Use when: back-to-back same-day rentals, or a vehicle that's already visibly clean
+
+WHEN TO CHOOSE WHICH
+▪ Overnight or multi-day return  → Full clean
+▪ Turnaround under 4 hours       → Quick wipe (if the car is presentable)
+▪ Customer complaint about smell → Full clean plus ozone treatment
+
+HOW TO LOG IT
+1. Open the vehicle card
+2. Tap "Mark Cleaned" (full) or "Quick Wipe" (light)
+3. The system stamps you, the time, and location automatically
+
+BATTERIES ON QUICK WIPES
+If you Quick Wipe 3 vehicles in a row on the same shift, that counts as one Full Clean's worth of productivity in the Performance Tracker.
+
+MISTAKES TO AVOID
+✗ Marking Full Clean when only a Quick Wipe was done
+✗ Skipping the log because "it was fast" — every action counts
+
+CHECK YOURSELF
+? Which of your last three vehicles were Full vs Quick?
+? What's the target time for a Full Clean?`, type: 'text' },
+
+  { title: '🏠 M2.4 — Vehicle Return Workflow', content:
+`YOU WILL LEARN HOW TO
+▪ Handle a returning vehicle end-to-end
+▪ Chain the five workflow steps
+▪ Watch your turnaround time
+
+THE FIVE STEPS (in order)
+1. 🏠 Returned — mark the moment the vehicle is back at its home lot
+2. 🔍 Inspecting — you're checking for damage / issues
+3. ✅ Inspected — inspection complete, any issues logged
+4. 🧹 Cleaned — full clean or quick wipe completed
+5. 📸 Photos — 11-shot photo set uploaded
+
+WHY THE ORDER MATTERS
+Your workflow chain shows up in the Vehicle Turnaround view (Team Performance → Vehicle Turnaround). Skipping steps or doing them out of order flags to managers that a corner was cut.
+
+TIME TARGETS
+▪ Return to inspection start: within 10 minutes
+▪ Full workflow chain complete: within 90 minutes
+▪ Photos uploaded: same day, no exceptions
+
+DAMAGE FOUND DURING INSPECTION
+1. Tap the ⚠ button on the Inspecting screen
+2. Choose severity (Minor / Major / Critical)
+3. Add note + photo
+4. This auto-creates a Repair work order in the Repairs Dashboard
+
+END OF THE CHAIN
+When you finish uploading photos the workflow chain shows all-green pills. This is the goal for every returning vehicle.
+
+CHECK YOURSELF
+? What are the five workflow steps in order?
+? What's the target time to complete the whole chain?`, type: 'text' },
+
+  { title: '📋 M2.5 — End-of-Day Checklist', content:
+`YOU WILL LEARN HOW TO
+▪ Close your day cleanly
+▪ Reduce next-morning surprises
+▪ Hand off to the next shift without gaps
+
+THE END-OF-SHIFT 5-MINUTE CHECKLIST
+1. Every vehicle you touched today: status set correctly?
+2. Every returned vehicle: photos uploaded?
+3. Every cleaning: logged?
+4. Every damage or issue: repair task created?
+5. Time Clock: are you clocked out?
+
+REVIEW THE TASK BOARD
+Tap 🎯 Tasks. Scan the "⏰ Overdue & Not Completed" banner. Anything with your name that's still open?
+▪ Can you resolve it now (< 3 minutes)? Do it.
+▪ Can you tomorrow? Leave a note in the task.
+▪ Blocked? Tap ⋯ and reassign to your manager with a note.
+
+SEND YOUR DAILY WRAP-UP (OPTIONAL BUT VALUED)
+Open Mailbox → New Message → your manager. One or two lines:
+▪ Vehicles you turned around
+▪ Anything unusual you noticed
+▪ Anything you need from them tomorrow
+
+CLOCK OUT LAST
+Once you've done the above, tap ⏱️ Time Clock → Clock Out.
+
+WHY THIS MATTERS
+This 5-minute checklist prevents 90% of the "who left this open?" morning conversations. It's the single most impactful habit in the whole app.
+
+CHECK YOURSELF
+? Am I clocked out?
+? Are all my vehicles photographed?
+? Have I sent a wrap-up message today?`, type: 'text' },
+
+  // ── MAINTENANCE & REPAIRS ───────────────────────────────────────
+  { title: '🛢 M3.1 — Logging Your First Service', content:
+`YOU WILL LEARN HOW TO
+▪ Log an oil change (or any service)
+▪ Set repeat intervals so reminders auto-generate
+▪ Attach an invoice
+
+STEPS
+1. Open the vehicle card
+2. Tap "Log Maintenance"
+3. TAP A CHIP for the service type (🛢 Oil Change, 🛑 Brakes, 🌧 Wipers, etc.). Do NOT skip this — the chip is what ties this record into the tracking system.
+4. Enter the date
+5. Enter the CURRENT MILEAGE — required, no exceptions
+6. Enter cost (optional but you should)
+7. Enter where serviced (chip picker of past vendors)
+8. Choose repeat interval — the chip pre-fills a default (e.g. Oil = 3 months / 3,000 mi). Adjust if your vendor recommends something different.
+9. Rate the vendor (⭐ comm, price, quality) if you're feeling generous
+10. Attach the invoice photo
+11. Save
+
+WHAT HAPPENS BEHIND THE SCENES
+The app creates:
+▪ A maintenance record
+▪ An auto-scheduled follow-up work order for the next due date/mileage
+▪ An expense in Finance (if cost > 0)
+
+WHY THE CHIP IS REQUIRED
+A free-typed "Oil" without a chip won't appear in the Service Reminders panel because our tracking watches specific service types. If you don't pick a chip you don't get a reminder.
+
+MISTAKES TO AVOID
+✗ Skipping the mileage field — the form now blocks the save
+✗ Free-typing an existing service (e.g. "oil change" lowercase) instead of picking the chip
+✗ Not attaching the invoice — always attach it
+
+CHECK YOURSELF
+? Where do I set the repeat interval?
+? Why must I pick a chip?`, type: 'text' },
+
+  { title: '🔔 M3.2 — Reading Service Reminders', content:
+`YOU WILL LEARN HOW TO
+▪ Interpret the Service Reminders panel
+▪ Recognize date-based vs mileage-based reminders
+▪ Take the right action for each
+
+WHERE TO FIND THEM
+Open any vehicle → scroll to "🛠 Service Reminders". This shows every service that's due or coming up within 30 days.
+
+READING THE ROW
+▪ 🗓️ icon = date-based reminder (e.g. "Oil Change — Overdue · Was due 2026-08-14")
+▪ 🔧 icon = mileage-based reminder (e.g. "Brake Fluid — Overdue by 500 mi")
+▪ ⚠️ icon = a mileage reminder that's close but not yet overdue
+
+CLICK THE ROW TO EDIT
+Every reminder is clickable. Clicking a date-based one opens the Edit Maintenance Record modal — where you can shift the last-service date, mileage, or the repeat interval, and the reminder recalculates.
+
+Clicking a mileage-based one opens the Adjust Due Date/Miles modal directly.
+
+WHEN TO ADJUST vs. LOG SERVICE
+▪ Vehicle actually was serviced → Log Maintenance (new record)
+▪ Vendor said to push interval → Adjust the reminder
+▪ Reminder just wrong (e.g. Turo pulled the car for a month) → Adjust
+
+CHECK YOURSELF
+? What does the 🔧 icon mean vs 🗓️ ?
+? What happens when I click a reminder?`, type: 'text' },
+
+  { title: '🕓 M3.3 — Adjusting Due Dates & Mileage', content:
+`YOU WILL LEARN HOW TO
+▪ Push a reminder out when the vehicle isn't really due yet
+▪ Keep the schedule in sync with reality
+
+WHEN TO USE ADJUST DUE
+▪ Time says overdue, but mileage says you're 2,000 mi away
+▪ Vendor recommends 6,000-mi interval instead of 3,000
+▪ Vehicle was off the road for a month and the calendar over-ran
+
+WHERE TO FIND IT
+Two entry points:
+1. Repairs Dashboard → the maintenance work order → 🕓 Adjust Due button
+2. Any Service Reminder row → click it
+
+WHAT YOU CAN EDIT
+▪ Next Due Date
+▪ Next Due Mileage
+▪ Repeat Every (Time)
+▪ Repeat Every (Miles)
+
+QUICK-PUSH BUTTONS
+▪ +1 mo, +3 mo, +6 mo — shifts the date forward from its current value
+▪ +1,000 mi, +3,000 mi — shifts the mileage forward from its current value
+
+WHAT SAVES
+When you tap Save, the work order updates AND the source maintenance record updates. Next auto-renewal will inherit your new interval — the change sticks.
+
+AUDIT TRAIL
+Every Adjust Due creates a log entry in the Performance tab so managers can see who moved what.
+
+WHEN NOT TO USE THIS
+If the vehicle actually WAS serviced, don't Adjust — LOG the service instead (M3.1). Adjust is for pushing out; Log is for recording completion.
+
+CHECK YOURSELF
+? Adjust vs Log — which do I use when the vehicle was serviced?
+? Where does the audit entry appear?`, type: 'text' },
+
+  { title: '⚡ M3.4 — Quick Done: What Was Fixed?', content:
+`YOU WILL LEARN HOW TO
+▪ Close a repair work order in under 30 seconds
+▪ Record what was actually done (not "Completed.")
+
+WHERE
+Repairs Dashboard → any open work order → ⚡ Quick Done button.
+
+WHAT HAPPENS
+A modal opens showing the vehicle plate and the original issue. You pick ONE preset chip:
+▪ ✅ Fixed / Repaired
+▪ 🔄 Replaced Part
+▪ 🔧 Cleaned / Adjusted
+▪ 💧 Topped Off Fluid
+▪ 🔩 Tightened / Reseated
+▪ 🔍 Diagnosed Only
+▪ 🩹 Temporary Fix
+▪ 🚫 No Fault Found
+
+Then you can type details ("Replaced front wiper blades. Used Bosch OEM").
+
+SAVE
+The work order closes with a real resolution log, not "Completed." Future you (and future me) will thank present you.
+
+WHEN TO USE QUICK DONE vs SERVICE DONE
+▪ Regular work order (rattle, warning light, damage) → Quick Done
+▪ Scheduled maintenance (Oil Change auto-reminder)  → ✅ Service Done (takes you to log the service properly)
+
+NEVER JUST HIT DONE WITH NOTHING TYPED
+The Save button now stays disabled until you either pick a chip or type something. This is intentional. Empty resolutions are worse than useless.
+
+CHECK YOURSELF
+? What if I clean and adjust but don't replace anything?
+? Where does the resolution text I type end up?`, type: 'text' },
+
+  { title: '🔧 M3.5 — Working with Repair Vendors', content:
+`YOU WILL LEARN HOW TO
+▪ Assign a vendor to a repair
+▪ Track vendor performance over time
+▪ Escalate a stuck repair
+
+ASSIGNING A VENDOR
+When a repair goes to a shop:
+1. Open the work order
+2. Fill in "Assigned Mechanic" — free-text or pick a system user
+3. Set the schedule date (when the shop will start)
+4. Optional: attach an invoice/estimate photo
+
+STATUS PIPELINE
+▪ Scheduled → we've booked the appointment
+▪ Dropped Off → the car is at the vendor
+▪ Awaiting Parts → vendor is waiting on a part; log ETA and supplier
+▪ Completed → the work is done and the car is back
+
+VENDOR TRACKING
+When you Complete a repair with a vendor assigned, the app auto-logs a Vendor Event (Vendor → Type: completed → Date). Over time this builds a picture of which vendors are fastest, cheapest, and most reliable.
+
+RATING VENDORS
+Rate them on Communication, Price/Value, Fixed Correctly (⭐ 1–5). Rating is optional but hugely valuable for admins choosing vendors for future work.
+
+WHEN A REPAIR IS STUCK
+▪ 3 days without progress → ⋯ menu → move to "Awaiting Parts" with note
+▪ 7 days without progress → Message your manager via Mailbox with a link to the work order
+▪ 14 days without progress → Admin escalation
+
+CHECK YOURSELF
+? What are the four statuses in the vendor pipeline?
+? When do I escalate to my manager?`, type: 'text' },
+
+  // ── COMMUNICATION & TASK MANAGEMENT ─────────────────────────────
+  { title: '🎯 M4.1 — Operations Hub (Task Board)', content:
+`YOU WILL LEARN HOW TO
+▪ Read the Ops Hub
+▪ Tab-navigate to what matters
+▪ Take action from the overdue banner
+
+WHERE
+Top nav → 🎯 Tasks. This is your daily command center.
+
+THE OVERDUE BANNER
+The first thing you see. Every task that's past its due date, sorted worst-first. Each row shows:
+▪ Task title (cleaned up — no clutter)
+▪ Plate + assignee + original due date
+▪ A red pill: "18d late", color-graded (yellow → orange → red)
+▪ ✓ Done button
+▪ ⋯ options menu
+
+STATUS TABS
+▪ All — everything active
+▪ 🚨 Urgent — dropped everything
+▪ 🔵 Scheduled — dated tasks
+▪ 🟢 Watch — monitoring items
+▪ 🔧 Maint — scheduled maintenance auto-tasks
+▪ 📋 Comply — inspection / registration due
+▪ 👤 Mine — assigned to you + team (unassigned)
+▪ 🚨 Incidents — accidents / claims
+
+TAKING ACTION
+Tap a row → jumps to the calendar day for that task. Tap ✓ Done → for a regular task marks done in place; for a repair opens Quick Done. Tap ⋯ → context menu (Edit, Change Date, Adjust Due, Reassign, Delete).
+
+DAILY HABIT
+Start every shift by opening 🎯 Tasks. Scan the overdue banner. Kill the small stuff (< 3 min items) immediately.
+
+CHECK YOURSELF
+? What does the "Mine" tab show?
+? What's the difference between Quick Done on a task and on a repair?`, type: 'text' },
+
+  { title: '📝 M4.2 — Creating & Assigning Tasks', content:
+`YOU WILL LEARN HOW TO
+▪ Create a task in under 30 seconds
+▪ Assign to the right person
+▪ Set a due date and priority
+
+STEPS
+1. Ops Hub → ➕ Add Task
+2. Title (required, one line)
+3. Description (optional, longer context)
+4. Priority: Normal / High / Critical
+5. Assignee: pick a specific person, or leave blank = Team (everyone sees it)
+6. Due date (optional but recommended)
+7. Save
+
+GOOD TASK TITLES
+✔ "WPB596 — replace rear wiper blade"
+✔ "Call Wai's Auto re: TRR149 brake estimate"
+✔ "Order 2x 205/55R16 tires"
+
+BAD TASK TITLES
+✗ "Do the thing" (what thing?)
+✗ "Vehicle stuff" (which vehicle?)
+✗ "URGENT!!!" (urgent about what?)
+
+WHEN TO ASSIGN vs LEAVE TEAM
+▪ Assign to a specific person → if there's one obvious owner
+▪ Leave as Team → if anyone on shift can pick it up (quick clean, photo touchup)
+
+STATUS MOVES
+Once a task is created, buttons let you move it between 🚨 Urgent, 🔵 Scheduled, and 🟢 Monitoring without editing.
+
+CHECK YOURSELF
+? What makes a good task title?
+? When would I leave a task as Team instead of assigning?`, type: 'text' },
+
+  { title: '📬 M4.3 — Mailbox Basics', content:
+`YOU WILL LEARN HOW TO
+▪ Send and receive messages inside the app
+▪ Turn a message into a task
+▪ Use urgent flags correctly
+
+WHERE
+Top nav → 📬 Mailbox (inside Hub on desktop; in Hub sheet on mobile).
+
+READING MAIL
+▪ Unread messages have a red badge
+▪ Tap a message to read it — read receipts stamp the moment you open it
+▪ From the message you can Reply, Delete, or Create Task
+
+CREATING A TASK FROM A MESSAGE
+This is a shortcut for turning a "hey can you check WPB596" ping into a real actionable task. From the opened message tap "📋 Create Task" — the task pre-fills with the message text.
+
+MESSAGE ETIQUETTE
+✔ One topic per message
+✔ Include the vehicle plate if it's about a specific car
+✔ Use urgent flag only if action is needed within 2 hours
+
+DELETING
+Deleted messages are gone. Don't delete anything you might need for a claim (damage discussions, customer complaints).
+
+WHEN NOT TO USE MAIL
+For anything action-oriented, create a Task instead — tasks have due dates and follow-ups; mail doesn't. Mail is for information exchange.
+
+CHECK YOURSELF
+? Can I turn a message into a task?
+? When should I use urgent flag?`, type: 'text' },
+
+  { title: '⏱️ M4.4 — Time Clock', content:
+`YOU WILL LEARN HOW TO
+▪ Clock in at start of shift
+▪ Take breaks correctly
+▪ Clock out at end of shift
+▪ View your hours for the pay period
+
+WHERE
+Top nav → ⏱️ Time Clock (in Hub group).
+
+CLOCK IN
+1. Tap Clock In
+2. GPS records your location automatically
+3. If you're OUTSIDE the geofence, you'll get a warning banner (managers see it too) but the clock still runs
+
+BREAKS
+Tap "Break Start" when you go on break, "Break End" when you return. Breaks are subtracted from your total shift time.
+
+CLOCK OUT
+Tap Clock Out at end of shift. That closes the shift and the completed hours land in the current pay period.
+
+READING YOUR WEEK
+The Time Clock shows a week-at-a-glance grid:
+▪ Green cells = complete shifts
+▪ Yellow = active (still clocked in)
+▪ Grey = no shift
+
+CORRECTIONS
+Made a mistake? Tell your manager — only admins can edit past shifts.
+
+WHY IT MATTERS
+Your time clock feeds the Productivity Tracker. Managers compare hours worked against actions logged. Missing clock-outs make you look less productive than you are.
+
+CHECK YOURSELF
+? What happens if I clock in outside the geofence?
+? How do I fix a missed clock-out?`, type: 'text' },
+
+  // ── COMPLIANCE ─────────────────────────────────────────────────
+  { title: '📋 M5.1 — Compliance Fundamentals', content:
+`YOU WILL LEARN HOW TO
+▪ Understand what "compliance" means for our fleet
+▪ Read the compliance bar on a vehicle
+▪ Know who owns each field
+
+WHAT WE TRACK
+Every vehicle has three compliance fields:
+1. Safety Inspection (annual, Hawaii-required)
+2. Registration Renewal
+3. Insurance
+
+Each has an expiration month/year. Optional 4th: Insurance document upload.
+
+READING THE COMPLIANCE BAR
+On any vehicle card you'll see a colored bar:
+▪ Green = all three good, no action for 30+ days
+▪ Yellow = one item expires within 30 days
+▪ Red = one item expires within 15 days OR is already expired
+▪ Flashing red = critical / expired
+
+WHO CAN EDIT
+▪ Admins → all fields
+▪ Managers → Safety + Registration (field-op common updates)
+▪ Everyone else → view only
+
+WHERE TO SEE THE FLEET-WIDE VIEW
+Manager Portal → 📋 HI Compliance. This shows every vehicle grouped by which item is expiring soonest — the "hit list" for the month.
+
+WHY IT MATTERS
+A single expired registration means we can't legally rent the vehicle. A single expired insurance means we can't legally drive it. These aren't optional — they're operational blockers.
+
+CHECK YOURSELF
+? What are the three compliance fields?
+? Can a manager edit insurance?`, type: 'text' },
+
+  { title: '🔍 M5.2 — Safety Inspections', content:
+`YOU WILL LEARN HOW TO
+▪ Handle a safety inspection expiration
+▪ Log the new date once inspected
+▪ Escalate a fail
+
+THE ANNUAL CYCLE
+Hawaii vehicle safety inspection expires at the END of the month printed on the sticker. Every year we need a new one.
+
+WHEN A REMINDER LANDS
+Within 30 days of expiration, the compliance bar turns yellow. Within 15 days, red. Once expired, flashing red and the vehicle CANNOT go out on a trip.
+
+STEPS TO RESOLVE
+1. Book the vehicle at an inspection station
+2. Move it: mark vehicle → Repair Shop
+3. Once passed: open the vehicle → Compliance section → Safety Inspection → set new expiration (usually 1 year forward)
+4. Upload the sticker photo to Insurance section (yes, oddly, it stores documents there)
+5. Mark vehicle back Home
+
+IF IT FAILS INSPECTION
+1. Create an urgent Repair Task with the failure item(s)
+2. Do not put the vehicle back on the road until fixed
+3. Once repaired, retake the inspection
+4. Update the compliance date only after passing
+
+BUFFER WINDOW
+Aim to inspect vehicles in the second-to-last week of their expiration month. Don't wait until the 28th — a failure gives you no time to fix.
+
+CHECK YOURSELF
+? What's the compliance color at 20 days out?
+? When should I book the inspection?`, type: 'text' },
+
+  { title: '📄 M5.3 — Registration & Insurance', content:
+`YOU WILL LEARN HOW TO
+▪ Renew registration on time
+▪ Attach the current insurance card
+▪ Understand what's stored where
+
+REGISTRATION
+Annual state registration renews by the anniversary month of the vehicle. Renewal can be done online at 5-6 weeks before expiration.
+1. Renew online via Hawaii DMV
+2. Print the new registration
+3. Place it in the vehicle
+4. Open the vehicle in the app → Compliance → Registration → set the new expiration month/year
+
+INSURANCE
+Our commercial policy renews annually. When the new insurance cards arrive:
+1. Replace the physical card in every vehicle's glove box
+2. Photograph the front of each card
+3. Open the vehicle → Compliance → Insurance date → set new expiration
+4. Upload the card photo (Insurance section has an upload button)
+
+WHY UPLOAD MATTERS
+If an accident happens, the driver — even one who's never touched the physical card — can pull up proof of insurance from the app on their phone.
+
+WHO DOES THIS
+Registration renewals: office manager or admin.
+Insurance card swaps: fleet manager or admin.
+Everyone else: report if you see a card missing from a vehicle.
+
+CHECK YOURSELF
+? Where do I upload the insurance card photo?
+? Who handles registration renewals?`, type: 'text' },
+
+  { title: '📊 M5.4 — Using the HI Compliance Dashboard', content:
+`YOU WILL LEARN HOW TO
+▪ Open the fleet-wide compliance view
+▪ Prioritize this month's work
+▪ Filter by type
+
+WHERE
+Manager Portal → 📋 HI Compliance.
+
+WHAT YOU SEE
+▪ Filter tabs at top: All | Urgent | Scheduled | Watch | Maintenance | Comply | Mine | Incidents
+▪ Month browser: navigate month-by-month (e.g. September 2026, October 2026…)
+▪ A list of vehicles grouped by which compliance item is expiring in that month, sorted soonest first
+
+READING A CARD
+Each row shows the plate, the expiring item (Safety / Registration / Insurance), and days remaining. Red icons = urgent.
+
+MONTHLY WORKFLOW
+Week 1: Open this dashboard. List everything due this month.
+Week 2: Book inspection appointments for anything Safety-related.
+Week 3: Renew registrations online.
+Week 4: Follow up on anything not yet resolved.
+
+WHO OPENS IT
+Admins and managers only. Regular staff don't see this dashboard.
+
+WHY YOU'D IGNORE IT AT YOUR PERIL
+An expired vehicle can't go on a trip. If we miss even one, that's lost revenue. If a police officer stops a driver in an expired vehicle, that's a much bigger problem.
+
+CHECK YOURSELF
+? Where do I find the fleet-wide compliance view?
+? What's my weekly workflow?`, type: 'text' },
+
+  // ── MANAGER TOOLS ──────────────────────────────────────────────
+  { title: '👥 M6.1 — Team Performance Dashboard (Managers)', content:
+`YOU WILL LEARN HOW TO
+▪ Read the Performance dashboard
+▪ Switch between Day, Week, and Month
+▪ Investigate a low-performance day
+
+WHERE
+Admin panel → 👥 Performance tab. Admin/Manager only.
+
+THE TOP OF THE SCREEN
+▪ Date picker (defaults to today)
+▪ Day / Week / Month toggle — pick your time window
+▪ Quick jumps: Today, Yesterday, 2 Days Ago, 3 Days Ago, Last Week
+
+THE HERO STATS ROW
+Total staff active, vehicles shot, returned, cleaned, quick wipes, tasks done, total actions across the range.
+
+STAFF SCORECARDS
+One row per person, worst to best (well, by action count desc). Each row shows:
+▪ Their name
+▪ Icon-count chips for photos / returns / cleans / quick wipes / inspections / tasks
+▪ Time Clock hours (day view only)
+▪ ▾ arrow → expand to see every task, photo, and operation they logged
+
+CLICK 📊 NEXT TO A STAFF ROW
+Opens the Productivity Tracker (M6.2) pre-filled with that person and date.
+
+INVESTIGATING A LOW DAY
+1. Pick the day → find the person with unusually low actions
+2. Expand their row → what did they log?
+3. Cross-reference their Time Clock hours → were they actually working?
+4. Message them via Mailbox → don't accuse; ask what happened
+
+WHY WEEKLY VIEW HELPS
+A single low day is usually an outlier. A week of low days is a pattern. Trust the pattern.
+
+CHECK YOURSELF
+? Can I see a specific person's actions on a specific day?
+? What does the 📊 button do?`, type: 'text' },
+
+  { title: '📊 M6.2 — Productivity Tracker (Managers)', content:
+`YOU WILL LEARN HOW TO
+▪ Compute a productivity score
+▪ Read the color coding
+▪ Have a productive coaching conversation
+
+WHERE
+👥 Team Performance → Productivity Tracker section at bottom.
+
+STEPS
+1. Select the employee
+2. Select the date
+3. Enter hours worked (if it doesn't auto-fill from Time Clock)
+4. Tap Calculate
+
+WHAT IT COMPUTES
+The app compares actual actions logged vs the expected minutes:
+▪ 30 min per vehicle move
+▪ 40 min per full clean
+▪ 6 min per quick wipe
+▪ 5 min per photo batch
+
+RESULT
+Total tracked minutes / hours × 60 minutes.
+▪ ≥ 85% → 🟢 green (great)
+▪ 60–84% → 🟡 yellow (average)
+▪ < 60% → 🔴 red (needs a conversation)
+
+WHAT LOW SCORES ACTUALLY MEAN
+Low doesn't always mean "not working." Sometimes:
+▪ They spent hours on one hard cleanup that only counts as one clean
+▪ They were on the phone with insurance for 2 hours (not logged)
+▪ They forgot to log actions (very common)
+
+COACHING WITH THIS DATA
+✔ "I noticed Tuesday was a red day — walk me through it?"
+✗ "Your score was 42%. Explain."
+
+The tracker is a starting point for a conversation, not an evaluation on its own.
+
+ADJUSTING TARGETS
+Admin → ⚙️ Settings on the tracker → adjust the target minutes per task.
+
+CHECK YOURSELF
+? What's the target minutes per quick wipe?
+? What's a green score threshold?`, type: 'text' },
+
+  { title: '🤝 M6.3 — CRM Basics (Sales Team)', content:
+`YOU WILL LEARN HOW TO
+▪ Log a new lead
+▪ Move a lead through the pipeline
+▪ Close a deal
+
+WHERE
+Manager Portal → 🤝 CRM. Requires admin OR crmAccess flag on your user account.
+
+THE PIPELINE
+▪ New Lead → just came in
+▪ Contacted → we've replied
+▪ Qualified → they're a real prospect
+▪ Booked → they've reserved
+▪ Won / Lost → outcome recorded
+
+LOGGING A NEW LEAD
+1. + New Lead
+2. Name, phone, email
+3. Source (referral, ad, walk-up, etc.)
+4. Interest (which vehicle or trip type)
+5. Save
+
+MOVING THE STAGE
+Tap the lead → drag or click the stage buttons. Every stage change is timestamped and logged in the lead history.
+
+FOLLOW-UP REMINDERS
+Set a Follow-Up date on any lead. The task appears in Ops Hub → Mine tab on the due date.
+
+WON / LOST
+▪ Won: log the booking date, revenue amount
+▪ Lost: log the reason (chose competitor, price, timing, other)
+
+WHY LOSS REASONS MATTER
+Over 30 days you'll see patterns. Losing to price? Time to revisit rates. Losing to timing? Time to improve availability.
+
+CHECK YOURSELF
+? What are the pipeline stages?
+? Why do we log lost-reason?`, type: 'text' },
+
+  { title: '💵 M6.4 — Finance & Expense Logging', content:
+`YOU WILL LEARN HOW TO
+▪ Log an expense (anyone can)
+▪ Read the P&L (admin/manager only)
+▪ Attach receipts
+
+WHERE
+Manager Portal → 💵 Finance.
+Note: even non-managers see this button, but they see only the Expense-Entry view.
+
+LOGGING AN EXPENSE
+1. Tap "Add Expense"
+2. Amount
+3. Category (Fuel, Maintenance, Cleaning Supplies, Office, etc.)
+4. Date
+5. Vendor (optional — free text or picker)
+6. Vehicle (optional — pick from your fleet if it applies)
+7. Notes
+8. Attach receipt photo
+9. Save
+
+MAINTENANCE AUTO-EXPENSES
+When you save a Maintenance record with a cost, an expense is auto-created in Finance under "Maintenance" category, linked to the vehicle. No double entry.
+
+READING THE FINANCE DASHBOARD (Admin/Manager)
+▪ Overview — monthly totals + top categories
+▪ Revenue — bookings and cash-in per month
+▪ P&L — profit/loss per vehicle per month
+▪ Owner Cut — how much is owed to the vehicle owner
+
+RECEIPTS ARE NON-NEGOTIABLE
+Every expense over $10 needs a receipt attached. IRS-quality photo: legible, whole receipt, no shadows.
+
+CHECK YOURSELF
+? Do I need to enter a maintenance cost twice (once as service, once as expense)?
+? What's the receipt rule?`, type: 'text' },
+
+  // ── STANDARD OPERATING PROCEDURES ──────────────────────────────
+  { title: '📋 SOP-01 — New Employee Onboarding', content:
+`AUDIENCE: Every new hire
+OWNER: Admin / HR
+LENGTH: One shift
+
+DAY-ONE CHECKLIST
+□ Manager creates user account in the app
+□ Manager sends temporary password via secure channel (not text)
+□ New hire logs in, changes password (M1.2)
+□ Manager walks them through the dashboard live (M1.3)
+□ New hire completes Modules 1.1 through 1.3 in Learning Center
+□ Time Clock: first clock-in with the manager watching
+□ Photo of the new hire added to their user profile (optional)
+
+DAY-TWO CHECKLIST
+□ Complete Module 2 (Daily Operations) — 5 items
+□ Shadow a senior team member for one full vehicle turnaround
+□ Do the turnaround themselves under supervision
+□ Complete first solo turnaround by end of shift
+
+END-OF-WEEK-ONE
+□ Complete Modules 3.1, 3.2 (Maintenance basics)
+□ Log at least one maintenance record (with mentor watching)
+□ Manager reviews the new hire's first 5 photo sets for quality
+□ Feedback session — 1-on-1, 15 minutes
+
+END-OF-MONTH-ONE
+□ Complete all Module 4 (Communication) items
+□ Attend team stand-up
+□ Complete a solo close-out on a repair via Quick Done
+□ 30-day performance review
+
+DOCUMENTS TO SIGN
+□ Employee handbook
+□ Time clock policy
+□ Photo policy (no personal social media use of vehicle photos)
+□ Confidentiality (customer data)
+
+ROLES ASSIGNMENT
+Role: Employee / Manager / Admin
+CRM Access: Yes / No
+Time Clock: Yes / No
+
+CHECK YOURSELF
+? Did this new hire complete every item on this SOP?
+? Have documents been signed and filed?`, type: 'text' },
+
+  { title: '📋 SOP-02 — Daily Opening Procedure', content:
+`AUDIENCE: Morning shift lead
+OWNER: Operations Manager
+LENGTH: 15 minutes at start of shift
+
+STEP 1 — CLOCK IN
+Time Clock → Clock In. Confirm location matches your assigned base.
+
+STEP 2 — SCAN THE OPS HUB (5 minutes)
+🎯 Tasks → check overdue banner. Kill anything you can in < 3 minutes.
+
+STEP 3 — REVIEW MAILBOX (2 minutes)
+📬 Mailbox → read overnight messages. Reply to urgent ones. Create tasks from action-required ones.
+
+STEP 4 — DASHBOARD SWEEP (5 minutes)
+Fleet Dashboard → walk your location.
+▪ Every vehicle marked "Home" should physically be here
+▪ Every vehicle marked "On Trip" should NOT be here
+▪ Discrepancies → status correction now
+
+STEP 5 — COMPLIANCE CHECK (2 minutes)
+Any vehicles with red compliance bars? Note them. Do NOT let them go out today unless resolved.
+
+STEP 6 — MAINTENANCE ALERTS (1 minute)
+🎯 Tasks → 🔧 Maint tab. Anything overdue? Schedule it today.
+
+STEP 7 — POST YOUR PLAN
+Mailbox → New Message → your manager: "Opening complete. X vehicles home, Y out. Focus today: [top priority]."
+
+TROUBLESHOOTING
+▪ Missing vehicles? Check the "Not Returned" flag list
+▪ App won't load? Try refresh; if still down message admin
+▪ GPS won't lock at clock-in? Toggle location permissions on the phone
+
+CHECK YOURSELF
+? Did I complete every step in order?
+? Did I send my opening summary?`, type: 'text' },
+
+  { title: '📋 SOP-03 — Vehicle Return & Turnaround', content:
+`AUDIENCE: All operations staff
+OWNER: Operations Manager
+LENGTH: 60–90 minutes per vehicle
+
+STEP 1 — RECEIVE THE VEHICLE
+Park in the assigned home location. Do NOT block other spots.
+
+STEP 2 — MARK RETURNED
+Open the vehicle card → tap 🏠 Returned. The timestamp starts the turnaround clock.
+
+STEP 3 — INSPECT (10–15 minutes)
+Tap 🔍 Start Inspection.
+▪ Exterior walk-around — check every panel, wheel, glass
+▪ Interior — check seats, dashboard, cargo area
+▪ Odometer — note the mileage (you'll need it later)
+▪ Fuel level — refill if below 1/4 tank
+▪ Warning lights on dashboard
+
+STEP 4 — LOG DAMAGE
+Any new damage? Tap "Add Issue" during inspection:
+▪ Severity (Minor / Major / Critical)
+▪ Photo (wide + close-up)
+▪ Estimated location on body
+
+Confirm inspection: ✅ Inspection Complete. If damage was logged, a Repair task auto-creates.
+
+STEP 5 — CLEAN (40 min Full / 6 min Quick)
+Follow M2.3. Mark ✅ Cleaned when done.
+
+STEP 6 — PHOTOS (10 minutes)
+11 required shots (see M2.2). Upload. Wait for green ✓.
+
+STEP 7 — UPDATE MILEAGE
+Vehicle card → Mileage → save. This anchors the maintenance tracking.
+
+STEP 8 — CONFIRM READY
+All five workflow pills green (Returned → Inspected → Cleaned → Photos). Vehicle status = Home. Cleaning flag = off. Vehicle is now available for the next trip.
+
+TARGET TIME
+Full workflow: 90 minutes end-to-end. Faster if quick-wipe eligible.
+
+CHECK YOURSELF
+? All five workflow pills green?
+? Mileage updated?`, type: 'text' },
+
+  { title: '📋 SOP-04 — Repair Escalation Path', content:
+`AUDIENCE: All operations staff
+OWNER: Fleet Manager
+PURPOSE: Ensure no repair sits stuck
+
+ESCALATION LEVELS
+
+LEVEL 0 — IMMEDIATE (unsafe to drive)
+▪ Brake failure, steering failure, flat tire, engine warning, transmission slipping
+▪ ACTION: DO NOT drive. Create urgent Repair Task with 🔴 Critical priority. Message admin AND manager immediately. Vehicle marked Repair Shop.
+
+LEVEL 1 — SAME DAY (impacts operations)
+▪ AC broken, cracked windshield, warning light non-critical, tire slow leak
+▪ ACTION: Create Repair Task with 🟠 High priority. Book vendor same day. Assign vendor in the task.
+
+LEVEL 2 — THIS WEEK (routine)
+▪ Wiper blades, headlight bulb, cabin filter, brakes worn (not overdue)
+▪ ACTION: Create Repair Task with 🟡 Standard priority. Book within 7 days.
+
+LEVEL 3 — MONITOR (not urgent yet)
+▪ Battery age approaching, tires 4/32 tread, alignment slightly off
+▪ ACTION: Create Repair Task with 🟢 Monitor priority. No specific date; revisit monthly.
+
+STUCK REPAIRS — WHEN TO ESCALATE
+▪ 3 days without progress → move to "Awaiting Parts" with vendor note
+▪ 7 days without progress → message the manager via Mailbox
+▪ 14 days without progress → admin escalation email
+
+QUALITY CHECK ON RETURN FROM SHOP
+1. Confirm the repair was actually done (test drive if applicable)
+2. If work is unsatisfactory → do NOT accept; call vendor back
+3. If satisfactory → ✅ Service Done in the Repairs Dashboard with resolution notes and cost
+
+CHECK YOURSELF
+? Do I know which level of priority to assign to a broken AC?
+? What's the message-manager threshold in days?`, type: 'text' },
+];
+
+// Publish the training curriculum to Shared Resources. Idempotent — items with
+// the same title are skipped, so this can be re-run after edits to add new modules
+// without duplicating existing ones.
+window.seedTrainingCurriculum = async function() {
+  if (currentUserRole !== 'admin') {
+    toast('Admin only.', 'warning');
+    return;
+  }
+  const ok = await confirm('Publish Training Curriculum', `This will add ${TRAINING_CURRICULUM.length} training modules and SOPs to Shared Resources.\n\nExisting items with the same title are skipped, so it's safe to re-run.`);
+  if (!ok) return;
+
+  const btn = document.getElementById('btn-seed-training');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Publishing…'; }
+
+  try {
+    // Fetch existing shared items to skip duplicates by title
+    const existingSnap = await db.collection('learningItems').where('scope', '==', 'shared').get();
+    const existingTitles = new Set(existingSnap.docs.map(d => (d.data().title || '').trim()));
+
+    let added = 0, skipped = 0;
+    // Iterate in reverse so the FIRST module (M1.1) is added LAST and shows at the top
+    for (let i = TRAINING_CURRICULUM.length - 1; i >= 0; i--) {
+      const item = TRAINING_CURRICULUM[i];
+      if (existingTitles.has(item.title.trim())) { skipped++; continue; }
+      try {
+        await db.collection('learningItems').add({
+          title: item.title,
+          content: item.content,
+          type: item.type || 'text',
+          scope: 'shared',
+          uid: currentUser.uid,
+          createdByName: 'Aloha Fleet Training Team',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          completions: [],
+        });
+        added++;
+      } catch (e) { console.error('Seed item failed:', item.title, e); }
+    }
+
+    toast(`✅ Curriculum ready — ${added} added, ${skipped} already existed`, 'success');
+    loadLearningItems();
+  } catch (e) {
+    console.error('Seed curriculum error:', e);
+    toast('Failed to publish curriculum.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🌱 Publish Training Curriculum'; }
+  }
 };
 
 // Set up role-specific UI in the task panel (admin filter, assignee dropdown)
