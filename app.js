@@ -10481,6 +10481,7 @@ async function _loadWorkOrders() {
           // Auto-maintenance: Quick Done would lose the service record — use Log Service + Snooze instead
           statusActions = `
             <button class="btn btn-sm wo-btn-resolve" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</button>
+            <button class="btn btn-sm wo-btn-schedule" onclick="window.openAdjustMaintDueModal('${item.id}')" title="Push out the due date / miles">🕓 Adjust Due</button>
             <button class="btn btn-sm wo-btn-snooze" onclick="window.snoozeWorkOrder('${item.id}',30)" title="Hide this item for 30 days">⏸️ Snooze 30d</button>
             <button class="btn btn-sm wo-btn-schedule" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${item.scheduledDate ? 'Reschedule' : 'Schedule'}</button>`;
         } else {
@@ -10502,17 +10503,26 @@ async function _loadWorkOrders() {
       const maintSourceBadge = isMaintAuto ? '<span class="wo-maint-source-badge">🛠 Scheduled Maintenance</span>' : '';
       let maintDueLine = '';
       if (isMaintAuto) {
+        const lines = [];
+        // Time-based due
         if (item.dueDate) {
           const dueD = new Date(item.dueDate + 'T12:00:00');
           const isOverdue = item.dueDate < today;
           const dueFmt = dueD.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-          maintDueLine = '<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">📆 ' + (isOverdue ? '<strong>Overdue</strong> — was due ' : 'Service due: ') + dueFmt + '</div>';
-        } else if (item.nextDueMileage) {
+          lines.push('<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">📆 ' + (isOverdue ? '<strong>Overdue</strong> — was due ' : 'Service due: ') + dueFmt + '</div>');
+        }
+        // Mileage-based due — always show alongside time so the user can see
+        // whether the mileage is still far off even when the date has passed
+        if (item.nextDueMileage) {
           const mileage = v && v.mileage ? v.mileage : 0;
           const milesLeft = item.nextDueMileage - mileage;
           const isOverdue = milesLeft <= 0;
-          maintDueLine = '<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">🛣️ ' + (isOverdue ? '<strong>Overdue by ' + Math.abs(milesLeft).toLocaleString() + ' mi</strong>' : 'Due at ' + item.nextDueMileage.toLocaleString() + ' mi' + (mileage ? ' (' + milesLeft.toLocaleString() + ' mi away)' : '')) + '</div>';
+          const label = isOverdue
+            ? '<strong>Overdue by ' + Math.abs(milesLeft).toLocaleString() + ' mi</strong>'
+            : 'Due at ' + item.nextDueMileage.toLocaleString() + ' mi' + (mileage ? ' (' + milesLeft.toLocaleString() + ' mi to go)' : '');
+          lines.push('<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">🛣️ ' + label + '</div>');
         }
+        maintDueLine = lines.join('');
       }
 
       // Problem category badge
@@ -10672,7 +10682,8 @@ async function _loadWorkOrders() {
       } else if (isMaintAuto2) {
         primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
         secondaryBtn = `<button class="wo-secondary-btn" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</button>`;
-        moreActions  = `<li onclick="window.snoozeWorkOrder('${item.id}',30)">⏸️ Snooze 30d</li>`;
+        moreActions  = `<li onclick="window.openAdjustMaintDueModal('${item.id}')">🕓 Adjust Due Date / Miles</li>
+          <li onclick="window.snoozeWorkOrder('${item.id}',30)">⏸️ Snooze 30d</li>`;
       } else {
         primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
         secondaryBtn = `<button class="wo-secondary-btn" onclick="window.openQuickDoneModal('${item.id}')">⚡ Quick Done</button>`;
@@ -11451,6 +11462,174 @@ async function _performQuickResolve(noteId, resStatus, resText) {
   } catch(e) {
     toast('Failed to update.', 'error');
   }
+};
+
+// ================================================================
+// ADJUST MAINTENANCE DUE — edit next-due date/mileage and repeat intervals
+// on an auto-generated maintenance work order. Keeps the linked maintenance
+// record in sync so future auto-renewals use the updated intervals.
+// ================================================================
+window.openAdjustMaintDueModal = async function(noteId) {
+  if (document.getElementById('amd-modal-overlay')) return;
+  let nd = {};
+  try {
+    const snap = await db.collection('vehicleNotes').doc(noteId).get();
+    if (!snap.exists) { toast('Not found.', 'error'); return; }
+    nd = snap.data();
+  } catch (e) { toast('Could not load record.', 'error'); return; }
+
+  const v = vehiclesCache.find(x => x.id === nd.vehicleId);
+  const plate = nd.plate || (v ? v.plate : '');
+  const service = nd.maintenanceService
+    || (nd.text || '').replace(/\s*\(every[^)]*\)\s*/gi, '').replace(/\s+due\b/i, '').trim()
+    || 'Maintenance';
+  const currentMi = v?.mileage || 0;
+
+  const overlay = document.createElement('div');
+  overlay.id = 'amd-modal-overlay';
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `
+    <div class="confirm-dialog" style="max-width:460px;text-align:left;">
+      <h4 style="text-align:left;">🕓 Adjust Maintenance Schedule</h4>
+      <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:0.85rem;color:#374151;">
+        <strong>${escapeHtml(plate || 'Vehicle')}</strong> · ${escapeHtml(service)}
+        ${currentMi ? `<div style="font-size:0.78rem;color:#6b7280;margin-top:3px;">Current mileage: ${currentMi.toLocaleString()} mi</div>` : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Next Due Date</label>
+          <input type="date" id="amd-due-date" value="${nd.dueDate || ''}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;">
+        </div>
+        <div>
+          <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Next Due Mileage</label>
+          <input type="number" id="amd-due-mi" min="0" max="999999" placeholder="e.g. 48000" value="${nd.nextDueMileage || ''}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;">
+        <div>
+          <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">🔁 Repeat Every (Time)</label>
+          <select id="amd-months" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;background:#fff;">
+            <option value="">No time repeat</option>
+            <option value="1">1 Month</option>
+            <option value="3">3 Months</option>
+            <option value="6">6 Months</option>
+            <option value="12">1 Year</option>
+            <option value="24">2 Years</option>
+            <option value="36">3 Years</option>
+            <option value="48">4 Years</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">🔁 Repeat Every (Miles)</label>
+          <input type="number" id="amd-miles" min="100" max="999999" placeholder="e.g. 7000" value="${nd.intervalMiles || ''}" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font:inherit;">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+        <button type="button" class="btn btn-sm btn-outline" data-amd-preset="1m">+1 mo</button>
+        <button type="button" class="btn btn-sm btn-outline" data-amd-preset="3m">+3 mo</button>
+        <button type="button" class="btn btn-sm btn-outline" data-amd-preset="6m">+6 mo</button>
+        <button type="button" class="btn btn-sm btn-outline" data-amd-preset="1000mi">+1,000 mi</button>
+        <button type="button" class="btn btn-sm btn-outline" data-amd-preset="3000mi">+3,000 mi</button>
+      </div>
+      <div class="confirm-actions" style="justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary" id="amd-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="amd-save">Save Schedule</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const $$ = (id) => overlay.querySelector('#' + id);
+  if (nd.intervalMonths) $$('amd-months').value = String(nd.intervalMonths);
+
+  overlay.querySelector('#amd-cancel').onclick = () => overlay.remove();
+
+  // Preset shift buttons — push the current values out by N months / miles
+  overlay.querySelectorAll('[data-amd-preset]').forEach(btn => {
+    btn.onclick = () => {
+      const key = btn.dataset.amdPreset;
+      const dateEl = $$('amd-due-date');
+      const miEl = $$('amd-due-mi');
+      if (key.endsWith('m')) {
+        const months = parseInt(key);
+        const base = dateEl.value ? new Date(dateEl.value + 'T12:00:00') : new Date();
+        base.setMonth(base.getMonth() + months);
+        dateEl.value = base.toISOString().slice(0, 10);
+      } else if (key.endsWith('mi')) {
+        const miles = parseInt(key);
+        const base = parseInt(miEl.value) || currentMi || 0;
+        miEl.value = base + miles;
+      }
+    };
+  });
+
+  overlay.querySelector('#amd-save').onclick = async () => {
+    const newDueDate = $$('amd-due-date').value || null;
+    const newDueMi = $$('amd-due-mi').value ? parseInt($$('amd-due-mi').value) : null;
+    const newMonths = $$('amd-months').value ? parseInt($$('amd-months').value) : null;
+    const newMiles = $$('amd-miles').value ? parseInt($$('amd-miles').value) : null;
+    if (!newDueDate && !newDueMi) {
+      toast('Set a next-due date or mileage.', 'warning');
+      return;
+    }
+    const saveBtn = overlay.querySelector('#amd-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Saving…';
+
+    // Rebuild the display text so the row reflects the new schedule
+    let newText;
+    if (newDueMi) {
+      const intervalLbl = newMiles ? ` (every ${newMiles.toLocaleString()} mi)` : '';
+      newText = `🛢️ ${service} due at ${newDueMi.toLocaleString()} mi${intervalLbl}`;
+    } else if (newDueDate) {
+      const intervalLbl = newMonths
+        ? ` (every ${newMonths === 1 ? '1 Month' : newMonths === 12 ? '1 Year' : newMonths === 24 ? '2 Years' : newMonths + ' Months'})`
+        : '';
+      newText = `🔧 ${service} due${intervalLbl}`;
+    } else {
+      newText = nd.text;
+    }
+
+    const noteUpdate = {
+      dueDate: newDueDate,
+      nextDueMileage: newDueMi,
+      intervalMonths: newMonths,
+      intervalMiles: newMiles,
+      intervalType: newDueMi ? 'mileage' : 'time',
+      text: newText,
+      snoozedUntil: firebase.firestore.FieldValue.delete(),
+    };
+    try {
+      await db.collection('vehicleNotes').doc(noteId).update(noteUpdate);
+      // Keep the source maintenance record in sync so future auto-renewals inherit the new cadence
+      if (nd.maintenanceRecordId) {
+        const mUpdate = {};
+        if (newDueDate) mUpdate.nextDueDate = newDueDate;
+        if (newDueMi)   mUpdate.nextDueMileage = newDueMi;
+        if (newMonths)  mUpdate.intervalMonths = newMonths;
+        if (newMiles)   mUpdate.intervalMiles = newMiles;
+        try { await db.collection('maintenance').doc(nd.maintenanceRecordId).update(mUpdate); } catch (_) {}
+      }
+      // Audit trail
+      try {
+        logUserActivity('adjust_maint_due', {
+          plate,
+          vehicleId: nd.vehicleId,
+          service,
+          newDueDate,
+          newDueMileage: newDueMi,
+          intervalMonths: newMonths,
+          intervalMiles: newMiles,
+        });
+      } catch (_) {}
+      toast('✅ Schedule updated', 'success');
+      overlay.remove();
+      _loadWorkOrders();
+      loadDashboardFollowUps();
+    } catch (e) {
+      console.error('Adjust maint due error:', e);
+      saveBtn.disabled = false; saveBtn.textContent = 'Save Schedule';
+      toast('Failed to update.', 'error');
+    }
+  };
 };
 
 // Snooze a work order — hides it from the main list until the snooze date
@@ -18119,6 +18298,7 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
   menu.innerHTML = `
     <button class="task-ctx-item" id="ctx-edit">✏️ Edit Task</button>
     <button class="task-ctx-item" id="ctx-date">📅 Change Date</button>
+    <button class="task-ctx-item" id="ctx-adjust-maint" style="display:none;">🕓 Adjust Due Date / Miles</button>
     <div class="task-ctx-divider"></div>
     <div class="task-ctx-label">Move to:</div>
     <button class="task-ctx-item ctx-move-urgent" id="ctx-move-urgent">🚨 Urgent</button>
@@ -18159,6 +18339,14 @@ window.openTaskContextMenu = function(docId, col, triggerBtn) {
       vBtn.textContent = '🚗 Go to Vehicle' + (v ? ' (' + v.plate + ')' : '');
     } else {
       vBtn.textContent = '🔗 Link Vehicle';
+    }
+    // Show the "Adjust Due" option only for auto-generated maintenance work orders
+    if (d && d.autoCreated && d.sourceType === 'maintenance') {
+      const adjBtn = menu.querySelector('#ctx-adjust-maint');
+      if (adjBtn) {
+        adjBtn.style.display = '';
+        adjBtn.onclick = () => { menu.remove(); window.openAdjustMaintDueModal(docId); };
+      }
     }
   }).catch(() => {
     const vBtn = menu.querySelector('#ctx-vehicle');
