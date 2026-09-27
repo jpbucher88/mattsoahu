@@ -10652,5 +10652,101 @@ input[type="checkbox"], input[type="radio"] {
   .parts-return-actions { justify-content: flex-end; }
 }
 
+/* ================================================================
+   DASHBOARD MODERNIZATION — KPI strip + section header polish
+   ================================================================ */
+
+/* KPI strip: horizontal scrollable chip row summarizing today's state */
+.kpi-strip {
+  display: flex;
+  gap: 10px;
+  padding: 4px 2px 10px;
+  margin: 0 0 16px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.kpi-strip::-webkit-scrollbar { display: none; }
+.kpi-chip {
+  flex: 1 1 0;
+  min-width: 96px;
+  max-width: 180px;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-left: 4px solid var(--primary, #2563eb);
+  border-radius: var(--radius, 12px);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.12s ease, box-shadow 0.16s ease, background 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+  position: relative;
+}
+.kpi-chip:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+.kpi-chip:focus-visible { outline: 2px solid var(--primary, #2563eb); outline-offset: 2px; }
+.kpi-chip .kpi-icon { font-size: 1.2rem; line-height: 1; }
+.kpi-chip .kpi-num  { font-size: 1.6rem; font-weight: 800; line-height: 1.05; color: var(--text, #0f172a); }
+.kpi-chip .kpi-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; text-transform: uppercase; color: var(--text-muted, #6b7280); }
+.kpi-chip-zero { opacity: 0.62; background: var(--surface-2, #f8fafc); }
+.kpi-chip-zero .kpi-num { color: #94a3b8; }
+.kpi-chip-alert:not(.kpi-chip-zero) {
+  background: linear-gradient(180deg, #fef2f2, var(--surface, #fff));
+  border-left-color: #dc2626;
+}
+.kpi-chip-alert .kpi-num { color: #b91c1c; }
+.kpi-chip-urgent { border-left-color: #dc2626; }
+.kpi-chip-clean  { border-left-color: #16a34a; }
+.kpi-chip-photo  { border-left-color: #2563eb; }
+.kpi-chip-road   { border-left-color: #0891b2; }
+.kpi-chip-parts  { border-left-color: #92400e; }
+.kpi-chip-compliance { border-left-color: #7c3aed; }
+
+@media (max-width: 640px) {
+  .kpi-strip { gap: 8px; padding-bottom: 6px; margin-bottom: 12px; }
+  .kpi-chip {
+    min-width: 88px;
+    max-width: none;
+    padding: 10px 12px;
+    flex: 0 0 auto;
+  }
+  .kpi-chip .kpi-num { font-size: 1.35rem; }
+  .kpi-chip .kpi-label { font-size: 0.68rem; }
+}
+
+/* Cleaner dashboard cards — softer shadow, tighter corner, unified header font */
+.dashboard-main .card {
+  border-radius: var(--radius, 12px);
+  box-shadow: 0 1px 2px rgba(15,23,42,0.04), 0 2px 8px rgba(15,23,42,0.04);
+  transition: box-shadow 0.18s ease;
+}
+.dashboard-main .card:hover {
+  box-shadow: 0 2px 4px rgba(15,23,42,0.06), 0 8px 24px rgba(15,23,42,0.06);
+}
+.dashboard-main .card .collapsible-header h3 {
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+}
+
+/* Softer secondary buttons in dashboard section headers */
+.dashboard-main .collapsible-header .btn-sm.btn-outline {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* Small tweak: single-column KPI on ultra-narrow phones is bad; keep at least 3 visible */
+@media (max-width: 420px) {
+  .kpi-chip { min-width: 84px; padding: 9px 11px; }
+  .kpi-chip .kpi-icon { font-size: 1.05rem; }
+  .kpi-chip .kpi-num { font-size: 1.25rem; }
+}
+
+
 
 

@@ -2171,6 +2171,100 @@ function renderFleetDashboard() {
   // loadFleetComplianceWidget();
   // Refresh shop schedule widget
   if (typeof renderShopSchedule === 'function') renderShopSchedule();
+  // Refresh the top-of-dashboard KPI strip (live counters)
+  if (typeof renderKpiStrip === 'function') renderKpiStrip();
+}
+
+// ================================================================
+// KPI STRIP — clickable summary chips at the top of the dashboard
+// ================================================================
+function renderKpiStrip() {
+  const strip = $('kpi-strip');
+  if (!strip) return;
+  const today = todayDateString();
+  const now = Date.now();
+  const MS_24H = 24 * 60 * 60 * 1000;
+  const MS_2H  = 2 * 60 * 60 * 1000;
+
+  const _needsPhotos = (v) => {
+    if (v.photoExcluded) return false;
+    if (v.photoSkipDate === today) return false;
+    const onTrip = v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'scheduled';
+    const atRepair = v.tripStatus === 'repair-shop';
+    let withinGrace = false;
+    if (v.cleaningFlaggedAt) {
+      const flagTime = v.cleaningFlaggedAt.toDate ? v.cleaningFlaggedAt.toDate().getTime() : new Date(v.cleaningFlaggedAt).getTime();
+      withinGrace = (now - flagTime) < MS_2H;
+    }
+    if (onTrip || atRepair || withinGrace) return false;
+    return v.lastPhotoAge == null || v.lastPhotoAge > MS_24H;
+  };
+  const _atHome = (v) => v.tripStatus !== 'on-trip' && v.tripStatus !== 'private-trip' && v.tripStatus !== 'scheduled' && v.tripStatus !== 'repair-shop';
+
+  const cleaningCount = vehiclesCache.filter(v => _atHome(v) && v.needsCleaning && !v.photoExcluded).length;
+  const photosCount   = vehiclesCache.filter(v => _atHome(v) && !v.needsCleaning && _needsPhotos(v)).length;
+  const roadCount     = vehiclesCache.filter(v => v.tripStatus === 'on-trip' || v.tripStatus === 'private-trip' || v.tripStatus === 'scheduled').length;
+
+  // Compliance count — vehicles with any Safety/Reg/Ins ≤30d or expired
+  let complianceCount = 0;
+  vehiclesCache.forEach(v => {
+    const flagged = ['complianceSafety','complianceRegistration','complianceInsurance'].some(k => {
+      const val = v[k];
+      if (!val || typeof complianceMonthStatus !== 'function') return false;
+      const s = complianceMonthStatus(val);
+      return s.cls === 'compliance-urgent' || s.cls === 'compliance-warn';
+    });
+    if (flagged) complianceCount++;
+  });
+
+  // Urgent tasks — mirror the top-bar badge
+  const urgentBadgeEl = $('task-alert-count');
+  const urgentCount = urgentBadgeEl ? (parseInt(urgentBadgeEl.textContent, 10) || 0) : 0;
+
+  // Parts arrived — fire-and-forget query
+  const partsNumEl = $('kpi-parts');
+  if (partsNumEl && typeof db !== 'undefined') {
+    db.collection('partsOrders').where('status', '==', 'arrived').get()
+      .then(snap => { partsNumEl.textContent = snap.size; _flagKpiState('parts', snap.size); })
+      .catch(() => { partsNumEl.textContent = '—'; });
+  }
+
+  const setNum = (id, n) => { const el = $(id); if (el) el.textContent = n; };
+  setNum('kpi-urgent',     urgentCount);
+  setNum('kpi-cleaning',   cleaningCount);
+  setNum('kpi-photos',     photosCount);
+  setNum('kpi-road',       roadCount);
+  setNum('kpi-compliance', complianceCount);
+
+  _flagKpiState('urgent',     urgentCount);
+  _flagKpiState('cleaning',   cleaningCount);
+  _flagKpiState('photos',     photosCount);
+  _flagKpiState('road',       roadCount);
+  _flagKpiState('compliance', complianceCount);
+
+  // One-time wiring — click chips to jump to the relevant section
+  if (!strip.dataset.wired) {
+    strip.dataset.wired = '1';
+    strip.querySelectorAll('.kpi-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const k = chip.dataset.kpi;
+        if (k === 'urgent') { if (typeof openTaskPanel === 'function') openTaskPanel(); setTimeout(() => window.switchTaskTab && switchTaskTab('urgent'), 60); }
+        else if (k === 'compliance') { if (typeof openComplianceView === 'function') openComplianceView(); }
+        else if (k === 'parts') { if (typeof openMaintenanceDash === 'function') openMaintenanceDash(); }
+        else {
+          // Scroll to Fleet Status / Locations widget
+          const target = $('locations-widget');
+          if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  }
+}
+function _flagKpiState(k, n) {
+  const chip = document.querySelector(`.kpi-chip[data-kpi="${k}"]`);
+  if (!chip) return;
+  chip.classList.toggle('kpi-chip-zero', n === 0);
+  chip.classList.toggle('kpi-chip-alert', n > 0 && (k === 'urgent' || k === 'compliance'));
 }
 
 // ================================================================

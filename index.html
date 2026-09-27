@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926e">
+  <link rel="stylesheet" href="style.css?v=20260926f">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -176,6 +176,40 @@
     <main class="dashboard-main">
       <!-- Pending photo uploads indicator (shown when photos are stuck in IDB from a backgrounded session) -->
       <div id="dashboard-pending-uploads" class="dashboard-pending-uploads" style="display:none;"></div>
+
+      <!-- Live KPI strip — today's state at a glance (clickable chips) -->
+      <section id="kpi-strip" class="kpi-strip" aria-label="Today at a glance">
+        <button class="kpi-chip kpi-chip-urgent" data-kpi="urgent" type="button" title="View urgent tasks">
+          <span class="kpi-icon">🚨</span>
+          <span class="kpi-num" id="kpi-urgent">0</span>
+          <span class="kpi-label">Urgent</span>
+        </button>
+        <button class="kpi-chip kpi-chip-clean" data-kpi="cleaning" type="button" title="Vehicles needing cleaning">
+          <span class="kpi-icon">🧹</span>
+          <span class="kpi-num" id="kpi-cleaning">0</span>
+          <span class="kpi-label">Clean</span>
+        </button>
+        <button class="kpi-chip kpi-chip-photo" data-kpi="photos" type="button" title="Vehicles needing photos">
+          <span class="kpi-icon">📷</span>
+          <span class="kpi-num" id="kpi-photos">0</span>
+          <span class="kpi-label">Photos</span>
+        </button>
+        <button class="kpi-chip kpi-chip-road" data-kpi="road" type="button" title="Vehicles on the road">
+          <span class="kpi-icon">🚗</span>
+          <span class="kpi-num" id="kpi-road">0</span>
+          <span class="kpi-label">On Road</span>
+        </button>
+        <button class="kpi-chip kpi-chip-parts" data-kpi="parts" type="button" title="Parts arrived — ready to install">
+          <span class="kpi-icon">📦</span>
+          <span class="kpi-num" id="kpi-parts">0</span>
+          <span class="kpi-label">Parts</span>
+        </button>
+        <button class="kpi-chip kpi-chip-compliance" data-kpi="compliance" type="button" title="Compliance items due or expired">
+          <span class="kpi-icon">📋</span>
+          <span class="kpi-num" id="kpi-compliance">0</span>
+          <span class="kpi-label">Compliance</span>
+        </button>
+      </section>
 
       <!-- Urgent Notifications Banner -->
       <section id="urgent-banner" class="card urgent-banner" style="display:none;">
