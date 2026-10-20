@@ -4585,9 +4585,11 @@ function _knownDamageCardHtml(id, d, isAdminUser) {
     + (isAdminUser ? '<button type="button" title="Delete photo" onclick="deleteKnownDamagePhoto(\'' + id + '\',' + i + ')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:13px;line-height:20px;cursor:pointer;padding:0;">&times;</button>' : '')
     + '</div>'
   ).join('');
-  const addBtn = (isAdminUser && photos.length < KNOWN_DAMAGE_MAX_PHOTOS)
-    ? '<label class="btn btn-sm btn-outline" style="cursor:pointer;align-self:center;">+ Photos'
-      + '<input type="file" accept="image/*" multiple style="display:none;" onchange="addKnownDamagePhotos(\'' + id + '\', this)"></label>'
+  const remaining = KNOWN_DAMAGE_MAX_PHOTOS - photos.length;
+  const addBtn = isAdminUser
+    ? '<input type="file" id="kd-file-' + id + '" accept="image/*" multiple style="display:none;" onchange="addKnownDamagePhotos(\'' + id + '\', this)">'
+      + '<button type="button" class="btn btn-sm btn-primary" style="align-self:center;"' + (remaining > 0 ? '' : ' disabled') + ' onclick="document.getElementById(\'kd-file-' + id + '\').click()">'
+      + (remaining > 0 ? '📷 Add photos (' + remaining + ' left)' : 'Photo limit reached') + '</button>'
     : '';
   const delBtn = isAdminUser
     ? '<button type="button" class="btn btn-sm btn-outline" onclick="deleteKnownDamage(\'' + id + '\')">Delete</button>'
@@ -4665,6 +4667,7 @@ window.addKnownDamagePhotos = async function(damageId, input) {
   if (files.length > room) toast(`Only ${room} more photo(s) fit. The rest were skipped.`, 'warning');
 
   const added = [];
+  let lastErr = '';
   for (const file of files.slice(0, room)) {
     try {
       const compressed = await compressImage(file, 1920, 0.85);
@@ -4674,9 +4677,10 @@ window.addKnownDamagePhotos = async function(damageId, input) {
       added.push({ url, storagePath: path, addedBy: currentUser.uid, addedByName: currentUserDisplayName || currentUser.email || '', addedAt: Date.now() });
     } catch (e) {
       console.error('Known damage photo upload error:', e);
+      lastErr = e.message || String(e);
     }
   }
-  if (!added.length) { toast('Photo upload failed. Try again.', 'error'); loadKnownDamages(vehicleId); return; }
+  if (!added.length) { toast('Photo upload failed: ' + lastErr, 'error'); loadKnownDamages(vehicleId); return; }
 
   try {
     await db.runTransaction(async tx => {
