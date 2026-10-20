@@ -4248,6 +4248,7 @@ async function openVehiclePage(vid) {
   // Role-gate upload and maintenance
   const canUpload = (currentUserRole === 'admin' || currentUserRole === 'manager');
   $('upload-section').style.display = canUpload ? 'block' : 'none';
+  if (canUpload && typeof loadKnownDamages === 'function') loadKnownDamages(selectedVehicle.id);
   $('recent-photos-section').style.display = 'block';
   $('maintenance-section').style.display = 'block';
   // Bi-Monthly Inspection section — visible to everyone, only admin/manager can create
@@ -4568,6 +4569,179 @@ async function doPhotoOverride() {
 }
 $('btn-photo-override').addEventListener('click', doPhotoOverride);
 $('btn-upload-override').addEventListener('click', doPhotoOverride);
+
+// ---- Known Damages — persistent per-vehicle damage photos ----
+// Stays until an admin deletes it. Admins add/delete. Max 15 photos per damage.
+// Photos use the same compression as regular uploads (1920px / 85% JPEG).
+const KNOWN_DAMAGE_MAX_PHOTOS = 15;
+let _knownDamageVehicleId = null;
+
+function _knownDamageCardHtml(id, d, isAdminUser) {
+  const photos = Array.isArray(d.photos) ? d.photos : [];
+  const thumbs = photos.map((p, i) =>
+    '<div style="position:relative;width:76px;height:76px;">'
+    + '<a href="' + escapeHtml(p.url) + '" target="_blank" rel="noopener">'
+    + '<img src="' + escapeHtml(p.url) + '" loading="lazy" alt="Damage photo" style="width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;"></a>'
+    + (isAdminUser ? '<button type="button" title="Delete photo" onclick="deleteKnownDamagePhoto(\'' + id + '\',' + i + ')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:13px;line-height:20px;cursor:pointer;padding:0;">&times;</button>' : '')
+    + '</div>'
+  ).join('');
+  const addBtn = (isAdminUser && photos.length < KNOWN_DAMAGE_MAX_PHOTOS)
+    ? '<label class="btn btn-sm btn-outline" style="cursor:pointer;align-self:center;">+ Photos'
+      + '<input type="file" accept="image/*" multiple style="display:none;" onchange="addKnownDamagePhotos(\'' + id + '\', this)"></label>'
+    : '';
+  const delBtn = isAdminUser
+    ? '<button type="button" class="btn btn-sm btn-outline" onclick="deleteKnownDamage(\'' + id + '\')">Delete</button>'
+    : '';
+  return '<div class="known-damage-card" style="border:1px solid #e5e7eb;border-radius:10px;padding:10px;margin-top:8px;background:#fff;">'
+    + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">'
+    + '<div><strong>' + escapeHtml(d.label || 'Damage') + '</strong>'
+    + '<div style="font-size:0.75rem;color:#6b7280;">' + photos.length + ' / ' + KNOWN_DAMAGE_MAX_PHOTOS + ' photos'
+    + (d.createdByName ? ' · added by ' + escapeHtml(d.createdByName) : '') + '</div></div>'
+    + delBtn + '</div>'
+    + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">' + thumbs + addBtn + '</div>'
+    + '</div>';
+}
+
+async function loadKnownDamages(vehicleId) {
+  const wrap = $('known-damages-wrap');
+  const list = $('known-damage-list');
+  if (!wrap || !list || !vehicleId) return;
+  wrap.style.display = '';
+  const isAdminUser = currentUserRole === 'admin';
+  const addRow = $('known-damage-add-row');
+  if (addRow) addRow.style.display = isAdminUser ? 'flex' : 'none';
+  _knownDamageVehicleId = vehicleId;
+  list.innerHTML = '<p class="hint">Loading…</p>';
+  try {
+    const snap = await db.collection('knownDamages').where('vehicleId', '==', vehicleId).get();
+    if (_knownDamageVehicleId !== vehicleId) return; // vehicle changed while loading
+    if (snap.empty) { list.innerHTML = '<p class="hint">No known damages on file.</p>'; return; }
+    const docs = snap.docs.slice().sort((a, b) => _coachTime(a.data()) - _coachTime(b.data()));
+    list.innerHTML = docs.map(doc => _knownDamageCardHtml(doc.id, doc.data(), isAdminUser)).join('');
+  } catch (e) {
+    console.error('Load known damages error:', e);
+    list.innerHTML = '<p class="hint">Could not load known damages.</p>';
+  }
+}
+
+window.addKnownDamage = async function() {
+  if (currentUserRole !== 'admin' || !selectedVehicle) { toast('Only admins can add known damages.', 'warning'); return; }
+  const input = $('known-damage-name');
+  const label = ((input && input.value) || '').trim();
+  if (!label) { toast('Describe the damage first.', 'warning'); return; }
+  const vehicle = selectedVehicle;
+  try {
+    await db.collection('knownDamages').add({
+      vehicleId: vehicle.id,
+      plate: vehicle.plate || '',
+      label: label.slice(0, 80),
+      photos: [],
+      createdBy: currentUser.uid,
+      createdByName: currentUserDisplayName || currentUser.email || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    if (input) input.value = '';
+    toast('Known damage added ✓', 'success');
+    loadKnownDamages(vehicle.id);
+  } catch (e) {
+    console.error('Add known damage error:', e);
+    toast('Failed to add.', 'error');
+  }
+};
+
+window.addKnownDamagePhotos = async function(damageId, input) {
+  const files = Array.from(input.files || []);
+  input.value = '';
+  if (!files.length || currentUserRole !== 'admin' || !selectedVehicle) return;
+  const vehicleId = selectedVehicle.id;
+  const plate = sanitizePlate(selectedVehicle.plate);
+  const st = getStorage();
+  if (!st) { toast('Photo storage not available.', 'error'); return; }
+  const ref = db.collection('knownDamages').doc(damageId);
+  const snap = await ref.get();
+  if (!snap.exists) { toast('This damage no longer exists.', 'warning'); loadKnownDamages(vehicleId); return; }
+  const room = KNOWN_DAMAGE_MAX_PHOTOS - ((snap.data().photos || []).length);
+  if (room <= 0) { toast(`This damage already has ${KNOWN_DAMAGE_MAX_PHOTOS} photos.`, 'warning'); return; }
+  if (files.length > room) toast(`Only ${room} more photo(s) fit. The rest were skipped.`, 'warning');
+
+  const added = [];
+  for (const file of files.slice(0, room)) {
+    try {
+      const compressed = await compressImage(file, 1920, 0.85);
+      const path = `knownDamages/${plate}/${damageId}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
+      const up = await st.ref(path).put(compressed, { contentType: 'image/jpeg' });
+      const url = await up.ref.getDownloadURL();
+      added.push({ url, storagePath: path, addedBy: currentUser.uid, addedByName: currentUserDisplayName || currentUser.email || '', addedAt: Date.now() });
+    } catch (e) {
+      console.error('Known damage photo upload error:', e);
+    }
+  }
+  if (!added.length) { toast('Photo upload failed. Try again.', 'error'); loadKnownDamages(vehicleId); return; }
+
+  try {
+    await db.runTransaction(async tx => {
+      const s = await tx.get(ref);
+      if (!s.exists) throw new Error('missing');
+      const existing = s.data().photos || [];
+      if (existing.length + added.length > KNOWN_DAMAGE_MAX_PHOTOS) throw new Error('limit');
+      tx.update(ref, { photos: existing.concat(added) });
+    });
+    toast(`${added.length} photo(s) added ✓`, 'success');
+  } catch (e) {
+    console.error('Save known damage photos error:', e);
+    added.forEach(p => st.ref(p.storagePath).delete().catch(() => {}));
+    toast(e.message === 'limit' ? `Limit is ${KNOWN_DAMAGE_MAX_PHOTOS} photos per damage.` : 'Failed to save photos.', 'error');
+  }
+  loadKnownDamages(vehicleId);
+};
+
+window.deleteKnownDamagePhoto = async function(damageId, index) {
+  if (currentUserRole !== 'admin') { toast('Only admins can delete damage photos.', 'warning'); return; }
+  const ok = await confirm('Delete Photo', 'Delete this damage photo?');
+  if (!ok) return;
+  const ref = db.collection('knownDamages').doc(damageId);
+  let removed = null;
+  try {
+    await db.runTransaction(async tx => {
+      const s = await tx.get(ref);
+      if (!s.exists) throw new Error('missing');
+      const photos = (s.data().photos || []).slice();
+      if (index < 0 || index >= photos.length) throw new Error('index');
+      removed = photos.splice(index, 1)[0];
+      tx.update(ref, { photos });
+    });
+  } catch (e) {
+    toast('Failed to delete photo.', 'error');
+    loadKnownDamages(_knownDamageVehicleId);
+    return;
+  }
+  if (removed && removed.storagePath) {
+    const st = getStorage();
+    if (st) st.ref(removed.storagePath).delete().catch(() => {});
+  }
+  toast('Photo deleted.', 'success');
+  loadKnownDamages(_knownDamageVehicleId);
+};
+
+window.deleteKnownDamage = async function(damageId) {
+  if (currentUserRole !== 'admin') { toast('Only admins can delete known damages.', 'warning'); return; }
+  const ok = await confirm('Delete Known Damage', 'Delete this damage and all of its photos?');
+  if (!ok) return;
+  const ref = db.collection('knownDamages').doc(damageId);
+  try {
+    const s = await ref.get();
+    const photos = s.exists ? (s.data().photos || []) : [];
+    await ref.delete();
+    const st = getStorage();
+    if (st) photos.forEach(p => { if (p.storagePath) st.ref(p.storagePath).delete().catch(() => {}); });
+  } catch (e) {
+    console.error('Delete known damage error:', e);
+    toast('Failed to delete.', 'error');
+    return;
+  }
+  toast('Known damage deleted.', 'success');
+  loadKnownDamages(_knownDamageVehicleId);
+};
 
 // Skip Photos Today — admin only; logs who performed the action
 async function doSkipPhotosToday() {
@@ -27783,7 +27957,7 @@ const COACHING_PRESETS = {
     label: 'TPMS Sensor on',
     kind: 'improvement',
     opportunity: 'A TPMS warning was left on or not reported before the vehicle went back out.',
-    nextSteps: 'When the TPMS light is on, note the plate, tell a manager before the next trip, and do not mark the vehicle ready until it is checked.',
+    nextSteps: 'Check tire for nails and refill the air in this tire and all other tires.',
   },
   blank: {
     label: 'Blank template',
@@ -27963,6 +28137,24 @@ function _coachTime(c) {
   return c.createdAt && c.createdAt.toMillis ? c.createdAt.toMillis() : Date.now();
 }
 
+function _coachingCardHtml(c) {
+  const ts = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate() : null;
+  const when = ts ? ts.toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+  const ack = c.status === 'acknowledged';
+  const ackWhen = c.acknowledgedAt && c.acknowledgedAt.toDate
+    ? c.acknowledgedAt.toDate().toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : '';
+  return '<div class="coach-card ' + (ack ? 'coach-ack' : '') + '">'
+    + '<div class="coach-card-top"><strong>' + escapeHtml(c.toName || 'User') + '</strong><span>'
+    + '<span class="coach-pill ' + (c.kind === 'recognition' ? 'coach-pill-rec' : 'coach-pill-imp') + '">' + (c.kind === 'recognition' ? 'Recognition' : 'Improvement') + '</span> '
+    + '<span class="coach-pill ' + (ack ? 'coach-pill-ack' : 'coach-pill-wait') + '">' + (ack ? 'Acknowledged' : 'Waiting') + '</span></span></div>'
+    + '<div style="font-size:0.78rem;color:#6b7280;margin-top:4px;">' + escapeHtml(c.presetLabel || '') + ' · ' + escapeHtml(when) + (c.fromName ? ' · from ' + escapeHtml(c.fromName) : '') + (ackWhen ? ' · seen ' + escapeHtml(ackWhen) : '') + '</div>'
+    + (c.opportunity ? '<div style="font-size:0.84rem;margin-top:6px;">' + escapeHtml(c.opportunity) + '</div>' : '')
+    + (c.nextSteps ? '<div style="font-size:0.8rem;color:#374151;margin-top:4px;"><strong>Next:</strong> ' + escapeHtml(c.nextSteps) + '</div>' : '')
+    + '</div>';
+}
+
+// One collapsible log per person (newest first inside each). Filter dropdown narrows to one person.
 window.renderCoachingHistory = function() {
   const list = $('coach-history-list');
   if (!list) return;
@@ -27972,22 +28164,24 @@ window.renderCoachingHistory = function() {
     list.innerHTML = '<p class="hint">No coachings yet.</p>';
     return;
   }
-  list.innerHTML = rows.map(c => {
-    const ts = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate() : null;
-    const when = ts ? ts.toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
-    const ack = c.status === 'acknowledged';
-    const ackWhen = c.acknowledgedAt && c.acknowledgedAt.toDate
-      ? c.acknowledgedAt.toDate().toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
-      : '';
-    return '<div class="coach-card ' + (ack ? 'coach-ack' : '') + '">'
-      + '<div class="coach-card-top"><strong>' + escapeHtml(c.toName || 'User') + '</strong><span>'
-      + '<span class="coach-pill ' + (c.kind === 'recognition' ? 'coach-pill-rec' : 'coach-pill-imp') + '">' + (c.kind === 'recognition' ? 'Recognition' : 'Improvement') + '</span> '
-      + '<span class="coach-pill ' + (ack ? 'coach-pill-ack' : 'coach-pill-wait') + '">' + (ack ? 'Acknowledged' : 'Waiting') + '</span></span></div>'
-      + '<div style="font-size:0.78rem;color:#6b7280;margin-top:4px;">' + escapeHtml(c.presetLabel || '') + ' · ' + escapeHtml(when) + (c.fromName ? ' · from ' + escapeHtml(c.fromName) : '') + (ackWhen ? ' · seen ' + escapeHtml(ackWhen) : '') + '</div>'
-      + (c.opportunity ? '<div style="font-size:0.84rem;margin-top:6px;">' + escapeHtml(c.opportunity) + '</div>' : '')
-      + (c.nextSteps ? '<div style="font-size:0.8rem;color:#374151;margin-top:4px;"><strong>Next:</strong> ' + escapeHtml(c.nextSteps) + '</div>' : '')
-      + '</div>';
-  }).join('');
+  const groups = new Map();
+  rows.forEach(c => {
+    const key = c.toUid || c.toName || 'unknown';
+    if (!groups.has(key)) groups.set(key, { name: c.toName || 'User', items: [] });
+    groups.get(key).items.push(c);
+  });
+  const single = groups.size === 1;
+  list.innerHTML = [...groups.values()]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(g => {
+      const latest = new Date(_coachTime(g.items[0])).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric' });
+      return '<details class="coach-group" style="margin-bottom:8px;"' + (single ? ' open' : '') + '>'
+        + '<summary style="cursor:pointer;font-weight:700;padding:8px 4px;">' + escapeHtml(g.name)
+        + ' <span style="font-weight:400;color:#6b7280;">· ' + g.items.length + (g.items.length === 1 ? ' coaching' : ' coachings') + ' · last ' + escapeHtml(latest) + '</span></summary>'
+        + g.items.map(_coachingCardHtml).join('')
+        + '</details>';
+    })
+    .join('');
 };
 
 // ---- Custom coaching templates (admin-created, reusable) ----

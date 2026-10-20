@@ -106,6 +106,14 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    // Known damages — persistent per-vehicle damage photos. All registered users can read;
+    // only admins add, edit photos, or delete. Max 15 photos per damage.
+    match /knownDamages/{damageId} {
+      allow read: if isRegistered();
+      allow create, update: if isAdmin() && request.resource.data.photos.size() <= 15;
+      allow delete: if isAdmin();
+    }
+
     // Messages (internal mailbox) - any registered user can send/read own messages
     match /messages/{msgId} {
       allow read: if isRegistered() && (
