@@ -4575,6 +4575,48 @@ $('btn-upload-override').addEventListener('click', doPhotoOverride);
 // Photos use the same compression as regular uploads (1920px / 85% JPEG).
 const KNOWN_DAMAGE_MAX_PHOTOS = 15;
 let _knownDamageVehicleId = null;
+let _knownDamageDocs = [];
+
+function _kdSetStatus(msg, type) {
+  const el = $('kd-status');
+  if (!el) return;
+  const colors = { info: '#374151', success: '#15803d', error: '#b91c1c', warning: '#b45309' };
+  el.style.color = colors[type] || colors.info;
+  el.textContent = msg || '';
+}
+
+window.openKnownDamages = function() {
+  if (!_knownDamageVehicleId) return;
+  const old = $('known-damage-overlay');
+  if (old) old.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'known-damage-overlay';
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-header" style="background:#1d4ed8;color:#fff;border-radius:10px 10px 0 0;">
+        <h3 style="color:#fff;margin:0;">🛠️ Known Damages${selectedVehicle && selectedVehicle.plate ? ' — ' + escapeHtml(selectedVehicle.plate) : ''}</h3>
+        <button class="modal-close" style="color:#fff;" onclick="closeKnownDamages()">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:14px 16px;overflow-y:auto;">
+        <p class="hint" style="margin-top:0;">Kept until an admin deletes it · up to 15 photos per damage.</p>
+        <div id="kd-add-row" style="display:none;gap:8px;margin-bottom:10px;">
+          <input type="text" id="kd-name" maxlength="80" placeholder="Describe the damage, e.g. Scratch rear bumper" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;">
+          <button type="button" class="btn btn-sm btn-primary" onclick="addKnownDamage()">+ Add Damage</button>
+        </div>
+        <div id="kd-status" class="hint" style="min-height:1.2em;margin:0 0 6px;"></div>
+        <div id="kd-list"></div>
+      </div>
+    </div>`;
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeKnownDamages(); });
+  document.body.appendChild(overlay);
+  loadKnownDamages(_knownDamageVehicleId);
+};
+
+window.closeKnownDamages = function() {
+  const overlay = $('known-damage-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
 
 function _knownDamageCardHtml(id, d, isAdminUser) {
   const photos = Array.isArray(d.photos) ? d.photos : [];
@@ -4587,9 +4629,10 @@ function _knownDamageCardHtml(id, d, isAdminUser) {
   ).join('');
   const remaining = KNOWN_DAMAGE_MAX_PHOTOS - photos.length;
   const addBtn = isAdminUser
-    ? '<input type="file" id="kd-file-' + id + '" accept="image/*" multiple style="display:none;" onchange="addKnownDamagePhotos(\'' + id + '\', this)">'
-      + '<button type="button" class="btn btn-sm btn-primary" style="align-self:center;"' + (remaining > 0 ? '' : ' disabled') + ' onclick="document.getElementById(\'kd-file-' + id + '\').click()">'
-      + (remaining > 0 ? '📷 Add photos (' + remaining + ' left)' : 'Photo limit reached') + '</button>'
+    ? (remaining > 0
+      ? '<label class="btn btn-sm btn-primary" style="align-self:center;cursor:pointer;margin:0;">📷 Add photos (' + remaining + ' left)'
+        + '<input type="file" accept="image/*" multiple style="display:none;" onchange="addKnownDamagePhotos(\'' + id + '\', this)"></label>'
+      : '<span class="hint" style="align-self:center;margin:0;">Photo limit reached (15)</span>')
     : '';
   const delBtn = isAdminUser
     ? '<button type="button" class="btn btn-sm btn-outline" onclick="deleteKnownDamage(\'' + id + '\')">Delete</button>'
@@ -4606,29 +4649,37 @@ function _knownDamageCardHtml(id, d, isAdminUser) {
 
 async function loadKnownDamages(vehicleId) {
   const wrap = $('known-damages-wrap');
-  const list = $('known-damage-list');
-  if (!wrap || !list || !vehicleId) return;
+  if (!wrap || !vehicleId) return;
   wrap.style.display = '';
-  const isAdminUser = currentUserRole === 'admin';
-  const addRow = $('known-damage-add-row');
-  if (addRow) addRow.style.display = isAdminUser ? 'flex' : 'none';
   _knownDamageVehicleId = vehicleId;
-  list.innerHTML = '<p class="hint">Loading…</p>';
   try {
     const snap = await db.collection('knownDamages').where('vehicleId', '==', vehicleId).get();
     if (_knownDamageVehicleId !== vehicleId) return; // vehicle changed while loading
-    if (snap.empty) { list.innerHTML = '<p class="hint">No known damages on file.</p>'; return; }
-    const docs = snap.docs.slice().sort((a, b) => _coachTime(a.data()) - _coachTime(b.data()));
-    list.innerHTML = docs.map(doc => _knownDamageCardHtml(doc.id, doc.data(), isAdminUser)).join('');
+    _knownDamageDocs = snap.docs.slice().sort((a, b) => _coachTime(a.data()) - _coachTime(b.data()));
   } catch (e) {
     console.error('Load known damages error:', e);
-    list.innerHTML = '<p class="hint">Could not load known damages.</p>';
+    _knownDamageDocs = [];
+    _kdSetStatus('Could not load known damages: ' + (e.message || e), 'error');
   }
+  renderKnownDamages();
+}
+
+function renderKnownDamages() {
+  const count = $('known-damage-count');
+  if (count) count.textContent = _knownDamageDocs.length ? '(' + _knownDamageDocs.length + ')' : '';
+  const isAdminUser = currentUserRole === 'admin';
+  const addRow = $('kd-add-row');
+  if (addRow) addRow.style.display = isAdminUser ? 'flex' : 'none';
+  const list = $('kd-list');
+  if (!list) return;
+  list.innerHTML = _knownDamageDocs.length
+    ? _knownDamageDocs.map(doc => _knownDamageCardHtml(doc.id, doc.data(), isAdminUser)).join('')
+    : '<p class="hint">No known damages on file.</p>';
 }
 
 window.addKnownDamage = async function() {
   if (currentUserRole !== 'admin' || !selectedVehicle) { toast('Only admins can add known damages.', 'warning'); return; }
-  const input = $('known-damage-name');
+  const input = $('kd-name');
   const label = ((input && input.value) || '').trim();
   if (!label) { toast('Describe the damage first.', 'warning'); return; }
   const vehicle = selectedVehicle;
@@ -4654,49 +4705,75 @@ window.addKnownDamage = async function() {
 window.addKnownDamagePhotos = async function(damageId, input) {
   const files = Array.from(input.files || []);
   input.value = '';
-  if (!files.length || currentUserRole !== 'admin' || !selectedVehicle) return;
-  const vehicleId = selectedVehicle.id;
-  const plate = sanitizePlate(selectedVehicle.plate);
+  if (!files.length) return;
+  if (currentUserRole !== 'admin') { _kdSetStatus('Only admins can add photos.', 'error'); return; }
+  const vehicleId = _knownDamageVehicleId;
   const st = getStorage();
-  if (!st) { toast('Photo storage not available.', 'error'); return; }
+  if (!st) { _kdSetStatus('Photo storage is not available.', 'error'); return; }
   const ref = db.collection('knownDamages').doc(damageId);
-  const snap = await ref.get();
-  if (!snap.exists) { toast('This damage no longer exists.', 'warning'); loadKnownDamages(vehicleId); return; }
-  const room = KNOWN_DAMAGE_MAX_PHOTOS - ((snap.data().photos || []).length);
-  if (room <= 0) { toast(`This damage already has ${KNOWN_DAMAGE_MAX_PHOTOS} photos.`, 'warning'); return; }
-  if (files.length > room) toast(`Only ${room} more photo(s) fit. The rest were skipped.`, 'warning');
+  let snap;
+  try {
+    snap = await ref.get();
+  } catch (e) {
+    console.error('Read known damage error:', e);
+    _kdSetStatus('Could not read this damage: ' + (e.message || e), 'error');
+    return;
+  }
+  if (!snap.exists) { _kdSetStatus('This damage no longer exists.', 'warning'); loadKnownDamages(vehicleId); return; }
+  const damage = snap.data();
+  const plateSeg = sanitizePlate(damage.plate || '') || vehicleId;
+  const room = KNOWN_DAMAGE_MAX_PHOTOS - (damage.photos || []).length;
+  if (room <= 0) { _kdSetStatus(`This damage already has ${KNOWN_DAMAGE_MAX_PHOTOS} photos.`, 'warning'); return; }
+  const batch = files.slice(0, room);
+  const skipped = files.length - batch.length;
 
-  const added = [];
-  let lastErr = '';
-  for (const file of files.slice(0, room)) {
+  let added = [];
+  let uploadErr = '';
+  for (let i = 0; i < batch.length; i++) {
+    _kdSetStatus(`Uploading photo ${i + 1} of ${batch.length}…`, 'info');
     try {
-      const compressed = await compressImage(file, 1920, 0.85);
-      const path = `knownDamages/${plate}/${damageId}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
+      const compressed = await compressImage(batch[i], 1920, 0.85);
+      const path = `knownDamages/${plateSeg}/${damageId}/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
       const up = await st.ref(path).put(compressed, { contentType: 'image/jpeg' });
       const url = await up.ref.getDownloadURL();
       added.push({ url, storagePath: path, addedBy: currentUser.uid, addedByName: currentUserDisplayName || currentUser.email || '', addedAt: Date.now() });
     } catch (e) {
       console.error('Known damage photo upload error:', e);
-      lastErr = e.message || String(e);
+      uploadErr = e.message || String(e);
     }
   }
-  if (!added.length) { toast('Photo upload failed: ' + lastErr, 'error'); loadKnownDamages(vehicleId); return; }
 
-  try {
-    await db.runTransaction(async tx => {
-      const s = await tx.get(ref);
-      if (!s.exists) throw new Error('missing');
-      const existing = s.data().photos || [];
-      if (existing.length + added.length > KNOWN_DAMAGE_MAX_PHOTOS) throw new Error('limit');
-      tx.update(ref, { photos: existing.concat(added) });
-    });
-    toast(`${added.length} photo(s) added ✓`, 'success');
-  } catch (e) {
-    console.error('Save known damage photos error:', e);
-    added.forEach(p => st.ref(p.storagePath).delete().catch(() => {}));
-    toast(e.message === 'limit' ? `Limit is ${KNOWN_DAMAGE_MAX_PHOTOS} photos per damage.` : 'Failed to save photos.', 'error');
+  let saveErr = '';
+  if (added.length) {
+    const toSave = added;
+    try {
+      await db.runTransaction(async tx => {
+        const s = await tx.get(ref);
+        if (!s.exists) throw new Error('This damage was deleted.');
+        const existing = s.data().photos || [];
+        if (existing.length + toSave.length > KNOWN_DAMAGE_MAX_PHOTOS) throw new Error(`Limit is ${KNOWN_DAMAGE_MAX_PHOTOS} photos per damage.`);
+        tx.update(ref, { photos: existing.concat(toSave) });
+      });
+    } catch (e) {
+      console.error('Save known damage photos error:', e);
+      saveErr = e.message || String(e);
+      toSave.forEach(p => st.ref(p.storagePath).delete().catch(() => {}));
+      added = [];
+    }
   }
-  loadKnownDamages(vehicleId);
+
+  await loadKnownDamages(vehicleId);
+  const saved = added.length;
+  const problem = saveErr || uploadErr;
+  if (problem) {
+    const msg = (saved ? saved + ' photo(s) added. ' : '') + 'Upload failed: ' + problem;
+    _kdSetStatus(msg, 'error');
+    toast(msg, 'error');
+  } else {
+    const msg = `${saved} photo(s) added.` + (skipped ? ` ${skipped} skipped (limit ${KNOWN_DAMAGE_MAX_PHOTOS}).` : '');
+    _kdSetStatus(msg, skipped ? 'warning' : 'success');
+    toast(msg, skipped ? 'warning' : 'success');
+  }
 };
 
 window.deleteKnownDamagePhoto = async function(damageId, index) {

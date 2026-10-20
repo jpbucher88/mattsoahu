@@ -695,18 +695,10 @@
             <button id="btn-upload-override" class="btn btn-sm btn-outline">📷 Mark Photos Up to Date</button>
           </div>
         </div>
-        <!-- Known Damages — persistent per-vehicle damage photos (admins add/delete, max 15 each) -->
-        <details id="known-damages-wrap" style="display:none; margin-bottom:12px;">
-          <summary style="cursor:pointer; display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; padding:6px 0;">
-            <strong>🛠️ Known Damages</strong>
-            <span class="hint" style="margin:0;">Kept until an admin deletes it · up to 15 photos each</span>
-          </summary>
-          <div id="known-damage-add-row" style="display:none; gap:8px; margin-top:8px;">
-            <input type="text" id="known-damage-name" maxlength="80" placeholder="Describe the damage, e.g. Scratch rear bumper" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;">
-            <button type="button" class="btn btn-sm btn-primary" onclick="addKnownDamage()">+ Add Damage</button>
-          </div>
-          <div id="known-damage-list"></div>
-        </details>
+        <!-- Known Damages — opens its own panel (admins add/delete, max 15 photos each) -->
+        <div id="known-damages-wrap" style="display:none; margin-bottom:12px;">
+          <button type="button" id="btn-known-damages-open" class="btn btn-sm btn-outline" onclick="openKnownDamages()">🛠️ Known Damages <span id="known-damage-count"></span></button>
+        </div>
         <!-- Skip Photos Today — per-vehicle, calendar-date specific -->
         <div id="skip-photos-today-wrap" style="display:none; margin-bottom:10px;">
           <button id="btn-skip-photos-today" class="btn btn-sm btn-skip-today" onclick="doSkipPhotosToday()">📅 No Photos Needed Today</button>
@@ -3444,7 +3436,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261019e"></script>
+  <script src="app.js?v=20261019f"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">
