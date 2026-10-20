@@ -34,7 +34,7 @@ service cloud.firestore {
 
     // Users collection - only admins can read/write, users can read own doc
     match /users/{userId} {
-      allow read: if isAuth() && (request.auth.uid == userId || isAdmin());
+      allow read: if isAuth() && (request.auth.uid == userId || isManager());
       allow create, update, delete: if isAdmin();
     }
 
@@ -83,12 +83,27 @@ service cloud.firestore {
       );
     }
 
-    // Coachings — admin sends and reviews; the recipient can read and acknowledge.
+    // Coachings — admins and managers send; admins see every log, managers see
+    // what they sent, and each person sees what was sent to them.
     match /coachings/{coachingId} {
-      allow read: if isAdmin() || (isRegistered() && resource.data.toUid == request.auth.uid);
-      allow create: if isAdmin();
-      allow update: if isAdmin() || (isRegistered() && resource.data.toUid == request.auth.uid);
+      allow read: if isAuth() && (
+        isAdmin() ||
+        resource.data.toUid == request.auth.uid ||
+        resource.data.fromUid == request.auth.uid
+      );
+      allow create: if isManager() && request.resource.data.fromUid == request.auth.uid;
+      allow update: if isAdmin() ||
+        (isAuth() && resource.data.toUid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'acknowledgedAt', 'acknowledgedBy', 'acknowledgedByName'])) ||
+        (isManager() && resource.data.fromUid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['messageId', 'taskId']));
       allow delete: if isAdmin();
+    }
+
+    // Coaching templates — admins create and manage; all registered users can read.
+    match /coachingTemplates/{templateId} {
+      allow read: if isRegistered();
+      allow create, update, delete: if isAdmin();
     }
 
     // Messages (internal mailbox) - any registered user can send/read own messages

@@ -7569,8 +7569,7 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     if (this.dataset.tab === 'tab-deleted')     loadDeletedTasks();
     if (this.dataset.tab === 'tab-ops-report')  loadOpsReport();
     if (this.dataset.tab === 'tab-performance') {
-      if ($('perf-coaching-pane') && $('perf-coaching-pane').style.display !== 'none') loadCoachingPanel();
-      else { loadPerformanceReport(); loadGoalsPanel(); }
+      loadPerformanceReport(); loadGoalsPanel();
     }
     if (this.dataset.tab === 'tab-config')      loadGeofenceDisplay();
   });
@@ -15898,6 +15897,11 @@ window.closeActivityLogModal = function() {
 };
 
 // Dashboard follow-up agenda (vehicle notes + general notes, grouped by date)
+// Coaching tasks are only visible to the person being coached
+function isCoachingTaskHiddenFromMe(d) {
+  return d.sourceType === 'coaching' && d.assignedTo !== (currentUser && currentUser.uid);
+}
+
 async function loadDashboardFollowUps() {
   const overdueEl = $('followup-overdue');
   const todayEl = $('followup-today');
@@ -15955,6 +15959,7 @@ async function loadDashboardFollowUps() {
       snap.forEach(doc => {
         if (seen.has(doc.id)) return;
         if (doc.data().deleted) return; // skip soft-deleted
+        if (isCoachingTaskHiddenFromMe(doc.data())) return;
         seen.add(doc.id);
         items.push({ id: doc.id, collection, type, ...doc.data() });
       });
@@ -15969,6 +15974,7 @@ async function loadDashboardFollowUps() {
     const seenDone = new Set();
     function addDoneItems(snap, type, collection) {
       snap.forEach(doc => {
+        if (isCoachingTaskHiddenFromMe(doc.data())) return;
         if (seenDone.has(doc.id)) return;
         seenDone.add(doc.id);
         completedItems.push({ id: doc.id, collection, type, ...doc.data() });
@@ -21171,7 +21177,7 @@ async function loadGeneralNotes() {
     const canDelete = (currentUserRole === 'admin');
     let html = '';
     snap.forEach(doc => {
-      const d = doc.data();
+      const d = doc || isCoachingTaskHiddenFromMe(d).data();
       if (d.deleted) return; // skip soft-deleted
       const dateStr = d.createdAt ? new Date(d.createdAt.toDate()).toLocaleDateString('en-US', { timeZone: APP_TIMEZONE }) : '';
       let followUpBadge = '';
@@ -27790,6 +27796,11 @@ const COACHING_PRESETS = {
 let _coachingKind = 'improvement';
 let _coachingPreset = 'photos-blurry';
 let _coachingHistory = [];
+let _customCoachingPresets = {};
+
+function getCoachingPreset(id) {
+  return COACHING_PRESETS[id] || _customCoachingPresets[id] || COACHING_PRESETS.blank;
+}
 
 window.setPerfMode = function(mode) {
   const coaching = mode === 'coaching';
@@ -27819,8 +27830,9 @@ window.setCoachingKind = function(kind) {
 };
 
 window.applyCoachingPreset = function(id) {
-  const preset = COACHING_PRESETS[id] || COACHING_PRESETS.blank;
-  _coachingPreset = COACHING_PRESETS[id] ? id : 'blank';
+  const known = COACHING_PRESETS[id] || _customCoachingPresets[id];
+  const preset = known || COACHING_PRESETS.blank;
+  _coachingPreset = known ? id : 'blank';
   document.querySelectorAll('.coach-preset-btn').forEach(btn => {
     btn.classList.toggle('coach-preset-active', btn.dataset.preset === _coachingPreset);
   });
@@ -27893,6 +27905,7 @@ async function deliverCoaching(opts) {
 }
 
 window.loadCoachingPanel = async function() {
+  await loadCustomCoachingTemplates();
   applyCoachingPreset(_coachingPreset || 'photos-blurry');
   const sel = $('coach-to');
   if (sel && sel.options.length < 2) {
@@ -27914,9 +27927,20 @@ window.loadCoachingPanel = async function() {
 async function loadCoachingHistory() {
   const list = $('coach-history-list');
   if (list) list.innerHTML = '<p class="hint">Loading coachings…</p>';
+  const uid = currentUser.uid;
   try {
-    const snap = await db.collection('coachings').orderBy('createdAt', 'desc').limit(80).get();
-    _coachingHistory = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Admins see every person's log; managers see what they sent and what was sent to them
+    let snaps;
+    if (currentUserRole === 'admin') {
+      snaps = [await db.collection('coachings').orderBy('createdAt', 'desc').limit(300).get()];
+    } else {
+      const queries = [db.collection('coachings').where('toUid', '==', uid).limit(200).get()];
+      if (currentUserRole === 'manager') queries.push(db.collection('coachings').where('fromUid', '==', uid).limit(200).get());
+      snaps = await Promise.all(queries);
+    }
+    const byId = new Map();
+    snaps.forEach(s => s.docs.forEach(d => byId.set(d.id, { id: d.id, ...d.data() })));
+    _coachingHistory = [...byId.values()].sort((a, b) => _coachTime(b) - _coachTime(a));
   } catch (e) {
     console.error('Coaching history:', e);
     _coachingHistory = [];
@@ -27926,20 +27950,26 @@ async function loadCoachingHistory() {
   const filter = $('coach-history-filter');
   if (filter) {
     const current = filter.value;
-    const names = [...new Set(_coachingHistory.map(c => c.toName).filter(Boolean))].sort();
-    filter.innerHTML = '<option value="">All people</option>' + names.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('');
+    const people = new Map();
+    _coachingHistory.forEach(c => { if (c.toUid && !people.has(c.toUid)) people.set(c.toUid, c.toName || 'User'); });
+    const sorted = [...people.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    filter.innerHTML = '<option value="">All people</option>' + sorted.map(([id, name]) => '<option value="' + escapeHtml(id) + '">' + escapeHtml(name) + '</option>').join('');
     if ([...filter.options].some(o => o.value === current)) filter.value = current;
   }
   renderCoachingHistory();
+}
+
+function _coachTime(c) {
+  return c.createdAt && c.createdAt.toMillis ? c.createdAt.toMillis() : Date.now();
 }
 
 window.renderCoachingHistory = function() {
   const list = $('coach-history-list');
   if (!list) return;
   const who = ($('coach-history-filter') || {}).value || '';
-  const rows = _coachingHistory.filter(c => !who || c.toName === who);
+  const rows = _coachingHistory.filter(c => !who || c.toUid === who);
   if (!rows.length) {
-    list.innerHTML = '<p class="hint">No coachings sent yet.</p>';
+    list.innerHTML = '<p class="hint">No coachings yet.</p>';
     return;
   }
   list.innerHTML = rows.map(c => {
@@ -27953,11 +27983,112 @@ window.renderCoachingHistory = function() {
       + '<div class="coach-card-top"><strong>' + escapeHtml(c.toName || 'User') + '</strong><span>'
       + '<span class="coach-pill ' + (c.kind === 'recognition' ? 'coach-pill-rec' : 'coach-pill-imp') + '">' + (c.kind === 'recognition' ? 'Recognition' : 'Improvement') + '</span> '
       + '<span class="coach-pill ' + (ack ? 'coach-pill-ack' : 'coach-pill-wait') + '">' + (ack ? 'Acknowledged' : 'Waiting') + '</span></span></div>'
-      + '<div style="font-size:0.78rem;color:#6b7280;margin-top:4px;">' + escapeHtml(c.presetLabel || '') + ' · ' + escapeHtml(when) + (ackWhen ? ' · seen ' + escapeHtml(ackWhen) : '') + '</div>'
+      + '<div style="font-size:0.78rem;color:#6b7280;margin-top:4px;">' + escapeHtml(c.presetLabel || '') + ' · ' + escapeHtml(when) + (c.fromName ? ' · from ' + escapeHtml(c.fromName) : '') + (ackWhen ? ' · seen ' + escapeHtml(ackWhen) : '') + '</div>'
       + (c.opportunity ? '<div style="font-size:0.84rem;margin-top:6px;">' + escapeHtml(c.opportunity) + '</div>' : '')
       + (c.nextSteps ? '<div style="font-size:0.8rem;color:#374151;margin-top:4px;"><strong>Next:</strong> ' + escapeHtml(c.nextSteps) + '</div>' : '')
       + '</div>';
   }).join('');
+};
+
+// ---- Custom coaching templates (admin-created, reusable) ----
+async function loadCustomCoachingTemplates() {
+  try {
+    const snap = await db.collection('coachingTemplates').get();
+    const docs = snap.docs.slice().sort((a, b) => (a.data().label || '').localeCompare(b.data().label || ''));
+    _customCoachingPresets = {};
+    docs.forEach(doc => {
+      const d = doc.data();
+      _customCoachingPresets['custom:' + doc.id] = {
+        docId: doc.id,
+        label: d.label || 'Template',
+        kind: 'improvement',
+        opportunity: d.opportunity || '',
+        nextSteps: d.nextSteps || ''
+      };
+    });
+  } catch (e) {
+    console.warn('Coaching templates:', e);
+  }
+  renderCustomCoachingPresets();
+}
+
+function renderCustomCoachingPresets() {
+  const wrap = $('coach-custom-presets');
+  if (!wrap) return;
+  const canDelete = currentUserRole === 'admin';
+  wrap.innerHTML = Object.entries(_customCoachingPresets).map(([id, p]) =>
+    '<span style="display:inline-flex;align-items:center;">'
+    + '<button type="button" class="coach-preset-btn' + (_coachingPreset === id ? ' coach-preset-active' : '') + '" data-preset="' + id + '" onclick="applyCoachingPreset(\'' + id + '\')">' + escapeHtml(p.label) + '</button>'
+    + (canDelete ? '<button type="button" title="Delete template" style="border:none;background:none;cursor:pointer;color:#9ca3af;font-size:1rem;padding:0 4px;" onclick="deleteCoachingTemplate(\'' + p.docId + '\')">\u00d7</button>' : '')
+    + '</span>'
+  ).join('');
+}
+
+window.toggleCoachingTemplateForm = function() {
+  const form = $('coach-tmpl-form');
+  if (form) form.style.display = form.style.display === 'none' ? '' : 'none';
+};
+
+window.saveCoachingTemplate = async function() {
+  if (currentUserRole !== 'admin') return;
+  const val = id => (($(id) || {}).value || '').trim();
+  const label = val('coach-tmpl-label');
+  const opportunity = val('coach-tmpl-opp');
+  const nextSteps = val('coach-tmpl-next');
+  if (!label) { toast('Name the template first.', 'warning'); return; }
+  if (!opportunity && !nextSteps) { toast('Add an opportunity or next steps.', 'warning'); return; }
+  try {
+    const ref = await db.collection('coachingTemplates').add({
+      label,
+      opportunity,
+      nextSteps,
+      createdBy: currentUser.uid,
+      createdByName: currentUserDisplayName || currentUser.email || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await loadCustomCoachingTemplates();
+    applyCoachingPreset('custom:' + ref.id);
+    ['coach-tmpl-label', 'coach-tmpl-opp', 'coach-tmpl-next'].forEach(id => { if ($(id)) $(id).value = ''; });
+    window.toggleCoachingTemplateForm();
+    toast('Template saved for future use.', 'success');
+  } catch (e) {
+    console.error('Save coaching template:', e);
+    toast('Could not save template.', 'error');
+  }
+};
+
+window.deleteCoachingTemplate = async function(docId) {
+  if (currentUserRole !== 'admin') return;
+  if (!confirm('Delete this template? Past coachings keep their text.')) return;
+  try {
+    await db.collection('coachingTemplates').doc(docId).delete();
+  } catch (e) {
+    console.error('Delete coaching template:', e);
+    toast('Could not delete template.', 'error');
+    return;
+  }
+  if (_coachingPreset === 'custom:' + docId) applyCoachingPreset('blank');
+  await loadCustomCoachingTemplates();
+  toast('Template deleted.', 'success');
+};
+
+// ---- Development overlay (Hub > Development) ----
+window.openDevelopment = async function() {
+  const overlay = $('dev-overlay');
+  if (!overlay || !currentUser) return;
+  const canSend = currentUserRole === 'admin' || currentUserRole === 'manager';
+  const compose = $('coach-compose');
+  if (compose) compose.style.display = canSend ? '' : 'none';
+  const tmplToggle = $('coach-tmpl-toggle');
+  if (tmplToggle) tmplToggle.style.display = currentUserRole === 'admin' ? '' : 'none';
+  overlay.style.display = 'flex';
+  if (canSend) await loadCoachingPanel();
+  else await loadCoachingHistory();
+};
+
+window.closeDevelopment = function() {
+  const overlay = $('dev-overlay');
+  if (overlay) overlay.style.display = 'none';
 };
 
 window.sendPerformanceCoaching = async function() {
@@ -27971,7 +28102,7 @@ window.sendPerformanceCoaching = async function() {
   const btn = $('coach-send-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   try {
-    const preset = COACHING_PRESETS[_coachingPreset] || COACHING_PRESETS.blank;
+    const preset = getCoachingPreset(_coachingPreset);
     await deliverCoaching({
       toUid: toUid, toName: toName,
       kind: _coachingKind,

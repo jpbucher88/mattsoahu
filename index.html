@@ -106,6 +106,10 @@
             <span class="hm-icon">🎓</span>
             <span class="hm-label">Learning Center</span>
           </button>
+          <button id="btn-development" class="header-menu-item" role="menuitem" onclick="closeHeaderMenu();openDevelopment()">
+            <span class="hm-icon">🌱</span>
+            <span class="hm-label">Development</span>
+          </button>
         </div>
       </div>
 
@@ -188,6 +192,10 @@
         <button class="mbn-more-item" data-mbn-target="btn-learning">
           <span class="mbn-icon">🎓</span>
           <span>Learning Center</span>
+        </button>
+        <button class="mbn-more-item" data-mbn-target="btn-development">
+          <span class="mbn-icon">🌱</span>
+          <span>Development</span>
         </button>
       </div>
     </div>
@@ -2046,7 +2054,6 @@
             <h3 style="margin:0;">👥 Team Performance</h3>
             <div id="perf-mode-toggle" role="tablist" aria-label="Performance section" style="display:inline-flex;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:3px;gap:2px;">
               <button type="button" class="perf-view-btn perf-view-active" data-perf-mode="report" onclick="setPerfMode('report')">Report</button>
-              <button type="button" class="perf-view-btn" data-perf-mode="coaching" onclick="setPerfMode('coaching')">Coaching</button>
             </div>
             <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
             <button class="btn btn-sm btn-primary" id="perf-load-btn" onclick="loadPerformanceReport()">Load</button>
@@ -2112,54 +2119,6 @@
             <div id="goals-panel-content" style="margin-top:10px;"></div>
           </div>
 
-          <!-- Coaching — send + track -->
-          <div id="perf-coaching-pane" style="display:none;">
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
-              <div>
-                <h4 style="margin:0;color:#4c1d95;">🎯 Improvement / Recognition</h4>
-                <p style="margin:3px 0 0;font-size:0.78rem;color:#6b7280;">Sends to their mailbox and pops an urgent notification until they acknowledge it.</p>
-              </div>
-            </div>
-            <div class="coach-form">
-              <div class="coach-form-row">
-                <label class="coach-label">Send to</label>
-                <select id="coach-to" class="form-select"><option value="">— Select user —</option></select>
-              </div>
-              <div class="coach-form-row">
-                <label class="coach-label">Type</label>
-                <div class="coach-kind-toggle">
-                  <button type="button" class="coach-kind-btn coach-kind-active" data-kind="improvement" onclick="setCoachingKind('improvement')">Improvement</button>
-                  <button type="button" class="coach-kind-btn" data-kind="recognition" onclick="setCoachingKind('recognition')">Recognition</button>
-                </div>
-              </div>
-              <div class="coach-form-row">
-                <label class="coach-label">Template</label>
-                <div class="coach-presets">
-                  <button type="button" class="coach-preset-btn coach-preset-active" data-preset="photos-blurry" onclick="applyCoachingPreset('photos-blurry')">Photos blurry</button>
-                  <button type="button" class="coach-preset-btn" data-preset="tpms" onclick="applyCoachingPreset('tpms')">TPMS Sensor on</button>
-                  <button type="button" class="coach-preset-btn" data-preset="blank" onclick="applyCoachingPreset('blank')">Blank template</button>
-                </div>
-              </div>
-              <div class="coach-form-row">
-                <label class="coach-label" for="coach-opportunity">Opportunity</label>
-                <textarea id="coach-opportunity" class="coach-textarea" rows="3" maxlength="800" placeholder="What happened, or what they did well"></textarea>
-              </div>
-              <div class="coach-form-row">
-                <label class="coach-label" for="coach-next">Next steps</label>
-                <textarea id="coach-next" class="coach-textarea" rows="3" maxlength="800" placeholder="What they should do next"></textarea>
-              </div>
-              <div style="display:flex;justify-content:flex-end;">
-                <button type="button" class="btn btn-primary" id="coach-send-btn" onclick="sendPerformanceCoaching()">Send coaching</button>
-              </div>
-            </div>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:16px 0 8px;flex-wrap:wrap;">
-              <h4 style="margin:0;font-size:0.92rem;">Sent coachings</h4>
-              <select id="coach-history-filter" class="form-select" style="width:auto;font-size:0.8rem;" onchange="renderCoachingHistory()">
-                <option value="">All people</option>
-              </select>
-            </div>
-            <div id="coach-history-list"><p class="hint">Open this tab to load coachings.</p></div>
-          </div>
         </div>
       </div>
 
@@ -3473,7 +3432,7 @@
   <script src="jszip.min.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261019b"></script>
+  <script src="app.js?v=20261019c"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">
@@ -3775,6 +3734,91 @@
       <div class="dm-footer">
         <button class="dm-btn-cancel" onclick="closeShiftLog()">Cancel</button>
         <button class="dm-btn-go" style="background:#1d4ed8;" onclick="submitShiftLog()">💾 Log Shift</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== DEVELOPMENT (coaching + templates) ==================== -->
+  <div id="dev-overlay" class="modal-overlay" style="display:none;" onclick="if(event.target===this)closeDevelopment()">
+    <div class="dm-card" style="max-width:760px;width:95vw;max-height:90vh;display:flex;flex-direction:column;">
+      <div class="dm-topbar" style="background:#4c1d95;">
+        <span class="dm-topbar-title">🌱 Development</span>
+        <button class="dm-topbar-close" onclick="closeDevelopment()">✕</button>
+      </div>
+      <div style="padding:16px;overflow:auto;">
+        <div id="perf-coaching-pane">
+          <div id="coach-compose">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+              <div>
+                <h4 style="margin:0;color:#4c1d95;">🎯 Improvement / Recognition</h4>
+                <p style="margin:3px 0 0;font-size:0.78rem;color:#6b7280;">Sends to their mailbox and pops an urgent notification until they acknowledge it. Only the person coached sees it.</p>
+              </div>
+            </div>
+            <div class="coach-form">
+              <div class="coach-form-row">
+                <label class="coach-label" for="coach-to">Send to</label>
+                <select id="coach-to" class="form-select"><option value="">— Select user —</option></select>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label">Type</label>
+                <div class="coach-kind-toggle">
+                  <button type="button" class="coach-kind-btn coach-kind-active" data-kind="improvement" onclick="setCoachingKind('improvement')">Improvement</button>
+                  <button type="button" class="coach-kind-btn" data-kind="recognition" onclick="setCoachingKind('recognition')">Recognition</button>
+                </div>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label">Template</label>
+                <div style="display:flex;flex-direction:column;gap:6px;">
+                  <div class="coach-presets">
+                    <button type="button" class="coach-preset-btn coach-preset-active" data-preset="photos-blurry" onclick="applyCoachingPreset('photos-blurry')">Photos blurry</button>
+                    <button type="button" class="coach-preset-btn" data-preset="tpms" onclick="applyCoachingPreset('tpms')">TPMS Sensor on</button>
+                    <button type="button" class="coach-preset-btn" data-preset="blank" onclick="applyCoachingPreset('blank')">Blank template</button>
+                    <span id="coach-custom-presets" style="display:contents;"></span>
+                  </div>
+                  <div>
+                    <button type="button" id="coach-tmpl-toggle" class="btn btn-sm btn-outline" onclick="toggleCoachingTemplateForm()" style="display:none;">+ Save as new template</button>
+                  </div>
+                </div>
+              </div>
+              <div id="coach-tmpl-form" style="display:none;padding:10px;border:1px dashed #c4b5fd;border-radius:8px;background:#faf5ff;">
+                <div class="coach-form-row">
+                  <label class="coach-label" for="coach-tmpl-label">Template name</label>
+                  <input id="coach-tmpl-label" class="form-select" type="text" maxlength="60" placeholder="e.g. Trash not bagged">
+                </div>
+                <div class="coach-form-row">
+                  <label class="coach-label" for="coach-tmpl-opp">Opportunity</label>
+                  <textarea id="coach-tmpl-opp" class="coach-textarea" rows="2" maxlength="800"></textarea>
+                </div>
+                <div class="coach-form-row">
+                  <label class="coach-label" for="coach-tmpl-next">Next steps</label>
+                  <textarea id="coach-tmpl-next" class="coach-textarea" rows="2" maxlength="800"></textarea>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:8px;">
+                  <button type="button" class="btn btn-sm btn-outline" onclick="toggleCoachingTemplateForm()">Cancel</button>
+                  <button type="button" class="btn btn-sm btn-primary" onclick="saveCoachingTemplate()">Save template</button>
+                </div>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label" for="coach-opportunity">Opportunity</label>
+                <textarea id="coach-opportunity" class="coach-textarea" rows="3" maxlength="800" placeholder="What happened, or what they did well"></textarea>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label" for="coach-next">Next steps</label>
+                <textarea id="coach-next" class="coach-textarea" rows="3" maxlength="800" placeholder="What they should do next"></textarea>
+              </div>
+              <div style="display:flex;justify-content:flex-end;">
+                <button type="button" class="btn btn-primary" id="coach-send-btn" onclick="sendPerformanceCoaching()">Send coaching</button>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:16px 0 8px;flex-wrap:wrap;">
+            <h4 style="margin:0;font-size:0.92rem;">Coaching log</h4>
+            <select id="coach-history-filter" class="form-select" style="width:auto;font-size:0.8rem;" onchange="renderCoachingHistory()">
+              <option value="">All people</option>
+            </select>
+          </div>
+          <div id="coach-history-list"><p class="hint">Loading coachings…</p></div>
+        </div>
       </div>
     </div>
   </div>
