@@ -16334,6 +16334,8 @@ function renderTaskAgenda(allItems) {
     items = allItems.filter(i => i.taskStatus === 'monitoring');
   } else if (currentTaskTab === 'maintenance') {
     items = allItems.filter(i => i.sourceType === 'maintenance');
+  } else if (currentTaskTab === 'charges') {
+    items = allItems.filter(i => i.sourceType === 'charge_followup');
   } else if (currentTaskTab === 'compliance') {
     // Compliance tab includes both Safety/Reg/Insurance notes AND bi-monthly inspection reminders
     items = allItems.filter(i => i.sourceType === 'compliance' || i.sourceType === 'inspection');
@@ -16349,6 +16351,7 @@ function renderTaskAgenda(allItems) {
   _tc('tc-scheduled', allItems.filter(i => !i.urgent && i.taskStatus !== 'monitoring' && i.taskStatus !== 'maintenance' && i.dueDate).length);
   _tc('tc-monitoring', allItems.filter(i => i.taskStatus === 'monitoring').length);
   _tc('tc-maintenance', allItems.filter(i => i.sourceType === 'maintenance').length);
+  _tc('tc-charges', allItems.filter(i => i.sourceType === 'charge_followup').length);
   if (currentUser) _tc('tc-mine', allItems.filter(i => !i.assignedTo || i.assignedTo === currentUser.uid).length);
 
   // Update quick stats bar (show only on 'all' tab)
