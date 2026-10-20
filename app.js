@@ -4600,8 +4600,7 @@ function _knownDamageCardHtml(id, d, isAdminUser) {
   const photos = Array.isArray(d.photos) ? d.photos : [];
   const thumbs = photos.map((p, i) =>
     '<div style="position:relative;width:76px;height:76px;">'
-    + '<a href="' + escapeHtml(p.url) + '" target="_blank" rel="noopener">'
-    + '<img src="' + escapeHtml(p.url) + '" loading="lazy" alt="Damage photo" style="width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;"></a>'
+    + '<img src="' + escapeHtml(p.url) + '" loading="lazy" alt="Damage photo" onclick="openKnownDamageViewer(\'' + id + '\',' + i + ')" style="width:76px;height:76px;object-fit:cover;border-radius:8px;border:1px solid #e5e7eb;cursor:zoom-in;">'
     + (isAdminUser ? '<button type="button" title="Delete photo" onclick="deleteKnownDamagePhoto(\'' + id + '\',' + i + ')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:#dc2626;color:#fff;font-size:13px;line-height:20px;cursor:pointer;padding:0;">&times;</button>' : '')
     + '</div>'
   ).join('');
@@ -4624,6 +4623,17 @@ function _knownDamageCardHtml(id, d, isAdminUser) {
     + '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;">' + thumbs + addBtn + '</div>'
     + '</div>';
 }
+
+window.openKnownDamageViewer = function(damageId, index) {
+  const doc = _knownDamageDocs.find(x => x.id === damageId);
+  if (!doc) return;
+  const d = doc.data();
+  const info = (d.label || 'Damage') + (d.plate ? ' — ' + d.plate : '');
+  lightboxPhotos = (d.photos || []).map(p => ({ url: p.url, info }));
+  lightboxIndex = index;
+  showLightboxPhoto();
+  $('lightbox').style.display = 'flex';
+};
 
 async function loadKnownDamages(vehicleId) {
   const wrap = $('known-damages-wrap');
