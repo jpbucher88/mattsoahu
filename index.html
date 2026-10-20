@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Aloha Fleet">
   <title>Aloha Fleet Management</title>
-  <link rel="stylesheet" href="style.css?v=20260926t">
+  <link rel="stylesheet" href="style.css?v=20261019a">
   <style>
     /* Dispatch modal overrides — inline to bypass CDN cache */
     .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px}
@@ -2042,10 +2042,14 @@
       <div id="tab-performance" class="tab-content">
         <div class="card" style="padding:16px;">
           <!-- Controls row -->
-          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+          <div id="perf-controls" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
             <h3 style="margin:0;">👥 Team Performance</h3>
+            <div id="perf-mode-toggle" role="tablist" aria-label="Performance section" style="display:inline-flex;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:3px;gap:2px;">
+              <button type="button" class="perf-view-btn perf-view-active" data-perf-mode="report" onclick="setPerfMode('report')">Report</button>
+              <button type="button" class="perf-view-btn" data-perf-mode="coaching" onclick="setPerfMode('coaching')">Coaching</button>
+            </div>
             <input type="date" id="perf-filter-date" class="form-select" style="width:auto;">
-            <button class="btn btn-sm btn-primary" onclick="loadPerformanceReport()">Load</button>
+            <button class="btn btn-sm btn-primary" id="perf-load-btn" onclick="loadPerformanceReport()">Load</button>
           </div>
           <!-- View mode toggle: Day / Week / Month -->
           <div id="perf-view-toggle" role="tablist" aria-label="View range" style="display:inline-flex;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:10px;padding:3px;margin-bottom:10px;gap:2px;">
@@ -2054,7 +2058,7 @@
             <button type="button" role="tab" data-perf-view="month" class="perf-view-btn" onclick="setPerfView('month')">Month</button>
           </div>
           <!-- Quick-date shortcuts -->
-          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+          <div id="perf-shortcuts" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
             <button class="btn btn-sm btn-outline" onclick="perfJumpDate(0)">Today</button>
             <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-1)">Yesterday</button>
             <button class="btn btn-sm btn-outline" onclick="perfJumpDate(-2)">2 Days Ago</button>
@@ -2106,6 +2110,55 @@
             </div>
 
             <div id="goals-panel-content" style="margin-top:10px;"></div>
+          </div>
+
+          <!-- Coaching — send + track -->
+          <div id="perf-coaching-pane" style="display:none;">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+              <div>
+                <h4 style="margin:0;color:#4c1d95;">🎯 Improvement / Recognition</h4>
+                <p style="margin:3px 0 0;font-size:0.78rem;color:#6b7280;">Sends to their mailbox and pops an urgent notification until they acknowledge it.</p>
+              </div>
+            </div>
+            <div class="coach-form">
+              <div class="coach-form-row">
+                <label class="coach-label">Send to</label>
+                <select id="coach-to" class="form-select"><option value="">— Select user —</option></select>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label">Type</label>
+                <div class="coach-kind-toggle">
+                  <button type="button" class="coach-kind-btn coach-kind-active" data-kind="improvement" onclick="setCoachingKind('improvement')">Improvement</button>
+                  <button type="button" class="coach-kind-btn" data-kind="recognition" onclick="setCoachingKind('recognition')">Recognition</button>
+                </div>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label">Template</label>
+                <div class="coach-presets">
+                  <button type="button" class="coach-preset-btn coach-preset-active" data-preset="photos-blurry" onclick="applyCoachingPreset('photos-blurry')">Photos blurry</button>
+                  <button type="button" class="coach-preset-btn" data-preset="tpms" onclick="applyCoachingPreset('tpms')">TPMS Sensor on</button>
+                  <button type="button" class="coach-preset-btn" data-preset="blank" onclick="applyCoachingPreset('blank')">Blank template</button>
+                </div>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label" for="coach-opportunity">Opportunity</label>
+                <textarea id="coach-opportunity" class="coach-textarea" rows="3" maxlength="800" placeholder="What happened, or what they did well"></textarea>
+              </div>
+              <div class="coach-form-row">
+                <label class="coach-label" for="coach-next">Next steps</label>
+                <textarea id="coach-next" class="coach-textarea" rows="3" maxlength="800" placeholder="What they should do next"></textarea>
+              </div>
+              <div style="display:flex;justify-content:flex-end;">
+                <button type="button" class="btn btn-primary" id="coach-send-btn" onclick="sendPerformanceCoaching()">Send coaching</button>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin:16px 0 8px;flex-wrap:wrap;">
+              <h4 style="margin:0;font-size:0.92rem;">Sent coachings</h4>
+              <select id="coach-history-filter" class="form-select" style="width:auto;font-size:0.8rem;" onchange="renderCoachingHistory()">
+                <option value="">All people</option>
+              </select>
+            </div>
+            <div id="coach-history-list"><p class="hint">Open this tab to load coachings.</p></div>
           </div>
         </div>
       </div>
@@ -2896,6 +2949,31 @@
       <div class="crm-lead-modal-footer">
         <button class="btn btn-sm btn-outline" onclick="closeFin2RevModal()">Cancel</button>
         <button class="btn btn-sm btn-primary" id="fin2-rev-save-btn" onclick="saveFin2Revenue()">Save Revenue</button>
+        <div class="crm-form-group">
+          <label>Who pays</label>
+          <div class="charge-who-row">
+            <label class="charge-who-opt"><input type="radio" name="fin2-exp-chargeto" value="company" checked onchange="toggleExpCustomerCharged()"> Company charge</label>
+            <label class="charge-who-opt"><input type="radio" name="fin2-exp-chargeto" value="customer" onchange="toggleExpCustomerCharged()"> Customer must be charged</label>
+          </div>
+          <label id="fin2-exp-charged-wrap" class="charge-who-opt" style="display:none;margin-top:6px;">
+            <input type="checkbox" id="fin2-exp-charged"> Customer has been charged
+          </label>
+          <p class="hint" style="margin:6px 0 0;">Fuel and airport parking need a plate plus receipts. If the customer is not charged yet, a 24-hour follow-up is created so the card charge is not lost.</p>
+        </div>
+        <div class="crm-form-row">
+          <div class="crm-form-group">
+            <label>Card last 4 <span style="font-weight:400;color:#9ca3af;">(optional)</span></label>
+            <input type="text" id="fin2-exp-card" class="crm-form-input" placeholder="1234" maxlength="4" inputmode="numeric">
+          </div>
+          <div class="crm-form-group">
+            <label>Receipt photos</label>
+            <label class="btn btn-sm btn-outline" style="display:inline-flex;align-items:center;gap:6px;">
+              📎 Add photos
+              <input type="file" id="fin2-exp-photos" accept="image/*" multiple style="display:none;" onchange="previewExpReceipts(this)">
+            </label>
+            <div id="fin2-exp-photo-preview" class="charge-photo-preview"></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -3321,7 +3399,7 @@
           </select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-          <div class="bill-form-field">
+          <div class="bill-f1019aield">
             <label class="bill-form-label">Amount (optional)</label>
             <input type="number" id="bill-amount" class="form-select" placeholder="0.00" min="0" step="0.01" style="width:100%;">
           </div>

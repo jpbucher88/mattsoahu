@@ -1377,6 +1377,7 @@ auth.onAuthStateChanged(async (user) => {
       } catch(relocErr) { console.warn('Relocations listener setup error:', relocErr); }
       showPage('dashboard');
       startMailListener();
+      checkMyCoachings();
       startIncidentListener();
       initTimeClock();
       if (currentUserRole === 'admin') {
@@ -3030,6 +3031,7 @@ function showDamageCheckModal(vid, plate) {
   const itemState = {};
   items.forEach(i => { itemState[i.key] = 'none'; });
   const failFiles = {}; // key -> File[]
+  const failSlotFiles = {}; // charge key -> { slotId: File[] }
   const bugUrgency = {}; // yesno key -> 'urgent' | 'monitoring' | null
   items.forEach(i => { if (i.yesno) bugUrgency[i.key] = null; });
 
@@ -3053,6 +3055,34 @@ function showDamageCheckModal(vid, plate) {
           <div class="dmg-bug-urgency-btns">
             <button class="dmg-bug-now-btn" data-check="${item.key}">🚨 Address Now</button>
             <button class="dmg-bug-later-btn" data-check="${item.key}">👁️ Follow Up</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    if (item.chargeFollowUp) {
+      const slots = CHARGE_SLOTS[item.chargeFollowUp] || [];
+      failSlotFiles[item.key] = {};
+      return `
+      <div class="dmg-item" id="dmg-item-${item.key}">
+        <div class="dmg-item-header">
+          <span class="dmg-item-label">${escapeHtml(item.label)}</span>
+          <div class="dmg-pf-btns">
+            <button class="dmg-pass-btn" data-check="${item.key}">Pass</button>
+            <button class="dmg-fail-btn" data-check="${item.key}">Fail</button>
+          </div>
+        </div>
+        <div class="dmg-fail-details" id="dmg-fail-${item.key}" style="display:none;">
+          <p class="hint" style="margin:0;">Fail it now even without photos. A 24-hour task opens so the charge can be tied to this plate before the money is lost.</p>
+          <input type="number" class="form-select" id="dmg-amt-${item.key}" placeholder="Amount $" min="0" step="0.01" inputmode="decimal">
+          <div class="charge-who-row">
+            <label class="charge-who-opt"><input type="radio" name="chg-${item.key}" value="customer" checked> Customer charge</label>
+            <label class="charge-who-opt"><input type="radio" name="chg-${item.key}" value="company"> Company charge</label>
+          </div>
+          <label class="charge-who-opt" id="dmg-charged-wrap-${item.key}"><input type="checkbox" id="dmg-charged-${item.key}"> Customer has been charged</label>
+          <input type="text" class="form-select" id="dmg-card-${item.key}" placeholder="Card last 4 (optional)" maxlength="4" inputmode="numeric">
+          <textarea class="dmg-fail-notes" id="dmg-notes-${item.key}" placeholder="Note for the card statement, e.g. HNL parking" rows="2"></textarea>
+          <div class="charge-slot-row">
+            ${slots.map(s => `<label class="charge-slot" id="dmg-slot-label-${item.key}-${s.id}">${escapeHtml(s.label)}<input type="file" accept="image/*" capture="environment" class="dmg-slot-photos" data-check="${item.key}" data-slot="${s.id}" style="display:none;"></label>`).join('')}
           </div>
         </div>
       </div>`;
@@ -3142,7 +3172,32 @@ function showDamageCheckModal(vid, plate) {
   });
 
   overlay.querySelectorAll('.dmg-fail-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('clinput[name^="chg-"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const key = (radio.name || '').replace('chg-', '');
+      const wrap = overlay.querySelector('#dmg-charged-wrap-' + key);
+      if (wrap) wrap.style.display = radio.value === 'company' && radio.checked ? 'none' : '';
+    });
+  });
+  overlay.querySelectorAll('.dmg-slot-photos').forEach(input => {
+    input.addEventListener('change', () => {
+      const key = input.dataset.check;
+      const slot = input.dataset.slot;
+      const files = Array.from(input.files || []);
+      if (!failSlotFiles[key]) failSlotFiles[key] = {};
+      failSlotFiles[key][slot] = (failSlotFiles[key][slot] || []).concat(files);
+      const label = overlay.querySelector('#dmg-slot-label-' + key + '-' + slot);
+      if (label) {
+        label.classList.toggle('has-file', (failSlotFiles[key][slot] || []).length > 0);
+        const slotMeta = (CHARGE_SLOTS[items.find(i => i.key === key)?.chargeFollowUp] || []).find(s => s.id === slot);
+        const n = (failSlotFiles[key][slot] || []).length;
+        label.firstChild.textContent = (slotMeta ? slotMeta.label : slot) + (n ? ' · ' + n : '');
+      }
+      input.value = '';
+    });
+  });
+
+  overlay.querySelectorAll('ick', () => {
       const key = btn.dataset.check;
       itemState[key] = 'fail';
       const itemEl = overlay.querySelector('#dmg-item-' + key);
@@ -3289,6 +3344,35 @@ function showDamageCheckModal(vid, plate) {
         }
 
         const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
+
+        // Fuel / parking: tie the card charge to the plate. Photos can come later (24h task).
+        if (item.chargeFollowUp) {
+          const amount = parseFloat((overlay.querySelector('#dmg-amt-' + item.key) || {}).value) || 0;
+          const chargeEl = overlay.querySelector('input[name="chg-' + item.key + '"]:checked');
+          const chargeTo = chargeEl ? chargeEl.value : 'customer';
+          const customerCharged = chargeTo === 'customer' && !!((overlay.querySelector('#dmg-charged-' + item.key) || {}).checked);
+          const cardLast4 = ((overlay.querySelector('#dmg-card-' + item.key) || {}).value || '').replace(/\D/g, '').slice(0, 4);
+          let photos = {};
+          try {
+            photos = await uploadChargePhotos(safePlate, item.chargeFollowUp, failSlotFiles[item.key] || {});
+          } catch (upErr) { console.error('Charge photo upload error:', upErr); }
+          const result = await createChargeFollowUp({
+            vehicleId: vid,
+            plate: vehicleObj ? vehicleObj.plate : safePlate,
+            kind: item.chargeFollowUp,
+            amount: amount,
+            chargeTo: chargeTo,
+            customerCharged: customerCharged,
+            cardLast4: cardLast4,
+            photos: photos,
+            description: notes,
+            source: 'inspection',
+            sourceInspectionKey: item.key,
+          });
+          if (!result.settled) newTaskCount++;
+          continue;
+        }
+
         const photoFiles = failFiles[item.key] || [];
         const photoUrls = [];
 
@@ -3445,6 +3529,139 @@ function showDamageCheckModal(vid, plate) {
 // extrasCheck: shown only when the vehicle has extrasNeeded on it (e.g. after a trip).
 //   Pass  → clears the extras from the vehicle (customer returned them).
 //   Fail  → creates a "missing extras" urgent task and keeps them on the vehicle.
+// Receipt slots required before a fuel or parking charge is settled.
+const CHARGE_SLOTS = {
+  fuel: [
+    { id: 'preGas', label: 'Pre-gas receipt' },
+    { id: 'invoice', label: 'Pump / invoice' },
+    { id: 'postRefill', label: 'Post-refill receipt' },
+  ],
+  parking: [
+    { id: 'citation', label: 'Citation photo' },
+    { id: 'payment', label: 'Payment receipt' },
+  ],
+};
+
+function chargeMissingSlots(kind, photos) {
+  return (CHARGE_SLOTS[kind] || []).filter(s => !photos || !photos[s.id] || !photos[s.id].length).map(s => s.id);
+}
+
+function chargeIsSettled(rec) {
+  if (!rec || !rec.amount || Number(rec.amount) <= 0) return false;
+  if (chargeMissingSlots(rec.kind || rec.chargeKind, rec.photos || rec.receiptPhotos).length) return false;
+  if ((rec.chargeTo || 'customer') === 'customer' && !rec.customerCharged) return false;
+  return true;
+}
+
+function chargeHoursLeft(exp) {
+  let dueMs = null;
+  if (exp && exp.dueAt && exp.dueAt.toMillis) dueMs = exp.dueAt.toMillis();
+  else if (exp && exp.createdAt && exp.createdAt.toMillis) dueMs = exp.createdAt.toMillis() + 24 * 60 * 60 * 1000;
+  if (!dueMs) return null;
+  return Math.round((dueMs - Date.now()) / 3600000);
+}
+
+async function uploadChargePhotos(plate, kind, slotFiles) {
+  const st = getStorage();
+  const photos = {};
+  if (!st) return photos;
+  const safePlate = sanitizePlate(plate || 'fleet');
+  for (const slot of (CHARGE_SLOTS[kind] || [])) {
+    const files = (slotFiles && slotFiles[slot.id]) || [];
+    const urls = [];
+    for (const file of files) {
+      try {
+        const compressed = await compressImage(file);
+        const fileName = kind + '_' + slot.id + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '.jpg';
+        const ref = st.ref('vehicles/' + safePlate + '/expenses/' + fileName);
+        await ref.put(compressed, { contentType: 'image/jpeg' });
+        urls.push(await ref.getDownloadURL());
+      } catch (e) { console.error('Charge receipt upload error:', e); }
+    }
+    if (urls.length) photos[slot.id] = urls;
+  }
+  return photos;
+}
+
+// Log a fuel or parking card charge against a plate. If receipts or the
+// customer charge are missing, open a 24-hour urgent task.
+async function createChargeFollowUp(opts) {
+  const kind = opts.kind === 'parking' ? 'parking' : 'fuel';
+  const photos = opts.photos || {};
+  if (opts.lenientPhotos) {
+    const any = Object.keys(photos).map(k => photos[k]).find(arr => arr && arr.length);
+    if (any) (CHARGE_SLOTS[kind] || []).forEach(s => { if (!photos[s.id] || !photos[s.id].length) photos[s.id] = any; });
+  }
+  const chargeTo = opts.chargeTo === 'company' ? 'company' : 'customer';
+  const customerCharged = chargeTo === 'customer' && !!opts.customerCharged;
+  const amount = Number(opts.amount) || 0;
+  const missing = chargeMissingSlots(kind, photos);
+  const settled = chargeIsSettled({ kind, amount, chargeTo, customerCharged, photos });
+  const dueMs = Date.now() + 24 * 60 * 60 * 1000;
+  const dueDate = new Date(dueMs).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+  const category = kind === 'parking' ? 'Parking / Fees' : 'Fuel';
+  const who = currentUserDisplayName || (currentUser && (currentUser.displayName || currentUser.email)) || '';
+  const desc = (opts.description || '').trim() || (kind === 'parking' ? 'Incorrect parking violation' : 'Fuel charge');
+  const record = {
+    date: todayDateString(),
+    amount: amount,
+    category: category,
+    description: desc,
+    chargeTo: chargeTo,
+    customerCharged: customerCharged,
+    cardLast4: opts.cardLast4 || '',
+    paidWithCard: true,
+    receiptPhotos: photos,
+    chargeKind: kind,
+    settlementStatus: settled ? 'settled' : 'open',
+    missingReceipts: missing,
+    dueAt: firebase.firestore.Timestamp.fromMillis(dueMs),
+    dueDate: dueDate,
+    source: opts.source || 'manual',
+    submittedBy: currentUser ? currentUser.uid : '',
+    submittedByName: who,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  };
+  if (opts.vehicleId) { record.vehicleId = opts.vehicleId; record.vehiclePlate = opts.plate || ''; }
+  if (opts.sourceInspectionKey) record.sourceInspectionKey = opts.sourceInspectionKey;
+  if (settled) {
+    record.settledAt = firebase.firestore.FieldValue.serverTimestamp();
+    record.settledByName = who;
+  }
+  const expRef = await db.collection('expenses').add(record);
+  let taskId = null;
+  if (!settled) {
+    const label = kind === 'parking' ? '🅿️ PARKING CHARGE' : '⛽ FUEL CHARGE';
+    const plateBit = opts.plate ? ' [' + opts.plate + ']' : '';
+    const why = [];
+    if (!amount) why.push('amount missing');
+    if (missing.length) {
+      const names = (CHARGE_SLOTS[kind] || []).filter(s => missing.indexOf(s.id) !== -1).map(s => s.label);
+      why.push('need ' + names.join(', '));
+    }
+    if (chargeTo === 'customer' && !customerCharged) why.push('customer not charged yet');
+    const text = label + plateBit + ' — close within 24h or the card charge is lost. ' + why.join('; ') + '.';
+    const note = {
+      text: text,
+      isFollowUp: true, done: false, urgent: true, taskStatus: 'urgent',
+      dueDate: dueDate,
+      sourceType: 'charge_followup',
+      inspectionKey: opts.sourceInspectionKey || (kind === 'parking' ? 'parking' : 'refueled'),
+      expenseId: expRef.id,
+      chargeKind: kind,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser ? currentUser.uid : '',
+      createdByName: who,
+    };
+    if (opts.vehicleId) note.vehicleId = opts.vehicleId;
+    const col = opts.vehicleId ? 'vehicleNotes' : 'generalNotes';
+    const noteRef = await db.collection(col).add(note);
+    taskId = noteRef.id;
+    await expRef.update({ followUpNoteId: taskId, followUpCollection: col });
+  }
+  return { expenseId: expRef.id, taskId: taskId, settled: settled, missing: missing };
+}
+
 const INSPECTION_ITEMS = [
   { key: 'exterior', label: 'Exterior - No new damage',        incidentType: 'damage'  },
   { key: 'interior', label: 'Interior - No new damage',        incidentType: 'damage'  },
@@ -3452,7 +3669,8 @@ const INSPECTION_ITEMS = [
   { key: 'smoking',  label: 'Smoking / Odor - None detected',  incidentType: 'smoking' },
   { key: 'extras',   label: '🎒 Extras Returned - All items back', extrasCheck: true },
   { key: 'clean',    label: 'Vehicle Cleaned' },
-  { key: 'refueled', label: 'Vehicle Refueled ⛽' },
+  { key: 'refueled', label: 'Vehicle Refueled ⛽', chargeFollowUp: 'fuel' },
+  { key: 'parking',  label: 'Incorrect parking violation', chargeFollowUp: 'parking' },
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
 ];
 
@@ -7342,7 +7560,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     // Auto-load tabs that need data
     if (this.dataset.tab === 'tab-deleted')     loadDeletedTasks();
     if (this.dataset.tab === 'tab-ops-report')  loadOpsReport();
-    if (this.dataset.tab === 'tab-performance') { loadPerformanceReport(); loadGoalsPanel(); }
+    if (this.dataset.tab === 'tab-performance') {
+      if ($('perf-coaching-pane') && $('perf-coaching-pane').style.display !== 'none') loadCoachingPanel();
+      else { loadPerformanceReport(); loadGoalsPanel(); }
+    }
     if (this.dataset.tab === 'tab-config')      loadGeofenceDisplay();
   });
 });
@@ -15790,6 +16011,7 @@ async function loadDashboardFollowUps() {
     renderTaskAgenda(items);
 
     // Render completed bucket
+    checkMyCoachings();
     renderCompletedBucket(completedItems);
 
   } catch (err) {
@@ -16545,6 +16767,10 @@ window.agendaMarkDone = async function(docId) {
 async function agendaMarkDoneVehicle(docId) {
   try {
     const snap = await db.collection('vehicleNotes').doc(docId).get();
+    if (snap.exists && snap.data().sourceType === 'charge_followup' && snap.data().expenseId) {
+      openChargeSettlement(snap.data().expenseId, docId, 'vehicleNotes');
+      return;
+    }
     await db.collection('vehicleNotes').doc(docId).update({
       done: true,
       completedBy: currentUser.uid,
@@ -16608,7 +16834,15 @@ window.agendaMarkGeneralDone = async function(docId) {
 async function agendaMarkDoneGeneral(docId) {
   try {
     const gSnap = await db.collection('generalNotes').doc(docId).get();
-    const gText = gSnap.exists ? (gSnap.data().text || '').slice(0, 120) : '';
+    const gData = gSnap.exists ? gSnap.data() : {};
+    if (gData.sourceType === 'charge_followup' && gData.expenseId) {
+      openChargeSettlement(gData.expenseId, docId, 'generalNotes');
+      return;
+    }
+    const gText = (gData.text || '').slice(0, 120);
+    if (gData.sourceType === 'coaching' && gData.coachingId) {
+      try { await acknowledgeCoaching(gData.coachingId, { silent: true }); } catch (e) { console.warn('Coaching ack:', e); }
+    }
     await db.collection('generalNotes').doc(docId).update({
       done: true,
       completedBy: currentUser.uid,
@@ -17224,6 +17458,15 @@ window.openUrgentItemInWorkOrders = async function(noteId, collection, vehicleId
     const doc = await db.collection(col).doc(noteId).get();
     if (!doc.exists) { openNoteEditModal(noteId, col); return; }
     const d = doc.data();
+
+    if (d.sourceType === 'charge_followup' && d.expenseId) {
+      openChargeSettlement(d.expenseId, noteId, col);
+      return;
+    }
+    if (d.sourceType === 'coaching' && d.coachingId) {
+      openCoachingNotice(d.coachingId, noteId);
+      return;
+    }
 
     // Non-vehicle items go to the regular edit modal
     const vId = d.vehicleId || vehicleId;
@@ -21240,7 +21483,8 @@ window.openMessage = async function(msgId) {
           <div class="msg-detail-from"><strong>From:</strong> ${escapeHtml(m.fromName || 'Unknown')}</div>
           <div class="msg-detail-time">${timeStr}</div>
         </div>
-        <div class="msg-detail-body">${escapeHtml(m.body || '').replace(/\n/g, '<br>')}</div>
+        <d${m.coachingId ? `<button class="btn btn-sm btn-primary" id="btn-msg-ack">I understand</button>` : ''}
+          iv class="msg-detail-body">${escapeHtml(m.body || '').replace(/\n/g, '<br>')}</div>
         ${photosHtml}
         <div class="msg-detail-actions">
           <button class="btn btn-sm btn-outline" id="btn-msg-reply">↩ Reply</button>
@@ -21253,7 +21497,14 @@ window.openMessage = async function(msgId) {
 
     overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
     overlay.querySelector('#btn-msg-close').onclick = () => overlay.remove();
+const ackBtn = overlay.querySelector('#btn-msg-ack');
+    if (ackBtn) ackBtn.onclick = async () => {
+      ackBtn.disabled = true;
+      await acknowledgeCoaching(m.coachingId);
+      overlay.remove();
+    };
 
+    
     overlay.querySelector('#btn-msg-reply').onclick = () => {
       overlay.remove();
       replyToMessage(m.from, m.fromName || '');
@@ -21473,6 +21724,7 @@ function startMailListener() {
           badge.textContent = count;
           badge.classList.toggle('count-zero', count === 0);
         });
+        checkMyCoachings();
         const inboxCount = $('mb-inbox-count');
         if (inboxCount) inboxCount.textContent = count || '';
         updateMailboxIcon(count);
@@ -24825,6 +25077,47 @@ window._fin2ScrollTo = function(id) {
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
 
+function _fin2UnsettledHtml(openSnap) {
+  var rows = [];
+  if (openSnap) openSnap.forEach(function(doc) { rows.push(Object.assign({ _id: doc.id }, doc.data())); });
+  rows.sort(function(a, b) {
+    var ah = chargeHoursLeft(a); var bh = chargeHoursLeft(b);
+    if (ah === null) return 1;
+    if (bh === null) return -1;
+    return ah - bh;
+  });
+  window._openChargeRows = rows;
+  if (!rows.length) return '';
+  return '<div class="unsettled-box" id="fin2-unsettled">'
+    + '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">'
+    + '<h4 style="margin:0;color:#b91c1c;">Unsettled card charges (' + rows.length + ')</h4>'
+    + '<input type="search" id="fin2-plate-filter" class="form-select" placeholder="Filter by plate" style="width:140px;" oninput="filterUnsettledCharges(this.value)">'
+    + '</div>'
+    + '<p class="hint" style="margin:6px 0 0;">Fuel and airport parking must be tied to a plate and closed within 24 hours, or the card charge cannot be billed.</p>'
+    + '<div id="fin2-unsettled-list">' + rows.map(_fin2UnsettledRow).join('') + '</div></div>';
+}
+function _fin2UnsettledRow(e) {
+  var hours = chargeHoursLeft(e);
+  var hourHtml = hours === null ? '' : '<span class="settle-hours' + (hours < 0 ? ' settle-late' : '') + '">' + (hours < 0 ? Math.abs(hours) + 'h overdue' : hours + 'h left') + '</span>';
+  var missing = (e.missingReceipts || []).length ? '<span class="settle-chip settle-open">Receipts missing</span>' : '';
+  var who = e.chargeTo === 'company' ? '<span class="settle-chip settle-co">Company</span>' : '<span class="settle-chip settle-open">Customer not charged</span>';
+  return '<div class="unsettled-row" data-plate="' + escapeHtml((e.vehiclePlate || '').toLowerCase()) + '">'
+    + '<div><strong>' + escapeHtml(e.vehiclePlate || 'No plate') + '</strong> '
+    + '<span style="color:#6b7280;font-size:0.8rem;">' + escapeHtml(e.category || '') + ' · ' + escapeHtml(e.description || '') + '</span><div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">'
+    + who + missing + (e.cardLast4 ? '<span class="settle-chip settle-co">Card •' + escapeHtml(e.cardLast4) + '</span>' : '') + hourHtml
+    + '</div></div>'
+    + '<div style="display:flex;align-items:center;gap:8px;">'
+    + '<strong>' + _fin2FmtFull(e.amount || 0) + '</strong>'
+    + '<button class="btn btn-sm btn-primary" onclick="openChargeSettlement(\'' + e._id + '\')">Update</button>'
+    + '</div></div>';
+}
+window.filterUnsettledCharges = function(q) {
+  var needle = (q || '').trim().toLowerCase();
+  document.querySelectorAll('#fin2-unsettled-list .unsettled-row').forEach(function(row) {
+    row.style.display = !needle || (row.dataset.plate || '').indexOf(needle) !== -1 ? '' : 'none';
+  });
+};
+
 window.loadFinanceDashboard = async function() {
   var body = _el('fin2-body');
   if (!body) return;
@@ -24838,9 +25131,10 @@ window.loadFinanceDashboard = async function() {
     // Load revenue + expenses in parallel (maintenance NOT included in costs — tracked separately)
     var results = await Promise.all([
       db.collection('tripLogs').where('startDate', '>=', range.start).where('startDate', '<=', range.end).get(),
-      db.collection('expenses').where('date', '>=', range.start).where('date', '<=', range.end).get()
+      db.collection('expenses').where('date', '>=', range.start).where('date', '<=', range.end).get(),
+      db.collection('expenses').where('settlementStatus', '==', 'open').limit(60).get()
     ]);
-    var revSnap = results[0], expSnap = results[1];
+    var revSnap = results[0], expSnap = results[1], openSnap = results[2];
 
     // ── Process Revenue ──
     // ONLY count manualRevenueEntry records — auto-created productivity logs
@@ -24888,6 +25182,11 @@ window.loadFinanceDashboard = async function() {
       var d = doc.data();
       var amt = Number(d.amount) || 0;
       if (amt <= 0) return; // skip $0 entries
+      // Customer-charged card spend is a pass-through, not a company cost.
+      if (d.chargeTo === 'customer' && d.customerCharged) {
+        allExpDocs.push(Object.assign({ _id: doc.id, _passThrough: true }, d));
+        return;
+      }
       totalExpenses += amt;
       var cat = d.category || 'Other';
       expByCategory[cat] = (expByCategory[cat] || 0) + amt;
@@ -24958,20 +25257,28 @@ window.loadFinanceDashboard = async function() {
             + '<div class="fin2-exp-amt">' + _fin2FmtFull(e[1]) + '</div></div>';
         }).join('');
 
-    // ── Expense List ──
+    // ── Recent expenses ──
     var expListHtml = allExpDocs.length === 0
       ? '<p class="hint" style="padding:16px;">No expenses recorded.</p>'
       : '<div class="fin2-exp-list">' + allExpDocs.map(function(e) {
           var canDel = currentUserRole === 'admin';
+          var settle = e.settlementStatus === 'open'
+            ? '<span class="settle-chip settle-open">Not settled</span>'
+            : (e.chargeTo === 'customer' && e.customerCharged ? '<span class="settle-chip settle-pass">Customer charged</span>'
+              : (e.chargeTo === 'company' ? '<span class="settle-chip settle-co">Company</span>' : ''));
+          var cardBit = e.cardLast4 ? '<span class="fin2-exp-item-plate">Card •' + escapeHtml(e.cardLast4) + '</span>' : '';
           return '<div class="fin2-exp-item">'
             + '<div class="fin2-exp-item-info">'
             + '<span class="fin2-exp-item-cat">' + (CAT_EMOJI[e.category] || '📌') + ' ' + escapeHtml(e.category || '') + '</span>'
             + '<span class="fin2-exp-item-desc">' + escapeHtml(e.description || '') + '</span>'
             + (e.vehiclePlate ? '<span class="fin2-exp-item-plate">' + escapeHtml(e.vehiclePlate) + '</span>' : '<span class="fin2-exp-item-plate" style="color:#9ca3af;">Fleet</span>')
+            + cardBit
+            + settle
             + '<span class="fin2-exp-item-date">' + escapeHtml(e.date || '') + '</span>'
             + '</div>'
             + '<div class="fin2-exp-item-right">'
-            + '<span class="fin2-exp-item-amt">-' + _fin2FmtFull(e.amount) + '</span>'
+            + '<span class="fin2-exp-item-amt">' + (e._passThrough ? '' : '-') + _fin2FmtFull(e.amount) + '</span>'
+            + (e.settlementStatus === 'open' || e.chargeKind ? '<button class="btn btn-xs btn-outline" style="margin-left:6px;" onclick="event.stopPropagation();openChargeSettlement(\'' + e._id + '\')">Update</button>' : '')
             + (canDel ? '<button class="btn btn-xs btn-outline" style="color:#dc2626;margin-left:8px;" onclick="deleteFin2Expense(\'' + e._id + '\')">✕</button>' : '')
             + '</div></div>';
         }).join('') + '</div>';
@@ -25049,7 +25356,8 @@ window.loadFinanceDashboard = async function() {
       + revHtml
       + '<div class="fin2-rev-total">Total: <strong>' + _fin2FmtFull(totalRev) + '</strong> &nbsp;|&nbsp; 🚗 Turo: <strong>' + _fin2FmtFull(totalTuro) + '</strong> &nbsp;|&nbsp; 🔒 Private: <strong>' + _fin2FmtFull(totalPrivate) + '</strong>' + (totalExtras > 0 ? ' &nbsp;|&nbsp; Extras: <strong>' + _fin2FmtFull(totalExtras) + '</strong>' : '') + '</div>'
       + '</div>'
-
+_fin2UnsettledHtml(openSnap)
+      + 
       + '<div id="fin2-sec-expenses" class="fin2-section">'
       + '<div class="fin2-sec-header">'
       + '<h4 class="fin2-sec-title">🧾 Expenses</h4>'
@@ -25229,22 +25537,81 @@ window.saveFin2Expense = async function() {
   if (!amount || amount <= 0) { toast('Enter a valid amount', 'warning'); return; }
   if (!desc) { toast('Enter a description', 'warning'); return; }
 
+  var chargeEl = document.querySelector('input[name="fin2-exp-chargeto"]:checked');
+  var chargeTo = chargeEl ? chargeEl.value : 'company';
+  var customerCharged = chargeTo === 'customer' && !!(_el('fin2-exp-charged') && _el('fin2-exp-charged').checked);
+  var cardLast4 = (_el('fin2-exp-card') ? _el('fin2-exp-card').value : '').replace(/\D/g, '').slice(0, 4);
+  var photoInput = _el('fin2-exp-photos');
+  var photoFiles = photoInput && photoInput.files ? Array.from(photoInput.files) : [];
+  var isChargeCat = category === 'Fuel' || category === 'Parking / Fees';
+  if (isChargeCat && !vehicleId) { toast('Pick the vehicle plate for fuel or parking.', 'warning'); return; }
+
   var btn = _el('fin2-exp-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
 
   try {
-    var record = {
-      date: date, amount: amount, category: category, description: desc,
-      submittedBy: currentUser.uid, submittedByName: currentUser.displayName || currentUser.email,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp()
-    };
-    if (vehicleId) { record.vehicleId = vehicleId; record.vehiclePlate = vehicleObj ? vehicleObj.plate : ''; }
-    await db.collection('expenses').add(record);
-    toast('Expense saved!', 'success');
+    var kind = category === 'Parking / Fees' ? 'parking' : (category === 'Fuel' ? 'fuel' : '');
+    var photos = {};
+    if (kind && photoFiles.length) {
+      photos = await uploadChargePhotos(vehicleObj ? vehicleObj.plate : 'fleet', kind, { invoice: photoFiles, payment: photoFiles });
+    } else if (photoFiles.length) {
+      photos = await uploadChargePhotos(vehicleObj ? vehicleObj.plate : 'fleet', 'fuel', { invoice: photoFiles });
+    }
+    if (kind) {
+      var result = await createChargeFollowUp({
+        vehicleId: vehicleId,
+        plate: vehicleObj ? vehicleObj.plate : '',
+        kind: kind,
+        amount: amount,
+        chargeTo: chargeTo,
+        customerCharged: customerCharged,
+        cardLast4: cardLast4,
+        photos: photos,
+        description: desc,
+        source: 'finance',
+        lenientPhotos: photoFiles.length > 0,
+      });
+      toast(result.settled ? 'Expense saved and settled.' : 'Expense saved. A 24-hour follow-up is open until receipts and the customer charge are done.', result.settled ? 'success' : 'warning');
+    } else {
+      var record = {
+        date: date, amount: amount, category: category, description: desc,
+        chargeTo: chargeTo, customerCharged: customerCharged, cardLast4: cardLast4,
+        receiptPhotos: photos, paidWithCard: !!cardLast4,
+        settlementStatus: (chargeTo === 'customer' && !customerCharged) ? 'open' : 'settled',
+        submittedBy: currentUser.uid, submittedByName: currentUser.displayName || currentUser.email,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      };
+      if (vehicleId) { record.vehicleId = vehicleId; record.vehiclePlate = vehicleObj ? vehicleObj.plate : ''; }
+      if (record.settlementStatus === 'open') {
+        record.dueAt = firebase.firestore.Timestamp.fromMillis(Date.now() + 24 * 60 * 60 * 1000);
+        record.dueDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toLocaleDateString('en-CA', { timeZone: APP_TIMEZONE });
+      }
+      var expRef = await db.collection('expenses').add(record);
+      if (record.settlementStatus === 'open') {
+        var noteRef = await db.collection(vehicleId ? 'vehicleNotes' : 'generalNotes').add({
+          text: '🧾 CHARGE FOLLOW-UP' + (record.vehiclePlate ? ' [' + record.vehiclePlate + ']' : '') + ' — ' + desc + '. Confirm the customer was charged within 24h.',
+          isFollowUp: true, done: false, urgent: true, taskStatus: 'urgent',
+          dueDate: record.dueDate,
+          sourceType: 'charge_followup',
+          expenseId: expRef.id,
+          ...(vehicleId ? { vehicleId: vehicleId } : {}),
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          createdByName: currentUser.displayName || currentUser.email,
+        });
+        await expRef.update({ followUpNoteId: noteRef.id, followUpCollection: vehicleId ? 'vehicleNotes' : 'generalNotes' });
+      }
+      toast(record.settlementStatus === 'open' ? 'Expense saved. 24-hour charge follow-up opened.' : 'Expense saved!', record.settlementStatus === 'open' ? 'warning' : 'success');
+    }
     var amtEl = _el('fin2-exp-amount'); if (amtEl) amtEl.value = '';
     var descEl = _el('fin2-exp-desc'); if (descEl) descEl.value = '';
+    var cardEl = _el('fin2-exp-card'); if (cardEl) cardEl.value = '';
+    if (photoInput) photoInput.value = '';
+    var preview = _el('fin2-exp-photo-preview'); if (preview) preview.innerHTML = '';
+    var charged = _el('fin2-exp-charged'); if (charged) charged.checked = false;
     closeFin2ExpModal();
     loadFinanceDashboard();
+    loadDashboardFollowUps();
   } catch(e) {
     toast('Failed to save expense: ' + e.message, 'error');
   } finally {
@@ -27377,14 +27744,489 @@ window.sendCoachingMessage = async function() {
   if (!_coachingTargetUid) { if (errEl) errEl.textContent = 'Recipient not found.'; return; }
   if (errEl) errEl.textContent = '';
   try {
-    await db.collection('messages').add({
-      from: currentUser.uid, fromName: currentUserDisplayName || currentUser.email,
-      to: _coachingTargetUid, toName: _coachingTargetName,
-      body: msg, sentAt: firebase.firestore.FieldValue.serverTimestamp(), read: false, coaching: true,
+    await deliverCoaching({
+      toUid: _coachingTargetUid,
+      toName: _coachingTargetName,
+      kind: 'improvement',
+      preset: 'blank',
+      presetLabel: 'Productivity',
+      opportunity: msg,
+      nextSteps: 'Reply in mailbox or acknowledge the notification so we know you saw this.',
     });
     closeCoachingModal();
     toast(`Coaching note sent to ${_coachingTargetName} ✓`, 'success');
-  } catch(e) { if (errEl) errEl.textContent = 'Failed to send.'; }
+  } catch(e) { if (errEl) errEl.textContent = 'Failed to send.'; console.error(e); }
+};
+
+const COACHING_PRESETS = {
+  'photos-blurry': {
+    label: 'Photos blurry',
+    kind: 'improvement',
+    opportunity: 'Photos are coming in blurry. The team and guests cannot clearly see the vehicle condition.',
+    nextSteps: 'Retake in good light, hold the phone steady, and check every shot before you upload. If a photo is blurry, delete it and take it again.',
+  },
+  tpms: {
+    label: 'TPMS Sensor on',
+    kind: 'improvement',
+    opportunity: 'A TPMS warning was left on or not reported before the vehicle went back out.',
+    nextSteps: 'When the TPMS light is on, note the plate, tell a manager before the next trip, and do not mark the vehicle ready until it is checked.',
+  },
+  blank: {
+    label: 'Blank template',
+    kind: 'improvement',
+    opportunity: '',
+    nextSteps: '',
+  },
+};
+
+let _coachingKind = 'improvement';
+let _coachingPreset = 'photos-blurry';
+let _coachingHistory = [];
+
+window.setPerfMode = function(mode) {
+  const coaching = mode === 'coaching';
+  document.querySelectorAll('[data-perf-mode]').forEach(btn => {
+    btn.classList.toggle('perf-view-active', btn.dataset.perfMode === mode);
+  });
+  ['perf-view-toggle', 'perf-shortcuts', 'perf-summary-cards', 'perf-goals-wrap', 'perf-filter-date', 'perf-load-btn'].forEach(id => {
+    const el = $(id);
+    if (el) el.style.display = coaching ? 'none' : '';
+  });
+  ['perf-hero-stats', 'perf-turnaround-wrap', 'perf-timeline-wrap'].forEach(id => {
+    const el = $(id);
+    if (!el) return;
+    if (coaching) el.style.display = 'none';
+  });
+  const pane = $('perf-coaching-pane');
+  if (pane) pane.style.display = coaching ? '' : 'none';
+  if (coaching) loadCoachingPanel();
+  else if (typeof loadPerformanceReport === 'function') loadPerformanceReport();
+};
+
+window.setCoachingKind = function(kind) {
+  _coachingKind = kind === 'recognition' ? 'recognition' : 'improvement';
+  document.querySelectorAll('.coach-kind-btn').forEach(btn => {
+    btn.classList.toggle('coach-kind-active', btn.dataset.kind === _coachingKind);
+  });
+};
+
+window.applyCoachingPreset = function(id) {
+  const preset = COACHING_PRESETS[id] || COACHING_PRESETS.blank;
+  _coachingPreset = COACHING_PRESETS[id] ? id : 'blank';
+  document.querySelectorAll('.coach-preset-btn').forEach(btn => {
+    btn.classList.toggle('coach-preset-active', btn.dataset.preset === _coachingPreset);
+  });
+  const opp = $('coach-opportunity');
+  const next = $('coach-next');
+  if (opp) opp.value = preset.opportunity || '';
+  if (next) next.value = preset.nextSteps || '';
+  if (preset.kind) setCoachingKind(preset.kind);
+};
+
+async function deliverCoaching(opts) {
+  const fromName = currentUserDisplayName || (currentUser && (currentUser.displayName || currentUser.email)) || '';
+  const kind = opts.kind === 'recognition' ? 'recognition' : 'improvement';
+  const title = (kind === 'recognition' ? '🌟 Recognition' : '🎯 Coaching') + ' — ' + (opts.presetLabel || 'Note');
+  const body = title + '\n\nOpportunity:\n' + (opts.opportunity || '(none)') + '\n\nNext steps:\n' + (opts.nextSteps || '(none)') + '\n\nOpen your notifications and acknowledge this so we know you saw it.';
+  const coachingRef = await db.collection('coachings').add({
+    toUid: opts.toUid,
+    toName: opts.toName || '',
+    fromUid: currentUser.uid,
+    fromName: fromName,
+    kind: kind,
+    preset: opts.preset || 'blank',
+    presetLabel: opts.presetLabel || 'Blank template',
+    opportunity: opts.opportunity || '',
+    nextSteps: opts.nextSteps || '',
+    status: 'sent',
+    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+  });
+  let messageId = '';
+  let taskId = '';
+  try {
+    const msgRef = await db.collection('messages').add({
+      from: currentUser.uid,
+      fromName: fromName,
+      to: opts.toUid,
+      toName: opts.toName || '',
+      body: body,
+      sentAt: firebase.firestore.FieldValue.serverTimestamp(),
+      read: false,
+      coaching: true,
+      coachingId: coachingRef.id,
+    });
+    messageId = msgRef.id;
+  } catch (e) { console.warn('Coaching mailbox send failed:', e); }
+  try {
+    const taskRef = await db.collection('generalNotes').add({
+      text: title + ' for ' + (opts.toName || 'staff') + '. ' + ((opts.opportunity || 'Open and acknowledge.').slice(0, 160)),
+      isFollowUp: true,
+      done: false,
+      urgent: true,
+      taskStatus: 'urgent',
+      dueDate: todayDateString(),
+      sourceType: 'coaching',
+      coachingId: coachingRef.id,
+      assignedTo: opts.toUid,
+      assignedToName: opts.toName || '',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: fromName,
+    });
+    taskId = taskRef.id;
+  } catch (e) { console.warn('Coaching notification task failed:', e); }
+  if (messageId || taskId) {
+    const patch = {};
+    if (messageId) patch.messageId = messageId;
+    if (taskId) patch.taskId = taskId;
+    try { await coachingRef.update(patch); } catch (e) { /* non-critical */ }
+  }
+  return coachingRef.id;
+}
+
+window.loadCoachingPanel = async function() {
+  applyCoachingPreset(_coachingPreset || 'photos-blurry');
+  const sel = $('coach-to');
+  if (sel && sel.options.length < 2) {
+    try {
+      const snap = await db.collection('users').orderBy('displayName').get();
+      sel.innerHTML = '<option value="">— Select user —</option>';
+      snap.forEach(doc => {
+        const d = doc.data();
+        const opt = document.createElement('option');
+        opt.value = doc.id;
+        opt.textContent = d.displayName || d.email || doc.id;
+        sel.appendChild(opt);
+      });
+    } catch (e) { console.warn('Coaching user list:', e); }
+  }
+  await loadCoachingHistory();
+};
+
+async function loadCoachingHistory() {
+  const list = $('coach-history-list');
+  if (list) list.innerHTML = '<p class="hint">Loading coachings…</p>';
+  try {
+    const snap = await db.collection('coachings').orderBy('createdAt', 'desc').limit(80).get();
+    _coachingHistory = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    console.error('Coaching history:', e);
+    _coachingHistory = [];
+    if (list) list.innerHTML = '<p class="hint">Could not load coachings.</p>';
+    return;
+  }
+  const filter = $('coach-history-filter');
+  if (filter) {
+    const current = filter.value;
+    const names = [...new Set(_coachingHistory.map(c => c.toName).filter(Boolean))].sort();
+    filter.innerHTML = '<option value="">All people</option>' + names.map(n => '<option value="' + escapeHtml(n) + '">' + escapeHtml(n) + '</option>').join('');
+    if ([...filter.options].some(o => o.value === current)) filter.value = current;
+  }
+  renderCoachingHistory();
+}
+
+window.renderCoachingHistory = function() {
+  const list = $('coach-history-list');
+  if (!list) return;
+  const who = ($('coach-history-filter') || {}).value || '';
+  const rows = _coachingHistory.filter(c => !who || c.toName === who);
+  if (!rows.length) {
+    list.innerHTML = '<p class="hint">No coachings sent yet.</p>';
+    return;
+  }
+  list.innerHTML = rows.map(c => {
+    const ts = c.createdAt && c.createdAt.toDate ? c.createdAt.toDate() : null;
+    const when = ts ? ts.toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+    const ack = c.status === 'acknowledged';
+    const ackWhen = c.acknowledgedAt && c.acknowledgedAt.toDate
+      ? c.acknowledgedAt.toDate().toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+      : '';
+    return '<div class="coach-card ' + (ack ? 'coach-ack' : '') + '">'
+      + '<div class="coach-card-top"><strong>' + escapeHtml(c.toName || 'User') + '</strong><span>'
+      + '<span class="coach-pill ' + (c.kind === 'recognition' ? 'coach-pill-rec' : 'coach-pill-imp') + '">' + (c.kind === 'recognition' ? 'Recognition' : 'Improvement') + '</span> '
+      + '<span class="coach-pill ' + (ack ? 'coach-pill-ack' : 'coach-pill-wait') + '">' + (ack ? 'Acknowledged' : 'Waiting') + '</span></span></div>'
+      + '<div style="font-size:0.78rem;color:#6b7280;margin-top:4px;">' + escapeHtml(c.presetLabel || '') + ' · ' + escapeHtml(when) + (ackWhen ? ' · seen ' + escapeHtml(ackWhen) : '') + '</div>'
+      + (c.opportunity ? '<div style="font-size:0.84rem;margin-top:6px;">' + escapeHtml(c.opportunity) + '</div>' : '')
+      + (c.nextSteps ? '<div style="font-size:0.8rem;color:#374151;margin-top:4px;"><strong>Next:</strong> ' + escapeHtml(c.nextSteps) + '</div>' : '')
+      + '</div>';
+  }).join('');
+};
+
+window.sendPerformanceCoaching = async function() {
+  const sel = $('coach-to');
+  const toUid = sel ? sel.value : '';
+  const toName = sel && sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].textContent.trim() : '';
+  const opportunity = (($('coach-opportunity') || {}).value || '').trim();
+  const nextSteps = (($('coach-next') || {}).value || '').trim();
+  if (!toUid) { toast('Select who this coaching is for.', 'warning'); return; }
+  if (!opportunity && !nextSteps) { toast('Add the opportunity or the next steps.', 'warning'); return; }
+  const btn = $('coach-send-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
+  try {
+    const preset = COACHING_PRESETS[_coachingPreset] || COACHING_PRESETS.blank;
+    await deliverCoaching({
+      toUid: toUid, toName: toName,
+      kind: _coachingKind,
+      preset: _coachingPreset,
+      presetLabel: preset.label,
+      opportunity: opportunity, nextSteps: nextSteps,
+    });
+    toast('Coaching sent. It is in their mailbox and notifications.', 'success');
+    if ($('coach-opportunity') && _coachingPreset === 'blank') $('coach-opportunity').value = '';
+    if ($('coach-next') && _coachingPreset === 'blank') $('coach-next').value = '';
+    loadDashboardFollowUps();
+    await loadCoachingHistory();
+  } catch (e) {
+    console.error(e);
+    toast('Could not send coaching.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Send coaching'; }
+  }
+};
+
+window.acknowledgeCoaching = async function(coachingId, opts) {
+  opts = opts || {};
+  if (!coachingId) return;
+  const snap = await db.collection('coachings').doc(coachingId).get();
+  if (!snap.exists) return;
+  const d = snap.data();
+  if (d.status !== 'acknowledged') {
+    await db.collection('coachings').doc(coachingId).update({
+      status: 'acknowledged',
+      acknowledgedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      acknowledgedBy: currentUser ? currentUser.uid : '',
+      acknowledgedByName: currentUserDisplayName || (currentUser && currentUser.email) || '',
+    });
+  }
+  if (d.taskId && !opts.skipTask) {
+    try {
+      await db.collection('generalNotes').doc(d.taskId).update({
+        done: true,
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedBy: currentUser ? currentUser.uid : '',
+        completedByName: currentUserDisplayName || (currentUser && currentUser.email) || '',
+      });
+    } catch (e) { console.warn('Could not close coaching task:', e); }
+  }
+  if (d.messageId) {
+    try { await db.collection('messages').doc(d.messageId).update({ read: true }); } catch (e) { /* recipient only */ }
+  }
+  if (!opts.silent) toast('Coaching acknowledged.', 'success');
+  loadDashboardFollowUps();
+  checkMyCoachings();
+};
+
+window.openCoachingNotice = async function(coachingId) {
+  try {
+    const snap = await db.collection('coachings').doc(coachingId).get();
+    if (!snap.exists) { toast('Coaching not found.', 'warning'); return; }
+    const c = snap.data();
+    const existing = document.querySelector('.coaching-notice-overlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay coaching-notice-overlay';
+    overlay.style.display = 'flex';
+    const ack = c.status === 'acknowledged';
+    overlay.innerHTML = '<div class="dm-card" style="max-width:440px;">'
+      + '<div class="dm-topbar" style="background:' + (c.kind === 'recognition' ? '#047857' : '#4c1d95') + ';">'
+      + '<span class="dm-topbar-title">' + (c.kind === 'recognition' ? '🌟 Recognition' : '🎯 Coaching') + ' — ' + escapeHtml(c.presetLabel || '') + '</span>'
+      + '<button class="dm-topbar-close" id="coach-notice-x">✕</button></div>'
+      + '<div class="dm-body" style="padding:14px 16px;">'
+      + '<p style="margin:0 0 8px;font-size:0.82rem;color:#6b7280;">From ' + escapeHtml(c.fromName || 'Manager') + '</p>'
+      + '<p style="margin:0 0 4px;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;">Opportunity</p>'
+      + '<p style="margin:0 0 10px;">' + escapeHtml(c.opportunity || '—') + '</p>'
+      + '<p style="margin:0 0 4px;font-size:0.72rem;font-weight:700;color:#6b7280;text-transform:uppercase;">Next steps</p>'
+      + '<p style="margin:0;">' + escapeHtml(c.nextSteps || '—') + '</p></div>'
+      + '<div class="dm-footer"><button class="dm-btn-cancel" id="coach-notice-close">Close</button>'
+      + (ack ? '' : '<button class="dm-btn-go" id="coach-notice-ack" style="background:#4c1d95;">I understand</button>')
+      + '</div></div>';
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    overlay.querySelector('#coach-notice-x').onclick = close;
+    overlay.querySelector('#coach-notice-close').onclick = close;
+    const ackBtn = overlay.querySelector('#coach-notice-ack');
+    if (ackBtn) ackBtn.onclick = async () => {
+      ackBtn.disabled = true;
+      await acknowledgeCoaching(coachingId);
+      close();
+    };
+  } catch (e) {
+    console.error(e);
+    toast('Could not open coaching.', 'error');
+  }
+};
+
+async function checkMyCoachings() {
+  if (!currentUser) return;
+  let banner = document.getElementById('coaching-alert-banner');
+  try {
+    const snap = await db.collection('coachings').where('toUid', '==', currentUser.uid).limit(20).get();
+    const open = [];
+    snap.forEach(doc => {
+      const d = doc.data();
+      if (d.status !== 'acknowledged') open.push({ id: doc.id, ...d });
+    });
+    const host = document.querySelector('#page-dashboard .dashboard-main') || document.querySelector('#page-dashboard');
+    if (!open.length) {
+      if (banner) banner.remove();
+      return;
+    }
+    if (!banner && host) {
+      banner = document.createElement('section');
+      banner.id = 'coaching-alert-banner';
+      banner.className = 'coaching-alert';
+      const urgent = document.getElementById('urgent-banner');
+      if (urgent && urgent.parentElement === host) host.insertBefore(banner, urgent);
+      else host.insertBefore(banner, host.firstChild);
+    }
+    if (!banner) return;
+    banner.innerHTML = '<h4>🎯 Coaching needs your acknowledgement (' + open.length + ')</h4>'
+      + '<p style="margin:0;font-size:0.8rem;color:#5b21b6;">This stays on the dashboard until you confirm you saw it.</p>'
+      + open.map(c => '<div class="coaching-alert-item"><strong>' + escapeHtml(c.presetLabel || 'Coaching') + '</strong>'
+        + '<div style="font-size:0.82rem;margin:4px 0;">' + escapeHtml((c.opportunity || c.nextSteps || '').slice(0, 180)) + '</div>'
+        + '<button class="btn btn-sm btn-primary" onclick="openCoachingNotice(\'' + c.id + '\')">Open and acknowledge</button></div>').join('');
+  } catch (e) { console.warn('Coaching banner:', e); }
+}
+
+window.openChargeSettlement = async function(expenseId, noteId, noteCol) {
+  if (!expenseId) return;
+  let exp;
+  try {
+    const snap = await db.collection('expenses').doc(expenseId).get();
+    if (!snap.exists) { toast('Charge record not found.', 'warning'); return; }
+    exp = { id: snap.id, ...snap.data() };
+  } catch (e) {
+    toast('Could not open this charge.', 'error');
+    return;
+  }
+  const kind = exp.chargeKind || (exp.category === 'Parking / Fees' ? 'parking' : 'fuel');
+  const slots = CHARGE_SLOTS[kind] || CHARGE_SLOTS.fuel;
+  const existing = document.querySelector('.charge-settle-overlay');
+  if (existing) existing.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay charge-settle-overlay';
+  overlay.style.display = 'flex';
+  const hours = chargeHoursLeft(exp);
+  const hourLabel = hours === null ? '' : (hours < 0 ? Math.abs(hours) + 'h overdue' : hours + 'h left');
+  const photos = exp.receiptPhotos || {};
+  overlay.innerHTML = '<div class="dm-card" style="max-width:480px;max-height:92vh;overflow:auto;">'
+    + '<div class="dm-topbar" style="background:#b45309;"><span class="dm-topbar-title">'
+    + (kind === 'parking' ? '🅿️ Parking charge ' : '⛽ Fuel charge ') + escapeHtml(exp.vehiclePlate || '')
+    + '</span><button class="dm-topbar-close" id="chg-x">✕</button></div>'
+    + '<div class="dm-body" style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;">'
+    + '<p class="hint" style="margin:0;">Match this to the company card by plate. ' + (hourLabel ? '<strong>' + hourLabel + '</strong>.' : 'Close within 24 hours.') + '</p>'
+    + '<label class="coach-label">Amount ($)</label>'
+    + '<input type="number" id="chg-amt" class="form-select" min="0" step="0.01" value="' + (exp.amount || '') + '">'
+    + '<div class="charge-who-row">'
+    + '<label class="charge-who-opt"><input type="radio" name="chg-who" value="customer"' + (exp.chargeTo !== 'company' ? ' checked' : '') + '> Customer charge</label>'
+    + '<label class="charge-who-opt"><input type="radio" name="chg-who" value="company"' + (exp.chargeTo === 'company' ? ' checked' : '') + '> Company charge</label></div>'
+    + '<label class="charge-who-opt" id="chg-charged-wrap"><input type="checkbox" id="chg-charged"' + (exp.customerCharged ? ' checked' : '') + '> Customer has been charged</label>'
+    + '<label class="coach-label">Card last 4</label>'
+    + '<input type="text" id="chg-card" class="form-select" maxlength="4" inputmode="numeric" value="' + escapeHtml(exp.cardLast4 || '') + '" placeholder="Matches the card statement">'
+    + '<label class="coach-label">Note</label>'
+    + '<input type="text" id="chg-desc" class="form-select" maxlength="200" value="' + escapeHtml(exp.description || '') + '">'
+    + '<label class="coach-label">Receipts</label><div class="charge-slot-row" id="chg-slots"></div></div>'
+    + '<div class="dm-footer"><button class="dm-btn-cancel" id="chg-cancel">Cancel</button>'
+    + '<button class="dm-btn-go" id="chg-save" style="background:#b45309;">Save charge</button></div></div>';
+  document.body.appendChild(overlay);
+  const slotFiles = {};
+  const slotBox = overlay.querySelector('#chg-slots');
+  slots.forEach(s => {
+    const have = (photos[s.id] || []).length;
+    const lab = document.createElement('label');
+    lab.className = 'charge-slot' + (have ? ' has-file' : '');
+    lab.appendChild(document.createTextNode(s.label + (have ? ' · ' + have + ' on file' : '')));
+    const input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment'; input.style.display = 'none';
+    input.addEventListener('change', function() {
+      slotFiles[s.id] = Array.from(this.files || []);
+      lab.classList.add('has-file');
+      lab.firstChild.textContent = s.label + ' · ' + slotFiles[s.id].length + ' new';
+      this.value = '';
+    });
+    lab.appendChild(input);
+    (photos[s.id] || []).forEach(url => {
+      const a = document.createElement('a');
+      a.href = url; a.target = '_blank'; a.textContent = ' view'; a.style.marginLeft = '4px';
+      lab.appendChild(a);
+    });
+    slotBox.appendChild(lab);
+  });
+  const syncWho = () => {
+    const who = (overlay.querySelector('input[name="chg-who"]:checked') || {}).value;
+    const wrap = overlay.querySelector('#chg-charged-wrap');
+    if (wrap) wrap.style.display = who === 'company' ? 'none' : '';
+  };
+  overlay.querySelectorAll('input[name="chg-who"]').forEach(r => r.addEventListener('change', syncWho));
+  syncWho();
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#chg-x').onclick = close;
+  overlay.querySelector('#chg-cancel').onclick = close;
+  overlay.querySelector('#chg-save').onclick = async () => {
+    const btn = overlay.querySelector('#chg-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+      const amount = parseFloat(overlay.querySelector('#chg-amt').value) || 0;
+      const chargeTo = (overlay.querySelector('input[name="chg-who"]:checked') || {}).value || 'customer';
+      const customerCharged = chargeTo === 'customer' && overlay.querySelector('#chg-charged').checked;
+      const cardLast4 = (overlay.querySelector('#chg-card').value || '').replace(/\D/g, '').slice(0, 4);
+      const description = (overlay.querySelector('#chg-desc').value || '').trim();
+      const added = await uploadChargePhotos(exp.vehiclePlate || 'fleet', kind, slotFiles);
+      const merged = Object.assign({}, photos);
+      Object.keys(added).forEach(k => { merged[k] = (merged[k] || []).concat(added[k]); });
+      const settled = chargeIsSettled({ kind: kind, amount: amount, chargeTo: chargeTo, customerCharged: customerCharged, photos: merged });
+      const missing = chargeMissingSlots(kind, merged);
+      const patch = {
+        amount: amount, chargeTo: chargeTo, customerCharged: customerCharged, cardLast4: cardLast4,
+        description: description, receiptPhotos: merged, missingReceipts: missing,
+        settlementStatus: settled ? 'settled' : 'open', chargeKind: kind, paidWithCard: true,
+      };
+      if (settled) {
+        patch.settledAt = firebase.firestore.FieldValue.serverTimestamp();
+        patch.settledByName = currentUserDisplayName || (currentUser && currentUser.email) || '';
+      }
+      await db.collection('expenses').doc(expenseId).update(patch);
+      const followCol = noteCol || exp.followUpCollection || 'vehicleNotes';
+      const followId = noteId || exp.followUpNoteId;
+      if (settled && followId) {
+        try {
+          await db.collection(followCol).doc(followId).update({
+            done: true,
+            completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            completedBy: currentUser.uid,
+            completedByName: currentUserDisplayName || currentUser.email,
+          });
+        } catch (e) { console.warn('Could not close charge task:', e); }
+      }
+      toast(settled ? 'Charge settled and matched to the plate.' : 'Saved. Still open until receipts and the customer charge are done.', settled ? 'success' : 'warning');
+      close();
+      loadDashboardFollowUps();
+      if ($('finance-overlay') && $('finance-overlay').style.display !== 'none') loadFinanceDashboard();
+    } catch (e) {
+      console.error(e);
+      toast('Could not save the charge.', 'error');
+      btn.disabled = false; btn.textContent = 'Save charge';
+    }
+  };
+};
+
+window.toggleExpCustomerCharged = function() {
+  const who = (document.querySelector('input[name="fin2-exp-chargeto"]:checked') || {}).value;
+  const wrap = $('fin2-exp-charged-wrap');
+  if (wrap) wrap.style.display = who === 'customer' ? '' : 'none';
+};
+
+window.previewExpReceipts = function(input) {
+  const box = $('fin2-exp-photo-preview');
+  if (!box) return;
+  box.innerHTML = '';
+  Array.from(input.files || []).forEach(f => {
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(f);
+    box.appendChild(img);
+  });
 };
 
 // Inject 72h Lagoon Drive alerts directly into the urgent banner DOM

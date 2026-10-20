@@ -72,10 +72,23 @@ service cloud.firestore {
       allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
     }
 
-    // General notes - all registered can read, managers/admins can write
+    // General notes - all registered can read, managers/admins can write.
+    // Assignees can update their own task (acknowledge a coaching, mark done).
     match /generalNotes/{noteId} {
       allow read: if isRegistered();
-      allow create, update, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow create, delete: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow update: if isAuth() && (
+        getUserRole() == 'admin' || getUserRole() == 'manager' ||
+        (isRegistered() && resource.data.assignedTo == request.auth.uid)
+      );
+    }
+
+    // Coachings — admin sends and reviews; the recipient can read and acknowledge.
+    match /coachings/{coachingId} {
+      allow read: if isAdmin() || (isRegistered() && resource.data.toUid == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (isRegistered() && resource.data.toUid == request.auth.uid);
+      allow delete: if isAdmin();
     }
 
     // Messages (internal mailbox) - any registered user can send/read own messages
@@ -133,11 +146,13 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Expenses - managers/admins can read and write; auto-logged from maintenance
+    // Expenses - managers/admins can read, create, and update (receipt follow-up).
+    // Delete stays admin-only.
     match /expenses/{expenseId} {
       allow read: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
       allow create: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
-      allow update, delete: if isAdmin();
+      allow update: if isAuth() && (getUserRole() == 'admin' || getUserRole() == 'manager');
+      allow delete: if isAdmin();
     }
 
     // Bills & Payments tracker - managers/admins only
