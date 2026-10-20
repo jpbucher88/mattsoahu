@@ -2498,10 +2498,11 @@ function renderLocationsWidget() {
 
   // ── Per-location combined sections ──────────────────────────────
   for (const loc of allLocations) {
-    // needsCleaning vehicles already shown in cleaning section — exclude from photos/ready groups
-    const cleaning = vehiclesCache.filter(v => isAtHome(v) && v.needsCleaning && !v.photoExcluded && v.homeLocation === loc);
-    const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && needsPhotosCheck(v) && !v.photoExcluded && v.homeLocation === loc);
-    const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !needsPhotosCheck(v) && v.homeLocation === loc);
+    // Turnaround stays at this location until cleaning AND inspection are done.
+    // A failed inspection is a task — it does not pull the car out of this row.
+    const cleaning = vehiclesCache.filter(v => isAtHome(v) && (v.needsCleaning || v.needsDamageCheck) && !v.photoExcluded && v.homeLocation === loc);
+    const photosOnly = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !v.needsDamageCheck && needsPhotosCheck(v) && !v.photoExcluded && v.homeLocation === loc);
+    const atHomeClean = vehiclesCache.filter(v => isAtHome(v) && !v.needsCleaning && !v.needsDamageCheck && !needsPhotosCheck(v) && v.homeLocation === loc);
     const overdueHere = [...overdueTrip, ...overdueRepair].filter(v => (v.homeLocation || '') === loc);
     // 1585-only: on-trip vehicles that hold a reserved parking spot should also render here
     const reservedHere = loc === '1585 Kapiolani'
@@ -2575,7 +2576,7 @@ function renderLocationsWidget() {
           <div class="cleaning-actions">
             ${addExtrasIcon}
             ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
-            <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled title="Complete inspection first"' : ''}>✓ Cleaned</button>
+            ${v.needsCleaning ? `<button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" title="Cleaning can be finished here even if inspection items failed">✓ Cleaned</button>` : '<span class="damage-ok-badge">✓ Cleaned</span>'}
             ${alsoNeedsPhotos ? `<button class="btn btn-sm btn-outline photo-done-btn" data-vid="${v.id}">📷</button>` : ''}
             ${parkingBtn}
           </div>
@@ -2712,8 +2713,8 @@ function renderLocationsWidget() {
   // No location set
   const noLocation = vehiclesCache.filter(v => isAtHome(v) && !v.homeLocation);
   if (noLocation.length > 0) {
-    const needsCleaningNoLoc = noLocation.filter(v => v.needsCleaning && !v.photoExcluded);
-    const cleanNoLoc = noLocation.filter(v => !v.needsCleaning && !needsPhotosCheck(v));
+    const needsCleaningNoLoc = noLocation.filter(v => (v.needsCleaning || v.needsDamageCheck) && !v.photoExcluded);
+    const cleanNoLoc = noLocation.filter(v => !v.needsCleaning && !v.needsDamageCheck && !needsPhotosCheck(v));
     html += `<div class="location-group">
       <div class="location-group-header" style="background:#6b7280;">
         <span class="location-group-name">❓ No Location Set</span>
@@ -2727,7 +2728,7 @@ function renderLocationsWidget() {
           <div class="cleaning-vehicle-info"><span class="location-vehicle-chip" data-vid="${v.id}">${escapeHtml(v.plate)}${v.color ? `<span class="chip-sub">${escapeHtml(v.color)}</span>` : ''}</span><span class="cleaning-meta">${escapeHtml(v.make)} ${escapeHtml(v.model)}</span></div>
           <div class="cleaning-actions">
             ${needsDamage ? `<button class="btn btn-sm btn-outline damage-check-btn" data-vid="${v.id}">🔍 Inspect</button>` : '<span class="damage-ok-badge">✅ Inspected</span>'}
-            <button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}" ${needsDamage ? 'disabled' : ''}>✓ Cleaned</button>
+            ${v.needsCleaning ? `<button class="btn btn-sm btn-primary cleaning-done-btn" data-vid="${v.id}">✓ Cleaned</button>` : '<span class="damage-ok-badge">✓ Cleaned</span>'}
           </div>
         </div>`;
       }
@@ -2836,18 +2837,15 @@ function renderLocationsWidget() {
       if (btn.disabled) return;
       const vid = btn.dataset.vid;
       try {
+        const stillNeedsInspect = !!(vehiclesCache.find(v => v.id === vid) || {}).needsDamageCheck;
         await db.collection('vehicles').doc(vid).update({
           needsCleaning: false,
-          needsDamageCheck: false,
           lastCleanedAt: firebase.firestore.FieldValue.serverTimestamp(),
           lastCleanedBy: currentUser.displayName || currentUser.email
         });
         const cached = vehiclesCache.find(v => v.id === vid);
-        if (cached) {
-          cached.needsCleaning = false;
-          cached.needsDamageCheck = false;
-        }
-        toast('Marked as cleaned! ✓', 'success');
+        if (cached) cached.needsCleaning = false;
+        toast(stillNeedsInspect ? 'Marked as cleaned. Inspection is still open — finish it here.' : 'Marked as cleaned! ✓', 'success');
         const freshV = vehiclesCache.find(v => v.id === vid);
         logUserActivity('vehicle_cleaned', { plate: freshV ? freshV.plate : vid, vehicleId: vid });
         renderLocationsWidget();
@@ -3117,7 +3115,7 @@ function showDamageCheckModal(vid, plate) {
     <div class="damage-check-modal dmg-modal-pf">
       <div class="dmg-modal-header">
         <h4>Vehicle Inspection - ${escapeHtml(plate)}</h4>
-        <p>Mark each item Pass or Fail. Issues will be logged as urgent follow-ups.</p>
+        <p>Mark each item Pass or Fail. A fail is saved as a task — the car stays here so cleaning and the rest of the turnaround can still be finished.</p>
       </div>
       <div class="damage-checklist dmg-pf-list">
         ${items.map(buildItemHTML).join('')}
@@ -3152,10 +3150,14 @@ function showDamageCheckModal(vid, plate) {
   }
 
   overlay.querySelectorAll('.dmg-pass-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.type = 'button';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const key = btn.dataset.check;
       itemState[key] = 'pass';
       const itemEl = overlay.querySelector('#dmg-item-' + key);
+      if (!itemEl) return;
       itemEl.classList.remove('dmg-state-fail');
       itemEl.classList.add('dmg-state-pass');
       const failEl = overlay.querySelector('#dmg-fail-' + key);
@@ -3163,16 +3165,40 @@ function showDamageCheckModal(vid, plate) {
       const bugUrgencyEl = overlay.querySelector('#dmg-bug-urgency-' + key);
       if (bugUrgencyEl) {
         bugUrgencyEl.style.display = '';
-        bugUrgency[key] = null; // reset choice
-        // Reset active state on both urgency buttons
-        overlay.querySelectorAll(`.dmg-bug-now-btn[data-check="${key}"], .dmg-bug-later-btn[data-check="${key}"]`).forEach(b => b.classList.remove('dmg-bug-active'));
+        bugUrgency[key] = null;
+        overlay.querySelectorAll('.dmg-bug-now-btn[data-check="' + key + '"], .dmg-bug-later-btn[data-check="' + key + '"]').forEach(b => b.classList.remove('dmg-bug-active'));
       }
       refreshConfirmBtn();
     });
   });
 
   overlay.querySelectorAll('.dmg-fail-btn').forEach(btn => {
-    btn.addEventListener('clinput[name^="chg-"]').forEach(radio => {
+    btn.type = 'button';
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const key = btn.dataset.check;
+      itemState[key] = 'fail';
+      const itemEl = overlay.querySelector('#dmg-item-' + key);
+      if (itemEl) {
+        itemEl.classList.remove('dmg-state-pass');
+        itemEl.classList.add('dmg-state-fail');
+      }
+      // For yesno items ("No" = bug-free): hide urgency panel and reset
+      const bugUrgencyEl = overlay.querySelector('#dmg-bug-urgency-' + key);
+      if (bugUrgencyEl) {
+        bugUrgencyEl.style.display = 'none';
+        bugUrgency[key] = null;
+        overlay.querySelectorAll('.dmg-bug-now-btn[data-check="' + key + '"], .dmg-bug-later-btn[data-check="' + key + '"]').forEach(b => b.classList.remove('dmg-bug-active'));
+      }
+      // Fail opens the notes, but does not block the rest of the checklist or cleaning.
+      const failEl = overlay.querySelector('#dmg-fail-' + key);
+      if (failEl) failEl.style.display = '';
+      refreshConfirmBtn();
+    });
+  });
+
+  overlay.querySelectorAll('input[name^="chg-"]').forEach(radio => {
     radio.addEventListener('change', () => {
       const key = (radio.name || '').replace('chg-', '');
       const wrap = overlay.querySelector('#dmg-charged-wrap-' + key);
@@ -3191,33 +3217,9 @@ function showDamageCheckModal(vid, plate) {
         label.classList.toggle('has-file', (failSlotFiles[key][slot] || []).length > 0);
         const slotMeta = (CHARGE_SLOTS[items.find(i => i.key === key)?.chargeFollowUp] || []).find(s => s.id === slot);
         const n = (failSlotFiles[key][slot] || []).length;
-        label.firstChild.textContent = (slotMeta ? slotMeta.label : slot) + (n ? ' · ' + n : '');
+        label.childNodes[0].textContent = (slotMeta ? slotMeta.label : slot) + (n ? ' · ' + n : '');
       }
       input.value = '';
-    });
-  });
-
-  overlay.querySelectorAll('ick', () => {
-      const key = btn.dataset.check;
-      itemState[key] = 'fail';
-      const itemEl = overlay.querySelector('#dmg-item-' + key);
-      itemEl.classList.remove('dmg-state-pass');
-      itemEl.classList.add('dmg-state-fail');
-      // For yesno items ("No" = bug-free): hide urgency panel and reset
-      const bugUrgencyEl = overlay.querySelector('#dmg-bug-urgency-' + key);
-      if (bugUrgencyEl) {
-        bugUrgencyEl.style.display = 'none';
-        bugUrgency[key] = null;
-        overlay.querySelectorAll(`.dmg-bug-now-btn[data-check="${key}"], .dmg-bug-later-btn[data-check="${key}"]`).forEach(b => b.classList.remove('dmg-bug-active'));
-      }
-      // For regular fail items: show notes panel
-      const failEl = overlay.querySelector('#dmg-fail-' + key);
-      if (failEl) {
-        failEl.style.display = '';
-        const notesEl = overlay.querySelector('#dmg-notes-' + key);
-        if (notesEl) notesEl.focus();
-      }
-      refreshConfirmBtn();
     });
   });
 
@@ -3264,6 +3266,12 @@ function showDamageCheckModal(vid, plate) {
     });
   });
 
+  const cancelBtn = overlay.querySelector('.dmg-cancel-btn');
+  if (cancelBtn) {
+    cancelBtn.type = 'button';
+    cancelBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); overlay.remove(); });
+  }
+  if (confirmBtn) confirmBtn.type = 'button';
   overlay.querySelector('.dmg-cancel-btn').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
@@ -3504,7 +3512,7 @@ function showDamageCheckModal(vid, plate) {
         if (newIncCount > 0)   parts.push(newIncCount + ' incident(s) created' + (TURO_ELIGIBLE_INCIDENT_TYPES.includes(failItems.find(i => i.incidentType)?.incidentType) ? ' — Turo claim task added' : ''));
         if (reusedCount > 0)   parts.push(reusedCount + ' existing incident(s) re-flagged');
         if (newTaskCount > 0)  parts.push(newTaskCount + ' task(s) logged');
-        toast('Inspection submitted. ' + parts.join(', ') + '.', 'warning');
+        toast('Inspection submitted. ' + parts.join(', ') + '. Car stays here — finish cleaning if it is still open.', 'warning');
         loadDashboardFollowUps();
         loadAllOpenIncidentsDashboard();
       } else {
