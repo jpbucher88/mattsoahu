@@ -197,6 +197,7 @@ const pages = {
   login: $('page-login'),
   dashboard: $('page-dashboard'),
   vehicle: $('page-vehicle'),
+  knownDamages: $('page-known-damages'),
   admin: $('page-admin'),
 };
 
@@ -4587,36 +4588,13 @@ function _kdSetStatus(msg, type) {
 
 window.openKnownDamages = function() {
   if (!_knownDamageVehicleId) return;
-  const old = $('known-damage-overlay');
-  if (old) old.remove();
-  const overlay = document.createElement('div');
-  overlay.id = 'known-damage-overlay';
-  overlay.className = 'modal-overlay';
-  overlay.innerHTML = `
-    <div class="modal-box" style="max-width:640px;width:100%;max-height:88vh;display:flex;flex-direction:column;">
-      <div class="modal-header" style="background:#1d4ed8;color:#fff;border-radius:10px 10px 0 0;">
-        <h3 style="color:#fff;margin:0;">🛠️ Known Damages${selectedVehicle && selectedVehicle.plate ? ' — ' + escapeHtml(selectedVehicle.plate) : ''}</h3>
-        <button class="modal-close" style="color:#fff;" onclick="closeKnownDamages()">&times;</button>
-      </div>
-      <div class="modal-body" style="padding:14px 16px;overflow-y:auto;">
-        <p class="hint" style="margin-top:0;">Kept until an admin deletes it · up to 15 photos per damage.</p>
-        <div id="kd-add-row" style="display:none;gap:8px;margin-bottom:10px;">
-          <input type="text" id="kd-name" maxlength="80" placeholder="Describe the damage, e.g. Scratch rear bumper" style="flex:1;min-width:0;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;">
-          <button type="button" class="btn btn-sm btn-primary" onclick="addKnownDamage()">+ Add Damage</button>
-        </div>
-        <div id="kd-status" class="hint" style="min-height:1.2em;margin:0 0 6px;"></div>
-        <div id="kd-list"></div>
-      </div>
-    </div>`;
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeKnownDamages(); });
-  document.body.appendChild(overlay);
+  const title = $('kd-page-title');
+  if (title) title.textContent = 'Known Damages' + (selectedVehicle && selectedVehicle.plate ? ' — ' + selectedVehicle.plate : '');
+  showPage('knownDamages');
   loadKnownDamages(_knownDamageVehicleId);
 };
 
-window.closeKnownDamages = function() {
-  const overlay = $('known-damage-overlay');
-  if (overlay) overlay.style.display = 'none';
-};
+$('btn-back-kd').addEventListener('click', () => showPage('vehicle'));
 
 function _knownDamageCardHtml(id, d, isAdminUser) {
   const photos = Array.isArray(d.photos) ? d.photos : [];
@@ -4678,13 +4656,17 @@ function renderKnownDamages() {
 }
 
 window.addKnownDamage = async function() {
-  if (currentUserRole !== 'admin' || !selectedVehicle) { toast('Only admins can add known damages.', 'warning'); return; }
+  if (currentUserRole !== 'admin' || !selectedVehicle) { _kdSetStatus('Only admins can add known damages.', 'warning'); return; }
   const input = $('kd-name');
+  const fileInput = $('kd-new-files');
   const label = ((input && input.value) || '').trim();
-  if (!label) { toast('Describe the damage first.', 'warning'); return; }
+  if (!label) { _kdSetStatus('Describe the damage first.', 'warning'); return; }
+  const files = fileInput ? Array.from(fileInput.files || []) : [];
   const vehicle = selectedVehicle;
+  _kdSetStatus('Saving damage…', 'info');
+  let newId;
   try {
-    await db.collection('knownDamages').add({
+    const docRef = await db.collection('knownDamages').add({
       vehicleId: vehicle.id,
       plate: vehicle.plate || '',
       label: label.slice(0, 80),
@@ -4693,19 +4675,26 @@ window.addKnownDamage = async function() {
       createdByName: currentUserDisplayName || currentUser.email || '',
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
-    if (input) input.value = '';
-    toast('Known damage added ✓', 'success');
-    loadKnownDamages(vehicle.id);
+    newId = docRef.id;
   } catch (e) {
     console.error('Add known damage error:', e);
-    toast('Failed to add.', 'error');
+    _kdSetStatus('Could not save the damage: ' + (e.message || e), 'error');
+    return;
   }
+  if (input) input.value = '';
+  if (fileInput) fileInput.value = '';
+  _knownDamageVehicleId = vehicle.id;
+  if (files.length) await uploadKnownDamagePhotos(newId, files);
+  else { _kdSetStatus('Damage added.', 'success'); await loadKnownDamages(vehicle.id); }
 };
 
 window.addKnownDamagePhotos = async function(damageId, input) {
   const files = Array.from(input.files || []);
   input.value = '';
-  if (!files.length) return;
+  if (files.length) await uploadKnownDamagePhotos(damageId, files);
+};
+
+async function uploadKnownDamagePhotos(damageId, files) {
   if (currentUserRole !== 'admin') { _kdSetStatus('Only admins can add photos.', 'error'); return; }
   const vehicleId = _knownDamageVehicleId;
   const st = getStorage();
