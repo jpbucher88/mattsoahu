@@ -1990,84 +1990,6 @@ function populateVehicleSelect(selectEl) {
   });
 }
 
-// Open vehicle follow-ups whose vehicle lives at this location, urgent and oldest first.
-function _locationFollowUpItems(loc) {
-  const homeOf = new Map(vehiclesCache.map(v => [v.id, v.homeLocation || '']));
-  return cachedTaskItems
-    .filter(i => i.type === 'vehicle' && !i.done && homeOf.get(i.vehicleId) === loc)
-    .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || (a.dueDate || '9999').localeCompare(b.dueDate || '9999'));
-}
-
-function _renderLocationFollowUpQueue(items) {
-  if (items.length === 0) return '';
-  const rows = items.map(i => {
-    const v = vehiclesCache.find(x => x.id === i.vehicleId);
-    const isCharge = i.sourceType === 'charge_followup';
-    const thumbs = (i.photos || []).slice(0, 4)
-      .map(u => `<a href="${escapeHtml(u)}" target="_blank"><img class="queue-thumb" src="${escapeHtml(u)}" alt="photo"></a>`).join('');
-    const due = i.dueDate ? `<span class="queue-due">Due ${escapeHtml(i.dueDate)}</span>` : '';
-    const by = i.createdByName ? `<span class="queue-by">${escapeHtml(i.createdByName)}</span>` : '';
-    return `<div class="queue-item${i.urgent ? ' queue-urgent' : ''}">
-        <div class="queue-main">
-          <span class="location-vehicle-chip" data-vid="${i.vehicleId}">${escapeHtml(v ? v.plate : 'Unknown')}</span>
-          <span class="queue-text">${i.urgent ? '🚨 ' : ''}${escapeHtml(i.text || '')}</span>
-          ${due}${by}
-        </div>
-        ${i.description ? `<div class="queue-desc">${escapeHtml(i.description)}</div>` : ''}
-        ${thumbs ? `<div class="queue-thumbs">${thumbs}</div>` : ''}
-        <div class="cleaning-actions">
-          <button class="btn btn-sm btn-outline" onclick="event.stopPropagation(); queueAddPhotos('${i.id}','${i.collection}','${i.vehicleId}')">📷 ${isCharge ? 'Receipts' : 'Photos'}</button>
-          <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${i.id}','${i.collection}')">✓ ${isCharge ? 'Settle' : 'Done'}</button>
-        </div>
-      </div>`;
-  }).join('');
-  return `<div class="loc-sub-header loc-sub-queue">📋 Follow-up Queue <span class="loc-sub-count">${items.length}</span></div>
-    <div class="location-group-vehicles queue-list">${rows}</div>`;
-}
-
-// Attach photos to an open follow-up; charge follow-ups use the settlement dialog instead.
-window.queueAddPhotos = function(noteId, col, vid) {
-  const item = cachedTaskItems.find(i => i.id === noteId);
-  if (item && item.sourceType === 'charge_followup' && item.expenseId) {
-    openChargeSettlement(item.expenseId, noteId, col);
-    return;
-  }
-  const v = vehiclesCache.find(x => x.id === vid);
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/*';
-  input.multiple = true;
-  input.onchange = async () => {
-    const files = Array.from(input.files || []);
-    input.remove();
-    if (!files.length) return;
-    toast('Uploading ' + files.length + ' photo(s)...', 'info');
-    try {
-      const st = getStorage();
-      if (!st) throw new Error('Storage unavailable');
-      const safePlate = sanitizePlate(v ? v.plate : 'fleet');
-      const urls = [];
-      for (const file of files) {
-        const compressed = await compressImage(file);
-        const name = 'followup_' + noteId + '_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6) + '.jpg';
-        const ref = st.ref('vehicles/' + safePlate + '/followups/' + name);
-        await ref.put(compressed, { contentType: 'image/jpeg' });
-        urls.push(await ref.getDownloadURL());
-      }
-      await db.collection(col).doc(noteId).update({
-        photos: firebase.firestore.FieldValue.arrayUnion(...urls)
-      });
-      toast('Added ' + urls.length + ' photo(s)', 'success');
-      loadDashboardFollowUps();
-    } catch (err) {
-      console.error('Follow-up photo upload error:', err);
-      toast('Photo upload failed: ' + (err.message || err), 'error');
-    }
-  };
-  document.body.appendChild(input);
-  input.click();
-};
-
 function renderFleetDashboard() {
   const container = $('fleet-dashboard');
   if (!container) return;
@@ -2587,8 +2509,7 @@ function renderLocationsWidget() {
     const reservedHere = loc === '1585 Kapiolani'
       ? onTripAll.filter(v => v.homeLocation === '1585 Kapiolani' && !!v.extraParking && !isOverdue(v))
       : [];
-    const queueItems = _locationFollowUpItems(loc);
-    const total = queueItems.length + cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length + reservedHere.length;
+    const total = cleaning.length + photosOnly.length + atHomeClean.length + overdueHere.length + reservedHere.length;
     if (total === 0) continue;
 
     const isKapiolani = loc === '1585 Kapiolani';
@@ -2599,8 +2520,6 @@ function renderLocationsWidget() {
         <span class="location-group-count">${total}</span>
         <button class="btn btn-sm btn-outline loc-at-btn" onclick="event.stopPropagation(); checkLocationPhotos('${escapeHtml(loc)}')" title="Refresh photo status for all vehicles at this location">🔄 Refresh Photos</button>
       </div>`;
-
-    html += _renderLocationFollowUpQueue(queueItems);
 
     // Overdue / awaiting return sub-section
     if (overdueHere.length > 0) {
@@ -16358,7 +16277,6 @@ async function loadDashboardFollowUps() {
     // Cache items and render
     cachedTaskItems = items;
     renderTaskAgenda(items);
-    renderFleetDashboard();
 
     // Render completed bucket
     checkMyCoachings();
