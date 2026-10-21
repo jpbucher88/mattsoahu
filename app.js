@@ -3062,8 +3062,9 @@ function showDamageCheckModal(vid, plate) {
     const files = failSlotPhotoFiles[key] || [];
     const list = overlay.querySelector(`#charge-photo-assignments-${key}`);
     if (!list) return;
+    const selectedSlots = Array.from(list.querySelectorAll('.charge-photo-slot-select'), select => select.value);
     list.innerHTML = files.map((file, index) => {
-      const defaultSlot = slots[Math.min(index, slots.length - 1)]?.id || '';
+      const defaultSlot = selectedSlots[index] || slots[Math.min(index, slots.length - 1)]?.id || '';
       const options = slots.map(slot => `<option value="${slot.id}" ${slot.id === defaultSlot ? 'selected' : ''}>${escapeHtml(slot.label)}</option>`).join('');
       return `<label class="charge-photo-assignment"><span>${escapeHtml(file.name)}</span><select class="charge-photo-slot-select" data-check="${key}" data-index="${index}">${options}</select></label>`;
     }).join('');
@@ -3106,7 +3107,10 @@ function showDamageCheckModal(vid, plate) {
         </div>
         <div class="dmg-fail-details" id="dmg-fail-${item.key}" style="display:none;">
           <p class="hint" style="margin:0;">Upload these now or submit the failure and finish the photos later from the open charge task. The assistant can complete the customer invoice separately.</p>
-          <label class="charge-bulk-upload">📷 Choose all photos<input type="file" accept="image/*" multiple class="dmg-charge-bulk-photos" data-check="${item.key}" style="display:none;"></label>
+          <div class="dmg-fail-upload-row">
+            <label class="dmg-fail-upload-label">📁 Upload / Photos<input type="file" accept="image/*" multiple class="dmg-charge-bulk-photos" data-check="${item.key}" style="display:none;"></label>
+            <label class="dmg-fail-upload-label dmg-fail-camera-label">📷 Camera<input type="file" accept="image/*" capture="environment" class="dmg-charge-bulk-photos" data-check="${item.key}" style="display:none;"></label>
+          </div>
           <div class="charge-photo-assignments" id="charge-photo-assignments-${item.key}"></div>
           <div class="charge-slot-row">
             ${slots.map(s => `<span class="charge-slot" id="dmg-slot-label-${item.key}-${s.id}"><span>${escapeHtml(s.label)}</span><span class="charge-slot-count" data-slot-count="${item.key}-${s.id}">No photo yet</span></span>`).join('')}
@@ -3230,7 +3234,8 @@ function showDamageCheckModal(vid, plate) {
   overlay.querySelectorAll('.dmg-charge-bulk-photos').forEach(input => {
     input.addEventListener('change', () => {
       const key = input.dataset.check;
-      failSlotPhotoFiles[key] = Array.from(input.files || []);
+      if (!failSlotPhotoFiles[key]) failSlotPhotoFiles[key] = [];
+      failSlotPhotoFiles[key].push(...Array.from(input.files || []));
       renderChargePhotoAssignments(key);
       input.value = '';
     });
@@ -29764,7 +29769,9 @@ window.openChargeSettlement = async function(expenseId, noteId, noteCol, photosO
     + '<input type="text" id="chg-desc" class="form-select" maxlength="200" value="' + escapeHtml(exp.description || '') + '">'
     + '</div>'
     + '<label class="coach-label">Required photos</label><div class="charge-slot-row" id="chg-existing-slots"></div>'
-    + '<label class="charge-bulk-upload">📷 Choose all photos<input type="file" id="chg-photo-input" accept="image/*" multiple style="display:none;"></label>'
+    + '<div class="dmg-fail-upload-row">'
+    + '<label class="dmg-fail-upload-label">📁 Upload / Photos<input type="file" id="chg-photo-input" accept="image/*" multiple style="display:none;"></label>'
+    + '<label class="dmg-fail-upload-label dmg-fail-camera-label">📷 Camera<input type="file" id="chg-camera-input" accept="image/*" capture="environment" style="display:none;"></label></div>'
     + '<div class="charge-photo-assignments" id="chg-photo-assignments"></div></div>'
     + '<div class="dm-footer"><button class="dm-btn-cancel" id="chg-cancel">Cancel</button>'
     + '<button class="dm-btn-go" id="chg-save" style="background:#b45309;">' + (photosOnly ? 'Save photos' : 'Save charge') + '</button></div></div>';
@@ -29802,19 +29809,21 @@ window.openChargeSettlement = async function(expenseId, noteId, noteCol, photosO
     });
   };
   const renderPhotoAssignments = () => {
+    const selectedSlots = Array.from(assignmentBox.querySelectorAll('.charge-photo-slot-select'), select => select.value);
     assignmentBox.innerHTML = stagedFiles.map((file, index) => {
-      const defaultSlot = slots[Math.min(index, slots.length - 1)]?.id || '';
+      const defaultSlot = selectedSlots[index] || slots[Math.min(index, slots.length - 1)]?.id || '';
       const options = slots.map(slot => `<option value="${slot.id}" ${slot.id === defaultSlot ? 'selected' : ''}>${escapeHtml(slot.label)}</option>`).join('');
       return `<label class="charge-photo-assignment"><span>${escapeHtml(file.name)}</span><select class="charge-photo-slot-select" data-index="${index}">${options}</select></label>`;
     }).join('');
     assignmentBox.querySelectorAll('.charge-photo-slot-select').forEach(select => select.addEventListener('change', syncSlotFiles));
     syncSlotFiles();
   };
-  const bulkPhotoInput = overlay.querySelector('#chg-photo-input');
-  bulkPhotoInput.addEventListener('change', () => {
-    stagedFiles.splice(0, stagedFiles.length, ...Array.from(bulkPhotoInput.files || []));
-    renderPhotoAssignments();
-    bulkPhotoInput.value = '';
+  overlay.querySelectorAll('#chg-photo-input, #chg-camera-input').forEach(input => {
+    input.addEventListener('change', () => {
+      stagedFiles.push(...Array.from(input.files || []));
+      renderPhotoAssignments();
+      input.value = '';
+    });
   });
   const syncWho = () => {
     const who = (overlay.querySelector('input[name="chg-who"]:checked') || {}).value;
