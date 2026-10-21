@@ -113,7 +113,7 @@
         </div>
       </div>
 
-      <!-- Manager Portal dropdown: Finance · Repairs · CRM -->
+      <!-- Manager Portal dropdown: Finance · Maintenance · CRM -->
       <div id="header-manager-wrap" class="header-menu-wrap" style="display:none;">
         <button id="btn-manager" class="task-alert-btn" title="Manager Portal" onclick="toggleHeaderMenu(event,'manager')">
           <span class="task-alert-icon">💼</span>
@@ -127,11 +127,7 @@
           </button>
           <button id="btn-maint-dash" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openMaintenanceDash()">
             <span class="hm-icon">🔧</span>
-            <span class="hm-label">Repairs</span>
-          </button>
-          <button id="btn-compliance-view" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openComplianceView()">
-            <span class="hm-icon">📋</span>
-            <span class="hm-label">HI Compliance</span>
+            <span class="hm-label">Maintenance Dashboard</span>
           </button>
           <button id="btn-crm-dash" class="header-menu-item" role="menuitem" style="display:none;" onclick="closeHeaderMenu();openCrmDash()">
             <span class="hm-icon">🤝</span>
@@ -211,11 +207,7 @@
         </button>
         <button class="mbn-more-item" data-mbn-target="btn-maint-dash">
           <span class="mbn-icon">🔧</span>
-          <span>Repairs</span>
-        </button>
-        <button class="mbn-more-item" data-mbn-target="btn-compliance-view">
-          <span class="mbn-icon">📋</span>
-          <span>HI Compliance</span>
+          <span>Maintenance</span>
         </button>
         <button class="mbn-more-item" data-mbn-target="btn-crm-dash">
           <span class="mbn-icon">🤝</span>
@@ -293,7 +285,7 @@
             <span id="compliance-widget-badge" class="badge compliance-fleet-badge">0</span>
           </div>
           <div class="collapsible-header-right">
-            <button class="btn btn-sm btn-outline compliance-view-tasks-btn" onclick="event.stopPropagation(); openComplianceView()">View Tasks →</button>
+            <button class="btn btn-sm btn-outline compliance-view-tasks-btn" onclick="event.stopPropagation(); openComplianceView()">View Compliance →</button>
             <button class="collapse-btn" id="compliance-widget-toggle">&#8722;</button>
           </div>
         </div>
@@ -2280,6 +2272,7 @@
       <div class="maint-dash-tabs">
         <button class="maint-tab-btn active" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🚨 Open Issues</button>
         <button class="maint-tab-btn" data-mtab="mtab-inspections" onclick="switchMaintTab('mtab-inspections',this)">🔍 Inspections</button>
+        <button class="maint-tab-btn" data-mtab="mtab-compliance" onclick="switchMaintTab('mtab-compliance',this)">📋 Compliance</button>
         <button class="maint-tab-btn" data-mtab="mtab-parts-queue" onclick="switchMaintTab('mtab-parts-queue',this)">📦 Parts Queue</button>
         <button class="maint-tab-btn" data-mtab="mtab-fleet" onclick="switchMaintTab('mtab-fleet',this)">🚗 Vehicles</button>
         <button class="maint-tab-btn" data-mtab="mtab-vendors" onclick="switchMaintTab('mtab-vendors',this)">🔧 Vendors</button>
@@ -2289,6 +2282,21 @@
         <button class="maint-tab-btn" data-mtab="mtab-overview" onclick="switchMaintTab('mtab-overview',this)">⚙️ Overview</button>
       </div>
       <div class="maint-dash-body">
+
+        <!-- ===== Vehicle Compliance Tab ===== -->
+        <div id="mtab-compliance" class="maint-tab-content" style="display:none;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+            <p style="margin:0;font-size:0.85rem;color:#6b7280;">Registration, Safety, and Insurance dates from each vehicle record.</p>
+            <button class="btn btn-sm btn-outline" onclick="_loadMaintCompliance()">↻ Refresh</button>
+          </div>
+          <div id="maint-compliance-summary" class="maint-compliance-summary"></div>
+          <div id="maint-compliance-filters" class="maint-chip-grid" style="margin-bottom:12px;">
+            <button type="button" class="maint-chip active" data-compliance-filter="all" onclick="setMaintComplianceFilter('all',this)">All vehicles</button>
+            <button type="button" class="maint-chip" data-compliance-filter="attention" onclick="setMaintComplianceFilter('attention',this)">Due within 60 days</button>
+            <button type="button" class="maint-chip" data-compliance-filter="missing" onclick="setMaintComplianceFilter('missing',this)">Missing dates</button>
+          </div>
+          <div id="maint-compliance-list" class="maint-compliance-list"></div>
+        </div>
 
         <!-- ===== Parts Queue Tab ===== -->
         <div id="mtab-parts-queue" class="maint-tab-content" style="display:none;">
@@ -2329,6 +2337,10 @@
 
         <!-- ===== Overview Tab ===== -->
         <div id="mtab-overview" class="maint-tab-content">
+          <div class="maint-overview-toolbar">
+            <span>Maintenance alerts are limited to immediate work and the next 60 days.</span>
+            <button id="btn-review-oil-intervals" class="btn btn-sm btn-outline" onclick="openOilIntervalReview()">Review Oil Intervals</button>
+          </div>
           <div id="maint-stat-cards" class="maint-stat-cards"></div>
           <div id="maint-alerts-section" style="margin-top:16px;"></div>
           <div id="maint-recent-section" style="margin-top:16px;"></div>

@@ -4240,6 +4240,36 @@ body {
   .insp-fleet-actions { width: 100%; }
 }
 
+.maint-compliance-summary { margin: 0 0 10px; color: #4b5563; font-size: 0.82rem; }
+.maint-overview-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; color: #6b7280; font-size: 0.8rem; }
+.oil-review-modal { width: min(680px, calc(100vw - 24px)); max-height: 88vh; overflow: auto; }
+.oil-review-table-wrap { max-height: 42vh; margin: 12px 0; overflow: auto; border: 1px solid #e5e7eb; border-radius: 6px; }
+.oil-review-table-wrap table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.oil-review-table-wrap th, .oil-review-table-wrap td { padding: 7px 9px; border-bottom: 1px solid #e5e7eb; text-align: left; white-space: nowrap; }
+.oil-review-table-wrap th { position: sticky; top: 0; background: #f8fafc; }
+.oil-review-backup { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; font-size: 0.82rem; }
+.oil-review-backup input { width: 18px; height: 18px; flex: 0 0 auto; margin: 0; }
+.oil-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.mc-summary-alert { color: #b91c1c; font-weight: 700; }
+.maint-compliance-list { display: grid; gap: 6px; }
+.mc-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) repeat(3, minmax(120px, 1fr)) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; }
+.mc-row:hover { border-color: #93c5fd; background: #f8fbff; }
+.mc-vehicle { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-vehicle span { overflow: hidden; color: #6b7280; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
+.mc-category { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 0.74rem; }
+.mc-category > span { color: #6b7280; }
+.mc-category strong { font-size: 0.78rem; }
+.mc-status-ok { color: #166534; }
+.mc-status-soon { color: #a16207; }
+.mc-status-urgent, .mc-status-overdue { color: #b91c1c; }
+.mc-status-missing { color: #6b7280; }
+@media (max-width: 760px) {
+  .maint-overview-toolbar { align-items: stretch; flex-direction: column; }
+  .mc-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .mc-vehicle { grid-column: 1 / -1; }
+  .mc-row > button { justify-self: start; }
+}
+
 /* ============ Maintenance-Dashboard overdue-inspections banner ============ */
 .maint-insp-alert {
   display: flex;
@@ -7584,6 +7614,7 @@ body {
 
 .mv-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 6px 14px 10px;
   border-top: 1px solid rgba(0,0,0,0.06);
