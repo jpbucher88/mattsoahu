@@ -10,7 +10,8 @@
       "firestore.indexes.json",
       "setup.html",
       "firebase-rules.js",
-      "README.md"
+      "README.md",
+      "photo-metadata.test.cjs"
     ],
     "headers": [
       {

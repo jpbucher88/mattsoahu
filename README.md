@@ -17,6 +17,29 @@ A mobile-first web app for car rental companies to photograph and document vehic
 
 ---
 
+## Photo Evidence Metadata
+
+Turo's fuel reimbursement guidance requires trip photos with date, time, and
+geolocation metadata: https://help.turo.com/charging-for-missing-fuel-or-low-battery-S1d_r4xV5
+
+The app's camera records the shutter time with a UTC timezone offset and a fresh
+device-provided GPS location in JPEG EXIF. Camera and location permissions are
+required. Camera buttons on inspection and expense forms use this same camera.
+Use a supported HTTPS browser such as current iOS Safari or Android Chrome.
+
+Photo imports are checked before they are accepted. Upload original JPEGs with
+capture date/time and GPS metadata; screenshots, stripped copies, and formats
+whose metadata cannot be read are rejected with an explanation. Upload time and
+file modification time are never substituted for a missing capture time.
+Compression and queued uploads preserve the original EXIF capture fields and GPS;
+JPEG downloads retain the original file bytes.
+
+This does not guarantee Turo acceptance or verify the device clock or GPS
+accuracy. Photos already stored without metadata cannot be repaired automatically.
+Physical iPhone and Android testing with real downloaded files remains necessary.
+
+Run the metadata regression checks with `node --test photo-metadata.test.cjs`.
+
 ## Prerequisites
 
 1. A **Firebase project** (free Spark plan works for getting started)
