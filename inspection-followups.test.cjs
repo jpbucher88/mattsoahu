@@ -17,6 +17,8 @@ const futureStart = source.indexOf('const TURO_INSPECTION_FUTURE_ITEMS');
 const futureEnd = source.indexOf('// Compute the aggregate', futureStart);
 const repairStart = source.indexOf('const TURO_CRITICAL_INSPECTION_KEYS');
 const repairEnd = source.indexOf('window.saveBiMonthlyInspection', repairStart);
+const availabilityStart = source.indexOf('function complianceVehicleAvailability(');
+const availabilityEnd = source.indexOf('function complianceVehicleStatusHtml', availabilityStart);
 
 function harness(existing) {
   const stores = {
@@ -65,8 +67,8 @@ function harness(existing) {
     APP_TIMEZONE: 'Pacific/Honolulu',
   };
   vm.runInNewContext(source.slice(itemStart, itemEnd) + source.slice(futureStart, futureEnd) + source.slice(repairStart, repairEnd) +
-    source.slice(fallbackStart, fallbackEnd) + source.slice(incidentStart, incidentEnd) + source.slice(deleteStart, deleteEnd) +
-    '\nglobalThis.create = _createInspectionViolationIncident; globalThis.followUps = inspectionChargeFollowUps; globalThis.syncPlanned = syncTuroInspectionRepairWorkOrders; globalThis.inspectionItems = TURO_INSPECTION_ITEMS; globalThis.bucket = maintenanceWorkBucket; globalThis.plateCount = maintenancePlateCount; globalThis.plannedCategory = maintenancePlannedCategory;', context);
+    source.slice(fallbackStart, fallbackEnd) + source.slice(incidentStart, incidentEnd) + source.slice(deleteStart, deleteEnd) + source.slice(availabilityStart, availabilityEnd) +
+    '\nglobalThis.create = _createInspectionViolationIncident; globalThis.followUps = inspectionChargeFollowUps; globalThis.syncPlanned = syncTuroInspectionRepairWorkOrders; globalThis.inspectionItems = TURO_INSPECTION_ITEMS; globalThis.bucket = maintenanceWorkBucket; globalThis.plateCount = maintenancePlateCount; globalThis.plannedCategory = maintenancePlannedCategory; globalThis.attention = maintenanceAttentionSummary; globalThis.availability = complianceVehicleAvailability;', context);
   return { context, stores, queries };
 }
 
@@ -270,4 +272,25 @@ test('planned summaries count distinct plates and group detailing work together'
   assert.equal(context.plateCount([{ vehicleId: 'a' }, { vehicleId: 'a' }, { vehicleId: 'b' }]), 2);
   assert.equal(context.plannedCategory({ inspectionFutureWork: true, inspectionKey: 'cleanliness' }), 'Detailing');
   assert.equal(context.plannedCategory({ repairCategory: 'detailing' }), 'Detailing');
+});
+
+test('red attention total includes compliance without double-counting repair vehicles', () => {
+  const { context } = harness();
+  const counts = context.attention([{ vehicleId: 'a' }, { vehicleId: 'a' }, { vehicleId: 'b' }], new Set(['b', 'c']));
+  assert.equal(counts.total, 3);
+  assert.equal(counts.repairs, 2);
+  assert.equal(counts.compliance, 2);
+  assert.equal(counts.overlap, 1);
+});
+
+test('Compliance distinguishes home, scheduled, shop, and trip availability', () => {
+  const { context } = harness();
+  assert.equal(context.availability({ tripStatus: 'home', homeLocation: 'HNL' }).label, 'At home');
+  assert.equal(context.availability({ tripStatus: 'scheduled' }).label, 'At home - trip scheduled');
+  assert.equal(context.availability({ tripStatus: 'repair-shop' }).label, 'At shop');
+  const trip = context.availability({ tripStatus: 'on-trip', homeLocation: 'HNL', tripReturnDate: '2026-10-25T22:00:00Z' });
+  assert.equal(trip.onTrip, true);
+  assert.equal(trip.homeLocation, 'HNL');
+  assert.ok(trip.returnLabel.includes('Returns'));
+  assert.equal(context.availability({ tripStatus: 'private-trip', tripReturnDate: 'bad date' }).returnLabel, 'Return time not set');
 });

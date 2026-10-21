@@ -4267,6 +4267,10 @@ body {
 .mc-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) repeat(3, minmax(120px, 1fr)) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; }
 .mc-row:hover { border-color: #93c5fd; background: #f8fbff; }
 .mc-vehicle { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mc-availability { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; font-size: 0.78rem; white-space: normal; overflow-wrap: anywhere; }
+.mc-availability strong { color: #334155; font-size: 0.78rem; }
+.mc-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.mc-vehicle .mc-availability span { white-space: normal; overflow: visible; }
 .mc-vehicle span { overflow: hidden; color: #6b7280; font-size: 0.75rem; text-overflow: ellipsis; white-space: nowrap; }
 .mc-category { display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 0.74rem; }
 .mc-category > span { color: #6b7280; }
@@ -8963,6 +8967,7 @@ body {
 .fh-ready   .fh-num { color: #4ade80; }
 .fh-monitor .fh-num { color: #a3e635; }
 .fh-assessments .fh-num { color: #fbbf24; }
+.wo-compliance-card { border-left: 4px solid #dc2626; }
 .fh-returns .fh-num { color: #60a5fa; }
 
 /* ── Modern Card v2 ── */

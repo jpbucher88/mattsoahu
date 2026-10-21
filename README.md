@@ -74,6 +74,24 @@ Older record-only notes are not migrated or converted automatically.
 Run inspection and photo regression checks with
 `node --test inspection-followups.test.cjs photo-metadata.test.cjs`.
 
+## Compliance Moves
+
+Compliance remains part of the red attention total. Action now shows the counted
+compliance vehicles individually, with Safety, Registration, or Insurance reasons;
+vehicles with both repairs and compliance are counted once in the red total.
+
+Managers and admins can select Schedule Move from Compliance or its Action now
+cards. The existing Vehicle Moves form preselects the vehicle and includes
+compliance context. Compliance rows and the move preview display the home location,
+home/trip/shop status, and available trip return estimate. Existing active
+compliance moves can be reopened rather than duplicated.
+
+An on-trip compliance vehicle requires an appointment date no earlier than its
+known return date. Dates have day-level precision; staff must coordinate the
+appointment time with the displayed return time. Future or still-on-trip moves
+remain pending and show as Scheduled in Vehicle Moves. Completing a move does not
+renew or clear compliance: the actual compliance record must still be updated.
+
 ## Prerequisites
 
 1. A **Firebase project** (free Spark plan works for getting started)

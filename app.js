@@ -9925,6 +9925,17 @@ function maintenancePlateCount(items) {
   return new Set(items.map(item => item.vehicleId || item.plate || item.id).filter(Boolean)).size;
 }
 
+function maintenanceAttentionSummary(items, complianceIds) {
+  const repairs = new Set(items.map(item => item.vehicleId || item.plate || item.id).filter(Boolean));
+  const compliance = new Set(complianceIds);
+  return {
+    total: new Set([...repairs, ...compliance]).size,
+    repairs: repairs.size,
+    compliance: compliance.size,
+    overlap: [...repairs].filter(id => compliance.has(id)).length,
+  };
+}
+
 function maintenancePlannedCategory(item) {
   if ((item.inspectionFutureWork && item.inspectionKey === 'cleanliness') ||
       /detail|clean/i.test(item.repairCategory || item.repairCategoryLabel || '')) return 'Detailing';
@@ -11419,6 +11430,41 @@ async function _loadMaintCompliance() {
   _renderMaintCompliance();
 }
 
+function complianceVehicleAvailability(vehicle) {
+  const onTrip = ['on-trip', 'private-trip'].includes(vehicle.tripStatus);
+  const label = onTrip ? (vehicle.tripStatus === 'private-trip' ? 'On private trip' : 'On Turo trip')
+    : vehicle.tripStatus === 'repair-shop' ? 'At shop'
+      : vehicle.tripStatus === 'scheduled' ? 'At home - trip scheduled'
+        : vehicle.tripStatus === 'home' ? 'At home' : 'Status not set';
+  const rawReturn = vehicle.tripReturnDate;
+  const returnDate = rawReturn ? (rawReturn.toDate ? rawReturn.toDate() : new Date(rawReturn)) : null;
+  const validReturn = returnDate && Number.isFinite(returnDate.getTime()) ? returnDate : null;
+  const returnLabel = onTrip ? (validReturn ? 'Returns ' + validReturn.toLocaleString('en-US', { timeZone: APP_TIMEZONE, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Return time not set') : '';
+  return { onTrip, label, homeLocation: vehicle.homeLocation || 'Not set', returnDate: validReturn, returnLabel };
+}
+
+function complianceVehicleStatusHtml(vehicle) {
+  const status = complianceVehicleAvailability(vehicle);
+  return `<div class="mc-availability"><strong>${escapeHtml(status.label)}</strong><span>Home: ${escapeHtml(status.homeLocation)}</span>${status.returnLabel ? `<span>${escapeHtml(status.returnLabel)}</span>` : ''}</div>`;
+}
+
+window.openComplianceMove = async function(vehicleId) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  const vehicle = vehiclesCache.find(item => item.id === vehicleId);
+  if (!vehicle) { toast('Vehicle not found.', 'warning'); return; }
+  const activeMove = _activeMoves.find(move => move.vehicleId === vehicleId && move.sourceType === 'compliance' && !['completed', 'cancelled'].includes(move.status));
+  await openDispatchModal(vehicleId, activeMove);
+  _dispatchComplianceVehicleId = vehicleId;
+  if (!activeMove) {
+    const reasons = [['Safety', vehicle.complianceSafety], ['Registration', vehicle.complianceRegistration], ['Insurance', vehicle.complianceInsurance]]
+      .filter(([, value]) => value && complianceMonthStatus(value).daysLeft <= 60)
+      .map(([label, value]) => `${label} ${value}`);
+    $('dispatch-notes').value = ('Compliance: ' + (reasons.join('; ') || 'Review compliance dates')).slice(0, 150);
+  }
+  $('dispatch-appt-row').style.display = 'flex';
+  $('dispatch-modal-overlay').style.zIndex = '100001';
+};
+
 function _renderMaintCompliance() {
   const list = $('maint-compliance-list');
   if (!list) return;
@@ -11427,6 +11473,7 @@ function _renderMaintCompliance() {
       : _maintComplianceFilter === 'missing' ? row.missing
         : true
   );
+  rows.forEach(row => { row.vehicle = vehiclesCache.find(vehicle => vehicle.id === row.vehicle.id) || row.vehicle; });
   rows.sort((a, b) => {
     const aDays = Math.min(...a.items.map(item => item.daysLeft == null ? Infinity : item.daysLeft));
     const bDays = Math.min(...b.items.map(item => item.daysLeft == null ? Infinity : item.daysLeft));
@@ -11438,9 +11485,9 @@ function _renderMaintCompliance() {
   }
   list.innerHTML = rows.map(row => `
     <div class="mc-row" onclick="openVehicleCompliancePage('${row.vehicle.id}')">
-      <div class="mc-vehicle"><strong>${escapeHtml(row.vehicle.plate || '—')}</strong><span>${escapeHtml([row.vehicle.make, row.vehicle.model].filter(Boolean).join(' '))}</span></div>
+      <div class="mc-vehicle"><strong>${escapeHtml(row.vehicle.plate || '—')}</strong><span>${escapeHtml([row.vehicle.make, row.vehicle.model].filter(Boolean).join(' '))}</span>${complianceVehicleStatusHtml(row.vehicle)}${_activeMoves.filter(move => move.vehicleId === row.vehicle.id && move.sourceType === 'compliance').map(move => `<span>Move: ${escapeHtml(move.toLocation || '')}${move.appointmentDate ? ' - ' + escapeHtml(move.appointmentDate) : ''}${move.driverName ? ' - ' + escapeHtml(move.driverName) : ''}</span>`).join('')}</div>
       ${row.items.map(item => `<div class="mc-category"><span>${item.label}</span><strong class="${item.cls}">${item.statusLabel}</strong></div>`).join('')}
-      <button type="button" class="btn btn-sm btn-outline" onclick="event.stopPropagation();openVehicleCompliancePage('${row.vehicle.id}')">Manage</button>
+      <div class="mc-actions"><button type="button" class="btn btn-sm btn-outline" onclick="event.stopPropagation();openVehicleCompliancePage('${row.vehicle.id}')">Manage</button>${currentUserRole === 'admin' || currentUserRole === 'manager' ? `<button type="button" class="btn btn-sm btn-primary" onclick="event.stopPropagation();openComplianceMove('${row.vehicle.id}')">Schedule Move</button>` : ''}</div>
     </div>`).join('');
 }
 
@@ -12760,10 +12807,7 @@ async function _loadWorkOrders() {
 
     // ── Populate Fleet Health Bar ──
     // Need Action: open work orders with real priority (critical / high / standard)
-    const fhAction  = activeItems.filter(i =>
-      (!i.repairStatus || i.repairStatus === 'open') &&
-      maintenanceWorkBucket(i, today) === 'action'
-    );
+    const fhAction = activeItems.filter(item => maintenanceWorkBucket(item, today) === 'action');
     // At Shop / Scheduled: any item that is scheduled OR physically at the shop
     const fhShop    = activeItems.filter(i =>
       i.repairStatus === 'dropped_off' || i.repairStatus === 'scheduled'
@@ -12792,7 +12836,8 @@ async function _loadWorkOrders() {
     const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woUrgentCountByVehicle[v.id] > 0));
     const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
     const setFH = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    setFH('fh-num-action', new Set([...fhAction.map(item => item.vehicleId || item.plate || item.id), ...compDueSet]).size);
+    const attention = maintenanceAttentionSummary(fhAction, compDueSet);
+    setFH('fh-num-action', attention.total);
     setFH('fh-num-shop',    maintenancePlateCount(fhShop));
     setFH('fh-num-parts',   maintenancePlateCount(fhParts));
     setFH('fh-num-monitor', maintenancePlateCount(fhMonitor));
@@ -13230,8 +13275,19 @@ async function _loadWorkOrders() {
     });
     const plannedSummary = _maintenanceBucket === 'planned' ? `<div class="wo-planned-summary"><strong>Planned work: ${maintenancePlateCount(fhMonitor)} plates</strong><div class="wo-breakdown-chips"><button class="wo-bdc" onclick="setPlannedWorkCategory('')">All planned work</button>${[...plannedCategories].sort(([first], [second]) => first.localeCompare(second)).map(([category, entries]) => `<button class="wo-bdc${category === _plannedWorkCategory ? ' wo-bdc-active' : ''}" data-category="${escapeHtml(category)}" onclick="setPlannedWorkCategory(this.dataset.category)">${escapeHtml(category)}: ${maintenancePlateCount(entries)} plates</button>`).join('')}</div></div>` : '';
     const complianceSummary = ['action', 'all'].includes(_maintenanceBucket) && compDueSet.size
-      ? `<div class="wo-planned-summary"><strong>Compliance attention: ${compDueSet.size} plates</strong><button class="btn btn-sm btn-outline" onclick="switchMaintTab('mtab-compliance',document.querySelector('[data-mtab=mtab-compliance]'))">Review safety / registration / insurance due within 15 days</button></div>` : '';
-    let html = complianceSummary + plannedSummary + breakdownHtml + `<div class="wo-pipeline-bar">
+      ? `<div class="wo-section-group"><div class="wo-section-header">Compliance attention <span class="wo-sec-count">${compDueSet.size} plates</span></div>${vehiclesCache.filter(vehicle => compDueSet.has(vehicle.id)).map(vehicle => {
+          const reasons = [['Safety', vehicle.complianceSafety], ['Registration', vehicle.complianceRegistration], ['Insurance', vehicle.complianceInsurance]].flatMap(([label, value]) => {
+            if (!value) return [];
+            const [year, month] = value.split('-').map(Number);
+            const expiresAt = Date.UTC(year, month, 0, 23, 59, 59);
+            if (!Number.isFinite(expiresAt) || expiresAt > comp15ms) return [];
+            return [`${label}: ${expiresAt < Date.now() ? 'expired' : 'due soon'} (${value})`];
+          });
+          const search = [vehicle.plate, vehicle.make, vehicle.model, vehicle.homeLocation, ...reasons].filter(Boolean).join(' ').toLowerCase();
+          return `<div class="wo-card-v2 wo-compliance-card" data-wo-plate="${escapeHtml(vehicle.plate || '')}" data-wo-location="${escapeHtml(vehicle.homeLocation || 'No Location Set')}" data-wo-search="${escapeHtml(search)}"><div class="wo-card-v2-main"><div class="wo-card-v2-body"><div class="wo-v2-plate">${escapeHtml(vehicle.plate || 'Unknown')}</div><div class="wo-v2-issue">${reasons.map(reason => escapeHtml(reason)).join('<br>')}</div>${complianceVehicleStatusHtml(vehicle)}</div></div><div class="wo-card-v2-actions">${currentUserRole === 'admin' || currentUserRole === 'manager' ? `<button class="wo-primary-btn" onclick="openComplianceMove('${vehicle.id}')">Schedule Move</button>` : ''}<button class="wo-secondary-btn" onclick="closeMaintenanceDash();openVehiclePage('${vehicle.id}')">Review Vehicle Compliance</button></div></div>`;
+        }).join('')}</div>` : '';
+    const actionSummary = _maintenanceBucket === 'action' ? `<div class="wo-planned-summary"><strong>Needs attention: ${attention.total} plates</strong><div>${attention.repairs} repair plates / ${attention.compliance} compliance plates${attention.overlap ? ' / ' + attention.overlap + ' in both' : ''}</div></div>` : '';
+    let html = actionSummary + complianceSummary + plannedSummary + breakdownHtml + `<div class="wo-pipeline-bar">
       ${droppedOff.length ? `<span class="wo-pip-chip wo-pip-active">🔧 In Progress: ${droppedOff.length}</span>` : ''}
       ${missedList.length ? `<span class="wo-pip-chip wo-pip-missed">⚠️ Missed: ${missedList.length}</span>` : ''}
       ${open.length ? `<span class="wo-pip-chip wo-pip-open">⚪ Open: ${open.length}</span>` : ''}
@@ -28503,6 +28559,7 @@ let _pendingArrivalMoveId = null; // ID of move being confirmed at HNL
 let _editingMoveId = null; // ID of move being edited
 let _relocUsersCache = []; // [{name, uid}] loaded once
 let _dispatchInProgress = false; // prevents double-submit
+let _dispatchComplianceVehicleId = null;
 let _activeMoves = []; // current active moves — used to badge fleet chips
 
 // Color → car emoji helper
@@ -28568,6 +28625,7 @@ function _populateDriverSelect(selectedName) {
 // Open dispatch modal — pass vehicleId to pre-select, pass existingMove to edit
 window.openDispatchModal = async function(vehicleId, existingMove) {
   _editingMoveId = existingMove ? existingMove.id : null;
+  _dispatchComplianceVehicleId = existingMove?.sourceType === 'compliance' ? existingMove.vehicleId : null;
   const titleEl = $('dispatch-modal-title');
   const submitBtn = $('dispatch-submit-btn');
   if (titleEl) titleEl.textContent = _editingMoveId ? 'Edit Vehicle Move' : 'Dispatch Vehicle Move';
@@ -28608,7 +28666,7 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
   if (shopEl) shopEl.value = existingMove ? (existingMove.shopAddress || '') : '';
   const isShop = existingMove && existingMove.toLocation === 'Mechanic Shop';
   const apptRow = $('dispatch-appt-row');
-  if (apptRow) apptRow.style.display = isShop ? 'flex' : 'none';
+  if (apptRow) apptRow.style.display = isShop || _dispatchComplianceVehicleId ? 'flex' : 'none';
   const shopRow = $('dispatch-shop-row');
   if (shopRow) shopRow.style.display = isShop ? 'flex' : 'none';
 
@@ -28623,6 +28681,8 @@ window.openDispatchModal = async function(vehicleId, existingMove) {
 
 window.closeDispatchModal = function() {
   $('dispatch-modal-overlay').style.display = 'none';
+  $('dispatch-modal-overlay').style.zIndex = '';
+  _dispatchComplianceVehicleId = null;
   _editingMoveId = null;
   _dispatchInProgress = false;
 };
@@ -28631,7 +28691,7 @@ window.updateDispatchDestination = function() {
   const dest = $('dispatch-destination') ? $('dispatch-destination').value : '';
   const isShop = dest === 'Mechanic Shop';
   const apptRow = $('dispatch-appt-row');
-  if (apptRow) apptRow.style.display = isShop ? 'flex' : 'none';
+  if (apptRow) apptRow.style.display = isShop || _dispatchComplianceVehicleId ? 'flex' : 'none';
   const shopRow = $('dispatch-shop-row');
   if (shopRow) shopRow.style.display = isShop ? 'flex' : 'none';
   if (!isShop && $('dispatch-shop-address')) $('dispatch-shop-address').value = '';
@@ -28651,7 +28711,7 @@ window.updateDispatchPreview = function() {
   if (v) {
     const emoji = _carColorEmoji(v.color);
     const dot = v.color ? `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${_cssColor(v.color)};vertical-align:middle;margin:0 4px 1px 0;"></span>` : '';
-    preview.innerHTML = `${emoji} ${dot}<strong>${escapeHtml(v.plate)}</strong>&nbsp;<span style="color:#7c3aed;font-weight:500;">${escapeHtml(v.color||'')} ${escapeHtml(v.make||'')} ${escapeHtml(v.model||'')}</span>`;
+    preview.innerHTML = `${emoji} ${dot}<strong>${escapeHtml(v.plate)}</strong>&nbsp;<span style="color:#7c3aed;font-weight:500;">${escapeHtml(v.color||'')} ${escapeHtml(v.make||'')} ${escapeHtml(v.model||'')}</span>${complianceVehicleStatusHtml(v)}`;
     preview.style.display = 'block';
   } else {
     preview.style.display = 'none';
@@ -28674,11 +28734,23 @@ window.submitDispatch = async function() {
   if (errEl) errEl.textContent = '';
   const v = vehiclesCache.find(x => x.id === vid);
   if (!v) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Vehicle not found.'; return; }
+  const fromCompliance = _dispatchComplianceVehicleId === vid;
+  if (_dispatchComplianceVehicleId && !fromCompliance) { _dispatchInProgress = false; if (errEl) errEl.textContent = 'Reopen Schedule Move from the intended compliance vehicle.'; return; }
+  const availability = complianceVehicleAvailability(v);
+  if (fromCompliance && availability.onTrip) {
+    const returnDay = availability.returnDate ? new Intl.DateTimeFormat('en-CA', { timeZone: APP_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(availability.returnDate) : '';
+    if (!appointmentDate || (returnDay && appointmentDate < returnDay)) {
+      _dispatchInProgress = false;
+      if (errEl) errEl.textContent = 'This vehicle is on a trip. Set an appointment date on or after its return and confirm the return time.';
+      return;
+    }
+  }
 
   const submitBtn = $('dispatch-submit-btn');
   if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Saving…'; }
 
-  const newStatus = driverName ? 'in-progress' : 'pending';
+  const scheduledCompliance = fromCompliance && (availability.onTrip || (appointmentDate && appointmentDate > todayDateString()));
+  const newStatus = scheduledCompliance ? 'pending' : driverName ? 'in-progress' : 'pending';
   const movePayload = {
     vehicleId: vid,
     vehiclePlate: v.plate || '',
@@ -28690,6 +28762,7 @@ window.submitDispatch = async function() {
     notes: notes,
     driverName: driverName || '',
     status: newStatus,
+    ...(fromCompliance ? { sourceType: 'compliance', complianceVehicleId: vid } : {}),
     ...(appointmentDate ? { appointmentDate } : {}),
     ...(shopAddress ? { shopAddress } : {}),
   };
@@ -28717,6 +28790,7 @@ window.submitDispatch = async function() {
     }
     closeDispatchModal();
     renderRelocationsWidget(_activeMoves); // instant update from local state
+    _renderMaintCompliance();
   } catch (e) {
     console.error('Dispatch error:', e);
     if (errEl) errEl.textContent = 'Failed to save. Try again.';
@@ -28917,6 +28991,7 @@ function subscribeRelocations() {
 }
 
 function renderRelocationsWidget(moves) {
+  if ($('mtab-compliance')?.style.display !== 'none') _renderMaintCompliance();
   const list = $('relocations-list');
   const countBadge = $('relocations-count');
   if (!list) return;
@@ -28949,19 +29024,22 @@ function renderRelocationsWidget(moves) {
     const isMyMove = m.driverName && m.driverName.toLowerCase() === myName;
     const canAct = isMyMove || isAdmin;
     const isShop = m.toLocation === 'Mechanic Shop';
+    const moveVehicle = vehiclesCache.find(vehicle => vehicle.id === m.vehicleId);
+    const scheduledCompliance = m.sourceType === 'compliance' &&
+      ((m.appointmentDate && m.appointmentDate > todayDateString()) || (moveVehicle && complianceVehicleAvailability(moveVehicle).onTrip));
 
     const assignedLabel = m.driverName
       ? `<span class="reloc-driver-badge">👤 ${escapeHtml(m.driverName)}</span>`
       : `<span class="reloc-driver-badge reloc-unassigned">👤 Unassigned</span>`;
 
     const statusBadge = isPending
-      ? `<span class="reloc-status reloc-pending">⏳ Awaiting Departure</span>`
+      ? `<span class="reloc-status reloc-pending">${scheduledCompliance ? 'Scheduled' : '⏳ Awaiting Departure'}</span>`
       : `<span class="reloc-status reloc-inprogress">🚐 En Route</span>`;
 
     const destIcon = isShop ? '🔧' : '🏠';
     const apptLine = m.appointmentDate ? `<div class="reloc-notes">📅 Appt: ${escapeHtml(m.appointmentDate)}</div>` : '';
 
-    const claimBtn = (isPending && !isAdmin)
+    const claimBtn = (isPending && !isAdmin && !scheduledCompliance)
       ? `<button class="btn btn-sm btn-primary reloc-btn" onclick="claimMove('${m.id}')">🙋 Take This</button>` : '';
     const arriveLabel = isShop ? '🔧 Dropped Off' : '✅ Arrived';
     const arriveBtn = (isInProgress && canAct)
