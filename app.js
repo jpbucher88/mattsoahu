@@ -12369,7 +12369,9 @@ async function _loadWorkOrders() {
         .limit(500)
         .get(),
     ]);
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const items = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(item => !_legacyInspectionViolationType(item));
     const existingIds = new Set(items.map(item => item.id));
     const legacyInspectionItems = [
       ...cachedTaskItems,
