@@ -4231,6 +4231,7 @@ body {
 .insp-fleet-row.insp-fleet-repairs { border-left: 4px solid #dc2626; }
 .insp-fleet-main { flex: 1; min-width: 0; }
 .insp-fleet-plate { font-size: 0.95rem; margin-bottom: 3px; }
+.insp-fleet-location { display: inline-block; margin-left: 6px; color: #64748b; font-size: 0.72rem; font-weight: 600; }
 .insp-fleet-meta { font-size: 0.78rem; color: #4b5563; }
 .insp-fleet-failures { margin-top: 4px; color: #991b1b; font-size: 0.78rem; }
 .insp-fleet-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
@@ -8948,6 +8949,10 @@ body {
   transition: box-shadow 0.15s;
 }
 .wo-card-v2:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.10); }
+.wo-card-oil-missing { border-left-color: #b91c1c !important; background: #fffafa; }
+.wo-search-bar { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(170px, 240px); gap: 8px; margin: 0 0 12px; }
+.wo-search-bar input, .wo-search-bar select { min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; font: inherit; }
+.wo-search-empty { padding: 20px; text-align: center; color: #6b7280; }
 .wo-card-v2-main {
   display: flex;
   gap: 0;
@@ -9013,6 +9018,9 @@ body {
 .wo-due-compact { font-size: 0.8rem; color: #6b7280; margin-bottom: 5px; }
 .wo-v2-pipeline { margin-bottom: 6px; }
 .wo-v2-details { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+@media (max-width: 640px) {
+  .wo-search-bar { grid-template-columns: 1fr; }
+}
 .wo-detail-chip {
   font-size: 0.75rem;
   background: #f1f5f9;

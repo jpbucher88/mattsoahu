@@ -1694,9 +1694,15 @@ window.openAvailableFleetCheck = async function() {
     const thirtyDaysStr = thirtyDaysOut.toISOString().slice(0, 10);
     const overdue = [], dueSoon = [], upToDate = [], noData = [];
     available.forEach(v => {
-      const notes = notesByVehicle[v.id] || [];
+      const notes = (notesByVehicle[v.id] || []).flatMap(note => {
+        if (!_isOilService(note.maintenanceService || note.text || '')) return [note];
+        const oil = oilChangeByVehicle[v.id];
+        if (!oil?.mileage) return [];
+        const nextDueMileage = oil.mileage + 6000;
+        return [{ ...note, intervalMiles: 6000, nextDueMileage, text: `Oil Change due at ${nextDueMileage.toLocaleString()} mi (every 6,000 mi)` }];
+      });
       // If no oil change has ever been recorded, inject a synthetic overdue note
-      const noOilChange = !oilChangeByVehicle[v.id];      const syntheticOilNote = noOilChange
+      const noOilChange = !oilChangeByVehicle[v.id]?.mileage;      const syntheticOilNote = noOilChange
         ? [{ text: 'No oil change on record — service history unknown', _synthetic: true }]
         : [];
       const overdueNotes = [
@@ -1709,7 +1715,7 @@ window.openAvailableFleetCheck = async function() {
       const upcomingNotes = notes.filter(n =>
         !overdueNotes.includes(n) && (
           (n.dueDate && n.dueDate <= thirtyDaysStr) ||   // time-based: past due OR within 30 days
-          (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= 1500)
+          (n.nextDueMileage && v.mileage && n.nextDueMileage - v.mileage <= (_isOilService(n.maintenanceService || '') ? 750 : 1500))
         )
       );
       // Check compliance — expired → overdue; ≤15 days → overdue; ≤30 days → due soon
@@ -9713,7 +9719,7 @@ async function updateRecommendedServices(vehicleId) {
     const milesLeft = nextDueMileage - mileage;
     const oilEntry = { id: latestOilRecord.id, source: 'maint', service: 'Oil Change', nextDueMileage, intervalMiles: 6000, milesLeft };
     if (milesLeft <= 0) miIntervalDue.push(oilEntry);
-    else if (milesLeft <= 1500) miIntervalWarn.push(oilEntry);
+    else if (milesLeft <= 750) miIntervalWarn.push(oilEntry);
   }
 
   if (timeDue.length === 0 && timeUpcoming.length === 0 && miIntervalDue.length === 0 && miIntervalWarn.length === 0) {
@@ -10416,6 +10422,7 @@ window.printCurrentInspection = function() {
 // One row per vehicle with last-inspection status + Run/Schedule actions
 // ================================================================
 let _inspFleetFilter = 'all';
+let _inspFleetLocationFilter = 'all';
 let _inspFleetData = []; // populated by loadInspectionsTab
 
 window.setInspFleetFilter = function(key, btn) {
@@ -10425,11 +10432,25 @@ window.setInspFleetFilter = function(key, btn) {
   _renderInspFleetList();
 };
 
+window.setInspFleetLocationFilter = function(location) {
+  _inspFleetLocationFilter = location || 'all';
+  _renderInspFleetList();
+};
+
 async function loadInspectionsTab() {
   const listEl = document.getElementById('insp-fleet-list');
   const sumEl  = document.getElementById('insp-fleet-summary');
   if (!listEl) return;
   listEl.innerHTML = '<p class="hint" style="padding:20px;text-align:center;">Loading…</p>';
+  const locationSelect = document.getElementById('insp-fleet-location-filter');
+  if (locationSelect && locationSelect.options.length <= 1) {
+    [...new Set(vehiclesCache.map(vehicle => vehicle.homeLocation || 'No Location Set'))].sort().forEach(location => {
+      const option = document.createElement('option');
+      option.value = location;
+      option.textContent = location;
+      locationSelect.appendChild(option);
+    });
+  }
 
   try {
     // Get the most recent inspection per vehicle
@@ -10504,11 +10525,14 @@ function _renderInspFleetList() {
   const listEl = document.getElementById('insp-fleet-list');
   const sumEl  = document.getElementById('insp-fleet-summary');
   if (!listEl) return;
-  const filtered = _inspFleetFilter === 'all'
+  let filtered = _inspFleetFilter === 'all'
     ? _inspFleetData
     : _inspFleetFilter === 'repairs'
       ? _inspFleetData.filter(r => r.outstandingRepairItems.length > 0)
     : _inspFleetData.filter(r => r.status === _inspFleetFilter);
+  if (_inspFleetLocationFilter !== 'all') {
+    filtered = filtered.filter(row => (row.vehicle.homeLocation || 'No Location Set') === _inspFleetLocationFilter);
+  }
 
   const counts = _inspFleetData.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
   const repairVehicleCount = _inspFleetData.filter(r => r.outstandingRepairItems.length > 0).length;
@@ -10569,7 +10593,7 @@ function _renderInspFleetList() {
         : '');
     return `<div class="insp-fleet-row insp-fleet-${r.status}${r.failedItems.length ? ' insp-fleet-repairs' : ''}">
       <div class="insp-fleet-main">
-        <div class="insp-fleet-plate">🚗 <strong>${escapeHtml(v.plate)}</strong> <span style="color:#9ca3af;font-size:0.8rem;">${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span></div>
+        <div class="insp-fleet-plate">🚗 <strong>${escapeHtml(v.plate)}</strong> <span style="color:#9ca3af;font-size:0.8rem;">${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span><span class="insp-fleet-location">📍 ${escapeHtml(v.homeLocation || 'No Location Set')}</span></div>
         <div class="insp-fleet-meta">${lastLine}${dueLine}</div>
         ${failureLine}
       </div>
@@ -11033,6 +11057,7 @@ window.applyOilIntervalReview = async function() {
     toast(`Recalculated ${updates.length} oil-service records. History was preserved.`, 'success');
     _loadMaintFleet();
     _loadMaintOverview();
+    _loadWorkOrders();
     if (selectedVehicle) updateRecommendedServices(selectedVehicle.id);
   } catch (error) {
     console.error('Oil interval recalculation failed:', error);
@@ -11081,6 +11106,16 @@ window.quickLogMaintenanceService = async function(vehicleId, serviceKey) {
   if (!addButton || addButton.style.display === 'none') return;
   addButton.click();
   if (serviceKey) applyServiceChip(serviceKey);
+};
+
+window.quickUpdateVehicleMileage = async function(vehicleId) {
+  closeMaintenanceDash();
+  await openVehiclePage(vehicleId);
+  const mileageInput = $('vehicle-mileage');
+  if (mileageInput) {
+    mileageInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    mileageInput.focus();
+  }
 };
 
 window.switchMaintTab = function(tabId, btn) {
@@ -11438,15 +11473,18 @@ async function _loadMaintFleet() {
       const flags = [];
 
       // Oil change check
-      if (!oil) {
-        priority = Math.max(priority, 1); // Needs Attention, not Critical — record may just be missing
-        flags.push({ level: 'warn', msg: '⚠️ No oil change on record — needs immediate attention' });
-      } else if (oil.mileage && v.mileage) {
+      if (!oil?.mileage) {
+        priority = 2;
+        flags.push({ level: 'critical', msg: '🛢️ No usable oil service mileage on record — verify history and service immediately' });
+      } else if (!v.mileage) {
+        priority = 2;
+        flags.push({ level: 'critical', msg: '🛢️ Current vehicle mileage missing — update odometer to verify oil interval' });
+      } else {
         const milesLeft = oil.mileage + 6000 - v.mileage;
         if (milesLeft <= 0) {
           priority = 2;
           flags.push({ level: 'critical', msg: `⛽ Oil change overdue by ${Math.abs(milesLeft).toLocaleString()} mi (${oil.mileage.toLocaleString()} mi at service)` });
-        } else if (milesLeft <= 1500) {
+        } else if (milesLeft <= 750) {
           priority = Math.max(priority, 1);
           flags.push({ level: 'warn', msg: `⛽ Oil change due in ${milesLeft.toLocaleString()} mi` });
         }
@@ -11523,10 +11561,9 @@ function _renderMaintByVehicle(filter, sortMode) {
   function oilMilesLeft(entry) {
     const oilItem = (entry.miIntervals || []).find(i => i.service && i.service.toLowerCase().includes('oil'));
     if (oilItem) return oilItem.milesLeft;
-    if (!entry.oil) return -999999; // no record = most urgent
-    // Estimate using months since last oil change (proxy ~1000 mi/mo)
-    const mo = (Date.now() - new Date(entry.oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30);
-    return Math.round((3 - mo) * 1000); // rough: 3mo = ok, 0 = due, negative = overdue
+    if (!entry.oil?.mileage) return -999999; // missing mileage = most urgent
+    const vehicle = entry.v;
+    return vehicle?.mileage ? entry.oil.mileage + 6000 - vehicle.mileage : -999999;
   }
 
   // Apply sort mode
@@ -11588,14 +11625,16 @@ function _renderMaintByVehicle(filter, sortMode) {
     // ── Oil status row (shown on EVERY vehicle) ──────────────
     const oilItem = (miIntervals || []).find(i => i.service && i.service.toLowerCase().includes('oil'));
     let oilRow = '';
-    if (!oil) {
-      oilRow = `<div class="mv-oil-row mv-oil-missing">⛽ No oil change on record</div>`;
+    if (!oil?.mileage) {
+      oilRow = `<div class="mv-oil-row mv-oil-missing">⛽ No usable oil service mileage on record</div>`;
     } else {
       const mo = Math.floor((Date.now() - new Date(oil.date).getTime()) / (1000 * 60 * 60 * 24 * 30));
       const lastPart = `Last: ${oil.date}${oil.mileage ? ' · ' + oil.mileage.toLocaleString() + ' mi' : ''} (${mo}mo ago)`;
-      if (oilItem) {
+      if (!v.mileage) {
+        oilRow = `<div class="mv-oil-row mv-oil-missing">⛽ ${lastPart} · Current vehicle mileage missing</div>`;
+      } else if (oilItem) {
         const ml = oilItem.milesLeft;
-        const dueCls = ml <= 0 ? 'mv-due-overdue' : ml <= 500 ? 'mv-due-urgent' : ml <= 1500 ? 'mv-due-warn' : 'mv-due-ok';
+        const dueCls = ml <= 0 ? 'mv-due-overdue' : ml <= 500 ? 'mv-due-urgent' : ml <= 750 ? 'mv-due-warn' : 'mv-due-ok';
         const dueLabel = ml <= 0
           ? `Overdue by ${Math.abs(ml).toLocaleString()} mi`
           : `Due in ${ml.toLocaleString()} mi`;
@@ -11916,6 +11955,42 @@ let _woCountByVehicle = {};        // vehicleId → ALL open WO count (for red b
 let _woUrgentCountByVehicle = {};  // vehicleId → non-monitor WO count (blocks Fleet Ready)
 let _woGroupByLocation = false;    // toggle: group by vehicle home location vs priority
 
+function _isInspectionFailureTask(item) {
+  if (item.inspectionFailure === true) return true;
+  if (item.sourceType !== 'inspection') return false;
+  return /^(turo inspection failed|inspection fail\s*[-—])/i.test(item.text || '');
+}
+
+window.filterWorkOrderCards = function() {
+  const container = $('work-orders-content');
+  if (!container) return;
+  const query = ($('work-orders-search')?.value || '').trim().toLowerCase();
+  const location = $('work-orders-location')?.value || 'all';
+  const cards = [...container.querySelectorAll('.wo-card-v2')];
+  let visibleCount = 0;
+  cards.forEach(card => {
+    const textMatch = !query || (card.dataset.woSearch || '').includes(query);
+    const locationMatch = location === 'all' || card.dataset.woLocation === location;
+    card.style.display = textMatch && locationMatch ? '' : 'none';
+    if (textMatch && locationMatch) visibleCount++;
+  });
+  container.querySelectorAll('.wo-section-group, .wo-location-group').forEach(group => {
+    const groupCards = [...group.querySelectorAll('.wo-card-v2')];
+    if (groupCards.length) group.style.display = groupCards.some(card => card.style.display !== 'none') ? '' : 'none';
+  });
+  let empty = container.querySelector('.wo-search-empty');
+  if (cards.length && visibleCount === 0) {
+    if (!empty) {
+      empty = document.createElement('div');
+      empty.className = 'wo-search-empty';
+      empty.textContent = 'No work orders match these filters.';
+      container.appendChild(empty);
+    }
+  } else if (empty) {
+    empty.remove();
+  }
+};
+
 // ================================================================
 // VEHICLE PAGE — ACTIVE ISSUES STRIP
 // ================================================================
@@ -12067,25 +12142,128 @@ async function _loadWorkOrders() {
   container.innerHTML = '<p class="hint" style="padding:24px;text-align:center;">Loading…</p>';
   const today = todayDateString();
   try {
-    const snap = await db.collection('vehicleNotes')
-      .where('workOrder', '==', true)
-      .where('done', '==', false)
-      .limit(300)
-      .get();
+    const [snap, inspectionSnap] = await Promise.all([
+      db.collection('vehicleNotes')
+        .where('workOrder', '==', true)
+        .where('done', '==', false)
+        .limit(300)
+        .get(),
+      db.collection('vehicleNotes')
+        .where('sourceType', '==', 'inspection')
+        .limit(500)
+        .get(),
+    ]);
+    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const existingIds = new Set(items.map(item => item.id));
+    const legacyInspectionItems = [
+      ...cachedTaskItems,
+      ...inspectionSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })),
+    ];
+    legacyInspectionItems.filter(item => _isInspectionFailureTask(item) && !item.done && !existingIds.has(item.id)).forEach(item => {
+      existingIds.add(item.id);
+      items.push({
+        ...item,
+        workOrder: true,
+        inspectionFailure: true,
+        legacyInspectionTask: true,
+        repairPriority: item.repairPriority || 'high',
+        repairStatus: item.repairStatus || 'open',
+        repairCategoryLabel: item.repairCategoryLabel || 'Turo inspection',
+      });
+    });
 
-    if (snap.empty) {
+    let oilHistoryLoaded = true;
+    const oilByVehicle = {};
+    const fleetIds = vehiclesCache.map(vehicle => vehicle.id).filter(Boolean);
+    try {
+      for (let offset = 0; offset < fleetIds.length; offset += 10) {
+        const vehicleIds = fleetIds.slice(offset, offset + 10);
+        const oilSnap = await db.collection('maintenance').where('vehicleId', 'in', vehicleIds).get();
+        oilSnap.forEach(doc => {
+          const record = doc.data();
+          if (!_isOilService(record.serviceType || '') || !record.vehicleId) return;
+          const existing = oilByVehicle[record.vehicleId];
+          if (!existing || (record.date || '') > (existing.date || '')) {
+            oilByVehicle[record.vehicleId] = { id: doc.id, ...record };
+          }
+        });
+      }
+    } catch (oilError) {
+      oilHistoryLoaded = false;
+      console.warn('Could not load oil history for work orders:', oilError);
+    }
+
+    if (oilHistoryLoaded) {
+      vehiclesCache.filter(vehicle => !vehicle.excluded).forEach(vehicle => {
+        const oilRecord = oilByVehicle[vehicle.id];
+        const missingOilHistory = !oilRecord?.mileage;
+        const missingCurrentMileage = !!oilRecord?.mileage && !vehicle.mileage;
+        if (!missingOilHistory && !missingCurrentMileage) return;
+        items.push({
+          id: `oil-history-missing-${vehicle.id}`,
+          vehicleId: vehicle.id,
+          plate: vehicle.plate || '',
+          text: missingOilHistory
+            ? 'No oil service mileage on record — verify service history or log an oil change'
+            : 'Current vehicle mileage missing — update odometer to verify oil interval',
+          sourceType: 'maintenance',
+          maintenanceService: 'Oil Change',
+          syntheticOilMissing: missingOilHistory,
+          syntheticCurrentMileageMissing: missingCurrentMileage,
+          workOrder: true,
+          done: false,
+          urgent: false,
+          repairPriority: 'critical',
+          repairStatus: 'open',
+          repairCategoryLabel: 'Oil history missing',
+          createdAt: new Date(),
+        });
+      });
+    }
+
+    const locationSelect = $('work-orders-location');
+    if (locationSelect && locationSelect.options.length <= 1) {
+      [...new Set(vehiclesCache.map(vehicle => vehicle.homeLocation || 'No Location Set'))].sort().forEach(location => {
+        const option = document.createElement('option');
+        option.value = location;
+        option.textContent = location;
+        locationSelect.appendChild(option);
+      });
+    }
+    if (items.length === 0) {
       container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No open work orders! Use "+ Log Issue" to record a problem.</p></div>';
       return;
     }
-
-    const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     // Filter out snoozed items (snoozedUntil set and in the future)
     const maintenanceHorizon = new Date();
     maintenanceHorizon.setDate(maintenanceHorizon.getDate() + 60);
     const maintenanceHorizonDate = maintenanceHorizon.toISOString().slice(0, 10);
-    const activeItems = items.filter(i => {
+    const normalizedItems = items.map(item => {
+      if (!item.autoCreated || item.sourceType !== 'maintenance' || !item.intervalType || !_isOilService(item.maintenanceService || item.text || '')) return item;
+      const latestOil = oilByVehicle[item.vehicleId];
+      if (!latestOil?.mileage) return { ...item, suppressFromMaintenanceView: true };
+      const nextDueMileage = latestOil.mileage + 6000;
+      return {
+        ...item,
+        intervalMiles: 6000,
+        nextDueMileage,
+        maintenanceRecordId: latestOil.id,
+        text: `🛢️ ${item.maintenanceService || 'Oil Change'} due at ${nextDueMileage.toLocaleString()} mi (every 6,000 mi)`,
+      };
+    });
+    const activeItems = normalizedItems.filter(i => {
+      if (i.suppressFromMaintenanceView) return false;
       if (i.snoozedUntil && i.snoozedUntil > today) return false;
-      if (!i.autoCreated || i.sourceType !== 'maintenance' || i.repairPriority !== 'monitor') return true;
+      const isMaintenanceReminder = i.autoCreated && i.sourceType === 'maintenance';
+      const isOilReminder = isMaintenanceReminder && _isOilService(i.maintenanceService || i.text || '');
+      if (isOilReminder) {
+        if (_isOilOnlyService(i.maintenanceService || '') && i.intervalType === 'time') return false;
+        if (i.nextDueMileage) {
+          const vehicle = vehiclesCache.find(v => v.id === i.vehicleId);
+          if (vehicle?.mileage && i.nextDueMileage - vehicle.mileage > 750) return false;
+        }
+      }
+      if (!isMaintenanceReminder || i.repairPriority !== 'monitor' || isOilReminder) return true;
       if (i.dueDate && i.dueDate > maintenanceHorizonDate) return false;
       if (i.intervalType === 'mileage' && i.nextDueMileage) {
         const vehicle = vehiclesCache.find(v => v.id === i.vehicleId);
@@ -12146,28 +12324,12 @@ async function _loadWorkOrders() {
       })) compDueSet.add(v.id);
     });
 
-    // Extra Need Action: vehicles with NO oil change on record
-    let noOilCount = 0;
-    try {
-      const allVIds = vehiclesCache.map(v => v.id).filter(Boolean);
-      const oilSet = new Set();
-      for (let i = 0; i < allVIds.length; i += 10) {
-        const chunk = allVIds.slice(i, i + 10);
-        const oilSnap = await db.collection('maintenance').where('vehicleId', 'in', chunk).get();
-        oilSnap.forEach(doc => {
-          if ((doc.data().serviceType || '').toLowerCase().includes('oil'))
-            oilSet.add(doc.data().vehicleId);
-        });
-      }
-      noOilCount = allVIds.filter(id => !oilSet.has(id)).length;
-    } catch(e) { console.warn('Oil check error:', e); }
-
     // Fleet Ready: home + clean + no critical/high/standard open issues
     // Monitor-only vehicles (oil reminders, upcoming services) still count as ready
     const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woUrgentCountByVehicle[v.id] > 0));
     const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
     const setFH = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    setFH('fh-num-action',  fhAction.length + compDueSet.size + noOilCount);
+    setFH('fh-num-action',  fhAction.length + compDueSet.size);
     setFH('fh-num-shop',    fhShop.length);
     setFH('fh-num-parts',   fhParts.length);
     setFH('fh-num-monitor', fhMonitor.length);
@@ -12230,6 +12392,29 @@ async function _loadWorkOrders() {
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
+      const homeLocation = v?.homeLocation || 'No Location Set';
+      const searchText = [v?.plate, v?.make, v?.model, item.text, item.repairCategoryLabel, homeLocation].filter(Boolean).join(' ').toLowerCase();
+      const searchAttrs = `data-wo-plate="${escapeHtml(v?.plate || '')}" data-wo-location="${escapeHtml(homeLocation)}" data-wo-search="${escapeHtml(searchText)}"`;
+      if (item.syntheticOilMissing || item.syntheticCurrentMileageMissing) {
+        const issueText = item.syntheticOilMissing ? 'No oil service mileage on record' : 'Current vehicle mileage missing';
+        const detailText = item.syntheticOilMissing
+          ? 'Verify service history or complete an oil change before relying on this vehicle.'
+          : 'Update the odometer so the next 6,000-mile oil service can be calculated.';
+        const actionButton = item.syntheticOilMissing
+          ? `<button class="wo-primary-btn" onclick="quickLogMaintenanceService('${v.id}','oil')">🛢 Log Oil Service</button>`
+          : `<button class="wo-primary-btn" onclick="quickUpdateVehicleMileage('${v.id}')">📍 Update Mileage</button>`;
+        return `<div class="wo-card-v2 wo-card-oil-missing" ${searchAttrs}>
+          <div class="wo-card-v2-main">
+            <div class="wo-v2-plate">🚨 ${escapeHtml(v?.plate || 'Unknown')}</div>
+            <div class="wo-card-v2-body">
+              <div class="wo-v2-issue">${issueText}</div>
+              <div class="wo-due-compact">${detailText}</div>
+              <div class="wo-v2-details"><span class="wo-detail-chip">📍 ${escapeHtml(homeLocation)}</span><span class="wo-detail-chip">${v?.mileage ? v.mileage.toLocaleString() + ' mi' : 'Mileage unknown'}</span><span class="wo-rent wo-rent-no">🔴 Critical — verify before rental</span></div>
+            </div>
+          </div>
+          <div class="wo-card-v2-actions">${actionButton}<button class="wo-secondary-btn" onclick="closeMaintenanceDash();setTimeout(()=>openVehiclePage('${v.id}'),80)">📋 Vehicle Record</button></div>
+        </div>`;
+      }
       const p = WO_PRIORITY[item.repairPriority] || WO_PRIORITY.standard;
       const rs = item.repairStatus || 'open';
       const st = WO_STATUS[rs] || WO_STATUS.open;
@@ -12520,12 +12705,13 @@ async function _loadWorkOrders() {
         ? `<button class="wo-claim-btn" onclick="event.stopPropagation();window._claimWorkOrder('${item.id}')">\ud83d\ude4b\u200d Claim It</button>`
         : '';
       const milesChip = v && v.mileage ? `<span class="wo-detail-chip">🛣️ ${v.mileage.toLocaleString()} mi</span>` : '';
+      const locationChip = `<span class="wo-detail-chip">📍 ${escapeHtml(homeLocation)}</span>`;
       const schedChip = item.scheduledDate
         ? `<span class="wo-detail-chip ${item.scheduledDate < today ? 'wo-chip-missed' : 'wo-chip-sched'}">📅 ${new Date(item.scheduledDate+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})}</span>`
         : '';
       const dueLine = maintDueLine ? `<div class="wo-due-compact">${maintDueLine}</div>` : '';
 
-      return `<div class="wo-card-v2${isMyTask?' wo-card-my-task':''}" style="border-left:4px solid ${cardBorderColor};" data-id="${item.id}">
+      return `<div class="wo-card-v2${isMyTask?' wo-card-my-task':''}" style="border-left:4px solid ${cardBorderColor};" data-id="${item.id}" ${searchAttrs}>
         <div class="wo-card-v2-main">
           ${thumbHtml}
           <div class="wo-card-v2-body">
@@ -12538,7 +12724,7 @@ async function _loadWorkOrders() {
             <div class="wo-v2-issue">${escapeHtml(item.text)}</div>
             ${dueLine}
             <div class="wo-v2-pipeline">${pipelineHtml}</div>
-            <div class="wo-v2-details">${assigneeChip}${claimBtn}${milesChip}${schedChip}${tripStatusChip}</div>
+            <div class="wo-v2-details">${assigneeChip}${claimBtn}${locationChip}${milesChip}${schedChip}${tripStatusChip}</div>
           </div>
         </div>
         <div class="wo-card-v2-actions">
@@ -12672,6 +12858,7 @@ async function _loadWorkOrders() {
       }
     } // end else (priority view)
     container.innerHTML = html;
+    filterWorkOrderCards();
   } catch(e) {
     container.innerHTML = '<p class="hint" style="color:#ef4444;padding:16px;">Failed to load work orders.</p>';
     console.error('[WorkOrders]', e);
@@ -14253,10 +14440,13 @@ async function _loadMaintByLocation() {
       const flags = [];
       let priority = 0;
 
-      if (!oil) {
+      if (!oil?.mileage) {
         priority = 2;
-        flags.push({ level: 'critical', msg: '⚠️ No oil change on record' });
-      } else if (oil.mileage && v.mileage) {
+        flags.push({ level: 'critical', msg: '⚠️ No usable oil service mileage on record' });
+      } else if (!v.mileage) {
+        priority = 2;
+        flags.push({ level: 'critical', msg: '🛢️ Current vehicle mileage missing' });
+      } else {
         const milesLeft = oil.mileage + 6000 - v.mileage;
         if (milesLeft <= 0) { priority = 2; flags.push({ level: 'critical', msg: `⛽ Oil overdue by ${Math.abs(milesLeft).toLocaleString()} mi` }); }
         else if (milesLeft <= 1500) { priority = Math.max(priority, 1); flags.push({ level: 'warn', msg: `⛽ Oil due in ${milesLeft.toLocaleString()} mi` }); }
@@ -15653,6 +15843,7 @@ window.deleteMaintenanceRecord = async function(docId) {
       loadMaintenanceHistory(selectedVehicle.id);
       updateRecommendedServices(selectedVehicle.id);
     }
+    if (typeof _loadWorkOrders === 'function') _loadWorkOrders();
   } catch (err) {
     console.error('Delete maintenance error:', err);
     toast('Failed to delete record.', 'error');
@@ -15955,6 +16146,7 @@ $('edit-maint-form').addEventListener('submit', async (e) => {
     if (selectedVehicle) {
       loadMaintenanceHistory(selectedVehicle.id);
       updateRecommendedServices(selectedVehicle.id);
+      if (typeof _loadWorkOrders === 'function') _loadWorkOrders();
     }
   } catch(err) {
     console.error('Edit maintenance error:', err);
@@ -16748,6 +16940,9 @@ async function loadDashboardFollowUps() {
         let data = doc.data();
         if (data.deleted) return; // skip soft-deleted
         if (isCoachingTaskHiddenFromMe(data)) return;
+        if (_isInspectionFailureTask(data)) {
+          data = { ...data, sourceType: 'maintenance', taskStatus: 'maintenance', urgent: false, inspectionFailure: true, workOrder: true };
+        }
         if (data.sourceType === 'maintenance' && data.autoCreated) {
           if (_isOilOnlyService(data.maintenanceService || '') && data.intervalType === 'time') return;
           const oilRecord = latestOilByVehicle[data.vehicleId];
@@ -16790,11 +16985,11 @@ async function loadDashboardFollowUps() {
 
     // Update badge count (active tasks)
     // Only count: urgent tasks + compliance items (due ≤15d — they're only created at that threshold)
-    const badgeCount = items.filter(i => i.urgent || i.sourceType === 'compliance').length;
+    const badgeCount = items.filter(i => (i.urgent && !i.inspectionFailure) || i.sourceType === 'compliance').length;
     if (badgeEl) {
       badgeEl.textContent = badgeCount;
       badgeEl.classList.toggle('count-zero', badgeCount === 0);
-      const hasUrgent = items.some(i => i.urgent);
+      const hasUrgent = items.some(i => i.urgent && !i.inspectionFailure);
       badgeEl.classList.toggle('has-urgent', hasUrgent);
     }
     // Update ops-hub widget badge
@@ -16802,7 +16997,7 @@ async function loadDashboardFollowUps() {
     if (opsHubBadge) {
       opsHubBadge.textContent = badgeCount;
       opsHubBadge.style.display = badgeCount > 0 ? '' : 'none';
-      opsHubBadge.classList.toggle('has-urgent', items.some(i => i.urgent));
+      opsHubBadge.classList.toggle('has-urgent', items.some(i => i.urgent && !i.inspectionFailure));
     }
     if (tasksBtn) tasksBtn.style.display = '';
 
@@ -16815,7 +17010,7 @@ async function loadDashboardFollowUps() {
     if (badgeVehicle) {
       badgeVehicle.textContent = badgeCount;
       badgeVehicle.classList.toggle('count-zero', badgeCount === 0);
-      badgeVehicle.classList.toggle('has-urgent', items.some(i => i.urgent));
+      badgeVehicle.classList.toggle('has-urgent', items.some(i => i.urgent && !i.inspectionFailure));
     }
     if (tasksBtnVehicle) tasksBtnVehicle.style.display = '';
 
@@ -18146,7 +18341,7 @@ function renderUrgentBanner(items) {
   const today = todayDateString();
   // Compliance items belong to the Fleet Compliance widget only — never show here
   // mileage_decrease tasks: separate review panel, not in main urgent banner
-  const urgentItems = items.filter(i => i.urgent && i.sourceType !== 'compliance' && i.sourceType !== 'mileage_decrease');
+  const urgentItems = items.filter(i => i.urgent && !i.inspectionFailure && i.sourceType !== 'compliance' && i.sourceType !== 'mileage_decrease');
   const mileageAlerts = items.filter(i => i.sourceType === 'mileage_decrease' && !i.done);
 
   if (urgentItems.length === 0 && mileageAlerts.length === 0) {
@@ -18852,7 +19047,7 @@ function updateNotifFab(items, badgeCount) {
   // Show FAB whenever logged in
   fab.style.display = 'flex';
 
-  const urgentItems = items.filter(i => i.urgent && !i.done);
+  const urgentItems = items.filter(i => i.urgent && !i.done && !i.inspectionFailure);
   const scheduledItems = items.filter(i => !i.urgent && i.isFollowUp && !i.done);
   const hasUrgent = urgentItems.length > 0;
 

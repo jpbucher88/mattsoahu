@@ -2318,6 +2318,9 @@
               <p style="margin:2px 0 0;font-size:0.78rem;color:#9ca3af;">Assign due dates below to spread inspections across the month.</p>
             </div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <select id="insp-fleet-location-filter" class="form-select" style="width:auto;min-width:150px;" onchange="setInspFleetLocationFilter(this.value)">
+                <option value="all">All locations</option>
+              </select>
               <button class="btn btn-sm btn-outline" onclick="spreadInspectionsAcrossMonth()" title="Auto-assign due dates so no more than 2 inspections come due on the same day">📅 Auto-Spread</button>
               <button class="btn btn-sm btn-outline" onclick="loadInspectionsTab()">↻ Refresh</button>
             </div>
@@ -2372,6 +2375,12 @@
               <button class="btn btn-sm btn-primary" onclick="openNewWorkOrder()">+ Log Issue</button>
               <button class="btn btn-sm btn-outline" onclick="_loadWorkOrders()">↻ Refresh</button>
             </div>
+          </div>
+          <div class="wo-search-bar">
+            <input id="work-orders-search" type="search" placeholder="Search plate, issue, or service…" oninput="filterWorkOrderCards()" aria-label="Search work orders">
+            <select id="work-orders-location" onchange="filterWorkOrderCards()" aria-label="Filter work orders by location">
+              <option value="all">All locations</option>
+            </select>
           </div>
           <div id="work-orders-content"><p class="hint" style="padding:24px;text-align:center;">Loading…</p></div>
         </div>
