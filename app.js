@@ -3477,7 +3477,7 @@ function showDamageCheckModal(vid, plate) {
             // Auto-create Turo 24h claim task so it surfaces in homepage urgent banner
             if (isTuro) {
               await db.collection('generalNotes').add({
-                text: '🛡️ FILE TURO CLAIM: ' + title + (plate ? ' [' + plate + ']' : ''),
+                text: '🧾 Invoice Guest: ' + title + (plate ? ' [' + plate + ']' : ''),
                 isFollowUp: true, done: false,
                 urgent: true, taskStatus: 'urgent',
                 dueDate: todayDateString(),
@@ -12133,7 +12133,7 @@ async function _migrateLegacyInspectionViolations(backupConfirmed) {
       }
       if (TURO_ELIGIBLE_INCIDENT_TYPES.includes(incidentType) && !claimSnap.exists) {
         batch.set(claimRef, {
-          text: `${deadlineDate.getTime() > Date.now() ? '🛡️ FILE TURO CLAIM' : '🔎 REVIEW LEGACY VIOLATION'}: ${title}${note.plate ? ' [' + note.plate + ']' : ''}`,
+          text: `${deadlineDate.getTime() > Date.now() ? '🧾 Invoice Guest' : '🔎 REVIEW LEGACY VIOLATION'}: ${title}${note.plate ? ' [' + note.plate + ']' : ''}`,
           isFollowUp: true,
           done: false,
           urgent: true,
@@ -17216,6 +17216,9 @@ async function loadDashboardFollowUps() {
       snap.forEach(doc => {
         if (seen.has(doc.id)) return;
         let data = doc.data();
+        if (data.sourceType === 'incident_turo' && /FILE TURO CLAIM:/i.test(data.text || '')) {
+          data = { ...data, text: String(data.text).replace(/.*?FILE TURO CLAIM:/i, '🧾 Invoice Guest:') };
+        }
         if (data.deleted) return; // skip soft-deleted
         if (isCoachingTaskHiddenFromMe(data)) return;
         if (_legacyInspectionViolationType(data)) return;
@@ -17253,10 +17256,14 @@ async function loadDashboardFollowUps() {
     const seenDone = new Set();
     function addDoneItems(snap, type, collection) {
       snap.forEach(doc => {
-        if (isCoachingTaskHiddenFromMe(doc.data())) return;
+        let data = doc.data();
+        if (data.sourceType === 'incident_turo' && /FILE TURO CLAIM:/i.test(data.text || '')) {
+          data = { ...data, text: String(data.text).replace(/.*?FILE TURO CLAIM:/i, '🧾 Invoice Guest:') };
+        }
+        if (isCoachingTaskHiddenFromMe(data)) return;
         if (seenDone.has(doc.id)) return;
         seenDone.add(doc.id);
-        completedItems.push({ id: doc.id, collection, type, ...doc.data() });
+        completedItems.push({ id: doc.id, collection, type, ...data });
       });
     }
     addDoneItems(vDoneSnap, 'vehicle', 'vehicleNotes');
@@ -18705,6 +18712,12 @@ function renderUrgentBanner(items) {
     const incidentBtnHTML = item.incidentDocId
       ? `<button class="btn btn-sm btn-outline urgent-inc-btn" onclick="event.stopPropagation(); openIncidentEditFromDashboard('${item.incidentDocId}', false)" title="View incident report">📋 View Incident</button>`
       : '';
+    const photoBtnHTML = item.incidentDocId
+      ? `<button class="btn btn-sm btn-outline urgent-add-photos-btn" onclick="event.stopPropagation(); openIncidentPhotoUpload('${item.incidentDocId}')" title="Add or review photos">📷 Add Photos</button>`
+      : '';
+    const displayText = item.sourceType === 'incident_turo'
+      ? String(item.text || '').replace(/.*?FILE TURO CLAIM:/i, '🧾 Invoice Guest:')
+      : item.text;
 
     // "Work Orders" shortcut — vehicle tasks route directly into the CRM pipeline
     const maintRouteBtn = (currentUserRole === 'admin' || currentUserRole === 'manager') && item.type === 'vehicle' && !item.workOrder
@@ -18714,12 +18727,13 @@ function renderUrgentBanner(items) {
     html += `
       <div class="urgent-banner-item" style="cursor:pointer;"${itemAttrs}>
         <div class="urgent-banner-info">
-          <div class="urgent-banner-text">${escapeHtml(item.text)}</div>
+          <div class="urgent-banner-text">${escapeHtml(displayText)}</div>
           <div class="urgent-banner-meta">${metaLabel} ${statusTag}</div>
           ${photosHTML}
         </div>
         <div class="urgent-banner-actions">
           ${incidentBtnHTML}
+          ${photoBtnHTML}
           ${reassignBtn}
           ${maintRouteBtn}
           ${doneBtn}
@@ -18742,6 +18756,22 @@ function renderUrgentBanner(items) {
     });
   });
 }
+
+window.openIncidentPhotoUpload = async function(incidentId) {
+  try {
+    const incidentSnap = await db.collection('incidents').doc(incidentId).get();
+    if (!incidentSnap.exists) { toast('Incident not found.', 'warning'); return; }
+    const incident = incidentSnap.data();
+    if (incident.relatedExpenseId) {
+      openChargeSettlement(incident.relatedExpenseId, null, null, true);
+      return;
+    }
+    openIncidentEditFromDashboard(incidentId, false);
+  } catch (e) {
+    console.error('Could not open incident photos:', e);
+    toast('Could not open photos for this incident.', 'error');
+  }
+};
 
 // ================================================================
 // URGENT ITEM → WORK ORDERS (unified CRM flow)
@@ -23178,7 +23208,7 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
   const claimTaskRef = db.collection('generalNotes').doc(`turo_incident_${incidentRef.id}`);
   const claimTaskSnap = await claimTaskRef.get();
   const claimTaskData = {
-      text: `🛡️ FILE TURO CLAIM: ${incidentTitle}${plate ? ' [' + plate + ']' : ''}`,
+      text: `🧾 Invoice Guest: ${incidentTitle}${plate ? ' [' + plate + ']' : ''}`,
       isFollowUp: true,
       done: false,
       urgent: true,
@@ -23378,9 +23408,9 @@ function _buildTuroCountdown(d, nowMs) {
     const hoursAgo = Math.abs(hoursLeft);
     return `<span class="turo-countdown turo-cd-expired">⚠️ Turo window expired ${hoursAgo < 24 ? Math.floor(hoursAgo)+'h ago' : Math.floor(hoursAgo/24)+'d ago'}</span>`;
   }
-  if (hoursLeft < 4) return `<span class="turo-countdown turo-cd-critical">🔴 ${Math.floor(hoursLeft)}h ${Math.floor((hoursLeft%1)*60)}m — FILE TURO NOW</span>`;
-  if (hoursLeft < 12) return `<span class="turo-countdown turo-cd-warning">🟡 ${Math.floor(hoursLeft)}h left to file Turo claim</span>`;
-  return `<span class="turo-countdown turo-cd-ok">🟢 ${Math.floor(hoursLeft)}h left to file Turo claim</span>`;
+  if (hoursLeft < 4) return `<span class="turo-countdown turo-cd-critical">🔴 ${Math.floor(hoursLeft)}h ${Math.floor((hoursLeft%1)*60)}m — INVOICE GUEST NOW</span>`;
+  if (hoursLeft < 12) return `<span class="turo-countdown turo-cd-warning">🟡 ${Math.floor(hoursLeft)}h left to invoice guest through Turo</span>`;
+  return `<span class="turo-countdown turo-cd-ok">🟢 ${Math.floor(hoursLeft)}h left to invoice guest through Turo</span>`;
 }
 
 // Turo Claims banner — shows at top of incidents tab for open Turo-eligible incidents
@@ -23923,7 +23953,7 @@ window.saveIncident = async function() {
       // Auto-create urgent Turo claim follow-up task on the dashboard
       if (isTuroEligible) {
         try {
-          const turoTaskText = `🛡️ FILE TURO CLAIM: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
+          const turoTaskText = `🧾 Invoice Guest: ${title}${vehiclePlate ? ' [' + vehiclePlate + ']' : ''}`;
           await db.collection('generalNotes').add({
             text: turoTaskText,
             isFollowUp: true,
@@ -29694,7 +29724,7 @@ async function checkMyCoachings() {
   } catch (e) { console.warn('Coaching banner:', e); }
 }
 
-window.openChargeSettlement = async function(expenseId, noteId, noteCol) {
+window.openChargeSettlement = async function(expenseId, noteId, noteCol, photosOnly) {
   if (!expenseId) return;
   let exp;
   try {
@@ -29720,7 +29750,8 @@ window.openChargeSettlement = async function(expenseId, noteId, noteCol) {
     + (kind === 'parking' ? '🅿️ Parking charge ' : '⛽ Fuel charge ') + escapeHtml(exp.vehiclePlate || '')
     + '</span><button class="dm-topbar-close" id="chg-x">✕</button></div>'
     + '<div class="dm-body" style="padding:14px 16px;display:flex;flex-direction:column;gap:8px;">'
-    + '<p class="hint" style="margin:0;">Match this to the company card by plate. ' + (hourLabel ? '<strong>' + hourLabel + '</strong>.' : 'Close within 24 hours.') + '</p>'
+    + '<p class="hint" style="margin:0;">' + (photosOnly ? 'Add or review the required photos. Invoice details are unchanged.' : 'Match this to the company card by plate. ' + (hourLabel ? '<strong>' + hourLabel + '</strong>.' : 'Close within 24 hours.')) + '</p>'
+    + '<div id="chg-billing-fields">'
     + '<label class="coach-label">Amount ($)</label>'
     + '<input type="number" id="chg-amt" class="form-select" min="0" step="0.01" value="' + (exp.amount || '') + '">'
     + '<div class="charge-who-row">'
@@ -29731,12 +29762,14 @@ window.openChargeSettlement = async function(expenseId, noteId, noteCol) {
     + '<input type="text" id="chg-card" class="form-select" maxlength="4" inputmode="numeric" value="' + escapeHtml(exp.cardLast4 || '') + '" placeholder="Matches the card statement">'
     + '<label class="coach-label">Note</label>'
     + '<input type="text" id="chg-desc" class="form-select" maxlength="200" value="' + escapeHtml(exp.description || '') + '">'
+    + '</div>'
     + '<label class="coach-label">Required photos</label><div class="charge-slot-row" id="chg-existing-slots"></div>'
     + '<label class="charge-bulk-upload">📷 Choose all photos<input type="file" id="chg-photo-input" accept="image/*" multiple style="display:none;"></label>'
     + '<div class="charge-photo-assignments" id="chg-photo-assignments"></div></div>'
     + '<div class="dm-footer"><button class="dm-btn-cancel" id="chg-cancel">Cancel</button>'
-    + '<button class="dm-btn-go" id="chg-save" style="background:#b45309;">Save charge</button></div></div>';
+    + '<button class="dm-btn-go" id="chg-save" style="background:#b45309;">' + (photosOnly ? 'Save photos' : 'Save charge') + '</button></div></div>';
   document.body.appendChild(overlay);
+  if (photosOnly) overlay.querySelector('#chg-billing-fields').style.display = 'none';
   const slotFiles = {};
   const existingSlotBox = overlay.querySelector('#chg-existing-slots');
   slots.forEach(s => {
