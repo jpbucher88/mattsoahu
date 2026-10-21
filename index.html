@@ -3278,6 +3278,7 @@
               <div class="inc-filter-row">
                 <button class="inc-filter-btn active" data-filter="all" onclick="setIncidentFilter('all')">All</button>
                 <button class="inc-filter-btn" data-filter="open" onclick="setIncidentFilter('open')">🔴 Open</button>
+                <button id="incident-violations-filter" class="inc-filter-btn inc-violation-filter-btn" data-filter="violations" onclick="setIncidentFilter('violations')">🚨 Violations <span id="incident-violation-count" class="inc-violation-count">0</span></button>
                 <button class="inc-filter-btn" data-filter="turo" onclick="setIncidentFilter('turo')">🛡️ Turo Claims</button>
               </div>
               <div id="incidents-dashboard-list" class="incidents-list"></div>

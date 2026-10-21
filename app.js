@@ -12069,10 +12069,19 @@ async function _migrateLegacyInspectionViolations(backupConfirmed) {
           sourceType: 'inspection',
           sourceInspectionNoteId: sourceDoc.id,
           inspectionKey: note.inspectionKey || (incidentType === 'refuel' ? 'refueled' : 'clean'),
+          turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
+          turoInvoiceSent: false,
+          ...(note.expenseId ? { relatedExpenseId: note.expenseId } : {}),
           reportedBy: note.createdBy || currentUser.uid,
           reportedByName: note.createdByName || currentUserDisplayName || currentUser.email,
           turoDeadlineAt: deadline,
           createdAt: note.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      } else {
+        batch.update(incidentRef, {
+          turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
+          ...(note.expenseId ? { relatedExpenseId: note.expenseId } : {}),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
       }
@@ -23053,6 +23062,10 @@ function startIncidentListener() {
 // Turo-eligible incident types (24-hour claim window)
 const TURO_ELIGIBLE_INCIDENT_TYPES = ['damage', 'accident', 'cleaning', 'smoking', 'refuel'];
 
+function _incidentRequiresTuroInvoice(type) {
+  return ['cleaning', 'refuel', 'smoking'].includes(type);
+}
+
 async function _createInspectionViolationIncident({ vehicleId, plate, item, notes, expenseId }) {
   const incidentType = item.incidentType;
   const incidentTitle = `${item.label}${notes ? ' — ' + notes : ''}`;
@@ -23071,6 +23084,7 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       title: incidentTitle,
       description: notes || `Inspection fail: ${item.label}`,
       turoDeadlineAt: deadline,
+      turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
       ...(expenseId ? { relatedExpenseId: expenseId } : {}),
     });
   } else {
@@ -23090,6 +23104,8 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       photoUrls: [],
       sourceType: 'inspection',
       inspectionKey: item.key,
+      turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
+      turoInvoiceSent: false,
       reportedBy: currentUser.uid,
       reportedByName: currentUser.displayName || currentUser.email,
       turoDeadlineAt: deadline,
@@ -23122,6 +23138,62 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
 let _cachedIncidentDocs = [];
 let _currentIncidentFilter = 'all';
 
+function _isViolationIncident(data) {
+  return ['cleaning', 'refuel', 'smoking', 'citation'].includes(data.type);
+}
+
+function _needsViolationAction(data) {
+  const invoiceRequired = data.turoInvoiceRequired === true || _incidentRequiresTuroInvoice(data.type);
+  return _isViolationIncident(data) && (data.status !== 'resolved' || (invoiceRequired && data.turoInvoiceSent !== true));
+}
+
+function _updateViolationIncidentBadge(docs) {
+  const button = $('incident-violations-filter');
+  const count = $('incident-violation-count');
+  const openCount = docs.filter(doc => _needsViolationAction(doc.data())).length;
+  if (count) count.textContent = openCount > 99 ? '99+' : String(openCount);
+  if (button) button.classList.toggle('has-open', openCount > 0);
+}
+
+window.markIncidentTuroInvoiceSent = async function(incidentId) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  const reference = (window.prompt('Enter the Turo invoice or claim reference:') || '').trim();
+  if (!reference) { toast('Enter a Turo invoice/claim reference before marking it sent.', 'warning'); return; }
+  try {
+    const incidentRef = db.collection('incidents').doc(incidentId);
+    const incidentSnap = await incidentRef.get();
+    if (!incidentSnap.exists) { toast('Incident not found.', 'error'); return; }
+    const incident = incidentSnap.data();
+    const sentAt = firebase.firestore.FieldValue.serverTimestamp();
+    if (incident.relatedExpenseId) {
+      const expenseRef = db.collection('expenses').doc(incident.relatedExpenseId);
+      const expenseSnap = await expenseRef.get();
+      if (!expenseSnap.exists) { toast('Linked expense was not found. Invoice status was not changed.', 'error'); return; }
+      await expenseRef.update({
+        turoInvoiceSent: true,
+        turoInvoiceReference: reference,
+        turoInvoiceSentAt: sentAt,
+        turoInvoiceSentBy: currentUser.uid,
+        turoInvoiceSentByName: currentUserDisplayName || currentUser.email,
+      });
+    }
+    await incidentRef.update({
+      turoInvoiceRequired: true,
+      turoInvoiceSent: true,
+      turoInvoiceReference: reference,
+      turoInvoiceSentAt: sentAt,
+      turoInvoiceSentBy: currentUser.uid,
+      turoInvoiceSentByName: currentUserDisplayName || currentUser.email,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    toast('Turo invoice marked sent and linked to the Incident.', 'success');
+    await loadAllOpenIncidentsDashboard();
+  } catch (error) {
+    console.error('Mark Turo invoice sent error:', error);
+    toast('Could not update Turo invoice status.', 'error');
+  }
+};
+
 window.setIncidentFilter = function(filter) {
   _currentIncidentFilter = filter;
   document.querySelectorAll('.inc-filter-btn').forEach(b => {
@@ -23136,6 +23208,8 @@ function _renderFilteredIncidentList(docs) {
     filtered = docs.filter(d => d.data().status !== 'resolved');
   } else if (_currentIncidentFilter === 'turo') {
     filtered = docs.filter(d => TURO_ELIGIBLE_INCIDENT_TYPES.includes(d.data().type));
+  } else if (_currentIncidentFilter === 'violations') {
+    filtered = docs.filter(d => _needsViolationAction(d.data()));
   }
   // Reuse existing render logic inline
   const list = $('incidents-dashboard-list');
@@ -23182,6 +23256,13 @@ function _renderFilteredIncidentList(docs) {
       ${d.recoveryStatus && d.recoveryStatus !== 'na' ? `<span class="inc-rec-status inc-rec-status-${d.recoveryStatus}">${REC_STATUS_LABELS2[d.recoveryStatus]||d.recoveryStatus}</span>` : ''}
       ${d.recoveryNotes ? `<span class="inc-rec-tag">📝 ${escapeHtml(d.recoveryNotes)}</span>` : ''}
     </div>` : '';
+    const invoiceRequired = d.turoInvoiceRequired === true || ['cleaning', 'refuel', 'smoking'].includes(d.type);
+    const turoInvoiceHTML = invoiceRequired ? `<div class="inc-turo-invoice ${d.turoInvoiceSent ? 'inc-turo-invoice-sent' : 'inc-turo-invoice-pending'}">
+      <strong>${d.turoInvoiceSent ? '✅ Turo invoice sent' : '⚠️ Turo invoice not marked sent'}</strong>
+      ${d.turoInvoiceReference ? `<span>Ref: ${escapeHtml(d.turoInvoiceReference)}</span>` : ''}
+      ${d.relatedExpenseId ? `<button class="btn btn-sm btn-outline" onclick="openChargeSettlement('${d.relatedExpenseId}')">💵 View Expense</button>` : ''}
+      ${!d.turoInvoiceSent ? `<button class="btn btn-sm btn-primary" onclick="markIncidentTuroInvoiceSent('${doc.id}')">📨 Mark Invoice Sent</button>` : ''}
+    </div>` : '';
     const resolvedBlock = d.status === 'resolved' && d.resolution
       ? `<div class="inc-resolution"><span class="inc-res-label">✅ Resolution:</span> <span>${escapeHtml(d.resolution)}</span>${d.resolvedByName ? ` <span class="inc-res-by">— ${escapeHtml(d.resolvedByName)}</span>` : ''}</div>`
       : '';
@@ -23199,6 +23280,7 @@ function _renderFilteredIncidentList(docs) {
       ${citationHTML2}
       ${damageHTML2}
       ${recoveryHTML2}
+      ${turoInvoiceHTML}
       <div class="inc-reporter">Reported by: ${escapeHtml(d.reportedByName||'—')}</div>
       ${followUpHTML}${photosHTML}${resolvedBlock}
       <div class="inc-actions">
@@ -23322,6 +23404,7 @@ async function loadAllOpenIncidentsDashboard() {
       return bt - at;
     });
     _cachedIncidentDocs = docs;
+    _updateViolationIncidentBadge(docs);
     // Sync vehicle page incidents if open
     if (selectedVehicle) {
       const vid = selectedVehicle.id || selectedVehicle;
@@ -23754,6 +23837,7 @@ window.saveIncident = async function() {
         followUpDate: followUpDate || '',
         photoUrls: newPhotoUrls,
         ...(turoDeadlineAt ? { turoDeadlineAt } : {}),
+        ...(_incidentRequiresTuroInvoice(type) ? { turoInvoiceRequired: true, turoInvoiceSent: false } : {}),
         ...(citationData || {}),
         ...(damageData || {}),
         ...(recoveryData || {}),
