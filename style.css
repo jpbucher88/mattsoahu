@@ -1695,6 +1695,9 @@ body {
   border-color: #dc2626;
   color: #fff;
 }
+.insp-fail-note { margin-top: 8px; }
+.insp-fail-note label { display: block; margin-bottom: 4px; color: #991b1b; font-size: 0.75rem; font-weight: 700; }
+.insp-fail-note textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 7px 8px; border: 1px solid #fca5a5; border-radius: 6px; font: inherit; font-size: 0.82rem; }
 .insp-measurements {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2766,6 +2769,7 @@ body {
 .task-form-field { display: flex; flex-direction: column; gap: 4px; }
 .task-form-label { font-size: 0.78rem; font-weight: 600; color: #374151; }
 .task-form-select {
+.insp-vw-fail-note { margin-top: 3px; color: #991b1b; font-size: 0.78rem; }
   padding: 7px 10px;
   border: 1.5px solid #d1d5db;
   border-radius: 7px;
@@ -4224,9 +4228,11 @@ body {
 .insp-fleet-row.insp-fleet-overdue { background: #fef2f2; border-color: #fecaca; }
 .insp-fleet-row.insp-fleet-due-soon { background: #fffbeb; border-color: #fde68a; }
 .insp-fleet-row.insp-fleet-never { background: #f3f4f6; border-color: #d1d5db; }
+.insp-fleet-row.insp-fleet-repairs { border-left: 4px solid #dc2626; }
 .insp-fleet-main { flex: 1; min-width: 0; }
 .insp-fleet-plate { font-size: 0.95rem; margin-bottom: 3px; }
 .insp-fleet-meta { font-size: 0.78rem; color: #4b5563; }
+.insp-fleet-failures { margin-top: 4px; color: #991b1b; font-size: 0.78rem; }
 .insp-fleet-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; }
 @media (max-width: 640px) {
   .insp-fleet-row { flex-wrap: wrap; }

@@ -9827,6 +9827,8 @@ window.setAllInspStatus = function(status) {
   TURO_INSPECTION_ITEMS.forEach(item => {
     const el = grid.querySelector(`input[name="insp-${item.key}"][value="${status}"]`);
     if (el) el.checked = !!status;
+    const noteWrap = grid.querySelector(`[data-insp-fail-note="${item.key}"]`);
+    if (noteWrap) noteWrap.style.display = status === 'fail' ? '' : 'none';
     if (!status) {
       grid.querySelectorAll(`input[name="insp-${item.key}"]`).forEach(inp => inp.checked = false);
     }
@@ -9839,6 +9841,7 @@ function _renderInspItemsGrid(prefill) {
   const items = TURO_INSPECTION_ITEMS.map((item, idx) => {
     const num = idx + 1;
     const cur = prefill?.items?.[item.key] || '';
+    const failureNote = prefill?.items?.[`${item.key}_notes`] || '';
     const passChecked = cur === 'pass' ? 'checked' : '';
     const failChecked = cur === 'fail' ? 'checked' : '';
     const measurements = item.measurements
@@ -9856,6 +9859,10 @@ function _renderInspItemsGrid(prefill) {
         <div class="insp-toggle" role="radiogroup">
           <label class="insp-pass"><input type="radio" name="insp-${item.key}" value="pass" ${passChecked}><span>✓ PASS</span></label>
           <label class="insp-fail"><input type="radio" name="insp-${item.key}" value="fail" ${failChecked}><span>✕ FAIL</span></label>
+        </div>
+        <div class="insp-fail-note" data-insp-fail-note="${item.key}" style="display:${cur === 'fail' ? '' : 'none'};">
+          <label for="insp-${item.key}-notes">Why did this fail?</label>
+          <textarea id="insp-${item.key}-notes" name="insp-${item.key}-notes" maxlength="500" rows="2" placeholder="Describe the defect or measurement…">${escapeHtml(failureNote)}</textarea>
         </div>
         ${measurements}
       </div>`;
@@ -9909,7 +9916,14 @@ window.openBiMonthlyInspection = async function(vehicleId, existingId) {
   // Wire change → recompute
   if (grid && !grid.dataset.wired) {
     grid.dataset.wired = '1';
-    grid.addEventListener('change', _computeInspectionResult);
+    grid.addEventListener('change', event => {
+      if (event.target.matches('input[type="radio"]')) {
+        const itemKey = event.target.name.replace(/^insp-/, '');
+        const noteWrap = grid.querySelector(`[data-insp-fail-note="${itemKey}"]`);
+        if (noteWrap) noteWrap.style.display = event.target.value === 'fail' ? '' : 'none';
+      }
+      _computeInspectionResult();
+    });
   }
 
   document.getElementById('inspection-modal-title').textContent = existing ? '✏️ Edit Inspection' : '🔍 New Bi-Monthly Turo Inspection';
@@ -9920,6 +9934,94 @@ window.closeBiMonthlyInspection = function() {
   document.getElementById('inspection-overlay').style.display = 'none';
   _currentInspectionId = null;
 };
+
+const TURO_CRITICAL_INSPECTION_KEYS = new Set(['brakes', 'ebrake', 'steering', 'tires', 'seatbelts']);
+
+async function syncTuroInspectionRepairWorkOrders(inspectionId, record) {
+  const notesSnap = await db.collection('vehicleNotes').where('vehicleId', '==', record.vehicleId).get();
+  const existingTasks = notesSnap.docs
+    .map(doc => ({ id: doc.id, ref: doc.ref, data: doc.data() }))
+    .filter(task => task.data.inspectionFailure === true);
+  const writes = [];
+  const actorName = currentUser?.displayName || currentUser?.email || 'Unknown';
+
+  TURO_INSPECTION_ITEMS.forEach(item => {
+    const ref = db.collection('vehicleNotes').doc(`turo_insp_${inspectionId}_${item.key}`);
+    const existingTask = existingTasks.find(task => task.id === ref.id);
+    const existing = existingTask?.data || null;
+    const failed = record.items?.[item.key] === 'fail';
+    const passed = record.items?.[item.key] === 'pass';
+    const failureNote = record.items?.[`${item.key}_notes`] || '';
+    const measurementText = item.measurements
+      ? item.measurements.map(pos => record.items?.[`${item.key}_${pos}`] ? `${pos}: ${record.items[`${item.key}_${pos}`]}` : '').filter(Boolean).join(' · ')
+      : '';
+    const detailText = [measurementText, failureNote].filter(Boolean).join(' · ');
+    const text = `Turo inspection failed — ${item.label}${detailText ? `: ${detailText}` : ''}`;
+
+    if (failed) {
+      const task = {
+        vehicleId: record.vehicleId,
+        plate: record.plate || '',
+        text,
+        isFollowUp: true,
+        urgent: true,
+        taskStatus: 'urgent',
+        sourceType: 'inspection',
+        inspectionFailure: true,
+        inspectionId,
+        inspectionKey: item.key,
+        inspectionDate: record.inspectionDate,
+        inspectionMileage: record.mileage,
+        inspectionNotes: record.notes || '',
+        inspectionFailureNotes: failureNote,
+        workOrder: true,
+        repairCategoryLabel: item.label,
+        repairPriority: TURO_CRITICAL_INSPECTION_KEYS.has(item.key) ? 'critical' : 'high',
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+      if (existing) {
+        writes.push({ method: 'update', ref, data: task });
+      } else {
+        task.done = false;
+        task.repairStatus = 'open';
+        task.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+        task.createdBy = currentUser?.uid || null;
+        task.createdByName = actorName;
+        task.progressLog = [{
+          by: actorName,
+          at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+          text: `Created from bi-monthly Turo inspection on ${record.inspectionDate}`,
+        }];
+        writes.push({ method: 'set', ref, data: task });
+      }
+    } else if (passed) {
+      existingTasks.forEach(task => {
+        if (task.data.inspectionKey !== item.key || task.data.done === true ||
+            task.data.inspectionId === inspectionId || !task.data.inspectionDate ||
+            task.data.inspectionDate > record.inspectionDate) return;
+        writes.push({ method: 'update', ref: task.ref, data: {
+        done: true,
+        repairStatus: 'resolved',
+        resolutionDate: todayDateString(),
+        resolvedByName: actorName,
+        resolutionReason: `Passed on bi-monthly Turo inspection ${record.inspectionDate}`,
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        progressLog: firebase.firestore.FieldValue.arrayUnion({
+          by: actorName,
+          at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+          text: `Closed after this checkpoint passed on ${record.inspectionDate}`,
+        }),
+        } });
+      });
+    }
+  });
+
+  for (let offset = 0; offset < writes.length; offset += 450) {
+    const batch = db.batch();
+    writes.slice(offset, offset + 450).forEach(write => batch[write.method](write.ref, write.data));
+    await batch.commit();
+  }
+}
 
 window.saveBiMonthlyInspection = async function() {
   const vehicleId = document.getElementById('insp-vehicle-id').value;
@@ -9943,6 +10045,11 @@ window.saveBiMonthlyInspection = async function() {
     const passEl = grid.querySelector(`input[name="insp-${item.key}"][value="pass"]`);
     const failEl = grid.querySelector(`input[name="insp-${item.key}"][value="fail"]`);
     items[item.key] = failEl?.checked ? 'fail' : (passEl?.checked ? 'pass' : '');
+    if (items[item.key] === 'fail') {
+      const noteEl = grid.querySelector(`textarea[name="insp-${item.key}-notes"]`);
+      const failureNote = noteEl?.value.trim();
+      if (failureNote) items[`${item.key}_notes`] = failureNote;
+    }
     if (item.measurements) {
       item.measurements.forEach(pos => {
         const mEl = grid.querySelector(`input[name="insp-${item.key}-${pos}"]`);
@@ -9992,53 +10099,76 @@ window.saveBiMonthlyInspection = async function() {
       inspRef = await db.collection('vehicleInspections').add(record);
     }
 
-    // Mirror to the maintenance stream so it appears in Service Reminders + auto-schedules the next one
-    try {
-      // Remove prior auto-scheduled inspection reminders for this vehicle
-      const oldInsp = await db.collection('vehicleNotes')
+    await syncTuroInspectionRepairWorkOrders(inspRef.id, record);
+
+    const maintenanceData = {
+      vehicleId,
+      plate: v?.plate || '',
+      serviceType: 'Bi-Monthly Inspection',
+      date: inspectionDate,
+      mileage,
+      cost: 0,
+      notes: `Overall: ${result.status.toUpperCase()} · ${result.passCount} pass / ${result.failCount} fail${record.inspectorName ? ' · ' + record.inspectorName : ''}`,
+      intervalMonths: 2,
+      nextDueDate,
+      inspectionId: inspRef.id,
+      loggedBy: currentUser?.uid || null,
+      loggedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+    const existingMaintenance = await db.collection('maintenance')
+      .where('inspectionId', '==', inspRef.id)
+      .limit(1)
+      .get();
+    let maintenanceRecordId;
+    if (existingMaintenance.empty) {
+      maintenanceData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      maintenanceRecordId = (await db.collection('maintenance').add(maintenanceData)).id;
+    } else {
+      maintenanceRecordId = existingMaintenance.docs[0].id;
+      await existingMaintenance.docs[0].ref.update(maintenanceData);
+    }
+
+    // Only the latest inspection controls the next scheduled reminder.
+    const vehicleInspections = await db.collection('vehicleInspections')
+      .where('vehicleId', '==', vehicleId)
+      .get();
+    const latestInspectionDate = vehicleInspections.docs.reduce((latest, doc) => {
+      const date = doc.data().inspectionDate || '';
+      return date > latest ? date : latest;
+    }, '');
+    if (inspectionDate >= latestInspectionDate) {
+      const followUpId = `turo_inspection_due_${inspRef.id}`;
+      const followUpRef = db.collection('vehicleNotes').doc(followUpId);
+      const existingFollowUp = await followUpRef.get();
+      const oldFollowUps = await db.collection('vehicleNotes')
         .where('vehicleId', '==', vehicleId)
         .where('sourceType', '==', 'inspection')
         .where('autoCreated', '==', true)
         .get();
-      const batch = db.batch();
-      oldInsp.forEach(d => batch.delete(d.ref));
-      // Also clean out prior maintenance records tagged for inspection so we don't stack
-      const oldMaint = await db.collection('maintenance')
-        .where('vehicleId', '==', vehicleId)
-        .where('serviceType', '==', 'Bi-Monthly Inspection')
-        .get();
-      oldMaint.forEach(d => batch.delete(d.ref));
-      await batch.commit();
-
-      // Add the current inspection as a maintenance record so it shows in history + drives the reminder
-      const maintRef = await db.collection('maintenance').add({
-        vehicleId,
-        plate: v?.plate || '',
-        serviceType: 'Bi-Monthly Inspection',
-        date: inspectionDate,
-        mileage,
-        cost: 0,
-        notes: `Overall: ${result.status.toUpperCase()} · ${result.passCount} pass / ${result.failCount} fail${record.inspectorName ? ' · ' + record.inspectorName : ''}`,
-        intervalMonths: 2,
-        nextDueDate,
-        inspectionId: inspRef.id,
-        loggedBy: currentUser?.uid || null,
-        loggedByName: currentUser?.displayName || currentUser?.email || 'Unknown',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      const followUpBatch = db.batch();
+      oldFollowUps.forEach(doc => {
+        const data = doc.data();
+        if (doc.id !== followUpId && !data.done && !data.inspectionFailure) {
+          followUpBatch.update(doc.ref, {
+            done: true,
+            completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            completedByName: currentUser?.displayName || currentUser?.email || 'System',
+          });
+        }
       });
-
-      // Create the follow-up work order for the next due date
-      await db.collection('vehicleNotes').add({
+      const followUpData = {
         vehicleId,
-        text: `🔍 Bi-Monthly Turo Inspection due (every 2 Months)`,
+        text: '🔍 Bi-Monthly Turo Inspection due (every 2 Months)',
         isFollowUp: true,
         done: false,
         urgent: false,
         dueDate: nextDueDate,
         sourceType: 'inspection',
+        inspectionId: inspRef.id,
         taskStatus: 'maintenance',
         maintenanceService: 'Bi-Monthly Inspection',
-        maintenanceRecordId: maintRef.id,
+        maintenanceRecordId,
         autoCreated: true,
         intervalType: 'time',
         intervalMonths: 2,
@@ -10046,10 +10176,13 @@ window.saveBiMonthlyInspection = async function() {
         repairStatus: 'open',
         repairPriority: 'monitor',
         scheduledDate: null,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         createdByName: 'System (auto follow-up)',
-      });
-    } catch(reminderErr) { console.warn('Reminder sync error:', reminderErr); }
+      };
+      if (!existingFollowUp.exists) followUpData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      followUpBatch.set(followUpRef, followUpData, { merge: true });
+      await followUpBatch.commit();
+    }
 
     // Audit trail
     try {
@@ -10167,7 +10300,9 @@ window.viewInspection = async function(id) {
           return `<span><strong>${pos}:</strong> ${escapeHtml(mv)}</span>`;
         }).join(' · ') + '</div>';
       }
-      return `<div class="insp-vw-row"><span class="insp-vw-n">${idx+1}</span><div style="flex:1;"><div>${escapeHtml(item.label)}</div>${measurements}</div>${badge}</div>`;
+      const failureNote = val === 'fail' ? d.items?.[`${item.key}_notes`] : '';
+      const noteHtml = failureNote ? `<div class="insp-vw-fail-note">${escapeHtml(failureNote)}</div>` : '';
+      return `<div class="insp-vw-row"><span class="insp-vw-n">${idx+1}</span><div style="flex:1;"><div>${escapeHtml(item.label)}</div>${measurements}${noteHtml}</div>${badge}</div>`;
     }).join('');
     const overallCls = d.overallStatus === 'pass' ? 'insp-overall-pass' : d.overallStatus === 'fail' ? 'insp-overall-fail' : 'insp-overall-incomplete';
     const overallLbl = d.overallStatus === 'pass' ? '✅ PASS' : d.overallStatus === 'fail' ? '❌ FAIL' : '⏳ INCOMPLETE';
@@ -10212,7 +10347,9 @@ window.printCurrentInspection = function() {
         return `${pos}: ${mv}`;
       }).join(' · ');
     }
-    return `<tr><td>${idx+1}</td><td>${escapeHtml(item.label)}${measurements}</td><td class="${cls}">${status}</td></tr>`;
+    const failureNote = val === 'fail' ? d.items?.[`${item.key}_notes`] : '';
+    const noteText = failureNote ? `<br><strong>Failure:</strong> ${escapeHtml(failureNote)}` : '';
+    return `<tr><td>${idx+1}</td><td>${escapeHtml(item.label)}${measurements}${noteText}</td><td class="${cls}">${status}</td></tr>`;
   }).join('');
   const overall = (d.overallStatus || 'incomplete').toUpperCase();
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>Inspection ${d.plate} ${d.inspectionDate}</title>
@@ -10304,6 +10441,10 @@ async function loadInspectionsTab() {
       .where('sourceType', '==', 'inspection')
       .where('done', '==', false)
       .get();
+    const repairSnap = await db.collection('vehicleNotes')
+      .where('inspectionFailure', '==', true)
+      .limit(1000)
+      .get();
     const notesByVid = {};
     notesSnap.forEach(d => {
       const data = d.data();
@@ -10312,11 +10453,23 @@ async function loadInspectionsTab() {
         notesByVid[data.vehicleId] = { id: d.id, ...data };
       }
     });
+    const repairsByInspection = {};
+    repairSnap.forEach(d => {
+      const data = d.data();
+      if (!data.inspectionId) return;
+      if (!repairsByInspection[data.inspectionId]) repairsByInspection[data.inspectionId] = [];
+      repairsByInspection[data.inspectionId].push({ id: d.id, ...data });
+    });
 
     const today = todayDateString();
     _inspFleetData = vehiclesCache.map(v => {
       const last = latestByVid[v.id] || null;
       const note = notesByVid[v.id] || null;
+      const repairTasks = last ? (repairsByInspection[last.id] || []) : [];
+      const failedItems = last?.overallStatus === 'fail'
+        ? TURO_INSPECTION_ITEMS.filter(item => last.items?.[item.key] === 'fail')
+        : [];
+      const outstandingRepairItems = failedItems.filter(item => !repairTasks.some(task => task.inspectionKey === item.key && task.done));
       let status = 'never', daysUntilDue = null, dueDate = null;
       if (last) {
         dueDate = last.nextDueDate || note?.dueDate || null;
@@ -10329,7 +10482,7 @@ async function loadInspectionsTab() {
           else status = 'ok';
         } else status = 'ok';
       }
-      return { vehicle: v, last, note, status, daysUntilDue, dueDate };
+      return { vehicle: v, last, note, status, daysUntilDue, dueDate, failedItems, repairTasks, outstandingRepairItems };
     });
 
     _renderInspFleetList();
@@ -10345,11 +10498,15 @@ function _renderInspFleetList() {
   if (!listEl) return;
   const filtered = _inspFleetFilter === 'all'
     ? _inspFleetData
+    : _inspFleetFilter === 'repairs'
+      ? _inspFleetData.filter(r => r.outstandingRepairItems.length > 0)
     : _inspFleetData.filter(r => r.status === _inspFleetFilter);
 
   const counts = _inspFleetData.reduce((acc, r) => { acc[r.status] = (acc[r.status] || 0) + 1; return acc; }, {});
+  const repairVehicleCount = _inspFleetData.filter(r => r.outstandingRepairItems.length > 0).length;
   if (sumEl) {
     sumEl.innerHTML = `📊 <strong>${_inspFleetData.length}</strong> vehicles · ` +
+      `<span style="color:#b91c1c;">🔧 ${repairVehicleCount} need repair follow-up</span> · ` +
       `<span style="color:#dc2626;">🔴 ${counts.overdue || 0} overdue</span> · ` +
       `<span style="color:#d97706;">🟡 ${counts['due-soon'] || 0} due soon</span> · ` +
       `<span style="color:#9ca3af;">⚠️ ${counts.never || 0} never inspected</span> · ` +
@@ -10383,16 +10540,33 @@ function _renderInspFleetList() {
     const runBtn = canRun
       ? `<button class="btn btn-sm btn-primary" onclick="_openInspFromMaintDash('${v.id}')">🔍 Run</button>`
       : '';
+    const editBtn = canRun && last
+      ? `<button class="btn btn-sm btn-outline" onclick="_editInspFromMaintDash('${v.id}','${last.id}')">✏️ Edit</button>`
+      : '';
     const schedBtn = canRun
       ? `<button class="btn btn-sm btn-outline" onclick="assignInspection('${v.id}')" title="Set a due date to assign this inspection">📅 Schedule</button>`
       : '';
-    return `<div class="insp-fleet-row insp-fleet-${r.status}">
+    const failureLine = r.failedItems.length
+      ? `<div class="insp-fleet-failures"><strong>Failed checks:</strong> ${r.failedItems.map(item => {
+          const note = last.items?.[`${item.key}_notes`];
+          return `${escapeHtml(item.label)}${note ? ` — ${escapeHtml(note)}` : ''}`;
+        }).join(' · ')}</div>`
+      : '';
+    const knownRepairKeys = new Set(r.repairTasks.map(task => task.inspectionKey));
+    const missingRepairCount = r.failedItems.filter(item => !knownRepairKeys.has(item.key)).length;
+    const repairBtn = canRun && missingRepairCount > 0
+      ? `<button class="btn btn-sm btn-danger" onclick="_createInspectionRepairTickets('${last.id}')">🔧 Create ${missingRepairCount} repair ticket${missingRepairCount === 1 ? '' : 's'}</button>`
+      : (canRun && r.failedItems.length > 0
+        ? `<button class="btn btn-sm btn-outline" onclick="_openInspectionWorkOrders()">🔧 Work Orders (${r.repairTasks.filter(task => !task.done).length} open)</button>`
+        : '');
+    return `<div class="insp-fleet-row insp-fleet-${r.status}${r.failedItems.length ? ' insp-fleet-repairs' : ''}">
       <div class="insp-fleet-main">
         <div class="insp-fleet-plate">🚗 <strong>${escapeHtml(v.plate)}</strong> <span style="color:#9ca3af;font-size:0.8rem;">${escapeHtml(v.make || '')} ${escapeHtml(v.model || '')}</span></div>
         <div class="insp-fleet-meta">${lastLine}${dueLine}</div>
+        ${failureLine}
       </div>
       ${badge}
-      <div class="insp-fleet-actions">${runBtn} ${schedBtn}</div>
+      <div class="insp-fleet-actions">${repairBtn} ${editBtn} ${runBtn} ${schedBtn}</div>
     </div>`;
   }).join('');
 }
@@ -10403,6 +10577,36 @@ window._openInspFromMaintDash = function(vehicleId) {
     openVehiclePage(vehicleId);
     setTimeout(() => openBiMonthlyInspection(vehicleId), 500);
   }, 100);
+};
+
+window._editInspFromMaintDash = function(vehicleId, inspectionId) {
+  closeMaintenanceDash();
+  setTimeout(() => {
+    openVehiclePage(vehicleId);
+    setTimeout(() => openBiMonthlyInspection(vehicleId, inspectionId), 500);
+  }, 100);
+};
+
+window._openInspectionWorkOrders = function() {
+  openMaintenanceDash();
+  setTimeout(() => {
+    const button = document.querySelector('[data-mtab="mtab-work-orders"]');
+    if (button) switchMaintTab('mtab-work-orders', button);
+  }, 200);
+};
+
+window._createInspectionRepairTickets = async function(inspectionId) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  try {
+    const snap = await db.collection('vehicleInspections').doc(inspectionId).get();
+    if (!snap.exists) { toast('Inspection not found.', 'error'); return; }
+    await syncTuroInspectionRepairWorkOrders(inspectionId, snap.data());
+    toast('Repair work orders created from failed inspection items.', 'success');
+    await loadInspectionsTab();
+  } catch (e) {
+    console.error('Create inspection repair tickets error:', e);
+    toast('Could not create repair work orders.', 'error');
+  }
 };
 
 // Called from openMaintenanceDash — if any inspections are overdue, drop a
