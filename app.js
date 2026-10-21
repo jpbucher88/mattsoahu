@@ -843,7 +843,7 @@ function _vehicleLocationStamp(v) {
 function _vehicleLocationAgeText(v) {
   const started = _vehicleLocationStamp(v);
   if (!started) return '';
-  return _formatDurationFromMs(Date.now() - started.getTime());
+    return _formatDurationFromMs(Date.now() - started.getTime());
 }
 
 function _vehicleLocationAgeLabel(v) {
@@ -3031,11 +3031,45 @@ function showDamageCheckModal(vid, plate) {
   items.forEach(i => { itemState[i.key] = 'none'; });
   const failFiles = {}; // key -> File[]
   const failSlotFiles = {}; // charge key -> { slotId: File[] }
+  const failSlotPhotoFiles = {}; // charge key -> files selected together
   const bugUrgency = {}; // yesno key -> 'urgent' | 'monitoring' | null
   items.forEach(i => { if (i.yesno) bugUrgency[i.key] = null; });
 
   const overlay = document.createElement('div');
   overlay.className = 'damage-check-overlay';
+
+  function syncChargePhotoSlots(key) {
+    const slots = CHARGE_SLOTS[items.find(item => item.key === key)?.chargeFollowUp] || [];
+    const files = failSlotPhotoFiles[key] || [];
+    const slotSelects = overlay.querySelectorAll(`.charge-photo-slot-select[data-check="${key}"]`);
+    failSlotFiles[key] = {};
+    slotSelects.forEach(select => {
+      const file = files[Number(select.dataset.index)];
+      if (!file || !select.value) return;
+      if (!failSlotFiles[key][select.value]) failSlotFiles[key][select.value] = [];
+      failSlotFiles[key][select.value].push(file);
+    });
+    slots.forEach(slot => {
+      const count = failSlotFiles[key][slot.id]?.length || 0;
+      const status = overlay.querySelector(`[data-slot-count="${key}-${slot.id}"]`);
+      if (status) status.textContent = count ? `${count} selected` : 'No photo yet';
+    });
+  }
+
+  function renderChargePhotoAssignments(key) {
+    const item = items.find(candidate => candidate.key === key);
+    const slots = CHARGE_SLOTS[item?.chargeFollowUp] || [];
+    const files = failSlotPhotoFiles[key] || [];
+    const list = overlay.querySelector(`#charge-photo-assignments-${key}`);
+    if (!list) return;
+    list.innerHTML = files.map((file, index) => {
+      const defaultSlot = slots[Math.min(index, slots.length - 1)]?.id || '';
+      const options = slots.map(slot => `<option value="${slot.id}" ${slot.id === defaultSlot ? 'selected' : ''}>${escapeHtml(slot.label)}</option>`).join('');
+      return `<label class="charge-photo-assignment"><span>${escapeHtml(file.name)}</span><select class="charge-photo-slot-select" data-check="${key}" data-index="${index}">${options}</select></label>`;
+    }).join('');
+    list.querySelectorAll('.charge-photo-slot-select').forEach(select => select.addEventListener('change', () => syncChargePhotoSlots(key)));
+    syncChargePhotoSlots(key);
+  }
 
   function buildItemHTML(item) {
     // Yes/No style (no fail notes needed)
@@ -3071,17 +3105,11 @@ function showDamageCheckModal(vid, plate) {
           </div>
         </div>
         <div class="dmg-fail-details" id="dmg-fail-${item.key}" style="display:none;">
-          <p class="hint" style="margin:0;">Fail it now even without photos. A 24-hour task opens so the charge can be tied to this plate before the money is lost.</p>
-          <input type="number" class="form-select" id="dmg-amt-${item.key}" placeholder="Amount $" min="0" step="0.01" inputmode="decimal">
-          <div class="charge-who-row">
-            <label class="charge-who-opt"><input type="radio" name="chg-${item.key}" value="customer" checked> Customer charge</label>
-            <label class="charge-who-opt"><input type="radio" name="chg-${item.key}" value="company"> Company charge</label>
-          </div>
-          <label class="charge-who-opt" id="dmg-charged-wrap-${item.key}"><input type="checkbox" id="dmg-charged-${item.key}"> Customer has been charged</label>
-          <input type="text" class="form-select" id="dmg-card-${item.key}" placeholder="Card last 4 (optional)" maxlength="4" inputmode="numeric">
-          <textarea class="dmg-fail-notes" id="dmg-notes-${item.key}" placeholder="Note for the card statement, e.g. HNL parking" rows="2"></textarea>
+          <p class="hint" style="margin:0;">Upload these now or submit the failure and finish the photos later from the open charge task. The assistant can complete the customer invoice separately.</p>
+          <label class="charge-bulk-upload">📷 Choose all photos<input type="file" accept="image/*" multiple class="dmg-charge-bulk-photos" data-check="${item.key}" style="display:none;"></label>
+          <div class="charge-photo-assignments" id="charge-photo-assignments-${item.key}"></div>
           <div class="charge-slot-row">
-            ${slots.map(s => `<label class="charge-slot" id="dmg-slot-label-${item.key}-${s.id}">${escapeHtml(s.label)}<input type="file" accept="image/*" capture="environment" class="dmg-slot-photos" data-check="${item.key}" data-slot="${s.id}" style="display:none;"></label>`).join('')}
+            ${slots.map(s => `<span class="charge-slot" id="dmg-slot-label-${item.key}-${s.id}"><span>${escapeHtml(s.label)}</span><span class="charge-slot-count" data-slot-count="${item.key}-${s.id}">No photo yet</span></span>`).join('')}
           </div>
         </div>
       </div>`;
@@ -3199,27 +3227,11 @@ function showDamageCheckModal(vid, plate) {
     });
   });
 
-  overlay.querySelectorAll('input[name^="chg-"]').forEach(radio => {
-    radio.addEventListener('change', () => {
-      const key = (radio.name || '').replace('chg-', '');
-      const wrap = overlay.querySelector('#dmg-charged-wrap-' + key);
-      if (wrap) wrap.style.display = radio.value === 'company' && radio.checked ? 'none' : '';
-    });
-  });
-  overlay.querySelectorAll('.dmg-slot-photos').forEach(input => {
+  overlay.querySelectorAll('.dmg-charge-bulk-photos').forEach(input => {
     input.addEventListener('change', () => {
       const key = input.dataset.check;
-      const slot = input.dataset.slot;
-      const files = Array.from(input.files || []);
-      if (!failSlotFiles[key]) failSlotFiles[key] = {};
-      failSlotFiles[key][slot] = (failSlotFiles[key][slot] || []).concat(files);
-      const label = overlay.querySelector('#dmg-slot-label-' + key + '-' + slot);
-      if (label) {
-        label.classList.toggle('has-file', (failSlotFiles[key][slot] || []).length > 0);
-        const slotMeta = (CHARGE_SLOTS[items.find(i => i.key === key)?.chargeFollowUp] || []).find(s => s.id === slot);
-        const n = (failSlotFiles[key][slot] || []).length;
-        label.childNodes[0].textContent = (slotMeta ? slotMeta.label : slot) + (n ? ' · ' + n : '');
-      }
+      failSlotPhotoFiles[key] = Array.from(input.files || []);
+      renderChargePhotoAssignments(key);
       input.value = '';
     });
   });
@@ -3335,7 +3347,7 @@ function showDamageCheckModal(vid, plate) {
         }
         // ── Extras-return fail: log which items are missing, keep them on vehicle ──
         if (item.extrasCheck) {
-          const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
+          const notes = ((overlay.querySelector('#dmg-notes-' + item.key) || {}).value || '').trim();
           const missingList = vehicleExtras.map(e => (_extrasMeta(e.code).icon + ' ' + _extrasMeta(e.code).label)).join(', ');
           await db.collection('vehicleNotes').add({
             vehicleId: vid,
@@ -3352,15 +3364,10 @@ function showDamageCheckModal(vid, plate) {
           continue;
         }
 
-        const notes = (overlay.querySelector('#dmg-notes-' + item.key) || {}).value.trim() || '';
+        const notes = ((overlay.querySelector('#dmg-notes-' + item.key) || {}).value || '').trim();
 
-        // Fuel / parking: tie the card charge to the plate. Photos can come later (24h task).
+        // Fuel / parking create a pending charge task; billing can be completed later.
         if (item.chargeFollowUp) {
-          const amount = parseFloat((overlay.querySelector('#dmg-amt-' + item.key) || {}).value) || 0;
-          const chargeEl = overlay.querySelector('input[name="chg-' + item.key + '"]:checked');
-          const chargeTo = chargeEl ? chargeEl.value : 'customer';
-          const customerCharged = chargeTo === 'customer' && !!((overlay.querySelector('#dmg-charged-' + item.key) || {}).checked);
-          const cardLast4 = ((overlay.querySelector('#dmg-card-' + item.key) || {}).value || '').replace(/\D/g, '').slice(0, 4);
           let photos = {};
           try {
             photos = await uploadChargePhotos(safePlate, item.chargeFollowUp, failSlotFiles[item.key] || {});
@@ -3369,16 +3376,17 @@ function showDamageCheckModal(vid, plate) {
             vehicleId: vid,
             plate: vehicleObj ? vehicleObj.plate : safePlate,
             kind: item.chargeFollowUp,
-            amount: amount,
-            chargeTo: chargeTo,
-            customerCharged: customerCharged,
-            cardLast4: cardLast4,
+            amount: 0,
+            chargeTo: 'customer',
+            customerCharged: false,
+            cardLast4: '',
             photos: photos,
-            description: notes,
+            description: notes || item.label,
             source: 'inspection',
             sourceInspectionKey: item.key,
+            createFollowUpTask: !item.incidentType,
           });
-          if (!result.settled) newTaskCount++;
+          if (!result.settled && !item.incidentType) newTaskCount++;
           if (item.incidentType) {
             try {
               const incident = await _createInspectionViolationIncident({
@@ -3557,13 +3565,13 @@ function showDamageCheckModal(vid, plate) {
 // Receipt slots required before a fuel or parking charge is settled.
 const CHARGE_SLOTS = {
   fuel: [
-    { id: 'preGas', label: 'Pre-gas receipt' },
-    { id: 'invoice', label: 'Pump / invoice' },
-    { id: 'postRefill', label: 'Post-refill receipt' },
+    { id: 'preGas', label: 'Post-trip Photo' },
+    { id: 'invoice', label: 'Fuel Photos' },
+    { id: 'postRefill', label: 'New photo with full tank' },
   ],
   parking: [
-    { id: 'citation', label: 'Citation photo' },
-    { id: 'payment', label: 'Payment receipt' },
+    { id: 'citation', label: 'Parking violation photo' },
+    { id: 'payment', label: 'Payment / ticket photo' },
   ],
 };
 
@@ -3655,7 +3663,7 @@ async function createChargeFollowUp(opts) {
   }
   const expRef = await db.collection('expenses').add(record);
   let taskId = null;
-  if (!settled) {
+  if (!settled && opts.createFollowUpTask !== false) {
     const label = kind === 'parking' ? '🅿️ PARKING CHARGE' : '⛽ FUEL CHARGE';
     const plateBit = opts.plate ? ' [' + opts.plate + ']' : '';
     const why = [];
@@ -3695,7 +3703,7 @@ const INSPECTION_ITEMS = [
   { key: 'extras',   label: '🎒 Extras Returned - All items back', extrasCheck: true },
   { key: 'clean',    label: 'Vehicle Cleaned',             incidentType: 'cleaning' },
   { key: 'refueled', label: 'Vehicle Refueled ⛽',          chargeFollowUp: 'fuel', incidentType: 'refuel' },
-  { key: 'parking',  label: 'Incorrect parking violation', chargeFollowUp: 'parking' },
+  { key: 'parking',  label: 'Incorrect parking violation', chargeFollowUp: 'parking', incidentType: 'citation' },
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
 ];
 
@@ -12026,6 +12034,7 @@ function _legacyInspectionViolationType(note) {
   if (!/inspection fail/i.test(text)) return null;
   if (/vehicle cleaned|cleaning violation|dog hair|dirty interior/i.test(text)) return 'cleaning';
   if (/vehicle refueled|refuel|fuel.*tank|tank not full/i.test(text)) return 'refuel';
+  if (/incorrect parking|parking violation/i.test(text)) return 'citation';
   return null;
 }
 
@@ -12050,7 +12059,40 @@ async function _migrateLegacyInspectionViolations(backupConfirmed) {
       const occurredAt = note.createdAt?.toDate ? note.createdAt.toDate() : (note.createdAt ? new Date(note.createdAt) : new Date());
       const deadlineDate = new Date(occurredAt.getTime() + 24 * 60 * 60 * 1000);
       const deadline = firebase.firestore.Timestamp.fromDate(deadlineDate);
+      const chargeKind = incidentType === 'refuel' ? 'fuel' : incidentType === 'citation' ? 'parking' : null;
+      const chargeRequired = !!chargeKind;
+      const existingExpenseId = note.expenseId || (incidentSnap.exists ? incidentSnap.data().relatedExpenseId : null);
+      const legacyExpenseId = chargeRequired ? (existingExpenseId || `legacy_violation_${sourceDoc.id}`) : null;
+      const legacyExpenseRef = legacyExpenseId ? db.collection('expenses').doc(legacyExpenseId) : null;
+      const legacyExpenseSnap = legacyExpenseRef ? await legacyExpenseRef.get() : null;
+      const legacyChargeSettled = !chargeRequired || (legacyExpenseSnap?.exists && legacyExpenseSnap.data().settlementStatus === 'settled');
       const batch = db.batch();
+      if (chargeRequired && !legacyExpenseSnap?.exists) {
+        batch.set(legacyExpenseRef, {
+          date: todayDateString(),
+          amount: 0,
+          category: chargeKind === 'fuel' ? 'Fuel' : 'Parking / Fees',
+          description: title,
+          chargeTo: 'customer',
+          customerCharged: false,
+          cardLast4: '',
+          paidWithCard: true,
+          receiptPhotos: {},
+          chargeKind,
+          settlementStatus: 'open',
+          missingReceipts: (CHARGE_SLOTS[chargeKind] || []).map(slot => slot.id),
+          dueAt: deadline,
+          dueDate: deadlineDate.toISOString().slice(0, 10),
+          source: 'inspection_legacy',
+          sourceInspectionKey: note.inspectionKey || (chargeKind === 'fuel' ? 'refueled' : 'parking'),
+          vehicleId: note.vehicleId || '',
+          vehiclePlate: note.plate || (vehiclesCache.find(vehicle => vehicle.id === note.vehicleId) || {}).plate || '',
+          incidentId,
+          submittedBy: note.createdBy || currentUser.uid,
+          submittedByName: note.createdByName || currentUserDisplayName || currentUser.email,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
       if (!incidentSnap.exists) {
         batch.set(incidentRef, {
           vehicleId: note.vehicleId || '',
@@ -12069,9 +12111,11 @@ async function _migrateLegacyInspectionViolations(backupConfirmed) {
           sourceType: 'inspection',
           sourceInspectionNoteId: sourceDoc.id,
           inspectionKey: note.inspectionKey || (incidentType === 'refuel' ? 'refueled' : 'clean'),
-          turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
+          turoInvoiceRequired: _incidentRequiresTuroInvoice(incidentType),
           turoInvoiceSent: false,
-          ...(note.expenseId ? { relatedExpenseId: note.expenseId } : {}),
+          chargeSettlementRequired: chargeRequired,
+          chargeSettled: legacyChargeSettled,
+          ...(legacyExpenseId ? { relatedExpenseId: legacyExpenseId } : {}),
           reportedBy: note.createdBy || currentUser.uid,
           reportedByName: note.createdByName || currentUserDisplayName || currentUser.email,
           turoDeadlineAt: deadline,
@@ -12080,8 +12124,10 @@ async function _migrateLegacyInspectionViolations(backupConfirmed) {
         });
       } else {
         batch.update(incidentRef, {
-          turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
-          ...(note.expenseId ? { relatedExpenseId: note.expenseId } : {}),
+          turoInvoiceRequired: _incidentRequiresTuroInvoice(incidentType),
+          chargeSettlementRequired: chargeRequired,
+          chargeSettled: legacyChargeSettled,
+          ...(legacyExpenseId ? { relatedExpenseId: legacyExpenseId } : {}),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         });
       }
@@ -12109,6 +12155,7 @@ async function _migrateLegacyInspectionViolations(backupConfirmed) {
         completedAt: firebase.firestore.FieldValue.serverTimestamp(),
         completedByName: currentUserDisplayName || currentUser.email,
       });
+      if (legacyExpenseId && legacyExpenseSnap?.exists) batch.update(legacyExpenseRef, { incidentId });
       await batch.commit();
       migratedCount++;
     }
@@ -23060,10 +23107,10 @@ function startIncidentListener() {
 }
 
 // Turo-eligible incident types (24-hour claim window)
-const TURO_ELIGIBLE_INCIDENT_TYPES = ['damage', 'accident', 'cleaning', 'smoking', 'refuel'];
+const TURO_ELIGIBLE_INCIDENT_TYPES = ['damage', 'accident', 'cleaning', 'smoking', 'refuel', 'citation'];
 
 function _incidentRequiresTuroInvoice(type) {
-  return ['cleaning', 'refuel', 'smoking'].includes(type);
+  return ['cleaning', 'refuel', 'smoking', 'citation'].includes(type);
 }
 
 async function _createInspectionViolationIncident({ vehicleId, plate, item, notes, expenseId }) {
@@ -23084,8 +23131,15 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       title: incidentTitle,
       description: notes || `Inspection fail: ${item.label}`,
       turoDeadlineAt: deadline,
-      turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
-      ...(expenseId ? { relatedExpenseId: expenseId } : {}),
+      turoInvoiceRequired: _incidentRequiresTuroInvoice(incidentType),
+      turoInvoiceSent: false,
+      turoInvoiceReference: firebase.firestore.FieldValue.delete(),
+      turoInvoiceSentAt: firebase.firestore.FieldValue.delete(),
+      turoInvoiceSentBy: firebase.firestore.FieldValue.delete(),
+      turoInvoiceSentByName: firebase.firestore.FieldValue.delete(),
+      chargeSettlementRequired: !!expenseId,
+      chargeSettled: !expenseId,
+      ...(expenseId ? { relatedExpenseId: expenseId, chargeSettled: false } : {}),
     });
   } else {
     incidentRef = await db.collection('incidents').add({
@@ -23104,8 +23158,10 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       photoUrls: [],
       sourceType: 'inspection',
       inspectionKey: item.key,
-      turoInvoiceRequired: ['cleaning', 'refuel', 'smoking'].includes(incidentType),
+      turoInvoiceRequired: _incidentRequiresTuroInvoice(incidentType),
       turoInvoiceSent: false,
+      chargeSettlementRequired: !!expenseId,
+      chargeSettled: !expenseId,
       reportedBy: currentUser.uid,
       reportedByName: currentUser.displayName || currentUser.email,
       turoDeadlineAt: deadline,
@@ -23115,10 +23171,13 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
     });
   }
 
+  if (expenseId) {
+    await db.collection('expenses').doc(expenseId).update({ incidentId: incidentRef.id });
+  }
+
   const claimTaskRef = db.collection('generalNotes').doc(`turo_incident_${incidentRef.id}`);
   const claimTaskSnap = await claimTaskRef.get();
-  if (!claimTaskSnap.exists) {
-    await claimTaskRef.set({
+  const claimTaskData = {
       text: `🛡️ FILE TURO CLAIM: ${incidentTitle}${plate ? ' [' + plate + ']' : ''}`,
       isFollowUp: true,
       done: false,
@@ -23130,8 +23189,8 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email,
-    });
-  }
+  };
+  await claimTaskRef.set(claimTaskData, { merge: true });
   return { incidentId: incidentRef.id, reused: !openSnap.empty };
 }
 
@@ -23144,7 +23203,8 @@ function _isViolationIncident(data) {
 
 function _needsViolationAction(data) {
   const invoiceRequired = data.turoInvoiceRequired === true || _incidentRequiresTuroInvoice(data.type);
-  return _isViolationIncident(data) && (data.status !== 'resolved' || (invoiceRequired && data.turoInvoiceSent !== true));
+  const chargeIncomplete = data.chargeSettlementRequired === true && data.chargeSettled !== true;
+  return _isViolationIncident(data) && (data.status !== 'resolved' || (invoiceRequired && data.turoInvoiceSent !== true) || chargeIncomplete);
 }
 
 function _updateViolationIncidentBadge(docs) {
@@ -23186,6 +23246,16 @@ window.markIncidentTuroInvoiceSent = async function(incidentId) {
       turoInvoiceSentByName: currentUserDisplayName || currentUser.email,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     });
+    const claimTaskRef = db.collection('generalNotes').doc(`turo_incident_${incidentId}`);
+    const claimTask = await claimTaskRef.get();
+    if (claimTask.exists && !claimTask.data().done) {
+      await claimTaskRef.update({
+        done: true,
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedBy: currentUser.uid,
+        completedByName: currentUserDisplayName || currentUser.email,
+      });
+    }
     toast('Turo invoice marked sent and linked to the Incident.', 'success');
     await loadAllOpenIncidentsDashboard();
   } catch (error) {
@@ -23239,7 +23309,7 @@ function _renderFilteredIncidentList(docs) {
     </div>` : '';
     const REIMB_LABELS = {na:'🚫 N/A',pending:'⏳ Pending',paid:'💵 Paid ✅',partial:'🔁 Partial',denied:'❌ Denied',escalated:'⚠️ Escalated'};
     const TURO_LABELS  = {no:'❌ No Claim',yes:'✅ Claim Filed',pending:'🕐 Pending'};
-    const damageHTML2 = TURO_ELIGIBLE_INCIDENT_TYPES.includes(d.type) ? `<div class="inc-damage-summary">
+    const damageHTML2 = (d.type === 'damage' || d.type === 'accident') ? `<div class="inc-damage-summary">
       ${d.damgeTuroClaim && d.damgeTuroClaim !== 'no' ? `<span class="inc-dmg-tag">🛡️ Turo: ${TURO_LABELS[d.damgeTuroClaim]||d.damgeTuroClaim}</span>` : ''}
       ${d.damgeTuroClaimNum ? `<span class="inc-dmg-tag">📋 ${escapeHtml(d.damgeTuroClaimNum)}</span>` : ''}
       ${d.damgeAmountClaimed != null ? `<span class="inc-dmg-tag">💸 Claimed $${Number(d.damgeAmountClaimed).toFixed(2)}</span>` : ''}
@@ -23256,10 +23326,11 @@ function _renderFilteredIncidentList(docs) {
       ${d.recoveryStatus && d.recoveryStatus !== 'na' ? `<span class="inc-rec-status inc-rec-status-${d.recoveryStatus}">${REC_STATUS_LABELS2[d.recoveryStatus]||d.recoveryStatus}</span>` : ''}
       ${d.recoveryNotes ? `<span class="inc-rec-tag">📝 ${escapeHtml(d.recoveryNotes)}</span>` : ''}
     </div>` : '';
-    const invoiceRequired = d.turoInvoiceRequired === true || ['cleaning', 'refuel', 'smoking'].includes(d.type);
+    const invoiceRequired = d.turoInvoiceRequired === true || _incidentRequiresTuroInvoice(d.type);
     const turoInvoiceHTML = invoiceRequired ? `<div class="inc-turo-invoice ${d.turoInvoiceSent ? 'inc-turo-invoice-sent' : 'inc-turo-invoice-pending'}">
       <strong>${d.turoInvoiceSent ? '✅ Turo invoice sent' : '⚠️ Turo invoice not marked sent'}</strong>
       ${d.turoInvoiceReference ? `<span>Ref: ${escapeHtml(d.turoInvoiceReference)}</span>` : ''}
+      ${d.chargeSettlementRequired ? `<span>Expense: ${d.chargeSettled ? '✅ Settled' : '⏳ Pending'}</span>` : ''}
       ${d.relatedExpenseId ? `<button class="btn btn-sm btn-outline" onclick="openChargeSettlement('${d.relatedExpenseId}')">💵 View Expense</button>` : ''}
       ${!d.turoInvoiceSent ? `<button class="btn btn-sm btn-primary" onclick="markIncidentTuroInvoiceSent('${doc.id}')">📨 Mark Invoice Sent</button>` : ''}
     </div>` : '';
@@ -29660,32 +29731,57 @@ window.openChargeSettlement = async function(expenseId, noteId, noteCol) {
     + '<input type="text" id="chg-card" class="form-select" maxlength="4" inputmode="numeric" value="' + escapeHtml(exp.cardLast4 || '') + '" placeholder="Matches the card statement">'
     + '<label class="coach-label">Note</label>'
     + '<input type="text" id="chg-desc" class="form-select" maxlength="200" value="' + escapeHtml(exp.description || '') + '">'
-    + '<label class="coach-label">Receipts</label><div class="charge-slot-row" id="chg-slots"></div></div>'
+    + '<label class="coach-label">Required photos</label><div class="charge-slot-row" id="chg-existing-slots"></div>'
+    + '<label class="charge-bulk-upload">📷 Choose all photos<input type="file" id="chg-photo-input" accept="image/*" multiple style="display:none;"></label>'
+    + '<div class="charge-photo-assignments" id="chg-photo-assignments"></div></div>'
     + '<div class="dm-footer"><button class="dm-btn-cancel" id="chg-cancel">Cancel</button>'
     + '<button class="dm-btn-go" id="chg-save" style="background:#b45309;">Save charge</button></div></div>';
   document.body.appendChild(overlay);
   const slotFiles = {};
-  const slotBox = overlay.querySelector('#chg-slots');
+  const existingSlotBox = overlay.querySelector('#chg-existing-slots');
   slots.forEach(s => {
     const have = (photos[s.id] || []).length;
-    const lab = document.createElement('label');
+    const lab = document.createElement('div');
     lab.className = 'charge-slot' + (have ? ' has-file' : '');
-    lab.appendChild(document.createTextNode(s.label + (have ? ' · ' + have + ' on file' : '')));
-    const input = document.createElement('input');
-    input.type = 'file'; input.accept = 'image/*'; input.capture = 'environment'; input.style.display = 'none';
-    input.addEventListener('change', function() {
-      slotFiles[s.id] = Array.from(this.files || []);
-      lab.classList.add('has-file');
-      lab.firstChild.textContent = s.label + ' · ' + slotFiles[s.id].length + ' new';
-      this.value = '';
-    });
-    lab.appendChild(input);
+    const title = document.createElement('span');
+    title.textContent = s.label;
+    lab.appendChild(title);
+    const status = document.createElement('span');
+    status.className = 'charge-slot-count';
+    status.textContent = have ? `${have} on file` : 'No photo yet';
+    lab.appendChild(status);
     (photos[s.id] || []).forEach(url => {
       const a = document.createElement('a');
-      a.href = url; a.target = '_blank'; a.textContent = ' view'; a.style.marginLeft = '4px';
+      a.href = url; a.target = '_blank'; a.textContent = 'View'; a.style.marginLeft = '4px';
       lab.appendChild(a);
     });
-    slotBox.appendChild(lab);
+    existingSlotBox.appendChild(lab);
+  });
+  const stagedFiles = [];
+  const assignmentBox = overlay.querySelector('#chg-photo-assignments');
+  const syncSlotFiles = () => {
+    Object.keys(slotFiles).forEach(key => delete slotFiles[key]);
+    assignmentBox.querySelectorAll('.charge-photo-slot-select').forEach(select => {
+      const file = stagedFiles[Number(select.dataset.index)];
+      if (!file || !select.value) return;
+      if (!slotFiles[select.value]) slotFiles[select.value] = [];
+      slotFiles[select.value].push(file);
+    });
+  };
+  const renderPhotoAssignments = () => {
+    assignmentBox.innerHTML = stagedFiles.map((file, index) => {
+      const defaultSlot = slots[Math.min(index, slots.length - 1)]?.id || '';
+      const options = slots.map(slot => `<option value="${slot.id}" ${slot.id === defaultSlot ? 'selected' : ''}>${escapeHtml(slot.label)}</option>`).join('');
+      return `<label class="charge-photo-assignment"><span>${escapeHtml(file.name)}</span><select class="charge-photo-slot-select" data-index="${index}">${options}</select></label>`;
+    }).join('');
+    assignmentBox.querySelectorAll('.charge-photo-slot-select').forEach(select => select.addEventListener('change', syncSlotFiles));
+    syncSlotFiles();
+  };
+  const bulkPhotoInput = overlay.querySelector('#chg-photo-input');
+  bulkPhotoInput.addEventListener('change', () => {
+    stagedFiles.splice(0, stagedFiles.length, ...Array.from(bulkPhotoInput.files || []));
+    renderPhotoAssignments();
+    bulkPhotoInput.value = '';
   });
   const syncWho = () => {
     const who = (overlay.querySelector('input[name="chg-who"]:checked') || {}).value;
@@ -29722,6 +29818,15 @@ window.openChargeSettlement = async function(expenseId, noteId, noteCol) {
         patch.settledByName = currentUserDisplayName || (currentUser && currentUser.email) || '';
       }
       await db.collection('expenses').doc(expenseId).update(patch);
+      if (exp.incidentId) {
+        try {
+          await db.collection('incidents').doc(exp.incidentId).update({
+            chargeSettlementRequired: true,
+            chargeSettled: settled,
+            chargeSettledAt: settled ? firebase.firestore.FieldValue.serverTimestamp() : firebase.firestore.FieldValue.delete(),
+          });
+        } catch (incidentError) { console.warn('Could not sync Incident charge status:', incidentError); }
+      }
       const followCol = noteCol || exp.followUpCollection || 'vehicleNotes';
       const followId = noteId || exp.followUpNoteId;
       if (settled && followId) {
