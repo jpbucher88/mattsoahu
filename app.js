@@ -17170,7 +17170,7 @@ function inspectionChargeFollowUps(expenseDocs, taskItems) {
   const incidentIds = new Set(taskItems.map(item => item.incidentDocId).filter(Boolean));
   return expenseDocs.flatMap(doc => {
     const data = doc.data();
-    if (data.source !== 'inspection' || data.settlementStatus !== 'open' || data.deleted ||
+    if (data.source !== 'inspection' || data.settlementStatus !== 'open' || data.deleted || data.homeFollowUpDeleted ||
         !['fuel', 'parking'].includes(data.chargeKind) || expenseIds.has(doc.id) ||
         (data.incidentId && incidentIds.has(data.incidentId))) return [];
     return [{
@@ -18759,8 +18759,8 @@ function renderUrgentBanner(items) {
       ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit">✏️ Edit</button>`
       : '';
     const doneBtn = isExpense ? '' : `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
-    const deleteBtn = currentUserRole === 'admin' && !isExpense
-      ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>`
+    const deleteBtn = canManage
+      ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteUrgentFollowUp('${item.id}','${item.collection}')" title="Delete notification">🗑 Delete</button>`
       : '';
 
     // Photos: inline array (inspection fail notes) or single photoUrl
@@ -18827,6 +18827,56 @@ function renderUrgentBanner(items) {
     });
   });
 }
+
+window.deleteUrgentFollowUp = async function(docId, collection) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  if (!['expenses', 'vehicleNotes', 'generalNotes'].includes(collection)) return;
+  if (!(await confirm('Delete Notification', 'Remove this notification from Home? Linked Expense, Incident, and photo records will be kept.'))) return;
+  try {
+    const ref = db.collection(collection).doc(docId);
+    const snap = await ref.get();
+    if (!snap.exists) { loadDashboardFollowUps(); return; }
+    const data = snap.data();
+    const audit = {
+      deletedBy: currentUser.uid,
+      deletedByName: currentUser.displayName || currentUser.email,
+      deletedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+    const batch = db.batch();
+    const expenses = new Map();
+    if (collection === 'expenses') {
+      expenses.set(docId, ref);
+    } else {
+      batch.update(ref, { deleted: true, ...audit });
+      if (data.expenseId) {
+        const expenseRef = db.collection('expenses').doc(data.expenseId);
+        const expenseSnap = await expenseRef.get();
+        if (expenseSnap.exists) expenses.set(expenseRef.id, expenseRef);
+      }
+      if (data.incidentDocId) {
+        const linked = await db.collection('expenses').where('incidentId', '==', data.incidentDocId).get();
+        linked.docs.forEach(doc => expenses.set(doc.id, doc.ref));
+      }
+    }
+    for (const [expenseId, expenseRef] of expenses) {
+      batch.update(expenseRef, {
+        homeFollowUpDeleted: true,
+        homeFollowUpDeletedAt: audit.deletedAt,
+        homeFollowUpDeletedBy: audit.deletedBy,
+        homeFollowUpDeletedByName: audit.deletedByName,
+      });
+      const linkedTasks = await db.collection('generalNotes').where('expenseId', '==', expenseId).get();
+      linkedTasks.docs.forEach(doc => batch.update(doc.ref, { deleted: true, ...audit }));
+    }
+    await batch.commit();
+    logUserActivity('delete_notification', { docId, collection });
+    toast('Notification deleted. Linked records kept.', 'success');
+    loadDashboardFollowUps();
+  } catch (error) {
+    console.error('Delete notification error:', error);
+    toast('Could not delete the notification. Please try again.', 'error');
+  }
+};
 
 window.openIncidentPhotoUpload = async function(incidentId) {
   try {
@@ -23285,6 +23335,7 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       text: `🧾 Invoice Guest: ${incidentTitle}${plate ? ' [' + plate + ']' : ''}`,
       isFollowUp: true,
       done: false,
+      deleted: false,
       urgent: true,
       taskStatus: 'urgent',
       dueDate: todayDateString(),
