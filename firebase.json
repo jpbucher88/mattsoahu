@@ -11,7 +11,7 @@
       "setup.html",
       "firebase-rules.js",
       "README.md",
-      "photo-metadata.test.cjs"
+      "*.test.cjs"
     ],
     "headers": [
       {

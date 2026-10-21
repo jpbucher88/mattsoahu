@@ -251,7 +251,7 @@
             <h3>🚨 Urgent Notifications</h3>
             <span id="urgent-banner-count" class="badge urgent-badge">0</span>
           </div>
-          <button class="collapse-btn" id="urgent-banner-toggle">&#43;</button>
+          <button class="collapse-btn" id="urgent-banner-toggle" aria-controls="urgent-banner-body" aria-expanded="false" aria-label="Toggle urgent notifications" title="Show or hide pending items">&#43;</button>
         </div>
         <div id="urgent-banner-body" class="collapsible-body collapsed">
           <div id="urgent-banner-list" class="urgent-banner-list"></div>
@@ -3488,7 +3488,7 @@
   <script src="photo-metadata.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261021metadata"></script>
+  <script src="app.js?v=20261021inspection-followups"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

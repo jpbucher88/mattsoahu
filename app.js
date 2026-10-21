@@ -215,7 +215,10 @@ window.toggleSection = function(bodyId, toggleId) {
   const btn = $(toggleId);
   if (!body) return;
   const collapsed = body.classList.toggle('collapsed');
-  if (btn) btn.innerHTML = collapsed ? '&#43;' : '&#8722;';
+  if (btn) {
+    btn.innerHTML = collapsed ? '&#43;' : '&#8722;';
+    if (btn.hasAttribute('aria-expanded')) btn.setAttribute('aria-expanded', String(!collapsed));
+  }
 };
 
 function showLoading(text = 'Loading...') {
@@ -3459,74 +3462,15 @@ function showDamageCheckModal(vid, plate) {
         }
 
         if (item.incidentType) {
-          // ── CLOSED-LOOP: create incident + Turo task (with deduplication) ──
-          const vehicleObj2 = vehiclesCache.find(v => v.id === vid);
-          const plate = vehicleObj2 ? (vehicleObj2.plate || '') : '';
-
-          // Check for an already-open incident for this exact inspection item on this vehicle
-          const existSnap = await db.collection('incidents')
-            .where('vehicleId', '==', vid)
-            .where('inspectionKey', '==', item.key)
-            .where('status', 'in', ['open', 'in-progress'])
-            .get();
-
-          if (!existSnap.empty) {
-            // Re-flag existing incident — no duplicate
-            const existRef = existSnap.docs[0].ref;
-            const updatePayload = {
-              urgent: true,
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-            };
-            if (notes) updatePayload.lastInspectionNote = notes;
-            if (photoUrls.length) updatePayload.photoUrls = firebase.firestore.FieldValue.arrayUnion(...photoUrls);
-            await existRef.update(updatePayload);
-            reusedCount++;
-          } else {
-            // Create fresh incident
-            const isTuro = TURO_ELIGIBLE_INCIDENT_TYPES.includes(item.incidentType);
-            const nowSec = Math.floor(Date.now() / 1000);
-            const turoDeadlineAt = isTuro
-              ? new firebase.firestore.Timestamp(nowSec + 86400, 0)
-              : null;
-            const title = item.label + (notes ? ' — ' + notes : '');
-
-            const incRef = await db.collection('incidents').add({
-              vehicleId: vid,
-              vehiclePlate: plate,
-              type: item.incidentType,
-              title: title,
-              description: notes || ('Inspection fail: ' + item.label),
-              urgent: true,
-              status: 'open',
-              resolution: '',
-              resolvedBy: '', resolvedByName: '', resolvedAt: null,
-              followUpDate: '',
-              photoUrls: photoUrls,
-              reportedBy: currentUser.uid,
-              reportedByName: currentUser.displayName || currentUser.email,
-              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-              sourceType: 'inspection',
-              inspectionKey: item.key,
-              ...(turoDeadlineAt ? { turoDeadlineAt } : {}),
-            });
-
-            // Auto-create Turo 24h claim task so it surfaces in homepage urgent banner
-            if (isTuro) {
-              await db.collection('generalNotes').add({
-                text: '🧾 Invoice Guest: ' + title + (plate ? ' [' + plate + ']' : ''),
-                isFollowUp: true, done: false,
-                urgent: true, taskStatus: 'urgent',
-                dueDate: todayDateString(),
-                sourceType: 'incident_turo',
-                incidentDocId: incRef.id,
-                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-                createdBy: currentUser.uid,
-                createdByName: currentUser.displayName || currentUser.email,
-              });
-            }
-            newIncCount++;
-          }
+          const incident = await _createInspectionViolationIncident({
+            vehicleId: vid,
+            plate: vehicleObj ? vehicleObj.plate : safePlate,
+            item,
+            notes,
+            photoUrls,
+          });
+          if (incident.reused) reusedCount++;
+          else newIncCount++;
         } else {
           // ── Non-incident ops items (clean, refueled): plain urgent task ──
           const noteData = {
@@ -17221,6 +17165,31 @@ function isCoachingTaskHiddenFromMe(d) {
   return d.sourceType === 'coaching' && d.assignedTo !== (currentUser && currentUser.uid);
 }
 
+function inspectionChargeFollowUps(expenseDocs, taskItems) {
+  const expenseIds = new Set(taskItems.map(item => item.expenseId).filter(Boolean));
+  const incidentIds = new Set(taskItems.map(item => item.incidentDocId).filter(Boolean));
+  return expenseDocs.flatMap(doc => {
+    const data = doc.data();
+    if (data.source !== 'inspection' || data.settlementStatus !== 'open' || data.deleted ||
+        !['fuel', 'parking'].includes(data.chargeKind) || expenseIds.has(doc.id) ||
+        (data.incidentId && incidentIds.has(data.incidentId))) return [];
+    return [{
+      id: doc.id,
+      collection: 'expenses',
+      type: 'expense',
+      expenseId: doc.id,
+      incidentDocId: data.incidentId || '',
+      vehicleId: data.vehicleId || '',
+      vehiclePlate: data.vehiclePlate || '',
+      text: `${data.turoInvoiceSent ? 'Complete photos' : 'Invoice Guest'}: ${data.chargeKind === 'fuel' ? 'Vehicle Refueled' : 'Parking violation'}${data.vehiclePlate ? ' [' + data.vehiclePlate + ']' : ''}`,
+      urgent: true,
+      done: false,
+      dueDate: data.dueDate || '',
+      sourceType: 'inspection_charge',
+    }];
+  });
+}
+
 async function loadDashboardFollowUps() {
   const overdueEl = $('followup-overdue');
   const todayEl = $('followup-today');
@@ -17234,7 +17203,7 @@ async function loadDashboardFollowUps() {
   try {
     // Fetch active follow-ups from both collections (isFollowUp = true)
     // PLUS any urgent vehicle/general notes (urgent = true) even if not marked as follow-up
-    const [vFollowSnap, gFollowSnap, vUrgentSnap, gUrgentSnap, vDoneSnap, gDoneSnap] = await Promise.all([
+    const [vFollowSnap, gFollowSnap, vUrgentSnap, gUrgentSnap, vDoneSnap, gDoneSnap, inspectionExpenses] = await Promise.all([
       db.collection('vehicleNotes')
         .where('isFollowUp', '==', true)
         .where('done', '==', false)
@@ -17268,7 +17237,13 @@ async function loadDashboardFollowUps() {
         .where('isFollowUp', '==', true)
         .where('done', '==', true)
         .limit(50)
-        .get()
+        .get(),
+      (currentUserRole === 'admin' || currentUserRole === 'manager')
+        ? db.collection('expenses').where('settlementStatus', '==', 'open').get().catch(error => {
+            console.warn('Could not load inspection photo follow-ups:', error);
+            return { docs: [] };
+          })
+        : Promise.resolve({ docs: [] }),
     ]);
 
     const possibleOilTasks = [...vFollowSnap.docs, ...vUrgentSnap.docs]
@@ -17333,6 +17308,7 @@ async function loadDashboardFollowUps() {
     addItems(gFollowSnap, 'general', 'generalNotes');
     addItems(vUrgentSnap, 'vehicle', 'vehicleNotes');
     addItems(gUrgentSnap, 'general', 'generalNotes');
+    const inspectionPhotoFollowUps = inspectionChargeFollowUps(inspectionExpenses.docs, items);
 
     // Completed items
     const completedItems = [];
@@ -17384,7 +17360,7 @@ async function loadDashboardFollowUps() {
     if (tasksBtnVehicle) tasksBtnVehicle.style.display = '';
 
     // Populate urgent banner on dashboard (separate from task panel)
-    renderUrgentBanner(items);
+    renderUrgentBanner([...items, ...inspectionPhotoFollowUps]);
 
     // Populate task calendar
     renderTaskCalendar(items);
@@ -18750,14 +18726,15 @@ function renderUrgentBanner(items) {
   let html = '';
   for (const item of urgentItems) {
     const isVehicle = item.type === 'vehicle';
+    const isExpense = item.type === 'expense';
     const markFn = isVehicle ? 'agendaMarkDone' : 'agendaMarkGeneralDone';
     const vidAttr = isVehicle ? ` data-vid="${item.vehicleId}"` : '';
-    const itemAttrs = `${vidAttr} data-id="${item.id}" data-col="${item.collection}"`;
+    const itemAttrs = `${vidAttr} data-id="${item.id}" data-col="${item.collection}" data-expense="${item.expenseId || ''}" data-incident="${item.incidentDocId || ''}"`;
 
     let metaLabel;
-    if (isVehicle) {
+    if (isVehicle || item.vehiclePlate) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
-      metaLabel = '\ud83d\ude97 ' + escapeHtml(v ? v.plate : 'Unknown');
+      metaLabel = '\ud83d\ude97 ' + escapeHtml(item.vehiclePlate || (v ? v.plate : 'Unknown'));
     } else {
       metaLabel = '\ud83d\udcdd General';
     }
@@ -18773,16 +18750,16 @@ function renderUrgentBanner(items) {
 
     const isOverdue = item.dueDate && item.dueDate < today;
     let reassignBtn = '';
-    if (currentUserRole === 'admin' && isOverdue) {
+    if (currentUserRole === 'admin' && isOverdue && !isExpense) {
       reassignBtn = `<button class="btn btn-sm btn-outline cal-reassign-btn" onclick="event.stopPropagation(); openReassignTask('${item.id}', '${item.collection}', '${item.dueDate}')" title="Reassign">📅 Reassign</button>`;
     }
 
     const canManage = (currentUserRole === 'admin' || currentUserRole === 'manager');
-    const editBtn = canManage
+    const editBtn = canManage && !isExpense
       ? `<button class="btn btn-sm btn-outline urgent-edit-btn" onclick="event.stopPropagation(); openNoteEditModal('${item.id}','${item.collection}')" title="Edit">✏️ Edit</button>`
       : '';
-    const doneBtn = `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
-    const deleteBtn = currentUserRole === 'admin'
+    const doneBtn = isExpense ? '' : `<button class="btn btn-sm btn-success urgent-done-btn" onclick="event.stopPropagation(); agendaMarkDone_dispatch('${item.id}','${item.collection}')" title="Mark Complete">✓ Done</button>`;
+    const deleteBtn = currentUserRole === 'admin' && !isExpense
       ? `<button class="btn btn-sm btn-danger urgent-delete-btn" onclick="event.stopPropagation(); deleteTaskNote('${item.id}','${item.collection}')" title="Delete">🗑</button>`
       : '';
 
@@ -18795,8 +18772,11 @@ function renderUrgentBanner(items) {
     const incidentBtnHTML = item.incidentDocId
       ? `<button class="btn btn-sm btn-outline urgent-inc-btn" onclick="event.stopPropagation(); openIncidentEditFromDashboard('${item.incidentDocId}', false)" title="View incident report">📋 View Incident</button>`
       : '';
-    const photoBtnHTML = item.incidentDocId
-      ? `<button class="btn btn-sm btn-outline urgent-add-photos-btn" onclick="event.stopPropagation(); openIncidentPhotoUpload('${item.incidentDocId}')" title="Add or review photos">📷 Add Photos</button>`
+    const photoAction = item.expenseId
+      ? `openChargeSettlement('${item.expenseId}', null, null, true)`
+      : (item.incidentDocId ? `openIncidentPhotoUpload('${item.incidentDocId}')` : '');
+    const photoBtnHTML = photoAction
+      ? `<button class="btn btn-sm btn-primary urgent-add-photos-btn" onclick="event.stopPropagation(); ${photoAction}" title="Add or review photos">📷 Add Photos</button>`
       : '';
     const displayText = item.sourceType === 'incident_turo'
       ? String(item.text || '').replace(/.*?FILE TURO CLAIM:/i, '🧾 Invoice Guest:')
@@ -18815,8 +18795,8 @@ function renderUrgentBanner(items) {
           ${photosHTML}
         </div>
         <div class="urgent-banner-actions">
-          ${incidentBtnHTML}
           ${photoBtnHTML}
+          ${incidentBtnHTML}
           ${reassignBtn}
           ${maintRouteBtn}
           ${doneBtn}
@@ -18830,6 +18810,14 @@ function renderUrgentBanner(items) {
   // Click urgent items — vehicle items route into Work Orders; general items open edit modal
   list.querySelectorAll('.urgent-banner-item').forEach(el => {
     el.addEventListener('click', () => {
+      if (el.dataset.expense) {
+        openChargeSettlement(el.dataset.expense, null, null, true);
+        return;
+      }
+      if (el.dataset.incident) {
+        openIncidentPhotoUpload(el.dataset.incident);
+        return;
+      }
       const vid = el.dataset.vid;
       if (vid) {
         openUrgentItemInWorkOrders(el.dataset.id, el.dataset.col, vid);
@@ -23226,18 +23214,20 @@ function _incidentRequiresTuroInvoice(type) {
   return ['cleaning', 'refuel', 'smoking', 'citation'].includes(type);
 }
 
-async function _createInspectionViolationIncident({ vehicleId, plate, item, notes, expenseId }) {
+async function _createInspectionViolationIncident({ vehicleId, plate, item, notes, expenseId, photoUrls = [] }) {
   const incidentType = item.incidentType;
   const incidentTitle = `${item.label}${notes ? ' — ' + notes : ''}`;
-  const openSnap = await db.collection('incidents')
+  const vehicleSnap = await db.collection('incidents')
     .where('vehicleId', '==', vehicleId)
-    .where('inspectionKey', '==', item.key)
-    .where('status', 'in', ['open', 'in_progress'])
     .get();
+  const existingIncident = vehicleSnap.docs.find(doc => {
+    const data = doc.data();
+    return data.inspectionKey === item.key && ['open', 'in_progress', 'in-progress'].includes(data.status);
+  });
   const deadline = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
   let incidentRef;
-  if (!openSnap.empty) {
-    incidentRef = openSnap.docs[0].ref;
+  if (existingIncident) {
+    incidentRef = existingIncident.ref;
     await incidentRef.update({
       urgent: true,
       updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -23253,6 +23243,7 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       chargeSettlementRequired: !!expenseId,
       chargeSettled: !expenseId,
       ...(expenseId ? { relatedExpenseId: expenseId, chargeSettled: false } : {}),
+      ...(photoUrls.length ? { photoUrls: firebase.firestore.FieldValue.arrayUnion(...photoUrls) } : {}),
     });
   } else {
     incidentRef = await db.collection('incidents').add({
@@ -23268,7 +23259,7 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       resolvedByName: '',
       resolvedAt: null,
       followUpDate: '',
-      photoUrls: [],
+      photoUrls,
       sourceType: 'inspection',
       inspectionKey: item.key,
       turoInvoiceRequired: _incidentRequiresTuroInvoice(incidentType),
@@ -23299,12 +23290,13 @@ async function _createInspectionViolationIncident({ vehicleId, plate, item, note
       dueDate: todayDateString(),
       sourceType: 'incident_turo',
       incidentDocId: incidentRef.id,
+      ...(expenseId ? { expenseId } : {}),
       createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       createdBy: currentUser.uid,
       createdByName: currentUser.displayName || currentUser.email,
   };
   await claimTaskRef.set(claimTaskData, { merge: true });
-  return { incidentId: incidentRef.id, reused: !openSnap.empty };
+  return { incidentId: incidentRef.id, reused: !!existingIncident };
 }
 
 let _cachedIncidentDocs = [];
