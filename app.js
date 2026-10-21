@@ -3379,6 +3379,22 @@ function showDamageCheckModal(vid, plate) {
             sourceInspectionKey: item.key,
           });
           if (!result.settled) newTaskCount++;
+          if (item.incidentType) {
+            try {
+              const incident = await _createInspectionViolationIncident({
+                vehicleId: vid,
+                plate: vehicleObj ? vehicleObj.plate : safePlate,
+                item,
+                notes,
+                expenseId: result.expenseId,
+              });
+              if (incident.reused) reusedCount++;
+              else newIncCount++;
+            } catch (incidentError) {
+              console.error('Refuel incident creation error:', incidentError);
+              toast('Fuel charge saved, but its violation report needs follow-up.', 'warning');
+            }
+          }
           continue;
         }
 
@@ -3677,8 +3693,8 @@ const INSPECTION_ITEMS = [
   { key: 'tires',    label: 'Tires - Good condition',          incidentType: 'damage'  },
   { key: 'smoking',  label: 'Smoking / Odor - None detected',  incidentType: 'smoking' },
   { key: 'extras',   label: '🎒 Extras Returned - All items back', extrasCheck: true },
-  { key: 'clean',    label: 'Vehicle Cleaned' },
-  { key: 'refueled', label: 'Vehicle Refueled ⛽', chargeFollowUp: 'fuel' },
+  { key: 'clean',    label: 'Vehicle Cleaned',             incidentType: 'cleaning' },
+  { key: 'refueled', label: 'Vehicle Refueled ⛽',          chargeFollowUp: 'fuel', incidentType: 'refuel' },
   { key: 'parking',  label: 'Incorrect parking violation', chargeFollowUp: 'parking' },
   { key: 'bugs',     label: 'Bugs Spotted?', yesno: true },
 ];
@@ -10443,13 +10459,17 @@ async function loadInspectionsTab() {
   if (!listEl) return;
   listEl.innerHTML = '<p class="hint" style="padding:20px;text-align:center;">Loading…</p>';
   const locationSelect = document.getElementById('insp-fleet-location-filter');
-  if (locationSelect && locationSelect.options.length <= 1) {
+  if (locationSelect) {
+    const selectedLocation = locationSelect.value || 'all';
+    locationSelect.innerHTML = '<option value="all">All locations</option>';
     [...new Set(vehiclesCache.map(vehicle => vehicle.homeLocation || 'No Location Set'))].sort().forEach(location => {
       const option = document.createElement('option');
       option.value = location;
       option.textContent = location;
       locationSelect.appendChild(option);
     });
+    locationSelect.value = selectedLocation;
+    if (locationSelect.value !== selectedLocation) locationSelect.value = 'all';
   }
 
   try {
@@ -10971,6 +10991,41 @@ let _maintByVehicleScored = null;
 let _maintByVehicleFilter = 'all';
 let _maintByVehicleSortMode = 'priority'; // 'priority' | 'oil'
 let _oilIntervalReview = null;
+let _maintDashScrollState = null;
+
+function _setMaintenanceScrollLock(locked) {
+  if (locked) {
+    if (_maintDashScrollState) return;
+    _maintDashScrollState = {
+      scrollY: window.scrollY,
+      bodyPosition: document.body.style.position,
+      bodyTop: document.body.style.top,
+      bodyLeft: document.body.style.left,
+      bodyRight: document.body.style.right,
+      bodyWidth: document.body.style.width,
+      bodyOverflow: document.body.style.overflow,
+      rootOverflow: document.documentElement.style.overflow,
+    };
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${_maintDashScrollState.scrollY}px`;
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+  } else if (_maintDashScrollState) {
+    const state = _maintDashScrollState;
+    document.body.style.position = state.bodyPosition;
+    document.body.style.top = state.bodyTop;
+    document.body.style.left = state.bodyLeft;
+    document.body.style.right = state.bodyRight;
+    document.body.style.width = state.bodyWidth;
+    document.body.style.overflow = state.bodyOverflow;
+    document.documentElement.style.overflow = state.rootOverflow;
+    _maintDashScrollState = null;
+    window.scrollTo(0, state.scrollY);
+  }
+}
 
 window.openOilIntervalReview = async function() {
   if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
@@ -11070,6 +11125,7 @@ window.applyOilIntervalReview = async function() {
 window.openMaintenanceDash = function() {
   const overlay = $('maint-dash-overlay');
   if (!overlay) return;
+  _setMaintenanceScrollLock(true);
   overlay.style.display = 'flex';
   const oilReviewButton = $('btn-review-oil-intervals');
   if (oilReviewButton) oilReviewButton.style.display = (currentUserRole === 'admin' || currentUserRole === 'manager') ? '' : 'none';
@@ -11096,6 +11152,7 @@ window.openMaintenanceDash = function() {
 
 window.closeMaintenanceDash = function() {
   $('maint-dash-overlay').style.display = 'none';
+  _setMaintenanceScrollLock(false);
 };
 
 window.quickLogMaintenanceService = async function(vehicleId, serviceKey) {
@@ -11765,6 +11822,7 @@ const _origCloseMD = window.closeMaintenanceDash;
 window.closeMaintenanceDash = function() {
   _maintDashLoaded = false;
   $('maint-dash-overlay').style.display = 'none';
+  _setMaintenanceScrollLock(false);
 };
 
 // ── Maintenance Dashboard: Open Tasks tab ────────────────────────
@@ -11957,9 +12015,167 @@ let _woGroupByLocation = false;    // toggle: group by vehicle home location vs 
 
 function _isInspectionFailureTask(item) {
   if (item.inspectionFailure === true) return true;
+  if (_legacyInspectionViolationType(item)) return false;
   if (item.sourceType !== 'inspection') return false;
   return /^(turo inspection failed|inspection fail\s*[-—])/i.test(item.text || '');
 }
+
+function _legacyInspectionViolationType(note) {
+  if (note.sourceType !== 'inspection') return null;
+  const text = note.text || '';
+  if (!/inspection fail/i.test(text)) return null;
+  if (/vehicle cleaned|cleaning violation|dog hair|dirty interior/i.test(text)) return 'cleaning';
+  if (/vehicle refueled|refuel|fuel.*tank|tank not full/i.test(text)) return 'refuel';
+  return null;
+}
+
+let _legacyViolationMigrationPromise = null;
+async function _migrateLegacyInspectionViolations(backupConfirmed) {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  if (backupConfirmed !== true) throw new Error('Export a Firestore backup before migrating legacy violations.');
+  if (_legacyViolationMigrationPromise) return _legacyViolationMigrationPromise;
+  _legacyViolationMigrationPromise = (async () => {
+    let migratedCount = 0;
+    const snap = await db.collection('vehicleNotes').where('sourceType', '==', 'inspection').limit(500).get();
+    for (const sourceDoc of snap.docs) {
+      const note = sourceDoc.data();
+      const incidentType = _legacyInspectionViolationType(note);
+      if (!incidentType || note.done) continue;
+
+      const incidentId = `legacy_inspection_${sourceDoc.id}`;
+      const incidentRef = db.collection('incidents').doc(incidentId);
+      const claimRef = db.collection('generalNotes').doc(`turo_incident_${incidentId}`);
+      const [incidentSnap, claimSnap] = await Promise.all([incidentRef.get(), claimRef.get()]);
+      const title = (note.text || '').replace(/^INSPECTION FAIL\s*[-—:]\s*/i, '').trim() || (incidentType === 'refuel' ? 'Refuel Violation' : 'Cleaning Violation');
+      const occurredAt = note.createdAt?.toDate ? note.createdAt.toDate() : (note.createdAt ? new Date(note.createdAt) : new Date());
+      const deadlineDate = new Date(occurredAt.getTime() + 24 * 60 * 60 * 1000);
+      const deadline = firebase.firestore.Timestamp.fromDate(deadlineDate);
+      const batch = db.batch();
+      if (!incidentSnap.exists) {
+        batch.set(incidentRef, {
+          vehicleId: note.vehicleId || '',
+          vehiclePlate: note.plate || (vehiclesCache.find(vehicle => vehicle.id === note.vehicleId) || {}).plate || '',
+          type: incidentType,
+          title,
+          description: note.text || title,
+          urgent: true,
+          status: 'open',
+          resolution: '',
+          resolvedBy: '',
+          resolvedByName: '',
+          resolvedAt: null,
+          followUpDate: '',
+          photoUrls: Array.isArray(note.photos) ? note.photos : (note.photoUrl ? [note.photoUrl] : []),
+          sourceType: 'inspection',
+          sourceInspectionNoteId: sourceDoc.id,
+          inspectionKey: note.inspectionKey || (incidentType === 'refuel' ? 'refueled' : 'clean'),
+          reportedBy: note.createdBy || currentUser.uid,
+          reportedByName: note.createdByName || currentUserDisplayName || currentUser.email,
+          turoDeadlineAt: deadline,
+          createdAt: note.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        });
+      }
+      if (TURO_ELIGIBLE_INCIDENT_TYPES.includes(incidentType) && !claimSnap.exists) {
+        batch.set(claimRef, {
+          text: `${deadlineDate.getTime() > Date.now() ? '🛡️ FILE TURO CLAIM' : '🔎 REVIEW LEGACY VIOLATION'}: ${title}${note.plate ? ' [' + note.plate + ']' : ''}`,
+          isFollowUp: true,
+          done: false,
+          urgent: true,
+          taskStatus: 'urgent',
+          dueDate: todayDateString(),
+          sourceType: 'incident_turo',
+          incidentDocId: incidentId,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          createdBy: currentUser.uid,
+          createdByName: currentUserDisplayName || currentUser.email,
+        });
+      }
+      batch.update(sourceDoc.ref, {
+        done: true,
+        repairStatus: 'resolved',
+        linkedIncidentId: incidentId,
+        resolutionDate: todayDateString(),
+        resolutionReason: 'Moved to the Incident Reports workflow; original note retained.',
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        completedByName: currentUserDisplayName || currentUser.email,
+      });
+      await batch.commit();
+      migratedCount++;
+    }
+    if (migratedCount) {
+      loadDashboardFollowUps();
+      loadAllOpenIncidentsDashboard();
+    }
+    return migratedCount;
+  })();
+  try {
+    return await _legacyViolationMigrationPromise;
+  } finally {
+    _legacyViolationMigrationPromise = null;
+  }
+}
+
+window.openLegacyInspectionViolationMigration = async function() {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  showLoading('Reviewing legacy inspection violations…');
+  try {
+    const snap = await db.collection('vehicleNotes').where('sourceType', '==', 'inspection').limit(500).get();
+    const pending = snap.docs
+      .map(doc => ({ id: doc.id, ref: doc.ref, ...doc.data() }))
+      .filter(note => !note.done && _legacyInspectionViolationType(note));
+    const cleaningCount = pending.filter(note => _legacyInspectionViolationType(note) === 'cleaning').length;
+    const refuelCount = pending.filter(note => _legacyInspectionViolationType(note) === 'refuel').length;
+    const examples = pending.slice(0, 20).map(note => {
+      const vehicle = vehiclesCache.find(item => item.id === note.vehicleId);
+      return `<li><strong>${escapeHtml(vehicle?.plate || note.plate || 'Unknown vehicle')}</strong> · ${escapeHtml(note.text || '')}</li>`;
+    }).join('');
+    const overlay = document.createElement('div');
+    overlay.id = 'legacy-violation-migration-overlay';
+    overlay.className = 'modal-overlay';
+    overlay.style.display = 'flex';
+    overlay.innerHTML = `<div class="modal-box oil-review-modal">
+      <div class="modal-header"><h3>Move Legacy Violations to Incidents</h3><button class="modal-close" onclick="document.getElementById('legacy-violation-migration-overlay').remove()">&times;</button></div>
+      <div class="modal-body">
+        <p>This will create Cleaning/Refuel Incidents with the original 24-hour deadline and claim task, then mark the old note completed and link it to the Incident. Source notes are retained. Mechanical inspection failures are not included.</p>
+        <p><strong>${pending.length}</strong> open records found · <strong>${cleaningCount}</strong> Cleaning · <strong>${refuelCount}</strong> Refuel</p>
+        ${examples ? `<ul class="legacy-violation-preview">${examples}</ul>${pending.length > 20 ? '<p class="hint">Showing first 20 open records.</p>' : ''}` : '<p class="hint">No legacy Cleaning or Refuel violation tasks need migration.</p>'}
+        <label class="oil-review-backup"><input id="legacy-violation-backup-check" type="checkbox"> I exported a Firestore backup before migrating these records.</label>
+        <div class="oil-review-actions"><button class="btn btn-outline" onclick="document.getElementById('legacy-violation-migration-overlay').remove()">Cancel</button><button id="legacy-violation-migrate" class="btn btn-primary" onclick="migrateLegacyInspectionViolationsFromUI()" disabled>Migrate to Incidents</button></div>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', event => { if (event.target === overlay) overlay.remove(); });
+    const backupCheck = overlay.querySelector('#legacy-violation-backup-check');
+    const migrateButton = overlay.querySelector('#legacy-violation-migrate');
+    backupCheck.addEventListener('change', () => { migrateButton.disabled = !backupCheck.checked || pending.length === 0; });
+  } catch (error) {
+    console.error('Legacy violation review failed:', error);
+    toast('Could not review legacy violation tasks.', 'error');
+  } finally {
+    hideLoading();
+  }
+};
+
+window.migrateLegacyInspectionViolationsFromUI = async function() {
+  if (currentUserRole !== 'admin' && currentUserRole !== 'manager') return;
+  if (!document.getElementById('legacy-violation-backup-check')?.checked) return;
+  if (!await confirm('Migrate Legacy Violations', 'Create linked Cleaning/Refuel Incidents for all open legacy notes? Original notes will be retained and marked completed.')) return;
+  showLoading('Migrating legacy violations…');
+  try {
+    const count = await _migrateLegacyInspectionViolations(true);
+    document.getElementById('legacy-violation-migration-overlay')?.remove();
+    toast(`Migrated ${count} legacy violation${count === 1 ? '' : 's'} to Incidents.`, 'success');
+    await loadAllOpenIncidentsDashboard();
+    await loadDashboardFollowUps();
+    await _loadWorkOrders();
+  } catch (error) {
+    console.error('Legacy violation migration failed:', error);
+    toast('Migration stopped. Check Incident Reports before retrying.', 'error');
+  } finally {
+    hideLoading();
+  }
+};
 
 window.filterWorkOrderCards = function() {
   const container = $('work-orders-content');
@@ -12222,13 +12438,17 @@ async function _loadWorkOrders() {
     }
 
     const locationSelect = $('work-orders-location');
-    if (locationSelect && locationSelect.options.length <= 1) {
+    if (locationSelect) {
+      const selectedLocation = locationSelect.value || 'all';
+      locationSelect.innerHTML = '<option value="all">All locations</option>';
       [...new Set(vehiclesCache.map(vehicle => vehicle.homeLocation || 'No Location Set'))].sort().forEach(location => {
         const option = document.createElement('option');
         option.value = location;
         option.textContent = location;
         locationSelect.appendChild(option);
       });
+      locationSelect.value = selectedLocation;
+      if (locationSelect.value !== selectedLocation) locationSelect.value = 'all';
     }
     if (items.length === 0) {
       container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No open work orders! Use "+ Log Issue" to record a problem.</p></div>';
@@ -16940,6 +17160,7 @@ async function loadDashboardFollowUps() {
         let data = doc.data();
         if (data.deleted) return; // skip soft-deleted
         if (isCoachingTaskHiddenFromMe(data)) return;
+        if (_legacyInspectionViolationType(data)) return;
         if (_isInspectionFailureTask(data)) {
           data = { ...data, sourceType: 'maintenance', taskStatus: 'maintenance', urgent: false, inspectionFailure: true, workOrder: true };
         }
@@ -22800,6 +23021,7 @@ const INCIDENT_TYPES = {
   theft:       { label: '🚔 Theft / Break-in',     color: '#dc2626' },
   smoking:     { label: '🚬 Smoking Violation',    color: '#dc2626' },
   cleaning:    { label: '🧹 Cleaning Violation',   color: '#f97316' },
+  refuel:      { label: '⛽ Refuel Violation',       color: '#d97706' },
   citation:    { label: '🎫 Citation / Ticket',    color: '#7c3aed' },
   complaint:   { label: '📢 Customer Complaint',   color: '#0ea5e9' },
   other:       { label: '📝 Other',                color: '#6b7280' },
@@ -22827,7 +23049,73 @@ function startIncidentListener() {
 }
 
 // Turo-eligible incident types (24-hour claim window)
-const TURO_ELIGIBLE_INCIDENT_TYPES = ['damage', 'accident', 'cleaning', 'smoking'];
+const TURO_ELIGIBLE_INCIDENT_TYPES = ['damage', 'accident', 'cleaning', 'smoking', 'refuel'];
+
+async function _createInspectionViolationIncident({ vehicleId, plate, item, notes, expenseId }) {
+  const incidentType = item.incidentType;
+  const incidentTitle = `${item.label}${notes ? ' — ' + notes : ''}`;
+  const openSnap = await db.collection('incidents')
+    .where('vehicleId', '==', vehicleId)
+    .where('inspectionKey', '==', item.key)
+    .where('status', 'in', ['open', 'in_progress'])
+    .get();
+  const deadline = firebase.firestore.Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000));
+  let incidentRef;
+  if (!openSnap.empty) {
+    incidentRef = openSnap.docs[0].ref;
+    await incidentRef.update({
+      urgent: true,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      title: incidentTitle,
+      description: notes || `Inspection fail: ${item.label}`,
+      turoDeadlineAt: deadline,
+      ...(expenseId ? { relatedExpenseId: expenseId } : {}),
+    });
+  } else {
+    incidentRef = await db.collection('incidents').add({
+      vehicleId,
+      vehiclePlate: plate || '',
+      type: incidentType,
+      title: incidentTitle,
+      description: notes || `Inspection fail: ${item.label}`,
+      urgent: true,
+      status: 'open',
+      resolution: '',
+      resolvedBy: '',
+      resolvedByName: '',
+      resolvedAt: null,
+      followUpDate: '',
+      photoUrls: [],
+      sourceType: 'inspection',
+      inspectionKey: item.key,
+      reportedBy: currentUser.uid,
+      reportedByName: currentUser.displayName || currentUser.email,
+      turoDeadlineAt: deadline,
+      ...(expenseId ? { relatedExpenseId: expenseId } : {}),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  const claimTaskRef = db.collection('generalNotes').doc(`turo_incident_${incidentRef.id}`);
+  const claimTaskSnap = await claimTaskRef.get();
+  if (!claimTaskSnap.exists) {
+    await claimTaskRef.set({
+      text: `🛡️ FILE TURO CLAIM: ${incidentTitle}${plate ? ' [' + plate + ']' : ''}`,
+      isFollowUp: true,
+      done: false,
+      urgent: true,
+      taskStatus: 'urgent',
+      dueDate: todayDateString(),
+      sourceType: 'incident_turo',
+      incidentDocId: incidentRef.id,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: currentUser.uid,
+      createdByName: currentUser.displayName || currentUser.email,
+    });
+  }
+  return { incidentId: incidentRef.id, reused: !openSnap.empty };
+}
 
 let _cachedIncidentDocs = [];
 let _currentIncidentFilter = 'all';
@@ -23442,7 +23730,7 @@ window.saveIncident = async function() {
       toast('Incident updated.', 'success');
     } else {
       // For Turo-eligible types on new incidents: force urgent + store deadline timestamp
-      const TURO_ELIGIBLE = ['damage', 'accident', 'cleaning', 'smoking'];
+      const TURO_ELIGIBLE = TURO_ELIGIBLE_INCIDENT_TYPES;
       const isTuroEligible = TURO_ELIGIBLE.includes(type);
       const finalUrgent = isTuroEligible ? true : urgent;
       const turoDeadlineAt = isTuroEligible

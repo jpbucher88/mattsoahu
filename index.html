@@ -1647,6 +1647,7 @@
             <option value="theft">🚔 Theft / Break-in</option>
             <option value="smoking">🚬 Smoking Violation</option>
             <option value="cleaning">🧹 Cleaning Violation</option>
+            <option value="refuel">⛽ Refuel Violation</option>
             <option value="citation">🎫 Citation / Ticket</option>
             <option value="complaint">📢 Customer Complaint</option>
             <option value="other">📝 Other</option>
@@ -3266,7 +3267,10 @@
             <div id="incidents-tab-content" class="incidents-tab-panel" style="display:none;">
               <div class="incidents-sub-header" style="margin-bottom:8px;">
                 <span class="incidents-sub-title">🚨 Incident Reports</span>
-                <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+                <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;">
+                  <button class="btn btn-sm btn-outline" onclick="openLegacyInspectionViolationMigration()">Review old violations</button>
+                  <button class="btn btn-sm btn-danger" onclick="openIncidentModal()">+ Report Incident</button>
+                </div>
               </div>
               <!-- Turo 24h deadline banner -->
               <div id="turo-claims-banner" style="display:none;margin-bottom:10px;"></div>

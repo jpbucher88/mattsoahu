@@ -4251,6 +4251,8 @@ body {
 .oil-review-backup { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0; font-size: 0.82rem; }
 .oil-review-backup input { width: 18px; height: 18px; flex: 0 0 auto; margin: 0; }
 .oil-review-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.legacy-violation-preview { max-height: 34vh; margin: 10px 0; padding: 10px 10px 10px 28px; overflow: auto; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 0.8rem; }
+.legacy-violation-preview li { padding: 4px 0; overflow-wrap: anywhere; }
 .mc-summary-alert { color: #b91c1c; font-weight: 700; }
 .maint-compliance-list { display: grid; gap: 6px; }
 .mc-row { display: grid; grid-template-columns: minmax(130px, 1.2fr) repeat(3, minmax(120px, 1fr)) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; cursor: pointer; }
@@ -7053,7 +7055,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  overflow-y: auto;
+  overflow: hidden;
+  overscroll-behavior: contain;
   padding: 16px 12px 40px;
 }
 .maint-dash-panel {
@@ -7065,6 +7068,11 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  max-height: calc(100vh - 56px);
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .maint-dash-header {
   display: flex;
@@ -9396,7 +9404,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  overflow-y: auto;
+  overflow: hidden;
+  overscroll-behavior: contain;
   padding: 16px 12px 40px;
 }
 .crm-dash-panel {
@@ -9408,6 +9417,11 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  max-height: calc(100vh - 56px);
+  max-height: calc(100dvh - 56px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .crm-dash-header {
   display: flex;
