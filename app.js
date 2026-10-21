@@ -53,7 +53,6 @@ let selectedAdminPhotos = new Set();
 let selectedDate = todayDateString(); // dashboard photo date
 let photoDatesCache = new Set();      // dates with photos for current vehicle/month
 
-// --------------- PASSWORD TOGGLE ---------------
 window.togglePassword = function(inputId, btn) {
   const input = $(inputId);
   if (input.type === 'password') {
@@ -9911,10 +9910,25 @@ function inspectionFutureSummary(record) {
   return rows.length ? `<h2 class="insp-section-title">Condition / planned work</h2><table class="insp-future-summary"><thead><tr><th>Area</th><th>Observation</th><th>Plan</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
 }
 
-function normalizeInspectionFollowUp(item, today) {
-  return item.inspectionFutureWork && item.repairPriority === 'monitor' && item.dueDate && item.dueDate <= today
-    ? { ...item, repairPriority: 'standard', taskStatus: 'maintenance' }
-    : item;
+function maintenanceWorkBucket(item, today) {
+  if (item.done || item.deleted) return 'closed';
+  if (!item.inspectionFailure && !item.inspectionFutureWork &&
+      (item.maintenanceService === 'Bi-Monthly Inspection' || /bi[- ]monthly (?:turo )?inspection due/i.test(item.text || ''))) return 'assessments';
+  if (item.inspectionFailure) return 'action';
+  if (item.repairStatus === 'dropped_off' || item.repairStatus === 'awaiting_parts') return 'action';
+  if (item.repairPriority === 'monitor' || item.repairStatus === 'deferred' ||
+      (item.snoozedUntil && item.snoozedUntil > today)) return 'planned';
+  return 'action';
+}
+
+function maintenancePlateCount(items) {
+  return new Set(items.map(item => item.vehicleId || item.plate || item.id).filter(Boolean)).size;
+}
+
+function maintenancePlannedCategory(item) {
+  if ((item.inspectionFutureWork && item.inspectionKey === 'cleanliness') ||
+      /detail|clean/i.test(item.repairCategory || item.repairCategoryLabel || '')) return 'Detailing';
+  return item.repairCategoryLabel || item.maintenanceService || 'Other future work';
 }
 
 // Compute the aggregate result by scanning every checkbox in the modal.
@@ -12149,6 +12163,7 @@ const WO_PRIORITY = {
 };
 
 const WO_PROBLEM_CATEGORIES = [
+  { key: 'detailing',         label: 'Detailing / Deep Clean', icon: '🧹' },
   { key: 'low_tire_pressure', label: 'Low Tire Pressure',  icon: '🫧' },
   { key: 'brakes',            label: 'Brakes',              icon: '🛑' },
   { key: 'check_engine',      label: 'Check Engine Light',  icon: '⚠️' },
@@ -12180,6 +12195,23 @@ async function _loadWoUsers() {
 }
 
 let _activeWoCategoryFilter = null; // null = show all
+let _maintenanceBucket = 'action';
+let _plannedWorkCategory = '';
+
+window.setMaintenanceBucket = function(bucket) {
+  if (!['action', 'planned', 'assessments', 'all'].includes(bucket)) return;
+  _maintenanceBucket = bucket;
+  _plannedWorkCategory = '';
+  _activeWoCategoryFilter = null;
+  const selector = $('work-orders-bucket');
+  if (selector) selector.value = bucket;
+  switchMaintTab('mtab-work-orders', document.querySelector('[data-mtab="mtab-work-orders"]'));
+};
+
+window.setPlannedWorkCategory = function(category) {
+  _plannedWorkCategory = category;
+  _loadWorkOrders();
+};
 let _pendingWOResolveId = null;    // set when close-out sends user to maintenance form
 let _woCountByVehicle = {};        // vehicleId → ALL open WO count (for red badge on vehicle chips)
 let _woUrgentCountByVehicle = {};  // vehicleId → non-monitor WO count (blocks Fleet Ready)
@@ -12672,16 +12704,12 @@ async function _loadWorkOrders() {
       locationSelect.value = selectedLocation;
       if (locationSelect.value !== selectedLocation) locationSelect.value = 'all';
     }
-    if (items.length === 0) {
-      container.innerHTML = '<div class="maint-tab-empty"><span>✅</span><p>No open work orders! Use "+ Log Issue" to record a problem.</p></div>';
-      return;
-    }
     // Filter out snoozed items (snoozedUntil set and in the future)
     const maintenanceHorizon = new Date();
     maintenanceHorizon.setDate(maintenanceHorizon.getDate() + 60);
     const maintenanceHorizonDate = maintenanceHorizon.toISOString().slice(0, 10);
     const normalizedItems = items.map(item => {
-      if (item.inspectionFutureWork) return normalizeInspectionFollowUp(item, today);
+      if (maintenanceWorkBucket(item, today) === 'assessments') return { ...item, repairPriority: 'monitor', urgent: false };
       if (!item.autoCreated || item.sourceType !== 'maintenance' || !item.intervalType || !_isOilService(item.maintenanceService || item.text || '')) return item;
       const latestOil = oilByVehicle[item.vehicleId];
       if (!latestOil?.mileage) return { ...item, suppressFromMaintenanceView: true };
@@ -12695,8 +12723,10 @@ async function _loadWorkOrders() {
       };
     });
     const activeItems = normalizedItems.filter(i => {
+      if (maintenanceWorkBucket(i, today) === 'closed') return false;
       if (i.suppressFromMaintenanceView) return false;
       if (i.snoozedUntil && i.snoozedUntil > today) return false;
+      if (maintenanceWorkBucket(i, today) === 'assessments') return true;
       const isMaintenanceReminder = i.autoCreated && i.sourceType === 'maintenance';
       const isOilReminder = isMaintenanceReminder && _isOilService(i.maintenanceService || i.text || '');
       if (isOilReminder) {
@@ -12722,7 +12752,7 @@ async function _loadWorkOrders() {
       if (i.vehicleId) {
         _woCountByVehicle[i.vehicleId] = (_woCountByVehicle[i.vehicleId] || 0) + 1;
         // Only non-monitor items block Fleet Ready
-        if (i.repairPriority !== 'monitor') {
+        if (maintenanceWorkBucket(i, today) === 'action' && i.repairPriority !== 'monitor') {
           _woUrgentCountByVehicle[i.vehicleId] = (_woUrgentCountByVehicle[i.vehicleId] || 0) + 1;
         }
       }
@@ -12732,7 +12762,7 @@ async function _loadWorkOrders() {
     // Need Action: open work orders with real priority (critical / high / standard)
     const fhAction  = activeItems.filter(i =>
       (!i.repairStatus || i.repairStatus === 'open') &&
-      i.repairPriority !== 'monitor'
+      maintenanceWorkBucket(i, today) === 'action'
     );
     // At Shop / Scheduled: any item that is scheduled OR physically at the shop
     const fhShop    = activeItems.filter(i =>
@@ -12742,19 +12772,8 @@ async function _loadWorkOrders() {
 
     // Monitor: only items CLOSE to due — within 1500 miles (mileage) or 60 days (time).
     // Far-future reminders are silently tracked but don't clog the counter.
-    const mon60str = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
-    const fhMonitor = activeItems.filter(i => {
-      if (i.repairPriority !== 'monitor') return false;
-      if (i.repairStatus && i.repairStatus !== 'open') return false;
-      if (i.inspectionFutureWork) return true;
-      if (i.nextDueMileage) {
-        const v = vehiclesCache.find(x => x.id === i.vehicleId);
-        const milesLeft = v && v.mileage ? i.nextDueMileage - v.mileage : null;
-        return milesLeft !== null && milesLeft <= 1500;
-      }
-      if (i.dueDate) return i.dueDate <= mon60str;
-      return false;
-    });
+    const fhMonitor = [...activeItems, ...snoozedItems].filter(item => maintenanceWorkBucket(item, today) === 'planned');
+    const assessmentItems = activeItems.filter(item => maintenanceWorkBucket(item, today) === 'assessments');
 
     // Extra Need Action: compliance (Safety / Reg / Insurance) expiring within 15 days
     const comp15ms = Date.now() + 15 * 86400000;
@@ -12773,10 +12792,11 @@ async function _loadWorkOrders() {
     const fhReady   = vehiclesCache.filter(v => v.tripStatus === 'home' && !v.needsCleaning && !(_woUrgentCountByVehicle[v.id] > 0));
     const fhReturns = vehiclesCache.filter(v => v.needsCleaning || v.needsDamageCheck);
     const setFH = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
-    setFH('fh-num-action',  fhAction.length + compDueSet.size);
-    setFH('fh-num-shop',    fhShop.length);
-    setFH('fh-num-parts',   fhParts.length);
-    setFH('fh-num-monitor', fhMonitor.length);
+    setFH('fh-num-action', new Set([...fhAction.map(item => item.vehicleId || item.plate || item.id), ...compDueSet]).size);
+    setFH('fh-num-shop',    maintenancePlateCount(fhShop));
+    setFH('fh-num-parts',   maintenancePlateCount(fhParts));
+    setFH('fh-num-monitor', maintenancePlateCount(fhMonitor));
+    setFH('fh-num-assessments', maintenancePlateCount(assessmentItems.filter(item => !item.dueDate || item.dueDate <= today)));
     setFH('fh-num-ready',   fhReady.length);
     setFH('fh-num-returns', fhReturns.length);
     // Sort newest first client-side (avoids needing a Firestore composite index)
@@ -12798,27 +12818,32 @@ async function _loadWorkOrders() {
 
     // Category breakdown counts (across ALL items, before filter)
     const catCounts = {};
-    activeItems.forEach(i => {
+    const scopedItems = _maintenanceBucket === 'all' ? activeItems : activeItems.filter(item => maintenanceWorkBucket(item, today) === _maintenanceBucket);
+    scopedItems.forEach(i => {
       const k = i.repairCategory || '__none__';
       catCounts[k] = (catCounts[k] || 0) + 1;
     });
 
     // Apply active category filter
-    const filteredItems = _activeWoCategoryFilter
-      ? activeItems.filter(i => (_activeWoCategoryFilter === '__none__' ? !i.repairCategory : i.repairCategory === _activeWoCategoryFilter))
-      : activeItems;
+    const categoryItems = _activeWoCategoryFilter
+      ? scopedItems.filter(i => (_activeWoCategoryFilter === '__none__' ? !i.repairCategory : i.repairCategory === _activeWoCategoryFilter))
+      : scopedItems;
+    const filteredItems = _maintenanceBucket === 'planned' && _plannedWorkCategory
+      ? categoryItems.filter(item => maintenancePlannedCategory(item) === _plannedWorkCategory) : categoryItems;
+    const assessments = filteredItems.filter(item => maintenanceWorkBucket(item, today) === 'assessments');
+    const repairItems = filteredItems.filter(item => maintenanceWorkBucket(item, today) !== 'assessments');
 
     // Group: dropped off gets its own section; missed/open/scheduled as before
-    const droppedOff = filteredItems.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
-    const missedList = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate < today);
-    const scheduled  = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate >= today);
+    const droppedOff = repairItems.filter(i => i.repairStatus === 'dropped_off' || i.repairStatus === 'awaiting_parts');
+    const missedList = repairItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate < today);
+    const scheduled  = repairItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && i.scheduledDate && i.scheduledDate >= today);
 
     // Auto-created monitor items with dueDate > 60 days are "future maintenance" — hide from urgent list
     const sixtyDaysOut = new Date(); sixtyDaysOut.setDate(sixtyDaysOut.getDate() + 60);
     const sixtyDaysStr = sixtyDaysOut.toISOString().slice(0, 10);
-    const openAll    = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
+    const openAll    = repairItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
     const open       = openAll.filter(i => {
-      if (i.inspectionFutureWork && i.repairPriority === 'monitor') return false;
+      if (maintenanceWorkBucket(i, today) === 'planned') return false;
       // Always show manual / non-monitor items
       if (!i.autoCreated || i.sourceType !== 'maintenance') return true;
       if (i.repairPriority !== 'monitor') return true;
@@ -12833,13 +12858,18 @@ async function _loadWorkOrders() {
       return true;
     });
     // Far-future automatic maintenance stays stored but is not surfaced in the dashboard.
-    const allFuture = [...openAll.filter(item => item.inspectionFutureWork && item.repairPriority === 'monitor'), ...snoozedItems];
+    const allFuture = [...openAll.filter(item => maintenanceWorkBucket(item, today) === 'planned'),
+      ...(['planned', 'all'].includes(_maintenanceBucket) ? snoozedItems.filter(item => !item.deleted && !item.done && (!_plannedWorkCategory || maintenancePlannedCategory(item) === _plannedWorkCategory)) : [])];
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
       const homeLocation = v?.homeLocation || 'No Location Set';
       const searchText = [v?.plate, v?.make, v?.model, item.text, item.repairCategoryLabel, homeLocation].filter(Boolean).join(' ').toLowerCase();
       const searchAttrs = `data-wo-plate="${escapeHtml(v?.plate || '')}" data-wo-location="${escapeHtml(homeLocation)}" data-wo-search="${escapeHtml(searchText)}"`;
+      if (maintenanceWorkBucket(item, today) === 'assessments') {
+        const dueLabel = item.dueDate ? (item.dueDate <= today ? 'Assessment due: ' : 'Next assessment: ') + item.dueDate : 'Assessment date needs review';
+        return `<div class="wo-card-v2 wo-assessment-card" ${searchAttrs} data-id="${item.id}"><div class="wo-card-v2-main"><div class="wo-card-v2-body"><div class="wo-v2-plate">${escapeHtml(v?.plate || item.plate || 'Unknown')}</div><div class="wo-v2-issue">Bi-Monthly Turo Assessment</div><div class="wo-due-compact">${escapeHtml(dueLabel)}</div></div></div><div class="wo-card-v2-actions"><button class="wo-primary-btn" onclick="closeMaintenanceDash();openBiMonthlyInspection('${item.vehicleId}')">Run Assessment</button>${item.inspectionId ? `<button class="wo-secondary-btn" onclick="closeMaintenanceDash();viewInspection('${item.inspectionId}')">Last Inspection</button>` : ''}</div></div>`;
+      }
       if (item.syntheticOilMissing || item.syntheticCurrentMileageMissing) {
         const issueText = item.syntheticOilMissing ? 'No oil service mileage on record' : 'Current vehicle mileage missing';
         const detailText = item.syntheticOilMissing
@@ -13113,12 +13143,12 @@ async function _loadWorkOrders() {
           : `<li onclick="window.openQuickDoneModal('${item.id}')">⚡ Quick Done</li>
              <li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</li>`;
       } else if (isMaintAuto2) {
-        primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
+        primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${maintenanceWorkBucket(item, today) === 'planned' ? 'Schedule Work' : 'Schedule Repair'}</button>`;
         secondaryBtn = `<button class="wo-secondary-btn" onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Service Done</button>`;
         moreActions  = `<li onclick="window.openAdjustMaintDueModal('${item.id}')">🕓 Adjust Due Date / Miles</li>
           <li onclick="window.snoozeWorkOrder('${item.id}',30)">⏸️ Snooze 30d</li>`;
       } else {
-        primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 Schedule Repair</button>`;
+        primaryBtn   = `<button class="wo-primary-btn wo-primary-sched" onclick="openScheduleWorkOrder('${item.id}','${item.scheduledDate||''}','${escapeHtml(item.assignedMechanic||'')}')">📅 ${maintenanceWorkBucket(item, today) === 'planned' ? 'Schedule Work' : 'Schedule Repair'}</button>`;
         secondaryBtn = `<button class="wo-secondary-btn" onclick="window.openQuickDoneModal('${item.id}')">⚡ Quick Done</button>`;
         moreActions  = `<li onclick="openCloseOutWorkOrder('${item.id}','${item.vehicleId}','${escapeHtml(item.text).replace(/'/g,"&#39;")}')">✅ Resolved</li>
           <li onclick="window.updateWorkOrderStatus('${item.id}','dropped_off')">🔧 Mark Dropped Off</li>
@@ -13181,7 +13211,7 @@ async function _loadWorkOrders() {
 
     // Build category breakdown chips
     const catEntries = Object.entries(catCounts).sort((a, b) => b[1] - a[1]);
-    let breakdownChips = `<button class="wo-bdc${!_activeWoCategoryFilter ? ' wo-bdc-active' : ''}" onclick="window._woFilterByCategory(null)">All (${items.length})</button>`;
+    let breakdownChips = `<button class="wo-bdc${!_activeWoCategoryFilter ? ' wo-bdc-active' : ''}" onclick="window._woFilterByCategory(null)">All (${scopedItems.length})</button>`;
     for (const [key, count] of catEntries) {
       const cat = WO_PROBLEM_CATEGORIES.find(c => c.key === key);
       const lbl = cat ? cat.icon + ' ' + cat.label : (key === '__none__' ? '📋 Uncategorized' : '📋 ' + key);
@@ -13192,7 +13222,16 @@ async function _loadWorkOrders() {
       <div class="wo-breakdown-chips">${breakdownChips}</div>
     </div>`;
 
-    let html = breakdownHtml + `<div class="wo-pipeline-bar">
+    const plannedCategories = new Map();
+    fhMonitor.forEach(item => {
+      const category = maintenancePlannedCategory(item);
+      if (!plannedCategories.has(category)) plannedCategories.set(category, []);
+      plannedCategories.get(category).push(item);
+    });
+    const plannedSummary = _maintenanceBucket === 'planned' ? `<div class="wo-planned-summary"><strong>Planned work: ${maintenancePlateCount(fhMonitor)} plates</strong><div class="wo-breakdown-chips"><button class="wo-bdc" onclick="setPlannedWorkCategory('')">All planned work</button>${[...plannedCategories].sort(([first], [second]) => first.localeCompare(second)).map(([category, entries]) => `<button class="wo-bdc${category === _plannedWorkCategory ? ' wo-bdc-active' : ''}" data-category="${escapeHtml(category)}" onclick="setPlannedWorkCategory(this.dataset.category)">${escapeHtml(category)}: ${maintenancePlateCount(entries)} plates</button>`).join('')}</div></div>` : '';
+    const complianceSummary = ['action', 'all'].includes(_maintenanceBucket) && compDueSet.size
+      ? `<div class="wo-planned-summary"><strong>Compliance attention: ${compDueSet.size} plates</strong><button class="btn btn-sm btn-outline" onclick="switchMaintTab('mtab-compliance',document.querySelector('[data-mtab=mtab-compliance]'))">Review safety / registration / insurance due within 15 days</button></div>` : '';
+    let html = complianceSummary + plannedSummary + breakdownHtml + `<div class="wo-pipeline-bar">
       ${droppedOff.length ? `<span class="wo-pip-chip wo-pip-active">🔧 In Progress: ${droppedOff.length}</span>` : ''}
       ${missedList.length ? `<span class="wo-pip-chip wo-pip-missed">⚠️ Missed: ${missedList.length}</span>` : ''}
       ${open.length ? `<span class="wo-pip-chip wo-pip-open">⚪ Open: ${open.length}</span>` : ''}
@@ -13204,7 +13243,7 @@ async function _loadWorkOrders() {
     if (_woGroupByLocation) {
       // ── Location-grouped view ──────────────────────────────────────────────────────────────────────────
       // Combine all active items across status groups
-      const allActiveForLoc = [...droppedOff, ...missedList, ...open, ...scheduled];
+      const allActiveForLoc = [...droppedOff, ...missedList, ...open, ...scheduled, ...allFuture, ...assessments];
       const byLoc = {};
       allActiveForLoc.forEach(i => {
         const veh = vehiclesCache.find(x => x.id === i.vehicleId);
@@ -13246,6 +13285,10 @@ async function _loadWorkOrders() {
         }
       }
     } else {
+      if (assessments.length) {
+        assessments.sort((first, second) => (first.dueDate || '').localeCompare(second.dueDate || ''));
+        html += `<div class="wo-section-group"><div class="wo-section-header">Assessments <span class="wo-sec-count">${maintenancePlateCount(assessments)} plates</span></div><div id="wo-sect-assessments">${assessments.map(renderCard).join('')}</div></div>`;
+      }
       // ── Default priority-based view ─────────────────────────────────────────────────────────────────────
       if (droppedOff.length) {
         html += `<div class="wo-section-group">
@@ -13281,9 +13324,9 @@ async function _loadWorkOrders() {
         allFuture.sort((a,b) => (a.dueDate||a.snoozedUntil||'').localeCompare(b.dueDate||b.snoozedUntil||''));
         html += `<div class="wo-section-group">
           <div class="wo-section-header wo-sect-toggle-btn" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;" onclick="_woToggleSection('wo-sect-future',this)">
-            📅 Future / Monitoring <span class="wo-sec-count" style="background:#16a34a;">${allFuture.length}</span><span class="wo-sect-arrow">▶</span>
+            📅 Future / Monitoring <span class="wo-sec-count" style="background:#16a34a;">${maintenancePlateCount(allFuture)} plates</span><span class="wo-sect-arrow">${_maintenanceBucket === 'planned' ? '▼' : '▶'}</span>
           </div>
-          <div id="wo-sect-future" style="display:none;">${allFuture.map(i => {
+          <div id="wo-sect-future" style="display:${_maintenanceBucket === 'planned' ? '' : 'none'};">${allFuture.map(i => {
             const snoozeNote = i.snoozedUntil ? `<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">⏸️ Snoozed until ${new Date(i.snoozedUntil+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} — <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 6px;background:transparent;border:1px solid #d1d5db;cursor:pointer;" onclick="window.unsnoozeWorkOrder('${i.id}')">Wake up</button></div>` : '';
             return snoozeNote + renderCard(i);
           }).join('')}</div>
@@ -13302,6 +13345,10 @@ async function _loadWorkOrders() {
         html += '<div class="maint-tab-empty"><span>✅</span><p>No open work orders!</p></div>';
       }
     } // end else (priority view)
+    if (!filteredItems.length && !allFuture.length) {
+      const message = _maintenanceBucket === 'action' ? 'No current repair work.' : _maintenanceBucket === 'planned' ? 'No planned work in this view.' : _maintenanceBucket === 'assessments' ? 'No pending assessment reminders.' : 'No open work.';
+      html += `<div class="maint-tab-empty"><p>${message}</p></div>`;
+    }
     container.innerHTML = html;
     filterWorkOrderCards();
   } catch(e) {
@@ -14191,7 +14238,8 @@ const _WO_OUT_OF_SERVICE = new Set(['brakes','check_engine','battery','seat_belt
 
 window.openNewWorkOrder = function(vehicleId) {
   document.getElementById('wo-modal-overlay')?.remove();
-  const wiz = { step: 1, vehicleId: vehicleId || null, catKey: null, catLabel: null, description: '', priority: 'standard', scheduleDate: '', mechanic: '', assigneeUid: '', assigneeName: '', photos: [] };
+  const plannedEntry = _maintenanceBucket === 'planned';
+  const wiz = { step: 1, vehicleId: vehicleId || null, catKey: null, catLabel: null, description: '', priority: plannedEntry ? 'monitor' : 'standard', scheduleDate: '', mechanic: '', assigneeUid: '', assigneeName: '', photos: [] };
 
   const overlay = document.createElement('div');
   overlay.id = 'wo-modal-overlay';
@@ -14300,7 +14348,8 @@ window.openNewWorkOrder = function(vehicleId) {
   };
   window._wizSelectIssue = (key, label) => {
     wiz.catKey = key; wiz.catLabel = label;
-    wiz.priority = _WO_AUTO_PRIORITY[key] || 'standard';
+    const suggested = _WO_AUTO_PRIORITY[key] || 'standard';
+    wiz.priority = key === 'detailing' || (plannedEntry && !_WO_OUT_OF_SERVICE.has(key) && !['critical', 'high'].includes(suggested)) ? 'monitor' : suggested;
     render();
   };
   window._wizSetPriority = p => { wiz.priority = p; render(); };

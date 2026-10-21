@@ -48,9 +48,22 @@ battery age/date, and oil/coolant observations are recorded separately.
 
 Choose Future / monitor, Needs attention now, or Record only for observations.
 Actionable notes create linked work orders in the Maintenance Dashboard, not
-Home's urgent invoice queue. Future work stays in the collapsed Future /
-Monitoring section; current work stays in the open queue. Target dates move due
-items into current work when the dashboard is refreshed.
+Home's urgent invoice queue. The Maintenance Work Queue separates Action now,
+Planned work / monitor, and Assessments, with an optional All work view.
+Planned work has distinct-plate category counts, including Detailing, and retains
+the existing scheduling and close-out controls. Target dates remain planning
+targets: they do not automatically make a road-ready vehicle a red repair alert.
+Use the existing priority editor to explicitly move a planned job to current work.
+
+Inspection reminders show their next assessment date and a Run Assessment action,
+not Schedule Repair. The Assessments Due tile counts reminders due today or
+overdue. Upcoming assessments and planned work do not inflate the red repair
+count or block Fleet Ready. Real failures and the existing compliance warnings
+remain visible; counts in the summary tiles represent distinct plates.
+
+Detailing jobs default to Monitor. Other noncritical jobs entered from the
+Planned Work view also default to Monitor; safety-critical category suggestions
+are preserved. Older reminders are classified on read without data migration.
 
 Work orders use the existing scheduling, assignment, timeline, and close-out
 controls. Re-saving an inspection updates the same work-order IDs and preserves

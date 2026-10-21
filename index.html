@@ -2248,21 +2248,25 @@
 
       <!-- Fleet Health Summary Cards -->
       <div id="fleet-health-bar" class="fleet-health-bar">
-        <div class="fh-card fh-action" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='action'">
+        <div class="fh-card fh-action" onclick="setMaintenanceBucket('action')">
           <div class="fh-num" id="fh-num-action">—</div>
           <div class="fh-label">🚨 Need Action</div>
         </div>
-        <div class="fh-card fh-shop" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='shop'">
+        <div class="fh-card fh-shop" onclick="setMaintenanceBucket('action')">
           <div class="fh-num" id="fh-num-shop">—</div>
           <div class="fh-label">🔧 At Shop / Scheduled</div>
         </div>
-        <div class="fh-card fh-parts" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='parts'">
+        <div class="fh-card fh-parts" onclick="setMaintenanceBucket('action')">
           <div class="fh-num" id="fh-num-parts">—</div>
           <div class="fh-label">⏳ Parts Wait</div>
         </div>
-        <div class="fh-card fh-monitor" onclick="switchMaintTab('mtab-work-orders',document.querySelector('[data-mtab=mtab-work-orders]'));window._fhFilter='monitor'">
+        <div class="fh-card fh-monitor" onclick="setMaintenanceBucket('planned')">
           <div class="fh-num" id="fh-num-monitor">—</div>
-          <div class="fh-label">🟢 Monitor</div>
+          <div class="fh-label">🟢 Planned Work</div>
+        </div>
+        <div class="fh-card fh-assessments" onclick="setMaintenanceBucket('assessments')">
+          <div class="fh-num" id="fh-num-assessments">—</div>
+          <div class="fh-label">Assessments Due</div>
         </div>
         <div class="fh-card fh-ready" onclick="switchMaintTab('mtab-fleet',document.querySelector('[data-mtab=mtab-fleet]'))">
           <div class="fh-num" id="fh-num-ready">—</div>
@@ -2275,7 +2279,7 @@
       </div>
 
       <div class="maint-dash-tabs">
-        <button class="maint-tab-btn active" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">🚨 Open Issues</button>
+        <button class="maint-tab-btn active" data-mtab="mtab-work-orders" onclick="switchMaintTab('mtab-work-orders',this)">Work Queue</button>
         <button class="maint-tab-btn" data-mtab="mtab-inspections" onclick="switchMaintTab('mtab-inspections',this)">🔍 Inspections</button>
         <button class="maint-tab-btn" data-mtab="mtab-compliance" onclick="switchMaintTab('mtab-compliance',this)">📋 Compliance</button>
         <button class="maint-tab-btn" data-mtab="mtab-parts-queue" onclick="switchMaintTab('mtab-parts-queue',this)">📦 Parts Queue</button>
@@ -2382,6 +2386,12 @@
             </div>
           </div>
           <div class="wo-search-bar">
+            <select id="work-orders-bucket" onchange="setMaintenanceBucket(this.value)" aria-label="Work queue bucket">
+              <option value="action">Action now</option>
+              <option value="planned">Planned work / monitor</option>
+              <option value="assessments">Assessments</option>
+              <option value="all">All work</option>
+            </select>
             <input id="work-orders-search" type="search" placeholder="Search plate, issue, or service…" oninput="filterWorkOrderCards()" aria-label="Search work orders">
             <select id="work-orders-location" onchange="filterWorkOrderCards()" aria-label="Filter work orders by location">
               <option value="all">All locations</option>
@@ -3492,7 +3502,7 @@
   <script src="photo-metadata.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261021inspection-planning"></script>
+  <script src="app.js?v=20261021maintenance-buckets"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

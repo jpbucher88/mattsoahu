@@ -66,7 +66,7 @@ function harness(existing) {
   };
   vm.runInNewContext(source.slice(itemStart, itemEnd) + source.slice(futureStart, futureEnd) + source.slice(repairStart, repairEnd) +
     source.slice(fallbackStart, fallbackEnd) + source.slice(incidentStart, incidentEnd) + source.slice(deleteStart, deleteEnd) +
-    '\nglobalThis.create = _createInspectionViolationIncident; globalThis.followUps = inspectionChargeFollowUps; globalThis.syncPlanned = syncTuroInspectionRepairWorkOrders; globalThis.inspectionItems = TURO_INSPECTION_ITEMS; globalThis.normalize = normalizeInspectionFollowUp;', context);
+    '\nglobalThis.create = _createInspectionViolationIncident; globalThis.followUps = inspectionChargeFollowUps; globalThis.syncPlanned = syncTuroInspectionRepairWorkOrders; globalThis.inspectionItems = TURO_INSPECTION_ITEMS; globalThis.bucket = maintenanceWorkBucket; globalThis.plateCount = maintenancePlateCount; globalThis.plannedCategory = maintenancePlannedCategory;', context);
   return { context, stores, queries };
 }
 
@@ -241,10 +241,33 @@ test('legacy observation notes do not silently create new planned work', async (
   assert.equal(stores.vehicleNotes.size, 0);
 });
 
-test('future target dates move into current work when due without mutating the stored task', () => {
+test('planned target dates do not automatically create false-positive current work', () => {
   const { context } = harness();
   const task = { inspectionFutureWork: true, repairPriority: 'monitor', dueDate: '2026-10-22' };
-  assert.equal(context.normalize(task, '2026-10-21').repairPriority, 'monitor');
-  assert.equal(context.normalize(task, '2026-10-22').repairPriority, 'standard');
+  assert.equal(context.bucket(task, '2026-10-21'), 'planned');
+  assert.equal(context.bucket(task, '2026-10-22'), 'planned');
+  assert.equal(context.bucket(task, '2026-10-23'), 'planned');
   assert.equal(task.repairPriority, 'monitor');
+});
+
+test('assessment reminders never become repair work even with an old standard priority', () => {
+  const { context } = harness();
+  assert.equal(context.bucket({ maintenanceService: 'Bi-Monthly Inspection', repairPriority: 'standard' }, '2026-10-21'), 'assessments');
+  assert.equal(context.bucket({ text: 'Bi-Monthly Turo Inspection due (every 2 Months)' }, '2026-10-21'), 'assessments');
+  assert.equal(context.bucket({ maintenanceService: 'Bi-Monthly Inspection', inspectionFailure: true }, '2026-10-21'), 'action');
+});
+
+test('real current issues remain actionable and closed work is excluded', () => {
+  const { context } = harness();
+  assert.equal(context.bucket({ inspectionFailure: true, repairPriority: 'critical' }, '2026-10-21'), 'action');
+  assert.equal(context.bucket({ repairPriority: 'standard' }, '2026-10-21'), 'action');
+  assert.equal(context.bucket({ repairPriority: 'monitor', repairStatus: 'dropped_off' }, '2026-10-21'), 'action');
+  assert.equal(context.bucket({ repairPriority: 'monitor', done: true }, '2026-10-21'), 'closed');
+});
+
+test('planned summaries count distinct plates and group detailing work together', () => {
+  const { context } = harness();
+  assert.equal(context.plateCount([{ vehicleId: 'a' }, { vehicleId: 'a' }, { vehicleId: 'b' }]), 2);
+  assert.equal(context.plannedCategory({ inspectionFutureWork: true, inspectionKey: 'cleanliness' }), 'Detailing');
+  assert.equal(context.plannedCategory({ repairCategory: 'detailing' }), 'Detailing');
 });
