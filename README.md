@@ -40,6 +40,27 @@ Physical iPhone and Android testing with real downloaded files remains necessary
 
 Run the metadata regression checks with `node --test photo-metadata.test.cjs`.
 
+## Inspection Planning
+
+Bi-monthly inspections retain their existing 21 pass/fail checkpoints. Notes can
+be added to passing checkpoints and to the overall inspection. Cleanliness,
+battery age/date, and oil/coolant observations are recorded separately.
+
+Choose Future / monitor, Needs attention now, or Record only for observations.
+Actionable notes create linked work orders in the Maintenance Dashboard, not
+Home's urgent invoice queue. Future work stays in the collapsed Future /
+Monitoring section; current work stays in the open queue. Target dates move due
+items into current work when the dashboard is refreshed.
+
+Work orders use the existing scheduling, assignment, timeline, and close-out
+controls. Re-saving an inspection updates the same work-order IDs and preserves
+completed work. Selecting Record only cancels an open linked follow-up without
+deleting the inspection; selecting follow-up again reopens that canceled task.
+Older record-only notes are not migrated or converted automatically.
+
+Run inspection and photo regression checks with
+`node --test inspection-followups.test.cjs photo-metadata.test.cjs`.
+
 ## Prerequisites
 
 1. A **Firebase project** (free Spark plan works for getting started)

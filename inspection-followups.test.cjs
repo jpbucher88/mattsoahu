@@ -11,12 +11,19 @@ const incidentStart = source.indexOf('async function _createInspectionViolationI
 const incidentEnd = source.indexOf('let _cachedIncidentDocs', incidentStart);
 const deleteStart = source.indexOf('window.deleteUrgentFollowUp =');
 const deleteEnd = source.indexOf('window.openIncidentPhotoUpload =', deleteStart);
+const itemStart = source.indexOf('const TURO_INSPECTION_ITEMS =');
+const itemEnd = source.indexOf('let _currentInspectionId', itemStart);
+const futureStart = source.indexOf('const TURO_INSPECTION_FUTURE_ITEMS');
+const futureEnd = source.indexOf('// Compute the aggregate', futureStart);
+const repairStart = source.indexOf('const TURO_CRITICAL_INSPECTION_KEYS');
+const repairEnd = source.indexOf('window.saveBiMonthlyInspection', repairStart);
 
 function harness(existing) {
   const stores = {
     incidents: new Map(existing ? [['existing', existing]] : []),
     expenses: new Map([['expense1', {}]]),
     generalNotes: new Map([['turo_incident_existing', { done: true }]]),
+    vehicleNotes: new Map(),
   };
   const queries = [];
   function reference(collection, id) {
@@ -30,7 +37,7 @@ function harness(existing) {
   const context = {
     db: { batch() {
       const writes = [];
-      return { update: (ref, data) => writes.push(() => ref.update(data)), commit: async () => {
+      return { set: (ref, data) => writes.push(() => ref.set(data)), update: (ref, data) => writes.push(() => ref.update(data)), commit: async () => {
         for (const write of writes) await write();
       } };
     }, collection(collection) { return {
@@ -55,9 +62,11 @@ function harness(existing) {
     logUserActivity() {},
     todayDateString: () => '2026-10-21',
     _incidentRequiresTuroInvoice: () => true,
+    APP_TIMEZONE: 'Pacific/Honolulu',
   };
-  vm.runInNewContext(source.slice(fallbackStart, fallbackEnd) + source.slice(incidentStart, incidentEnd) + source.slice(deleteStart, deleteEnd) +
-    '\nglobalThis.create = _createInspectionViolationIncident; globalThis.followUps = inspectionChargeFollowUps;', context);
+  vm.runInNewContext(source.slice(itemStart, itemEnd) + source.slice(futureStart, futureEnd) + source.slice(repairStart, repairEnd) +
+    source.slice(fallbackStart, fallbackEnd) + source.slice(incidentStart, incidentEnd) + source.slice(deleteStart, deleteEnd) +
+    '\nglobalThis.create = _createInspectionViolationIncident; globalThis.followUps = inspectionChargeFollowUps; globalThis.syncPlanned = syncTuroInspectionRepairWorkOrders; globalThis.inspectionItems = TURO_INSPECTION_ITEMS; globalThis.normalize = normalizeInspectionFollowUp;', context);
   return { context, stores, queries };
 }
 
@@ -151,4 +160,91 @@ test('ordinary users cannot delete Home notifications', async () => {
   context.confirm = async () => { throw new Error('Unauthorized user reached confirmation'); };
   await context.window.deleteUrgentFollowUp('expense1', 'expenses');
   assert.deepEqual(stores.expenses.get('expense1'), {});
+});
+
+function passingRecord(context, patch = {}) {
+  return {
+    vehicleId: 'vehicle1', plate: 'TEST', inspectionDate: '2026-10-21', mileage: 50000,
+    items: Object.fromEntries(context.inspectionItems.map(item => [item.key, 'pass'])),
+    overallStatus: 'pass', ...patch,
+  };
+}
+
+test('passing inspection notes create nonurgent Maintenance work grouped by future or now', async () => {
+  const { context, stores } = harness();
+  const record = passingRecord(context, { notes: 'Coordinate detailing', notesFollowUp: 'future', futureWork: {
+    cleanliness: { notes: 'Deep-clean seat seams', plan: 'future' },
+    battery: { notes: 'Installed October 2023', plan: 'record' },
+    oil: { level: 'normal', plan: 'future' },
+    coolant: { level: 'low', plan: 'now' },
+  } });
+  record.items.brakes_notes = 'Recheck pad wear next service';
+  record.items.brakes_followUp = 'future';
+  await context.syncPlanned('inspection1', record);
+  assert.equal(stores.vehicleNotes.size, 4);
+  const tasks = [...stores.vehicleNotes.values()];
+  assert.ok(tasks.every(task => task.sourceType === 'maintenance' && task.urgent === false && task.inspectionFailure === false));
+  assert.equal(stores.vehicleNotes.get('turo_insp_future_inspection1_coolant').repairPriority, 'standard');
+  assert.equal(stores.vehicleNotes.get('turo_insp_future_inspection1_cleanliness').repairPriority, 'monitor');
+  assert.equal(record.overallStatus, 'pass');
+});
+
+test('planned work edits keep stable IDs, scheduling details, and completed work closed', async () => {
+  const { context, stores } = harness();
+  const record = passingRecord(context, { futureWork: { cleanliness: { notes: 'Clean carpets', plan: 'future' } } });
+  await context.syncPlanned('inspection1', record);
+  const task = stores.vehicleNotes.get('turo_insp_future_inspection1_cleanliness');
+  Object.assign(task, { done: true, repairStatus: 'completed', assignedMechanic: 'Detail team' });
+  record.futureWork.cleanliness.notes = 'Updated cleaning observation';
+  await context.syncPlanned('inspection1', record);
+  assert.equal(stores.vehicleNotes.size, 1);
+  const updated = stores.vehicleNotes.get('turo_insp_future_inspection1_cleanliness');
+  assert.equal(updated.done, true);
+  assert.equal(updated.repairStatus, 'completed');
+  assert.equal(updated.assignedMechanic, 'Detail team');
+});
+
+test('removing a planned follow-up cancels it; selecting it again reopens that same task', async () => {
+  const { context, stores } = harness();
+  const record = passingRecord(context, { notes: 'Plan a detail', notesFollowUp: 'future' });
+  const id = 'turo_insp_future_inspection1_general';
+  await context.syncPlanned('inspection1', record);
+  record.notesFollowUp = 'record';
+  await context.syncPlanned('inspection1', record);
+  assert.equal(stores.vehicleNotes.get(id).done, true);
+  assert.equal(stores.vehicleNotes.get(id).inspectionFollowUpCancelled, true);
+  record.notesFollowUp = 'future';
+  await context.syncPlanned('inspection1', record);
+  assert.equal(stores.vehicleNotes.size, 1);
+  assert.equal(stores.vehicleNotes.get(id).done, false);
+  assert.equal(stores.vehicleNotes.get(id).repairStatus, 'open');
+});
+
+test('failing checkpoints remain urgent repair tickets without duplicate planned-work tickets', async () => {
+  const { context, stores } = harness();
+  const record = passingRecord(context);
+  record.items.brakes = 'fail';
+  record.items.brakes_notes = 'Pads below minimum';
+  record.items.brakes_followUp = 'future';
+  await context.syncPlanned('inspection1', record);
+  assert.equal(stores.vehicleNotes.size, 1);
+  const task = stores.vehicleNotes.get('turo_insp_inspection1_brakes');
+  assert.equal(task.inspectionFailure, true);
+  assert.equal(task.repairPriority, 'critical');
+});
+
+test('legacy observation notes do not silently create new planned work', async () => {
+  const { context, stores } = harness();
+  const record = passingRecord(context, { notes: 'Historical note' });
+  record.items.brakes_notes = 'Historical wear observation';
+  await context.syncPlanned('inspection1', record);
+  assert.equal(stores.vehicleNotes.size, 0);
+});
+
+test('future target dates move into current work when due without mutating the stored task', () => {
+  const { context } = harness();
+  const task = { inspectionFutureWork: true, repairPriority: 'monitor', dueDate: '2026-10-22' };
+  assert.equal(context.normalize(task, '2026-10-21').repairPriority, 'monitor');
+  assert.equal(context.normalize(task, '2026-10-22').repairPriority, 'standard');
+  assert.equal(task.repairPriority, 'monitor');
 });

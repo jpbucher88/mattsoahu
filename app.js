@@ -9855,6 +9855,68 @@ const TURO_INSPECTION_ITEMS = [
 
 let _currentInspectionId = null;
 
+const TURO_INSPECTION_FUTURE_ITEMS = [
+  { key: 'cleanliness', label: 'Cleanliness', placeholder: 'Areas needing thorough cleaning: seats, carpets, vents...' },
+  { key: 'battery', label: 'Battery age / date', placeholder: 'Age, date code, installation date, and condition' },
+  { key: 'oil', label: 'Oil level', levels: true },
+  { key: 'coolant', label: 'Coolant level', levels: true },
+];
+
+function inspectionFollowUpOptions(selected = 'future') {
+  return [['future', 'Future / monitor'], ['now', 'Needs attention now'], ['record', 'Record only']]
+    .map(([value, label]) => `<option value="${value}"${selected === value ? ' selected' : ''}>${label}</option>`).join('');
+}
+
+function renderInspectionFutureWork(record) {
+  return TURO_INSPECTION_FUTURE_ITEMS.map(item => {
+    const value = record?.futureWork?.[item.key] || {};
+    const fieldId = `insp-future-${item.key}`;
+    const level = item.levels ? `<label for="${fieldId}-level">Observed level</label><select id="${fieldId}-level">${[['not_checked', 'Not checked'], ['normal', 'Normal'], ['low', 'Low'], ['high', 'High']].map(([key, label]) => `<option value="${key}"${(value.level || 'not_checked') === key ? ' selected' : ''}>${label}</option>`).join('')}</select>` : '';
+    return `<section class="insp-future-row"><h4>${item.label}</h4>
+      ${level}<label for="${fieldId}">${item.levels ? 'Condition / work needed' : item.label}</label>
+      <textarea id="${fieldId}" rows="2" maxlength="500" placeholder="${item.placeholder || 'Observations or work to coordinate'}">${escapeHtml(value.notes || '')}</textarea>
+      <div class="insp-future-schedule"><div><label for="${fieldId}-plan">When to address</label><select id="${fieldId}-plan">${inspectionFollowUpOptions(value.plan)}</select></div>
+      <div><label for="${fieldId}-due">Target date (optional)</label><input id="${fieldId}-due" type="date" value="${escapeHtml(value.dueDate || '')}"></div></div>
+    </section>`;
+  }).join('');
+}
+
+function inspectionFollowUpEntries(record) {
+  const entries = TURO_INSPECTION_FUTURE_ITEMS.map(item => {
+    const value = record.futureWork?.[item.key] || {};
+    const abnormal = value.level === 'low' || value.level === 'high';
+    return { key: item.key, label: item.label, details: [abnormal ? `Level: ${value.level}` : '', value.notes].filter(Boolean).join(' - '), plan: value.plan || 'record', dueDate: value.dueDate || '' };
+  });
+  TURO_INSPECTION_ITEMS.forEach(item => {
+    if (record.items?.[item.key] === 'fail') return;
+    entries.push({ key: item.key, label: item.label, details: record.items?.[`${item.key}_notes`] || '', plan: record.items?.[`${item.key}_followUp`] || 'record', dueDate: '' });
+  });
+  entries.push({ key: 'general', label: 'Inspection notes', details: record.notes || '', plan: record.notesFollowUp || 'record', dueDate: record.notesDueDate || '' });
+  return entries.filter(entry => entry.details.trim() && ['future', 'now'].includes(entry.plan));
+}
+
+function inspectionFutureSummary(record) {
+  const planned = inspectionFollowUpEntries(record);
+  const rows = TURO_INSPECTION_FUTURE_ITEMS.flatMap(item => {
+    const value = record.futureWork?.[item.key];
+    if (!value || (!value.notes && (!value.level || value.level === 'not_checked'))) return [];
+    const details = [value.level && value.level !== 'not_checked' ? `Level: ${value.level}` : '', value.notes].filter(Boolean).join(' - ');
+    const tracked = planned.some(entry => entry.key === item.key);
+    const plan = !tracked ? 'Record only' : value.plan === 'now' ? 'Needs attention now' : 'Future / monitor';
+    return [`<tr><td>${escapeHtml(item.label)}</td><td>${escapeHtml(details)}</td><td>${plan}${value.dueDate ? '<br>Target: ' + escapeHtml(value.dueDate) : ''}</td></tr>`];
+  });
+  planned.filter(entry => !TURO_INSPECTION_FUTURE_ITEMS.some(item => item.key === entry.key)).forEach(entry => {
+    rows.push(`<tr><td>${escapeHtml(entry.label)}</td><td>${escapeHtml(entry.details)}</td><td>${entry.plan === 'now' ? 'Needs attention now' : 'Future / monitor'}${entry.dueDate ? '<br>Target: ' + escapeHtml(entry.dueDate) : ''}</td></tr>`);
+  });
+  return rows.length ? `<h2 class="insp-section-title">Condition / planned work</h2><table class="insp-future-summary"><thead><tr><th>Area</th><th>Observation</th><th>Plan</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
+}
+
+function normalizeInspectionFollowUp(item, today) {
+  return item.inspectionFutureWork && item.repairPriority === 'monitor' && item.dueDate && item.dueDate <= today
+    ? { ...item, repairPriority: 'standard', taskStatus: 'maintenance' }
+    : item;
+}
+
 // Compute the aggregate result by scanning every checkbox in the modal.
 // Also updates the summary banner.
 function _computeInspectionResult() {
@@ -9893,7 +9955,12 @@ window.setAllInspStatus = function(status) {
     const el = grid.querySelector(`input[name="insp-${item.key}"][value="${status}"]`);
     if (el) el.checked = !!status;
     const noteWrap = grid.querySelector(`[data-insp-fail-note="${item.key}"]`);
-    if (noteWrap) noteWrap.style.display = status === 'fail' ? '' : 'none';
+    if (noteWrap) {
+      noteWrap.style.display = '';
+      noteWrap.open = status === 'fail' || !!noteWrap.querySelector('textarea').value.trim();
+      noteWrap.querySelector('label').textContent = status === 'fail' ? 'Why did this fail?' : 'Notes / future observations';
+      noteWrap.querySelector('.insp-note-plan').style.display = status === 'fail' ? 'none' : '';
+    }
     if (!status) {
       grid.querySelectorAll(`input[name="insp-${item.key}"]`).forEach(inp => inp.checked = false);
     }
@@ -9925,10 +9992,14 @@ function _renderInspItemsGrid(prefill) {
           <label class="insp-pass"><input type="radio" name="insp-${item.key}" value="pass" ${passChecked}><span>✓ PASS</span></label>
           <label class="insp-fail"><input type="radio" name="insp-${item.key}" value="fail" ${failChecked}><span>✕ FAIL</span></label>
         </div>
-        <div class="insp-fail-note" data-insp-fail-note="${item.key}" style="display:${cur === 'fail' ? '' : 'none'};">
-          <label for="insp-${item.key}-notes">Why did this fail?</label>
-          <textarea id="insp-${item.key}-notes" name="insp-${item.key}-notes" maxlength="500" rows="2" placeholder="Describe the defect or measurement…">${escapeHtml(failureNote)}</textarea>
-        </div>
+        <details class="insp-fail-note" data-insp-fail-note="${item.key}"${cur === 'fail' || failureNote ? ' open' : ''}>
+          <summary>Notes / future work</summary>
+          <label for="insp-${item.key}-notes">${cur === 'fail' ? 'Why did this fail?' : 'Notes / future observations'}</label>
+          <textarea id="insp-${item.key}-notes" name="insp-${item.key}-notes" maxlength="500" rows="2" placeholder="Observations, measurements, or future work">${escapeHtml(failureNote)}</textarea>
+          <div class="insp-note-plan" style="display:${cur === 'fail' ? 'none' : ''};"><label for="insp-${item.key}-plan">Follow-up</label>
+          <select id="insp-${item.key}-plan" name="insp-${item.key}-plan">${inspectionFollowUpOptions(prefill?.items?.[`${item.key}_followUp`] || (failureNote ? 'record' : 'future'))}</select>
+          </div>
+        </details>
         ${measurements}
       </div>`;
   }).join('');
@@ -9973,6 +10044,9 @@ window.openBiMonthlyInspection = async function(vehicleId, existingId) {
   document.getElementById('insp-host-sig').value = existing?.hostSignature || (currentUser?.displayName || '');
   document.getElementById('insp-inspector-sig').value = existing?.inspectorSignature || '';
   document.getElementById('insp-notes').value = existing?.notes || '';
+  document.getElementById('insp-notes-plan').innerHTML = inspectionFollowUpOptions(existing?.notesFollowUp || (existing?.notes ? 'record' : 'future'));
+  document.getElementById('insp-notes-due').value = existing?.notesDueDate || '';
+  document.getElementById('insp-future-work').innerHTML = renderInspectionFutureWork(existing);
 
   const grid = document.getElementById('insp-items-grid');
   if (grid) grid.innerHTML = _renderInspItemsGrid(existing);
@@ -9985,7 +10059,12 @@ window.openBiMonthlyInspection = async function(vehicleId, existingId) {
       if (event.target.matches('input[type="radio"]')) {
         const itemKey = event.target.name.replace(/^insp-/, '');
         const noteWrap = grid.querySelector(`[data-insp-fail-note="${itemKey}"]`);
-        if (noteWrap) noteWrap.style.display = event.target.value === 'fail' ? '' : 'none';
+        if (noteWrap) {
+          noteWrap.style.display = '';
+          noteWrap.open = event.target.value === 'fail' || !!noteWrap.querySelector('textarea').value.trim();
+          noteWrap.querySelector('label').textContent = event.target.value === 'fail' ? 'Why did this fail?' : 'Notes / future observations';
+          noteWrap.querySelector('.insp-note-plan').style.display = event.target.value === 'fail' ? 'none' : '';
+        }
       }
       _computeInspectionResult();
     });
@@ -10081,6 +10160,47 @@ async function syncTuroInspectionRepairWorkOrders(inspectionId, record) {
     }
   });
 
+  const planned = inspectionFollowUpEntries(record);
+  const existingPlanned = notesSnap.docs.filter(doc => doc.data().inspectionFutureWork && doc.data().inspectionId === inspectionId);
+  planned.forEach(entry => {
+    const ref = db.collection('vehicleNotes').doc(`turo_insp_future_${inspectionId}_${entry.key}`);
+    const existing = existingPlanned.find(doc => doc.id === ref.id)?.data();
+    const reopen = existing?.inspectionFollowUpCancelled === true;
+    const task = {
+      vehicleId: record.vehicleId, plate: record.plate || '',
+      text: `Inspection follow-up - ${entry.label}: ${entry.details}`,
+      isFollowUp: true, urgent: false, taskStatus: entry.plan === 'now' ? 'maintenance' : 'monitoring',
+      dueDate: entry.dueDate, sourceType: 'maintenance', workOrder: true,
+      inspectionFutureWork: true, inspectionFailure: false, inspectionId, inspectionKey: entry.key,
+      inspectionDate: record.inspectionDate, inspectionMileage: record.mileage,
+      inspectionNotes: record.notes || '', inspectionFollowUpCancelled: false,
+      repairCategoryLabel: entry.label, repairPriority: entry.plan === 'now' ? 'standard' : 'monitor',
+      done: reopen ? false : (existing?.done || false),
+      repairStatus: reopen ? 'open' : (existing?.repairStatus || 'open'),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    };
+    if (!existing) {
+      task.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      task.createdBy = currentUser?.uid || null;
+      task.createdByName = actorName;
+      task.progressLog = [{
+        by: actorName,
+        at: new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+        text: `Created from inspection ${record.inspectionDate}: ${entry.plan === 'now' ? 'needs attention now' : 'future / monitoring'}${entry.dueDate ? '; target ' + entry.dueDate : ''}`,
+      }];
+    }
+    writes.push({ method: existing ? 'update' : 'set', ref, data: task });
+  });
+  existingPlanned.forEach(doc => {
+    const task = doc.data();
+    if (task.done || planned.some(entry => entry.key === task.inspectionKey)) return;
+    writes.push({ method: 'update', ref: doc.ref, data: {
+      done: true, repairStatus: 'resolved', inspectionFollowUpCancelled: true,
+      resolutionReason: 'Follow-up removed from inspection',
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedByName: actorName,
+    } });
+  });
+
   for (let offset = 0; offset < writes.length; offset += 450) {
     const batch = db.batch();
     writes.slice(offset, offset + 450).forEach(write => batch[write.method](write.ref, write.data));
@@ -10110,11 +10230,10 @@ window.saveBiMonthlyInspection = async function() {
     const passEl = grid.querySelector(`input[name="insp-${item.key}"][value="pass"]`);
     const failEl = grid.querySelector(`input[name="insp-${item.key}"][value="fail"]`);
     items[item.key] = failEl?.checked ? 'fail' : (passEl?.checked ? 'pass' : '');
-    if (items[item.key] === 'fail') {
-      const noteEl = grid.querySelector(`textarea[name="insp-${item.key}-notes"]`);
-      const failureNote = noteEl?.value.trim();
-      if (failureNote) items[`${item.key}_notes`] = failureNote;
-    }
+    const noteEl = grid.querySelector(`textarea[name="insp-${item.key}-notes"]`);
+    const itemNote = noteEl?.value.trim();
+    if (itemNote) items[`${item.key}_notes`] = itemNote;
+    if (itemNote) items[`${item.key}_followUp`] = grid.querySelector(`[name="insp-${item.key}-plan"]`)?.value || 'future';
     if (item.measurements) {
       item.measurements.forEach(pos => {
         const mEl = grid.querySelector(`input[name="insp-${item.key}-${pos}"]`);
@@ -10127,6 +10246,17 @@ window.saveBiMonthlyInspection = async function() {
   const nextDue = new Date(inspectionDate + 'T12:00:00');
   nextDue.setDate(nextDue.getDate() + 60);
   const nextDueDate = nextDue.toISOString().slice(0, 10);
+
+  const futureWork = {};
+  TURO_INSPECTION_FUTURE_ITEMS.forEach(item => {
+    const fieldId = `insp-future-${item.key}`;
+    futureWork[item.key] = {
+      notes: document.getElementById(fieldId).value.trim(),
+      level: document.getElementById(`${fieldId}-level`)?.value || '',
+      plan: document.getElementById(`${fieldId}-plan`).value,
+      dueDate: document.getElementById(`${fieldId}-due`).value,
+    };
+  });
 
   const record = {
     vehicleId,
@@ -10143,6 +10273,9 @@ window.saveBiMonthlyInspection = async function() {
     hostSignature: document.getElementById('insp-host-sig').value.trim(),
     inspectorSignature: document.getElementById('insp-inspector-sig').value.trim(),
     notes: document.getElementById('insp-notes').value.trim(),
+    notesFollowUp: document.getElementById('insp-notes-plan').value,
+    notesDueDate: document.getElementById('insp-notes-due').value,
+    futureWork,
     items,
     overallStatus: result.status, // 'pass' | 'fail' | 'incomplete'
     passCount: result.passCount,
@@ -10257,12 +10390,14 @@ window.saveBiMonthlyInspection = async function() {
         overallStatus: result.status,
         passCount: result.passCount,
         failCount: result.failCount,
+        plannedFollowUpCount: inspectionFollowUpEntries(record).length,
       });
     } catch(_) {}
 
     toast(`✅ Inspection saved — ${result.status.toUpperCase()}`, 'success');
     closeBiMonthlyInspection();
     loadVehicleInspections(vehicleId);
+    loadDashboardFollowUps();
     if (typeof updateRecommendedServices === 'function') updateRecommendedServices(vehicleId);
   } catch(e) {
     console.error('Save inspection error:', e);
@@ -10365,8 +10500,8 @@ window.viewInspection = async function(id) {
           return `<span><strong>${pos}:</strong> ${escapeHtml(mv)}</span>`;
         }).join(' · ') + '</div>';
       }
-      const failureNote = val === 'fail' ? d.items?.[`${item.key}_notes`] : '';
-      const noteHtml = failureNote ? `<div class="insp-vw-fail-note">${escapeHtml(failureNote)}</div>` : '';
+      const failureNote = d.items?.[`${item.key}_notes`] || '';
+      const noteHtml = failureNote ? `<div class="${val === 'fail' ? 'insp-vw-fail-note' : 'insp-vw-note'}">${escapeHtml(failureNote)}</div>` : '';
       return `<div class="insp-vw-row"><span class="insp-vw-n">${idx+1}</span><div style="flex:1;"><div>${escapeHtml(item.label)}</div>${measurements}${noteHtml}</div>${badge}</div>`;
     }).join('');
     const overallCls = d.overallStatus === 'pass' ? 'insp-overall-pass' : d.overallStatus === 'fail' ? 'insp-overall-fail' : 'insp-overall-incomplete';
@@ -10384,7 +10519,8 @@ window.viewInspection = async function(id) {
       </div>
       <div class="insp-overall ${overallCls}" style="margin:10px 0;">${overallLbl} · ${d.passCount || 0} pass · ${d.failCount || 0} fail${d.nextDueDate ? ' · next due ' + d.nextDueDate : ''}</div>
       <div class="insp-vw-list">${rows}</div>
-      ${d.notes ? `<div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px;"><strong>Notes:</strong> ${escapeHtml(d.notes)}</div>` : ''}
+      ${inspectionFutureSummary(d)}
+      ${d.notes ? `<div style="margin-top:10px;padding:10px;background:#f8fafc;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere;"><strong>Notes:</strong> ${escapeHtml(d.notes)}</div>` : ''}
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-top:10px;font-size:0.85rem;">
         <div><strong>Host Signature:</strong> ${escapeHtml(d.hostSignature || '—')}</div>
         <div><strong>Inspector:</strong> ${escapeHtml(d.inspectorName || '—')}${d.aseId ? ' · ASE ' + escapeHtml(d.aseId) : ''}</div>
@@ -10412,8 +10548,8 @@ window.printCurrentInspection = function() {
         return `${pos}: ${mv}`;
       }).join(' · ');
     }
-    const failureNote = val === 'fail' ? d.items?.[`${item.key}_notes`] : '';
-    const noteText = failureNote ? `<br><strong>Failure:</strong> ${escapeHtml(failureNote)}` : '';
+    const failureNote = d.items?.[`${item.key}_notes`] || '';
+    const noteText = failureNote ? `<br><strong>${val === 'fail' ? 'Failure' : 'Notes'}:</strong> ${escapeHtml(failureNote)}` : '';
     return `<tr><td>${idx+1}</td><td>${escapeHtml(item.label)}${measurements}${noteText}</td><td class="${cls}">${status}</td></tr>`;
   }).join('');
   const overall = (d.overallStatus || 'incomplete').toUpperCase();
@@ -10454,7 +10590,8 @@ window.printCurrentInspection = function() {
     <div class="overall ${d.overallStatus==='pass'?'o-pass':d.overallStatus==='fail'?'o-fail':'o-inc'}">Overall: ${overall} · ${d.passCount||0} pass · ${d.failCount||0} fail</div>
     <h2>Inspection Points</h2>
     <table><thead><tr><th style="width:40px;">#</th><th>Item</th><th style="width:100px;">Result</th></tr></thead><tbody>${rows}</tbody></table>
-    ${d.notes ? `<h2>Notes</h2><div style="font-size:12px;">${escapeHtml(d.notes)}</div>` : ''}
+    ${inspectionFutureSummary(d)}
+    ${d.notes ? `<h2>Notes</h2><div style="font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere;">${escapeHtml(d.notes)}</div>` : ''}
     <div class="sig">
       <div><span style="color:#666;font-size:10px;">HOST SIGNATURE</span><br>${escapeHtml(d.hostSignature||'')}</div>
       <div><span style="color:#666;font-size:10px;">INSPECTOR SIGNATURE</span><br>${escapeHtml(d.inspectorSignature||'')}</div>
@@ -12544,6 +12681,7 @@ async function _loadWorkOrders() {
     maintenanceHorizon.setDate(maintenanceHorizon.getDate() + 60);
     const maintenanceHorizonDate = maintenanceHorizon.toISOString().slice(0, 10);
     const normalizedItems = items.map(item => {
+      if (item.inspectionFutureWork) return normalizeInspectionFollowUp(item, today);
       if (!item.autoCreated || item.sourceType !== 'maintenance' || !item.intervalType || !_isOilService(item.maintenanceService || item.text || '')) return item;
       const latestOil = oilByVehicle[item.vehicleId];
       if (!latestOil?.mileage) return { ...item, suppressFromMaintenanceView: true };
@@ -12608,6 +12746,7 @@ async function _loadWorkOrders() {
     const fhMonitor = activeItems.filter(i => {
       if (i.repairPriority !== 'monitor') return false;
       if (i.repairStatus && i.repairStatus !== 'open') return false;
+      if (i.inspectionFutureWork) return true;
       if (i.nextDueMileage) {
         const v = vehiclesCache.find(x => x.id === i.vehicleId);
         const milesLeft = v && v.mileage ? i.nextDueMileage - v.mileage : null;
@@ -12679,6 +12818,7 @@ async function _loadWorkOrders() {
     const sixtyDaysStr = sixtyDaysOut.toISOString().slice(0, 10);
     const openAll    = filteredItems.filter(i => i.repairStatus !== 'dropped_off' && i.repairStatus !== 'awaiting_parts' && !i.scheduledDate);
     const open       = openAll.filter(i => {
+      if (i.inspectionFutureWork && i.repairPriority === 'monitor') return false;
       // Always show manual / non-monitor items
       if (!i.autoCreated || i.sourceType !== 'maintenance') return true;
       if (i.repairPriority !== 'monitor') return true;
@@ -12693,7 +12833,7 @@ async function _loadWorkOrders() {
       return true;
     });
     // Far-future automatic maintenance stays stored but is not surfaced in the dashboard.
-    const allFuture = [...snoozedItems];
+    const allFuture = [...openAll.filter(item => item.inspectionFutureWork && item.repairPriority === 'monitor'), ...snoozedItems];
 
     function renderCard(item) {
       const v = vehiclesCache.find(x => x.id === item.vehicleId);
@@ -12793,16 +12933,16 @@ async function _loadWorkOrders() {
 
       // Maintenance source badge + due date info
       const isMaintAuto = !!(item.autoCreated && item.sourceType === 'maintenance');
-      const maintSourceBadge = isMaintAuto ? '<span class="wo-maint-source-badge">🛠 Scheduled Maintenance</span>' : '';
+      const maintSourceBadge = isMaintAuto ? '<span class="wo-maint-source-badge">🛠 Scheduled Maintenance</span>' : (item.inspectionFutureWork ? '<span class="wo-maint-source-badge">Inspection follow-up</span>' : '');
       let maintDueLine = '';
-      if (isMaintAuto) {
+      if (isMaintAuto || item.inspectionFutureWork) {
         const lines = [];
         // Time-based due
         if (item.dueDate) {
           const dueD = new Date(item.dueDate + 'T12:00:00');
           const isOverdue = item.dueDate < today;
           const dueFmt = dueD.toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-          lines.push('<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">📆 ' + (isOverdue ? '<strong>Overdue</strong> — was due ' : 'Service due: ') + dueFmt + '</div>');
+          lines.push('<div class="wo-due-line' + (isOverdue ? ' wo-due-overdue' : '') + '">📆 ' + (isOverdue ? '<strong>Overdue</strong> — was due ' : (item.inspectionFutureWork ? 'Target date: ' : 'Service due: ')) + dueFmt + '</div>');
         }
         // Mileage-based due — always show alongside time so the user can see
         // whether the mileage is still far off even when the date has passed
@@ -13141,7 +13281,7 @@ async function _loadWorkOrders() {
         allFuture.sort((a,b) => (a.dueDate||a.snoozedUntil||'').localeCompare(b.dueDate||b.snoozedUntil||''));
         html += `<div class="wo-section-group">
           <div class="wo-section-header wo-sect-toggle-btn" style="background:#f0fdf4;color:#166534;border-color:#bbf7d0;" onclick="_woToggleSection('wo-sect-future',this)">
-            📅 Future / Snoozed <span class="wo-sec-count" style="background:#16a34a;">${allFuture.length}</span><span class="wo-sect-arrow">▶</span>
+            📅 Future / Monitoring <span class="wo-sec-count" style="background:#16a34a;">${allFuture.length}</span><span class="wo-sect-arrow">▶</span>
           </div>
           <div id="wo-sect-future" style="display:none;">${allFuture.map(i => {
             const snoozeNote = i.snoozedUntil ? `<div style="font-size:0.75rem;color:#6b7280;margin-bottom:4px;">⏸️ Snoozed until ${new Date(i.snoozedUntil+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'})} — <button class="btn btn-sm" style="font-size:0.72rem;padding:1px 6px;background:transparent;border:1px solid #d1d5db;cursor:pointer;" onclick="window.unsnoozeWorkOrder('${i.id}')">Wake up</button></div>` : '';

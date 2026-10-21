@@ -1074,9 +1074,13 @@
             </div>
             <div id="insp-items-grid" class="insp-items-grid"></div>
 
+            <div class="insp-section-title">Condition / planned work</div>
+            <div id="insp-future-work"></div>
+
             <!-- Notes -->
             <div class="insp-section-title">📝 Notes</div>
             <textarea id="insp-notes" rows="2" maxlength="500" placeholder="Anything the inspector or host wants recorded"></textarea>
+            <div class="insp-future-schedule"><div><label for="insp-notes-plan">Notes follow-up</label><select id="insp-notes-plan"></select></div><div><label for="insp-notes-due">Target date (optional)</label><input id="insp-notes-due" type="date"></div></div>
 
             <!-- Signatures -->
             <div class="insp-section-title">✍️ Signatures</div>
@@ -3488,7 +3492,7 @@
   <script src="photo-metadata.js"></script>
 
   <script src="firebase-config.js"></script>
-  <script src="app.js?v=20261021notification-delete"></script>
+  <script src="app.js?v=20261021inspection-planning"></script>
 
   <!-- Floating background upload progress -->
   <div id="bg-upload-toast" class="bg-upload-toast" style="display:none;">

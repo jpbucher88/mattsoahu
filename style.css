@@ -1696,8 +1696,22 @@ body {
   color: #fff;
 }
 .insp-fail-note { margin-top: 8px; }
-.insp-fail-note label { display: block; margin-bottom: 4px; color: #991b1b; font-size: 0.75rem; font-weight: 700; }
-.insp-fail-note textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 7px 8px; border: 1px solid #fca5a5; border-radius: 6px; font: inherit; font-size: 0.82rem; }
+.insp-fail-note summary { cursor: pointer; color: #475569; font-size: 0.8rem; }
+.insp-fail-note[open] summary { margin-bottom: 8px; }
+.insp-fail-note label { display: block; margin-bottom: 4px; color: #475569; font-size: 0.75rem; font-weight: 700; }
+.insp-fail-note textarea { box-sizing: border-box; width: 100%; resize: vertical; padding: 7px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; font-size: 0.82rem; }
+.insp-item:has(.insp-fail input:checked) .insp-fail-note textarea { border-color: #fca5a5; }
+#inspection-form #insp-notes { box-sizing: border-box; display: block; width: 100%; min-height: 100px; resize: vertical; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.insp-fail-note select { width: 100%; padding: 7px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; font-size: 0.82rem; }
+.insp-future-row { padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+.insp-future-row h4 { margin: 0 0 8px; font-size: 0.9rem; }
+.insp-future-row label, .insp-future-schedule label { display: block; margin: 6px 0 4px; font-size: 0.8rem; color: #475569; }
+.insp-future-row input, .insp-future-row select, .insp-future-row textarea, .insp-future-schedule select, .insp-future-schedule input { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: inherit; }
+.insp-future-row textarea { resize: vertical; min-height: 70px; }
+.insp-future-schedule { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; }
+.insp-future-summary { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 0.82rem; }
+.insp-future-summary th, .insp-future-summary td { padding: 8px; border: 1px solid #e2e8f0; text-align: left; overflow-wrap: anywhere; white-space: pre-wrap; }
+.insp-vw-note { margin-top: 4px; color: #475569; font-size: 0.82rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 .insp-measurements {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
