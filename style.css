@@ -1167,7 +1167,6 @@ body {
 
 /* ============ CONFIRM DIALOG ============ */
 .confirm-overlay {
-  z-index: 100004 !important;
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
   background: rgba(0,0,0,0.5);
@@ -1266,8 +1265,6 @@ body {
   transition: transform 0.08s ease-out;
   will-change: transform;
 }
-.camera-gps-option { position: absolute; bottom: 100%; left: 12px; margin-bottom: 10px; display: inline-flex; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(0,0,0,0.8); color: #fff; border-radius: 6px; font-size: 0.85rem; pointer-events: auto; }
-.camera-gps-option input { width: 18px; height: 18px; }
 
 .camera-hud {
   position: absolute;
@@ -1438,7 +1435,6 @@ body {
 }
 
 .camera-bottom-bar {
-  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;

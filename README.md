@@ -22,22 +22,22 @@ A mobile-first web app for car rental companies to photograph and document vehic
 Turo's fuel reimbursement guidance requires trip photos with date, time, and
 geolocation metadata: https://help.turo.com/charging-for-missing-fuel-or-low-battery-S1d_r4xV5
 
-The app's camera records the shutter time with a UTC timezone offset and a fresh
-device-provided GPS location in JPEG EXIF when available. Camera permission is
-required; GPS is optional so a location failure does not stop fleet photography.
-Camera buttons on inspection and expense forms use this same camera.
-Use a supported HTTPS browser such as current iOS Safari or Android Chrome.
+The camera/photo workflow has been restored to pre-GPS capture behavior. The main
+in-app camera captures immediately and records the actual shutter time; it does
+not request GPS, show metadata prompts, or require a bypass. Inspection and
+expense Camera buttons use the native phone camera input again. Existing business
+workflows and the multi-photo evidence controls remain unchanged.
 
-Photo imports with missing capture time or GPS are accepted with a warning.
-Upload time and file modification time are never substituted for a missing
-capture time. The camera offers Skip GPS and a confirmation after a failed GPS
-request; bypass applies only to that camera session. New camera captures retain
-their actual shutter time even without GPS, and no location is invented.
-Fleet photo records flag missing metadata for later review. Photos without GPS
-may not satisfy Turo fuel reimbursement requirements; keep complete original
-evidence for claims whenever possible.
-Compression and queued uploads preserve the original EXIF capture fields and GPS;
-JPEG downloads retain the original file bytes.
+Original JPEG EXIF capture fields and GPS, when present, are copied during import
+compression. Missing capture time or location does not block imports and is not
+invented from upload time or file-modified time. Resumed imports use original
+metadata rather than the resume time. JPEG downloads keep their file bytes.
+
+The in-app browser camera does not obtain GPS metadata. For claim evidence, retain
+original phone-camera files with location enabled and upload the original JPEGs
+instead of screenshots or edited copies. Metadata reading/conversion is format-
+dependent; unsupported formats may not retain their metadata. Do not discard the
+original evidence files after upload.
 
 This does not guarantee Turo acceptance or verify the device clock or GPS
 accuracy. Photos already stored without metadata cannot be repaired automatically.

@@ -91,3 +91,18 @@ test('GPS requests use a short timeout and recent cached fixes', async () => {
   assert.equal(options.timeout, 3000);
   assert.equal(options.maximumAge, 30000);
 });
+
+test('restored camera has no GPS gate and imported photos do not receive guessed capture dates', () => {
+  const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  const shutterStart = app.indexOf("$('camera-shutter').addEventListener");
+  const shutter = app.slice(shutterStart, app.indexOf('async function queueCameraUpload', shutterStart));
+  assert.ok(!shutter.includes('PhotoMetadata.position'));
+  assert.ok(!shutter.includes('confirm('));
+  assert.ok(!app.includes('cameraGpsBypass'));
+  assert.ok(!app.includes('metadataApprovedEvents'));
+  const compressionStart = app.indexOf('function compressImage(');
+  const compression = app.slice(compressionStart, app.indexOf('function compressBlob(', compressionStart));
+  assert.ok(compression.includes('PhotoMetadata.restore'));
+  assert.ok(!compression.includes('injectExifTimestamp'));
+  assert.ok(!compression.includes('Date.now()'));
+});

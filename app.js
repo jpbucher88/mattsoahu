@@ -1259,10 +1259,15 @@ function compressImage(file, maxWidth = 1920, quality = 0.85) {
         ctx.drawImage(img, 0, 0, w, h);
         canvas.toBlob(async (blob) => {
           if (!blob) { reject(new Error('Failed to convert image to JPEG.')); return; }
+          let stamped = blob;
           try {
-            const stamped = await PhotoMetadata.restore(blob, file, w, h);
-            resolve(new File([stamped], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: file.lastModified }));
-          } catch (error) { reject(error); }
+            stamped = await PhotoMetadata.restore(blob, file, w, h);
+          } catch (error) {
+            console.warn('Could not copy photo metadata:', error);
+            const header = new Uint8Array(await file.slice(0, 2).arrayBuffer());
+            if (header[0] === 0xFF && header[1] === 0xD8) stamped = file;
+          }
+          resolve(new File([stamped], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg', lastModified: file.lastModified }));
         }, 'image/jpeg', quality);
       };
       img.src = e.target.result;
@@ -1273,7 +1278,7 @@ function compressImage(file, maxWidth = 1920, quality = 0.85) {
 
 // Compress a blob directly (used by the in-browser camera and queue resume)
 // Defaults match the file-picker: 1920px / 85% quality
-function compressBlob(blob, maxWidth = 1920, quality = 0.85) {
+function compressBlob(blob, maxWidth = 1920, quality = 0.85, captureTimestamp = null) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('Image processing timed out.')), 15000);
     const url = URL.createObjectURL(blob);
@@ -1295,56 +1300,16 @@ function compressBlob(blob, maxWidth = 1920, quality = 0.85) {
       ctx.drawImage(img, 0, 0, w, h);
       canvas.toBlob(async (result) => {
         if (!result) { reject(new Error('Failed to convert to JPEG.')); return; }
-        try { resolve(await PhotoMetadata.restore(result, blob, w, h)); }
-        catch (error) { reject(error); }
+        if (captureTimestamp) resolve(await injectExifTimestamp(result, captureTimestamp));
+        else {
+          try { resolve(await PhotoMetadata.restore(result, blob, w, h)); }
+          catch (error) { resolve(blob); }
+        }
       }, 'image/jpeg', quality);
     };
     img.src = url;
   });
 }
-
-const metadataApprovedEvents = new WeakSet();
-const photoValidationRuns = new WeakMap();
-document.addEventListener('change', async event => {
-  const input = event.target;
-  if (metadataApprovedEvents.has(event) || !input || input.type !== 'file' || !input.files) return;
-  const files = Array.from(input.files);
-  const photos = files.filter(file => file.type.startsWith('image/') || /\.(jpe?g|heic|heif|png|webp|avif|tiff?|bmp)$/i.test(file.name));
-  if (!photos.length) return;
-  event.stopImmediatePropagation();
-  const run = {};
-  photoValidationRuns.set(input, run);
-  try {
-    let missingMetadata = false;
-    for (const file of photos) {
-      if (PhotoMetadata.missing(await PhotoMetadata.read(file)).length) missingMetadata = true;
-    }
-    if (!input.isConnected || photoValidationRuns.get(input) !== run) return;
-    if (missingMetadata && !(cameraGpsBypass && $('camera-overlay').style.display === 'flex')) toast('Photos accepted with missing capture time or GPS. Turo fuel reimbursement may require original photos with complete metadata.', 'warning');
-    const approved = new Event('change', { bubbles: true });
-    metadataApprovedEvents.add(approved);
-    input.dispatchEvent(approved);
-  } catch (error) {
-    if (photoValidationRuns.get(input) !== run) return;
-    input.value = '';
-    toast(error.message, 'error');
-  }
-}, true);
-
-document.addEventListener('click', event => {
-  const label = event.target.closest && event.target.closest('label');
-  const input = event.target.type === 'file' ? event.target : label && (label.control || label.querySelector('input[type="file"]'));
-  if (!input || input.type !== 'file' || !input.hasAttribute('capture')) return;
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  openCamera(file => {
-    if (!input.isConnected) throw new Error('The photo form was closed. Please reopen it and retake the photo.');
-    const transfer = new DataTransfer();
-    transfer.items.add(file);
-    input.files = transfer.files;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  });
-}, true);
 
 // ================================================================
 // AUTH
@@ -5251,7 +5216,6 @@ async function handlePhotoFiles(e) {
 // Core upload function — used by both file picker and camera
 // capturedDate: the date string when the photo was TAKEN (not when it's uploaded)
 async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
-  const metadataMissing = PhotoMetadata.missing(await PhotoMetadata.read(blobOrFile));
   const st = getStorage();
   if (!st) {
     throw new Error('Firebase Storage is not enabled yet. Contact your admin to enable billing.');
@@ -5292,8 +5256,6 @@ async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
     url: downloadURL,
     date: date,
     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-    metadataMissing,
-    metadataStatus: metadataMissing.length ? 'incomplete' : 'complete',
     uploadedBy: currentUser.uid,
     uploaderName: currentUser.displayName || currentUser.email,
   });
@@ -5528,25 +5490,11 @@ function _initCameraPinchZoom() {
   }, { passive: false });
 }
 
-let cameraPhotoTarget = null;
-let cameraSession = 0;
-let cameraGpsBypass = false;
-
-$('camera-gps-bypass').addEventListener('change', event => {
-  cameraGpsBypass = event.target.checked;
-  if (cameraGpsBypass) toast('GPS skipped for this camera session. Capture time is saved; Turo fuel evidence may need location metadata.', 'warning');
-});
-
-async function openCamera(photoTarget = null) {
+async function openCamera() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     toast('Camera unavailable. Use Safari or Chrome with camera and location access.', 'error');
     return;
   }
-  cameraPhotoTarget = photoTarget;
-  cameraSession++;
-  cameraGpsBypass = false;
-  $('camera-gps-bypass').checked = false;
-  $('camera-note-btn').style.display = photoTarget ? 'none' : '';
   // Reset session display counters — but ONLY if no uploads are in flight.
   // If the user closes and reopens the camera while photos are uploading,
   // resetting the counters would break the progress bar mid-upload.
@@ -5904,29 +5852,10 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Shutter button — captures frame and queues upload
-$('camera-shutter').addEventListener('click', async () => {
-  const session = cameraSession;
-  const target = cameraPhotoTarget;
+$('camera-shutter').addEventListener('click', () => {
   const capturedVehicle = selectedVehicle;
-  const shutter = $('camera-shutter');
-  if (shutter.disabled) return;
-  shutter.disabled = true;
-  let location;
-  try {
-    if (!cameraGpsBypass) location = await PhotoMetadata.position();
-  } catch (error) {
-    if (session !== cameraSession) return;
-    const bypass = await confirm('GPS unavailable', 'Continue without GPS for this camera session? Capture time will still be saved. These photos may not meet Turo fuel reimbursement requirements.');
-    if (!bypass) return;
-    cameraGpsBypass = true;
-    $('camera-gps-bypass').checked = true;
-  } finally {
-    shutter.disabled = false;
-  }
-  if (session !== cameraSession || !cameraStream || $('camera-overlay').style.display === 'none') return;
   const capturedAt = new Date();
   const capturedDate = todayDateString();
-  const bypassForShot = cameraGpsBypass;
   const video = $('camera-video');
   const canvas = $('camera-canvas');
   if (!video.videoWidth || !video.videoHeight) { toast('Camera is not ready yet. Please try again.', 'warning'); return; }
@@ -5956,24 +5885,13 @@ $('camera-shutter').addEventListener('click', async () => {
   // Get blob
   canvas.toBlob(async (blob) => {
     if (!blob) return;
-    let stamped;
-    try {
-      stamped = await PhotoMetadata.stampCapture(blob, capturedAt, location, { allowWithoutLocation: bypassForShot });
-      if (target) {
-        target(new File([stamped], `camera_${capturedAt.getTime()}.jpg`, { type: 'image/jpeg', lastModified: capturedAt.getTime() }));
-      } else {
-        queueCameraUpload(stamped, capturedVehicle, capturedDate).catch(error => toast('Photo could not be queued: ' + error.message, 'error'));
-      }
-    } catch (error) {
-      toast(error.message, 'error');
-      return;
-    }
+    queueCameraUpload(blob, capturedVehicle, capturedDate, capturedAt).catch(error => toast('Photo could not be queued: ' + error.message, 'error'));
 
     cameraShotCount++;
     $('camera-count').textContent = `${cameraShotCount} photo${cameraShotCount !== 1 ? 's' : ''}`;
 
     // Add thumbnail — revoke URL after load to prevent memory leak
-    const thumbUrl = URL.createObjectURL(stamped);
+    const thumbUrl = URL.createObjectURL(blob);
     const thumbImg = document.createElement('img');
     thumbImg.onload = () => URL.revokeObjectURL(thumbUrl);
     thumbImg.src = thumbUrl;
@@ -5982,8 +5900,8 @@ $('camera-shutter').addEventListener('click', async () => {
   }, 'image/jpeg', 0.85);
 });
 
-async function queueCameraUpload(blob, capturedVehicle, capturedDate) {
-  const compressed = await compressBlob(blob); // uses 1920px/85% defaults
+async function queueCameraUpload(blob, capturedVehicle, capturedDate, capturedAt) {
+  const compressed = await compressBlob(blob, 1920, 0.85, capturedAt);
   await _queuePhotoForUpload(compressed, capturedVehicle, capturedDate);
 }
 
@@ -6084,7 +6002,7 @@ async function _runCameraWorker() {
       // so the resumed upload uses the actual capture time, not the resume time.
       if (item.raw) {
         try {
-          const compressed = await compressBlob(item.blob, 1920, 0.85);
+          const compressed = await compressImage(item.blob, 1920, 0.85);
           const newIdbId = await _idbSavePhoto(compressed, item.vehicle, item.capturedDate, false);
           _idbDeletePhoto(item.idbId);
           item.blob = compressed;
@@ -6195,9 +6113,6 @@ $('camera-zoom-out').addEventListener('click', () => {
 
 // Close camera
 $('camera-close').addEventListener('click', async () => {
-  const wasEvidenceCapture = !!cameraPhotoTarget;
-  cameraPhotoTarget = null;
-  cameraSession++;
   if (cameraStream) {
     cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
@@ -6215,7 +6130,7 @@ $('camera-close').addEventListener('click', async () => {
     toast(`Finishing ${cameraUploadQueue.length} upload(s) in background...`, 'info');
   }
 
-  if (cameraShotCount > 0 && selectedVehicle && !wasEvidenceCapture) {
+  if (cameraShotCount > 0 && selectedVehicle) {
     toast(`${cameraShotCount} photo(s) taken!`, 'success');
     await loadPhotosForDate(selectedVehicle.id, selectedDate);
     loadPhotoDates(selectedVehicle.id, selectedDate);
