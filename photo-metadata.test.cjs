@@ -44,10 +44,11 @@ test('compression preserves original camera time, timezone, and GPS while correc
   assert.equal(restored.Exif[piexif.ExifIFD.PixelYDimension], 1440);
 });
 
-test('missing metadata is rejected rather than replaced with modified or upload time', async () => {
+test('missing metadata can be detected without blocking compression or inventing dates', async () => {
   jpeg.lastModified = capturedAt.getTime();
   await assert.rejects(metadata.requireMetadata(jpeg), /capture date\/time and GPS location/);
-  await assert.rejects(metadata.restore(jpeg, jpeg), /capture date\/time and GPS location/);
+  const restored = await metadata.restore(jpeg, jpeg);
+  assert.ok(metadata.missing(await metadata.read(restored)).includes('original capture date/time'));
   await assert.rejects(metadata.requireMetadata(new Blob(['not an image'])), /capture date\/time and GPS location/);
 });
 
@@ -69,5 +70,24 @@ test('stale, missing, or invalid locations cannot be stamped onto a new capture'
 test('unavailable or denied device location returns a permission error', async () => {
   await assert.rejects(metadata.position(), /Location is unavailable/);
   context.navigator.geolocation = { getCurrentPosition(resolve, reject) { reject({ code: 1 }); } };
-  await assert.rejects(metadata.position(), /Enable location permission/);
+  await assert.rejects(metadata.position(), /continue without GPS/);
+});
+
+test('explicit GPS bypass saves the actual capture timestamp and no invented location', async () => {
+  const photo = await metadata.stampCapture(jpeg, capturedAt, null, { allowWithoutLocation: true });
+  const exif = await metadata.read(photo);
+  assert.equal(exif.Exif[piexif.ExifIFD.DateTimeOriginal], '2026:10:21 20:30:15');
+  assert.equal(Object.keys(exif.GPS).length, 0);
+  const restored = await metadata.restore(jpeg, photo, 1920, 1440);
+  const result = await metadata.read(restored);
+  assert.equal(result.Exif[piexif.ExifIFD.DateTimeOriginal], '2026:10:21 20:30:15');
+  assert.ok(metadata.missing(result).includes('GPS location'));
+});
+
+test('GPS requests use a short timeout and recent cached fixes', async () => {
+  let options;
+  context.navigator.geolocation = { getCurrentPosition(resolve, reject, supplied) { options = supplied; resolve(location); } };
+  assert.equal(await metadata.position(), location);
+  assert.equal(options.timeout, 3000);
+  assert.equal(options.maximumAge, 30000);
 });

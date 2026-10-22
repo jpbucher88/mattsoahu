@@ -1315,8 +1315,12 @@ document.addEventListener('change', async event => {
   const run = {};
   photoValidationRuns.set(input, run);
   try {
-    for (const file of photos) await PhotoMetadata.requireMetadata(file);
+    let missingMetadata = false;
+    for (const file of photos) {
+      if (PhotoMetadata.missing(await PhotoMetadata.read(file)).length) missingMetadata = true;
+    }
     if (!input.isConnected || photoValidationRuns.get(input) !== run) return;
+    if (missingMetadata && !(cameraGpsBypass && $('camera-overlay').style.display === 'flex')) toast('Photos accepted with missing capture time or GPS. Turo fuel reimbursement may require original photos with complete metadata.', 'warning');
     const approved = new Event('change', { bubbles: true });
     metadataApprovedEvents.add(approved);
     input.dispatchEvent(approved);
@@ -5247,7 +5251,7 @@ async function handlePhotoFiles(e) {
 // Core upload function — used by both file picker and camera
 // capturedDate: the date string when the photo was TAKEN (not when it's uploaded)
 async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
-  await PhotoMetadata.requireMetadata(blobOrFile);
+  const metadataMissing = PhotoMetadata.missing(await PhotoMetadata.read(blobOrFile));
   const st = getStorage();
   if (!st) {
     throw new Error('Firebase Storage is not enabled yet. Contact your admin to enable billing.');
@@ -5288,6 +5292,8 @@ async function uploadPhoto(blobOrFile, vehicleOverride, capturedDate) {
     url: downloadURL,
     date: date,
     timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+    metadataMissing,
+    metadataStatus: metadataMissing.length ? 'incomplete' : 'complete',
     uploadedBy: currentUser.uid,
     uploaderName: currentUser.displayName || currentUser.email,
   });
@@ -5524,6 +5530,12 @@ function _initCameraPinchZoom() {
 
 let cameraPhotoTarget = null;
 let cameraSession = 0;
+let cameraGpsBypass = false;
+
+$('camera-gps-bypass').addEventListener('change', event => {
+  cameraGpsBypass = event.target.checked;
+  if (cameraGpsBypass) toast('GPS skipped for this camera session. Capture time is saved; Turo fuel evidence may need location metadata.', 'warning');
+});
 
 async function openCamera(photoTarget = null) {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -5532,6 +5544,8 @@ async function openCamera(photoTarget = null) {
   }
   cameraPhotoTarget = photoTarget;
   cameraSession++;
+  cameraGpsBypass = false;
+  $('camera-gps-bypass').checked = false;
   $('camera-note-btn').style.display = photoTarget ? 'none' : '';
   // Reset session display counters — but ONLY if no uploads are in flight.
   // If the user closes and reopens the camera while photos are uploading,
@@ -5899,16 +5913,20 @@ $('camera-shutter').addEventListener('click', async () => {
   shutter.disabled = true;
   let location;
   try {
-    location = await PhotoMetadata.position();
+    if (!cameraGpsBypass) location = await PhotoMetadata.position();
   } catch (error) {
-    toast(error.message, 'error');
-    return;
+    if (session !== cameraSession) return;
+    const bypass = await confirm('GPS unavailable', 'Continue without GPS for this camera session? Capture time will still be saved. These photos may not meet Turo fuel reimbursement requirements.');
+    if (!bypass) return;
+    cameraGpsBypass = true;
+    $('camera-gps-bypass').checked = true;
   } finally {
     shutter.disabled = false;
   }
   if (session !== cameraSession || !cameraStream || $('camera-overlay').style.display === 'none') return;
   const capturedAt = new Date();
   const capturedDate = todayDateString();
+  const bypassForShot = cameraGpsBypass;
   const video = $('camera-video');
   const canvas = $('camera-canvas');
   if (!video.videoWidth || !video.videoHeight) { toast('Camera is not ready yet. Please try again.', 'warning'); return; }
@@ -5940,7 +5958,7 @@ $('camera-shutter').addEventListener('click', async () => {
     if (!blob) return;
     let stamped;
     try {
-      stamped = await PhotoMetadata.stampCapture(blob, capturedAt, location);
+      stamped = await PhotoMetadata.stampCapture(blob, capturedAt, location, { allowWithoutLocation: bypassForShot });
       if (target) {
         target(new File([stamped], `camera_${capturedAt.getTime()}.jpg`, { type: 'image/jpeg', lastModified: capturedAt.getTime() }));
       } else {

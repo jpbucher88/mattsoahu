@@ -23,14 +23,19 @@ Turo's fuel reimbursement guidance requires trip photos with date, time, and
 geolocation metadata: https://help.turo.com/charging-for-missing-fuel-or-low-battery-S1d_r4xV5
 
 The app's camera records the shutter time with a UTC timezone offset and a fresh
-device-provided GPS location in JPEG EXIF. Camera and location permissions are
-required. Camera buttons on inspection and expense forms use this same camera.
+device-provided GPS location in JPEG EXIF when available. Camera permission is
+required; GPS is optional so a location failure does not stop fleet photography.
+Camera buttons on inspection and expense forms use this same camera.
 Use a supported HTTPS browser such as current iOS Safari or Android Chrome.
 
-Photo imports are checked before they are accepted. Upload original JPEGs with
-capture date/time and GPS metadata; screenshots, stripped copies, and formats
-whose metadata cannot be read are rejected with an explanation. Upload time and
-file modification time are never substituted for a missing capture time.
+Photo imports with missing capture time or GPS are accepted with a warning.
+Upload time and file modification time are never substituted for a missing
+capture time. The camera offers Skip GPS and a confirmation after a failed GPS
+request; bypass applies only to that camera session. New camera captures retain
+their actual shutter time even without GPS, and no location is invented.
+Fleet photo records flag missing metadata for later review. Photos without GPS
+may not satisfy Turo fuel reimbursement requirements; keep complete original
+evidence for claims whenever possible.
 Compression and queued uploads preserve the original EXIF capture fields and GPS;
 JPEG downloads retain the original file bytes.
 

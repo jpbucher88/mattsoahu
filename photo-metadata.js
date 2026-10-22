@@ -55,7 +55,7 @@
   }
 
   async function restore(compressed, original, width, height) {
-    const exif = await requireMetadata(original);
+    const exif = await read(original);
     exif['0th'][piexif.ImageIFD.Orientation] = 1;
     if (Number.isFinite(width) && Number.isFinite(height)) {
       exif['0th'][piexif.ImageIFD.ImageWidth] = width;
@@ -71,17 +71,18 @@
   function position() {
     return new Promise((resolve, reject) => {
       if (!navigator.geolocation) { reject(new Error('Location is unavailable. Use a browser with camera and location access.')); return; }
-      navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('Location is required for photo evidence. Enable location permission and try again.')), {
-        enableHighAccuracy: true, maximumAge: 10000, timeout: 15000,
+      navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error('GPS is unavailable. Enable location permission or continue without GPS.')), {
+        enableHighAccuracy: true, maximumAge: 30000, timeout: 3000,
       });
     });
   }
 
-  async function stampCapture(blob, capturedAt, location) {
+  async function stampCapture(blob, capturedAt, location, options = {}) {
     const coords = location && location.coords;
-    if (!coords || !Number.isFinite(coords.latitude) || !Number.isFinite(coords.longitude) ||
-        Math.abs(coords.latitude) > 90 || Math.abs(coords.longitude) > 180 ||
-        !Number.isFinite(location.timestamp) || Math.abs(capturedAt.getTime() - location.timestamp) > 60000) {
+    const hasLocation = coords && Number.isFinite(coords.latitude) && Number.isFinite(coords.longitude) &&
+        Math.abs(coords.latitude) <= 90 && Math.abs(coords.longitude) <= 180 &&
+        Number.isFinite(location.timestamp) && Math.abs(capturedAt.getTime() - location.timestamp) <= 60000;
+    if (!hasLocation && !options.allowWithoutLocation) {
       throw new Error('A fresh GPS location is required before taking this photo.');
     }
     const date = capturedAt.toISOString().slice(0, 19).replace(/-/g, ':').replace('T', ' ');
@@ -93,14 +94,16 @@
     exif.Exif[0x9010] = '+00:00';
     exif.Exif[0x9011] = '+00:00';
     exif.Exif[0x9012] = '+00:00';
-    const rational = value => [[Math.round(Math.abs(value) * 10000000), 10000000], [0, 1], [0, 1]];
-    exif.GPS[piexif.GPSIFD.GPSVersionID] = [2, 3, 0, 0];
-    exif.GPS[piexif.GPSIFD.GPSLatitudeRef] = coords.latitude < 0 ? 'S' : 'N';
-    exif.GPS[piexif.GPSIFD.GPSLatitude] = rational(coords.latitude);
-    exif.GPS[piexif.GPSIFD.GPSLongitudeRef] = coords.longitude < 0 ? 'W' : 'E';
-    exif.GPS[piexif.GPSIFD.GPSLongitude] = rational(coords.longitude);
-    exif.GPS[piexif.GPSIFD.GPSDateStamp] = date.slice(0, 10);
-    exif.GPS[piexif.GPSIFD.GPSTimeStamp] = [[capturedAt.getUTCHours(), 1], [capturedAt.getUTCMinutes(), 1], [capturedAt.getUTCSeconds(), 1]];
+    if (hasLocation) {
+      const rational = value => [[Math.round(Math.abs(value) * 10000000), 10000000], [0, 1], [0, 1]];
+      exif.GPS[piexif.GPSIFD.GPSVersionID] = [2, 3, 0, 0];
+      exif.GPS[piexif.GPSIFD.GPSLatitudeRef] = coords.latitude < 0 ? 'S' : 'N';
+      exif.GPS[piexif.GPSIFD.GPSLatitude] = rational(coords.latitude);
+      exif.GPS[piexif.GPSIFD.GPSLongitudeRef] = coords.longitude < 0 ? 'W' : 'E';
+      exif.GPS[piexif.GPSIFD.GPSLongitude] = rational(coords.longitude);
+      exif.GPS[piexif.GPSIFD.GPSDateStamp] = date.slice(0, 10);
+      exif.GPS[piexif.GPSIFD.GPSTimeStamp] = [[capturedAt.getUTCHours(), 1], [capturedAt.getUTCMinutes(), 1], [capturedAt.getUTCSeconds(), 1]];
+    }
     return toBlob(piexif.insert(piexif.dump(exif), await dataUrl(blob)));
   }
 
